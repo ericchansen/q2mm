@@ -292,7 +292,7 @@ class TestObjectiveFunctionEigenmatrix:
         assert result == 0.3  # eigenmatrix[2, 1]
 
     def test_evaluate_molecule_eigenmatrix_projection_and_caching(self) -> None:
-        """_evaluate_molecule computes eigenmatrix from engine.hessian using cached QM eigenvectors."""
+        """_evaluate_molecule computes eigenmatrix from backend.hessian using cached QM eigenvectors."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
         _ref_data, mol = load_fchk_reference(str(GS_FCHK))
@@ -300,40 +300,72 @@ class TestObjectiveFunctionEigenmatrix:
 
         qm_hessian = np.array(mol.hessian, dtype=float)
 
-        class StubMMEngine:
-            """Stub MM engine returning a fixed Hessian in canonical units."""
+        from q2mm.backends.contracts import (
+            AbstractPreparedBackend,
+            BackendInfo,
+            BackendProvenance,
+            BackendRole,
+            Capability,
+            HessianResult as _CHessianResult,
+            HessianUnit,
+            readonly_array,
+        )
 
-            name = "stub"
+        _PROV = BackendProvenance(backend="stub", role=BackendRole.MM)
+        _INFO = BackendInfo(
+            name="stub",
+            role=BackendRole.MM,
+            capabilities=frozenset({Capability.HESSIAN}),
+            functional_forms=frozenset({"harmonic"}),
+            provenance=_PROV,
+        )
+
+        class _StubPrepared(AbstractPreparedBackend):
+            def __init__(self, backend: StubBackend, molecule: object) -> None:
+                super().__init__(info=_INFO, case_id="0", molecule=molecule, force_field=None, layout=None)
+                self._backend = backend
+
+            def _hessian(self, request: object) -> _CHessianResult:
+                self._backend.hessian_calls += 1
+                return _CHessianResult(
+                    hessian=readonly_array(self._backend._hessian),
+                    unit=HessianUnit.HARTREE_PER_BOHR2,
+                    provenance=_PROV,
+                )
+
+        class StubBackend:
+            """Backend double returning a fixed Hessian in canonical units."""
 
             def __init__(self, hessian: np.ndarray) -> None:
                 self._hessian = np.array(hessian, dtype=float)
                 self.hessian_calls = 0
 
-            def hessian(self, structure: object, forcefield: object = None) -> np.ndarray:
-                self.hessian_calls += 1
-                return self._hessian
+            @property
+            def info(self) -> BackendInfo:
+                return _INFO
 
-            def supports_runtime_params(self) -> bool:
-                return False
+            def prepare(self, request: object) -> _StubPrepared:
+                return _StubPrepared(self, request.molecule)
 
         # Build reference data with eigenmatrix entries
         ref = ObservationSet()
         ref = ref.with_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
 
         # Use MM Hessian == QM Hessian → self-projection should be diagonal
-        engine = StubMMEngine(qm_hessian)
+        backend = StubBackend(qm_hessian)
         from q2mm.models.forcefield import ForceField, FunctionalForm
 
         stub_ff = ForceField(functional_form=FunctionalForm.HARMONIC)
+        layout = ParameterLayout.from_force_field(stub_ff)
         obj = ObjectiveFunction(
             forcefield=stub_ff,
-            engine=engine,
+            backend=backend,
             molecules=[mol],
             reference=ref,
-            layout=ParameterLayout.from_force_field(stub_ff),
+            layout=layout,
         )
 
-        result = obj._evaluate_molecule(0, obj.forcefield)
+        result = obj._evaluate_molecule(0, layout.vector(stub_ff))
         assert "eigenmatrix" in result
 
         eigmat = np.array(result["eigenmatrix"], dtype=float)
@@ -342,17 +374,18 @@ class TestObjectiveFunctionEigenmatrix:
         # Self-projection → eigenmatrix should be diagonal
         diag_only = np.diag(np.diag(eigmat))
         assert np.allclose(eigmat, diag_only, atol=1e-8)
-        assert engine.hessian_calls == 1
+        assert backend.hessian_calls == 1
 
-        # Second call: swap in a scaled engine, eigenvectors stay cached
-        engine2 = StubMMEngine(2.0 * qm_hessian)
-        obj.engine = engine2
-        result2 = obj._evaluate_molecule(0, obj.forcefield)
+        # Second call: swap in a scaled backend, eigenvectors stay cached
+        backend2 = StubBackend(2.0 * qm_hessian)
+        obj.backend = backend2
+        obj._prepared.clear()
+        result2 = obj._evaluate_molecule(0, layout.vector(stub_ff))
         eigmat2 = np.array(result2["eigenmatrix"], dtype=float)
 
         # Diagonal should scale by 2
         assert np.allclose(np.diag(eigmat2), 2.0 * np.diag(eigmat), atol=1e-8)
-        assert engine2.hessian_calls == 1
+        assert backend2.hessian_calls == 1
 
 
 class TestMassWeightedEigenmatrixParity:

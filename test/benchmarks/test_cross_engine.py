@@ -1,13 +1,14 @@
-"""Cross-engine parity tests.
+"""Cross-backend parity tests.
 
 Validates that different MM backends produce consistent results for the
-same molecule and force field.  These tests catch regressions in engine
+same molecule and force field.  These tests catch regressions in backend
 implementations by asserting that energies and frequencies agree within
 a tolerance.
 
-Because force-field functional forms differ across backends (e.g. MM3 in
-OpenMM/Tinker vs. pure harmonic in JAX), only engines that share a
-functional form are compared directly.
+Because force-field functional forms differ across backends, only backends
+that share a functional form are compared directly.  MM3 is supported by
+OpenMM, Tinker, and JAX, so the OpenMM/JAX pair is compared explicitly and
+does not depend on Tinker being installed.
 """
 
 from __future__ import annotations
@@ -18,41 +19,36 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from q2mm.backends.registry import available_engines as _available_engines
+from q2mm.backends.contracts import EnergyRequest, FrequencyRequest
+from q2mm.backends.registry import available_backends as _available_backends
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import backend_is_usable, load_test_backend, param_vector, prepare_case
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Molecule
 
-pytestmark = [pytest.mark.benchmark, pytest.mark.integration]
+pytestmark = [pytest.mark.benchmark, pytest.mark.cross_backend, pytest.mark.integration]
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-# Engines that use the same functional form can be compared directly.
+# Backends that use the same functional form can be compared directly.
 _MM3_BACKENDS = {"openmm", "tinker"}
-
-
-def _get_engine(name: str) -> object:
-    """Instantiate a backend engine by registry name."""
-    from q2mm.backends.registry import get_engine
-
-    return get_engine(name)
 
 
 def _available_from(pool: set[str]) -> list[str]:
     """Return the subset of *pool* that is actually installed."""
-    avail = set(_available_engines())
-    return sorted(pool & avail)
+    return sorted(name for name in pool if backend_is_usable(name))
 
 
 def _skip_unless_pair(pool: set[str]) -> None:
     """Skip if fewer than two backends in *pool* are available."""
     available = _available_from(pool)
     if len(available) < 2:
-        pytest.skip(f"Need ≥2 backends from {pool}; have {available}")
+        pytest.skip(f"Need >=2 backends from {pool}; have {available}")
 
 
 # ---------------------------------------------------------------------------
@@ -61,8 +57,10 @@ def _skip_unless_pair(pool: set[str]) -> None:
 
 
 class TestEnergyParity:
-    """Assert that engines sharing a functional form agree on energy."""
+    """Assert that backends sharing a functional form agree on energy."""
 
+    @pytest.mark.openmm
+    @pytest.mark.tinker
     def test_mm3_energy_parity(
         self,
         ch3f_mol: Molecule,
@@ -70,17 +68,36 @@ class TestEnergyParity:
     ) -> None:
         """OpenMM and Tinker should agree on MM3 energy."""
         _skip_unless_pair(_MM3_BACKENDS)
-        engines = {name: _get_engine(name) for name in _available_from(_MM3_BACKENDS)}
+        backends = {name: load_test_backend(name) for name in _available_from(_MM3_BACKENDS)}
 
         energies: dict[str, float] = {}
-        for name, eng in engines.items():
-            energies[name] = eng.energy(ch3f_mol, ch3f_ff)
+        for name, bk in backends.items():
+            energies[name] = (
+                prepare_case(bk, ch3f_mol, ch3f_ff).energy(EnergyRequest(parameters=param_vector(ch3f_ff))).energy
+            )
 
         names = list(energies.keys())
         for a, b in combinations(names, 2):
             assert energies[a] == pytest.approx(energies[b], abs=1e-3), (
                 f"Energy mismatch: {a}={energies[a]:.6f} vs {b}={energies[b]:.6f}"
             )
+
+    @pytest.mark.openmm
+    @pytest.mark.jax
+    def test_openmm_jax_mm3_energy_parity(
+        self,
+        ch3f_mol: Molecule,
+        ch3f_ff: ForceField,
+    ) -> None:
+        """OpenMM and JAX must agree on MM3 energy (independent of Tinker)."""
+        avail = set(_available_backends())
+        if not {"openmm", "jax"} <= avail:
+            pytest.skip("Need both OpenMM and JAX for this MM3 parity check")
+        omm = prepare_case(load_backend("openmm"), ch3f_mol, ch3f_ff)
+        jbk = prepare_case(load_backend("jax"), ch3f_mol, ch3f_ff)
+        e_omm = omm.energy(EnergyRequest(parameters=param_vector(ch3f_ff))).energy
+        e_jax = jbk.energy(EnergyRequest(parameters=param_vector(ch3f_ff))).energy
+        assert e_omm == pytest.approx(e_jax, abs=1e-3), f"OpenMM {e_omm:.6f} vs JAX {e_jax:.6f}"
 
 
 # ---------------------------------------------------------------------------
@@ -89,8 +106,10 @@ class TestEnergyParity:
 
 
 class TestFrequencyParity:
-    """Assert that engines sharing a functional form agree on frequencies."""
+    """Assert that backends sharing a functional form agree on frequencies."""
 
+    @pytest.mark.openmm
+    @pytest.mark.tinker
     def test_mm3_frequency_parity(
         self,
         ch3f_mol: Molecule,
@@ -98,15 +117,16 @@ class TestFrequencyParity:
     ) -> None:
         """OpenMM and Tinker should agree on MM3 vibrational frequencies."""
         _skip_unless_pair(_MM3_BACKENDS)
-        engines = {name: _get_engine(name) for name in _available_from(_MM3_BACKENDS)}
+        backends = {name: load_test_backend(name) for name in _available_from(_MM3_BACKENDS)}
 
-        # engines.frequencies() returns all 3N modes; compare only the
+        # frequencies() returns all 3N modes; compare only the
         # 3N-6 vibrational modes (skip near-zero translation/rotation).
         n_vib = 3 * len(ch3f_mol.symbols) - 6
 
         freq_sets: dict[str, np.ndarray] = {}
-        for name, eng in engines.items():
-            all_freqs = np.sort(np.asarray(eng.frequencies(ch3f_mol, ch3f_ff)))
+        for name, bk in backends.items():
+            result = prepare_case(bk, ch3f_mol, ch3f_ff).frequencies(FrequencyRequest(parameters=param_vector(ch3f_ff)))
+            all_freqs = np.sort(np.asarray([float(f) for f in result.frequencies]))
             freq_sets[name] = all_freqs[-n_vib:]
 
         names = list(freq_sets.keys())
@@ -122,6 +142,28 @@ class TestFrequencyParity:
                 err_msg=f"Vibrational frequency mismatch between {a} and {b}",
             )
 
+    @pytest.mark.openmm
+    @pytest.mark.jax
+    def test_openmm_jax_mm3_frequency_parity(
+        self,
+        ch3f_mol: Molecule,
+        ch3f_ff: ForceField,
+    ) -> None:
+        """OpenMM and JAX must agree on MM3 vibrational frequencies."""
+        avail = set(_available_backends())
+        if not {"openmm", "jax"} <= avail:
+            pytest.skip("Need both OpenMM and JAX for this MM3 parity check")
+        n_vib = 3 * len(ch3f_mol.symbols) - 6
+        omm = prepare_case(load_backend("openmm"), ch3f_mol, ch3f_ff).frequencies(
+            FrequencyRequest(parameters=param_vector(ch3f_ff))
+        )
+        jbk = prepare_case(load_backend("jax"), ch3f_mol, ch3f_ff).frequencies(
+            FrequencyRequest(parameters=param_vector(ch3f_ff))
+        )
+        f_omm = np.sort(np.asarray([float(f) for f in omm.frequencies]))[-n_vib:]
+        f_jax = np.sort(np.asarray([float(f) for f in jbk.frequencies]))[-n_vib:]
+        np.testing.assert_allclose(f_omm, f_jax, atol=1.0, rtol=1e-3, err_msg="OpenMM vs JAX MM3 frequency mismatch")
+
 
 # ---------------------------------------------------------------------------
 # Golden-value validation (archived benchmark results)
@@ -129,12 +171,12 @@ class TestFrequencyParity:
 
 
 class TestGoldenValues:
-    """Validate current engine output against archived benchmark results."""
+    """Validate current backend output against archived benchmark results."""
 
     @pytest.mark.openmm
     def test_openmm_frequencies_match_golden(
         self,
-        openmm_engine: object,
+        openmm_backend: object,
         ch3f_mol: Molecule,
         ch3f_ff: ForceField,
         golden_results: dict[str, dict[str, object]],
@@ -147,8 +189,13 @@ class TestGoldenValues:
         golden_default_freqs = golden_results[key]["default_ff"]["frequencies_cm1"]
         n_golden = len(golden_default_freqs)
 
-        # Engine returns all 3N modes; archived results store only 3N-6.
-        current_freqs = openmm_engine.frequencies(ch3f_mol, ch3f_ff)  # type: ignore[attr-defined]
+        # Backend returns all 3N modes; archived results store only 3N-6.
+        current_freqs = [
+            float(f)
+            for f in prepare_case(openmm_backend, ch3f_mol, ch3f_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ch3f_ff)))
+            .frequencies
+        ]
         current_vib = current_freqs[-n_golden:]
 
         np.testing.assert_allclose(

@@ -7,9 +7,13 @@ from typing import Any
 
 import numpy as np
 
-from q2mm.backends.base import MMEngine
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Molecule
+from q2mm.backends.contracts import (
+    Capability,
+    EnergyRequest,
+    ParameterGradientRequest,
+    PreparedBackend,
+    UnsupportedCapabilityError,
+)
 from q2mm.models.observations import Observation
 
 
@@ -18,7 +22,7 @@ class EnergyResult:
     """Container for a computed MM energy value.
 
     Attributes:
-        energy: The MM single-point energy (kcal/mol or engine units).
+        energy: The MM single-point energy (kcal/mol).
 
     """
 
@@ -28,7 +32,7 @@ class EnergyResult:
 class EnergyEvaluator:
     """Evaluates MM single-point energies against QM reference energies.
 
-    This is the simplest evaluator: it calls ``engine.energy()`` once
+    This is the simplest evaluator: it calls ``prepared.energy()`` once
     per molecule and compares against reference energy values.
     """
 
@@ -36,27 +40,21 @@ class EnergyEvaluator:
 
     def compute(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
-        *,
-        structure: Any | None = None,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
     ) -> EnergyResult:
         """Compute the MM single-point energy.
 
         Args:
-            engine: The MM backend.
-            mol: The molecule being evaluated.
-            ff: The current force field.
-            structure: Optional pre-built engine context/handle.
+            prepared: The prepared per-case backend session.
+            parameters: Full parameter vector.
 
         Returns:
             EnergyResult with the computed energy.
 
         """
-        target = structure if structure is not None else mol
-        energy = engine.energy(target, ff)
-        return EnergyResult(energy=energy)
+        result = prepared.energy(EnergyRequest(parameters=parameters))
+        return EnergyResult(energy=float(result.energy))
 
     def residuals(
         self,
@@ -79,64 +77,58 @@ class EnergyEvaluator:
             result.append(ref.weight * diff)
         return result
 
-    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
-        """Energy gradients are available when the engine provides them.
+    def supports_analytical_gradient(self, prepared: PreparedBackend) -> bool:
+        """Energy gradients are available when the backend declares them.
 
         Args:
-            engine: The MM backend to check.
+            prepared: The prepared backend session to check.
 
         Returns:
-            ``True`` if *engine* supports ``energy_and_param_grad()``.
+            ``True`` if the backend declares ``PARAMETER_GRADIENT``.
 
         """
-        return engine.supports_analytical_gradients()
+        return prepared.info.supports(Capability.PARAMETER_GRADIENT)
 
     def gradient(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
         references: list[Observation],
         n_params: int,
         *,
-        structure: Any | None = None,
         mol_idx: int = 0,
     ) -> np.ndarray:
         """Compute analytical gradient of the energy score contribution.
 
-        Uses the engine's ``energy_and_param_grad()`` to obtain
-        ``dE/dp`` and chains through the weighted-residual score:
+        Uses the backend's parameter-gradient result to obtain ``dE/dp`` and
+        chains through the weighted-residual score:
 
         ``d(score)/d(p) = -2 * sum_i [w_i^2 * (ref_i - E_calc) * dE/dp]``
 
         Args:
-            engine: The MM backend (must support analytical gradients).
-            mol: The molecule being evaluated.
-            ff: The current force field.
+            prepared: The prepared backend session (must support gradients).
+            parameters: Full parameter vector.
             references: Reference energy values for this molecule.
             n_params: Length of the gradient vector.
-            structure: Optional pre-built engine context/handle.
             mol_idx: Molecule index (unused).
 
         Returns:
             Gradient vector of shape ``(n_params,)``.
 
         Raises:
-            TypeError: If the engine does not support analytical gradients.
+            UnsupportedCapabilityError: If the backend does not declare
+                analytical parameter gradients.
 
         """
-        if not engine.supports_analytical_gradients():
-            raise TypeError(
-                f"{engine.name} does not support energy_and_param_grad(). Cannot compute analytical energy gradient."
-            )
+        if not prepared.info.supports(Capability.PARAMETER_GRADIENT):
+            raise UnsupportedCapabilityError(prepared.info.name, Capability.PARAMETER_GRADIENT)
 
-        # energy_and_param_grad operates on the molecule, not cached handles,
-        # since some engines (e.g. OpenMM) only accept Molecule for
-        # parameter gradient computation.
-        calc_energy, de_dp = engine.energy_and_param_grad(mol, ff)
+        result = prepared.parameter_gradient(ParameterGradientRequest(parameters=parameters))
+        calc_energy = float(result.energy)
+        de_dp = np.asarray(result.gradient)
 
         if len(de_dp) != n_params:
-            raise ValueError(f"energy_and_param_grad returned {len(de_dp)} derivatives but expected {n_params}")
+            raise ValueError(f"parameter_gradient returned {len(de_dp)} derivatives but expected {n_params}")
 
         grad = np.zeros(n_params)
         for ref in references:

@@ -104,7 +104,7 @@ class JaxMultiStartOptimizer:
         """Run ``n_starts`` replicas in parallel, return the best.
 
         Args:
-            objective: Configured objective with a JaxEngine backend.
+            objective: Configured objective with a JaxBackend backend.
             space: The active/frozen projection over ``objective.layout``.
                 Only active parameters are perturbed/optimized;
                 ``objective.forcefield`` is never mutated — materialize
@@ -118,7 +118,7 @@ class JaxMultiStartOptimizer:
             replica's jaxopt state.
 
         Raises:
-            TypeError: If the engine is not a JaxEngine.
+            TypeError: If the engine is not a JaxBackend.
             ImportError: If jaxopt is not installed.
             RuntimeError: If ``method='lbfgsb'`` on a non-CPU backend.
 
@@ -126,23 +126,25 @@ class JaxMultiStartOptimizer:
         _ensure_jaxopt()
 
         from q2mm.backends.mm._jax_common import jax, jnp
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        from q2mm.backends.mm.jax_engine import JaxBackend
         from q2mm.optimizers.jaxloss import JaxLoss
 
-        if not isinstance(objective.engine, JaxEngine):
-            raise TypeError(f"JaxMultiStartOptimizer requires a JaxEngine, got {type(objective.engine).__name__}.")
+        if not isinstance(objective.backend, JaxBackend):
+            raise TypeError(f"JaxMultiStartOptimizer requires a JaxBackend, got {type(objective.backend).__name__}.")
 
         if self.method == "lbfgsb":
-            backend = jax.default_backend()
-            if backend != "cpu":
+            jax_device = jax.default_backend()
+            if jax_device != "cpu":
                 raise RuntimeError(
-                    f"jaxopt LBFGSB is not supported on the {backend!r} backend — use method='lbfgs' on GPU."
+                    f"jaxopt LBFGSB is not supported on the {jax_device!r} backend — use method='lbfgs' on GPU."
                 )
 
         import jaxopt
 
         spec = objective.to_jax_spec()
-        jax_loss = JaxLoss(spec, objective.engine, objective.molecules, objective.forcefield)
+        jax_loss = JaxLoss(
+            spec, objective.backend, objective.molecules, objective.forcefield, sessions=objective.jax_sessions(spec)
+        )
 
         layout = objective.layout
         initial_full = layout.vector(objective.forcefield)

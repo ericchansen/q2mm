@@ -6,12 +6,19 @@ JaxOptOptimizer converges on real systems (CH₃F, water, SN₂ TS).
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    FrequencyRequest,
+    HessianRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import param_vector, prepare_case
 
 import importlib.util
 from pathlib import Path
 
 import numpy as np
 import pytest
+
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
 _HAS_JAXOPT = importlib.util.find_spec("jaxopt") is not None
@@ -41,7 +48,7 @@ from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.seminario import qfuerza_fresh
 from q2mm.optimizers.objective import ObjectiveFunction
 
-JaxEngine = None
+JaxBackend = None
 
 
 def _load_qm_frequencies(path: Path) -> np.ndarray:
@@ -63,11 +70,11 @@ def _materialize(forcefield: ForceField, vector: np.ndarray) -> ForceField:
 
 
 def _make_objective(
-    forcefield: ForceField, engine: object, molecules: list, reference: ObservationSet, **kwargs: object
+    forcefield: ForceField, backend: object, molecules: list, reference: ObservationSet, **kwargs: object
 ) -> ObjectiveFunction:
     return ObjectiveFunction(
         forcefield=forcefield,
-        engine=engine,
+        backend=backend,
         molecules=molecules,
         reference=reference,
         layout=_layout(forcefield),
@@ -116,10 +123,10 @@ def _init_jax() -> None:
 
     ensure_jax()
     ensure_jaxopt()
-    global JaxEngine  # noqa: PLW0603
-    from q2mm.backends.mm.jax_engine import JaxEngine as _JE
+    global JaxBackend  # noqa: PLW0603
+    from q2mm.backends.mm.jax_engine import JaxBackend as _JE
 
-    JaxEngine = _JE
+    JaxBackend = _JE
 
 
 # ---------------------------------------------------------------------------
@@ -136,12 +143,12 @@ class TestCyclingJaxoptDispatch:
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=110.0)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         loop = OptimizationLoop(
             obj,
@@ -163,12 +170,12 @@ class TestCyclingJaxoptDispatch:
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=110.0)
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         loop = OptimizationLoop(
             obj,
@@ -219,10 +226,15 @@ class TestJaxOptCH3FValidation:
         """
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         # Compute mode indices from Seminario FF (correct mode ordering)
-        mm_all = engine.frequencies(ch3f_mol, seminario_ff)
+        mm_all = [
+            float(_f)
+            for _f in prepare_case(backend, ch3f_mol, seminario_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(seminario_ff)))
+            .frequencies
+        ]
         mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > 50.0])
         qm_real = sorted(qm_freqs[qm_freqs > 50.0])
         n = min(len(qm_real), len(mm_real_indices))
@@ -234,7 +246,7 @@ class TestJaxOptCH3FValidation:
         # Perturb to create non-trivial starting point
         ff = _scale_force_constants(seminario_ff, bond_scale=0.9, angle_scale=0.9)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[ch3f_mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[ch3f_mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgsb", maxiter=500)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -254,10 +266,15 @@ class TestJaxOptCH3FValidation:
         """JaxOpt L-BFGS converges on CH₃F energy + frequency objective."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         # Mode indices from Seminario FF
-        mm_all = engine.frequencies(ch3f_mol, seminario_ff)
+        mm_all = [
+            float(_f)
+            for _f in prepare_case(backend, ch3f_mol, seminario_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(seminario_ff)))
+            .frequencies
+        ]
         mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > 50.0])
         qm_real = sorted(qm_freqs[qm_freqs > 50.0])
         n = min(len(qm_real), len(mm_real_indices))
@@ -269,7 +286,7 @@ class TestJaxOptCH3FValidation:
 
         ff = _scale_force_constants(seminario_ff, bond_scale=0.8)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[ch3f_mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[ch3f_mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=500)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -287,10 +304,15 @@ class TestJaxOptCH3FValidation:
         """OptimizationLoop jaxopt:lbfgs on CH₃F for 2 cycles."""
         from q2mm.optimizers.cycling import OptimizationLoop
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         # Mode indices from Seminario FF
-        mm_all = engine.frequencies(ch3f_mol, seminario_ff)
+        mm_all = [
+            float(_f)
+            for _f in prepare_case(backend, ch3f_mol, seminario_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(seminario_ff)))
+            .frequencies
+        ]
         mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > 50.0])
         qm_real = sorted(qm_freqs[qm_freqs > 50.0])
         n = min(len(qm_real), len(mm_real_indices))
@@ -301,7 +323,7 @@ class TestJaxOptCH3FValidation:
 
         ff = _scale_force_constants(seminario_ff, bond_scale=0.8)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[ch3f_mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[ch3f_mol], reference=ref)
 
         loop = OptimizationLoop(
             obj,
@@ -329,10 +351,10 @@ class TestJaxOptWaterHessianValidation:
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         eq_ff = _water_ff()
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         # Compute hessian at equilibrium to serve as "QM" reference
-        qm_hess = engine.hessian(mol, eq_ff)
+        qm_hess = prepare_case(backend, mol, eq_ff).hessian(HessianRequest(parameters=param_vector(eq_ff))).hessian
 
         # Perturbed starting FF
         ff = _water_ff(bond_k=400.0, bond_r0=1.02, angle_k=35.0, angle_eq=108.0)
@@ -340,7 +362,7 @@ class TestJaxOptWaterHessianValidation:
         ref = ObservationSet()
         ref = ref.with_hessian_from_matrix(qm_hess, diagonal_only=True, case_id="0", diagonal_weight=1.0)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200)
         result = optimizer.optimize(obj, _all_active_space(obj))
@@ -376,10 +398,15 @@ class TestJaxOptSN2TSValidation:
         """JaxOpt L-BFGS-B converges on SN₂ TS frequency objective."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
-        engine = JaxEngine()
+        backend = load_backend("jax")
 
         # Mode indices from Seminario FF (correct ordering)
-        mm_all = engine.frequencies(ts_mol, ts_seminario_ff)
+        mm_all = [
+            float(_f)
+            for _f in prepare_case(backend, ts_mol, ts_seminario_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ts_seminario_ff)))
+            .frequencies
+        ]
         mm_real_indices = sorted([i for i, f in enumerate(mm_all) if f > 50.0])
         qm_real = sorted(ts_qm_freqs[ts_qm_freqs > 50.0])
         n = min(len(qm_real), len(mm_real_indices))
@@ -390,7 +417,7 @@ class TestJaxOptSN2TSValidation:
 
         ff = _scale_force_constants(ts_seminario_ff, bond_scale=0.9)
 
-        obj = _make_objective(forcefield=ff, engine=engine, molecules=[ts_mol], reference=ref)
+        obj = _make_objective(forcefield=ff, backend=backend, molecules=[ts_mol], reference=ref)
 
         optimizer = JaxOptOptimizer(method="lbfgsb", maxiter=500)
         result = optimizer.optimize(obj, _all_active_space(obj))

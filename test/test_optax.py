@@ -1,6 +1,7 @@
 """Unit tests for OptaxOptimizer (no backend required)."""
 
 from __future__ import annotations
+from test.backend_fixtures import mock_backend_info
 
 from dataclasses import dataclass
 from importlib.util import find_spec
@@ -102,8 +103,8 @@ class MockObjective:
         self.space = MockSpace(baseline, bounds=bounds)
         self.n_eval = 0
         self.history: list[float] = []
-        self.engine = MagicMock()
-        self.engine.supports_analytical_gradients.return_value = True
+        self.backend = MagicMock()
+        self.backend.info = mock_backend_info(param_grad=True, hess_jac=True)
 
     def __call__(self, x: np.ndarray) -> float:
         score = float(np.sum((np.asarray(x, dtype=np.float64) - self.target) ** 2))
@@ -126,8 +127,8 @@ class MockDivergentObjective:
         self.space = MockSpace(baseline)
         self.n_eval = 0
         self.history: list[float] = []
-        self.engine = MagicMock()
-        self.engine.supports_analytical_gradients.return_value = True
+        self.backend = MagicMock()
+        self.backend.info = mock_backend_info(param_grad=True, hess_jac=True)
 
     def __call__(self, x: np.ndarray) -> float:
         self._call_count += 1
@@ -155,8 +156,8 @@ class MockFrozenObjective:
         )
         self.n_eval = 0
         self.history: list[float] = []
-        self.engine = MagicMock()
-        self.engine.supports_analytical_gradients.return_value = True
+        self.backend = MagicMock()
+        self.backend.info = mock_backend_info(param_grad=True, hess_jac=True)
 
     def __call__(self, x: np.ndarray) -> float:
         score = float(np.sum((np.asarray(x, dtype=np.float64) - self.target) ** 2))

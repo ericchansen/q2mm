@@ -94,7 +94,7 @@ def _normal_modes_path(data_dir_override: Path | None) -> Path:
 
 def load(
     *,
-    engine: Any,
+    backend: Any,
     data_dir: Path | None = None,
     data_roots: ExternalDataRoots | None = None,
     starting_point: StartingPoint = "qfuerza",
@@ -104,7 +104,7 @@ def load(
     """Build the CH3F-SN2 :class:`~q2mm.benchmarks.cases.BenchmarkCase`.
 
     Args:
-        engine: MM backend used to compute frequencies at the starting
+        backend: MM backend used to compute frequencies at the starting
             force field (required — the reference is a frequency-only
             fit; see :func:`~q2mm.benchmarks.systems._assembly.assemble_qfuerza_fresh_case`).
         data_dir: Optional override for the packaged CH3F/SN2 resource
@@ -132,7 +132,7 @@ def load(
         name=NAME,
         molecule=molecule,
         stationary_point=StationaryPointKind.TRANSITION_STATE,
-        engine=engine,
+        backend=backend,
         starting_point=starting_point,
         qfuerza_replace_with=qfuerza_replace_with,
         functional_form=functional_form,

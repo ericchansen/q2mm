@@ -1,6 +1,6 @@
 """Tests for per-data-type evaluators.
 
-Tests each evaluator independently using stub engines and known data.
+Tests each evaluator independently using stub backends and known data.
 """
 
 from __future__ import annotations
@@ -10,15 +10,45 @@ import pytest
 
 from test._shared import GS_FCHK, make_water, make_ethane
 
+from q2mm.backends.contracts import (
+    UnsupportedCapabilityError,
+    AbstractPreparedBackend,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    Capability,
+    EnergyResult,
+    EnergyUnit,
+    FrequencyResult,
+    FrequencyUnit,
+    GeometryResult,
+    HessianJacobianResult,
+    HessianResult,
+    HessianUnit,
+    LengthUnit,
+    ParameterGradientResult,
+    readonly_array,
+)
 from q2mm.io.fchk import load_fchk_reference
 from q2mm.models.observations import Observation, ObservationSet
-# ---- Stub engine ----
+from test.backend_fixtures import MockLayout
+
+# ---- Prepared-session doubles ----
+
+_PROV = BackendProvenance(backend="stub", role=BackendRole.MM)
+
+#: Dummy full parameter vector — the fakes ignore it (they return fixed data).
+P = np.zeros(2)
 
 
-class StubEngine:
-    """Minimal stub engine for testing evaluators in isolation."""
+def _prep(backend: StubPrepared, mol: object) -> StubPrepared:
+    """Attach *mol* to a stub prepared session and return it."""
+    backend._molecule = mol
+    return backend
 
-    name = "stub"
+
+class StubPrepared(AbstractPreparedBackend):
+    """Minimal prepared-session double for testing evaluators in isolation."""
 
     def __init__(
         self,
@@ -29,42 +59,48 @@ class StubEngine:
         minimize_coords: np.ndarray | None = None,
         minimize_symbols: list[str] | None = None,
     ) -> None:
-        self._energy = energy
-        self._frequencies = frequencies or []
-        self._hessian = hessian
+        info = BackendInfo(
+            name="stub",
+            role=BackendRole.MM,
+            capabilities=frozenset(
+                {Capability.ENERGY, Capability.HESSIAN, Capability.FREQUENCIES, Capability.MINIMIZE}
+            ),
+            functional_forms=frozenset({"harmonic"}),
+            provenance=_PROV,
+        )
+        super().__init__(info=info, case_id="0", molecule=None, force_field=None, layout=None)
+        self._energy_value = energy
+        self._freqs = frequencies or []
+        self._hess = hessian
         self._minimize_coords = minimize_coords
         self._minimize_symbols = minimize_symbols or []
 
-    def energy(self, structure: object, forcefield: object = None) -> float:
-        return self._energy
+    def _energy(self, request: object) -> EnergyResult:
+        return EnergyResult(energy=self._energy_value, unit=EnergyUnit.KCAL_PER_MOL, provenance=_PROV)
 
-    def frequencies(self, structure: object, forcefield: object = None, **kwargs: object) -> list[float]:
-        return list(self._frequencies)
+    def _frequencies(self, request: object) -> FrequencyResult:
+        return FrequencyResult(frequencies=readonly_array(self._freqs), unit=FrequencyUnit.INVERSE_CM, provenance=_PROV)
 
-    def hessian(self, structure: object, forcefield: object = None) -> np.ndarray:
-        if self._hessian is None:
+    def _hessian(self, request: object) -> HessianResult:
+        if self._hess is None:
             raise ValueError("No hessian configured")
-        return self._hessian
+        return HessianResult(hessian=readonly_array(self._hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=_PROV)
 
-    def minimize(self, structure: object, forcefield: object = None) -> tuple:
+    def _minimize(self, request: object) -> GeometryResult:
         if self._minimize_coords is None:
             raise ValueError("No minimize_coords configured")
-        return 0.0, self._minimize_symbols, self._minimize_coords
-
-    def supports_runtime_params(self) -> bool:
-        return False
-
-    def supports_analytical_gradients(self) -> bool:
-        return False
-
-    def supports_analytical_hessian_gradients(self) -> bool:
-        return False
+        return GeometryResult(
+            energy=0.0,
+            energy_unit=EnergyUnit.KCAL_PER_MOL,
+            symbols=tuple(self._minimize_symbols),
+            coordinates=readonly_array(self._minimize_coords),
+            coordinate_unit=LengthUnit.ANGSTROM,
+            provenance=_PROV,
+        )
 
 
-class GradStubEngine(StubEngine):
-    """Stub engine that supports analytical parameter gradients."""
-
-    name = "grad_stub"
+class GradStubPrepared(StubPrepared):
+    """Stub prepared session that supports analytical parameter gradients."""
 
     def __init__(
         self,
@@ -75,45 +111,58 @@ class GradStubEngine(StubEngine):
     ) -> None:
         super().__init__(energy=energy, **kwargs)
         self._param_grad = param_grad if param_grad is not None else np.zeros(0)
+        self._layout = MockLayout(len(self._param_grad))
+        self._info = BackendInfo(
+            name="grad_stub",
+            role=BackendRole.MM,
+            capabilities=self._info.capabilities | {Capability.PARAMETER_GRADIENT},
+            functional_forms=frozenset({"harmonic"}),
+            provenance=_PROV,
+        )
 
-    def supports_analytical_gradients(self) -> bool:
-        return True
-
-    def energy_and_param_grad(
-        self,
-        structure: object,
-        forcefield: object = None,
-    ) -> tuple[float, np.ndarray]:
-        return self._energy, np.array(self._param_grad)
+    def _parameter_gradient(self, request: object) -> ParameterGradientResult:
+        return ParameterGradientResult(
+            energy=self._energy_value,
+            gradient=readonly_array(self._param_grad),
+            unit=EnergyUnit.KCAL_PER_MOL,
+            provenance=_PROV,
+        )
 
 
-class RuntimeHandleStubEngine(GradStubEngine):
-    """Stub engine with ``supports_runtime_params() = True``.
+class HessJacStubPrepared(StubPrepared):
+    """Stub prepared session that supports Hessian parameter Jacobians."""
 
-    When the objective function dispatches through ``_get_structure``,
-    the engine receives a handle from ``create_context`` for compute
-    calls, but ``energy_and_param_grad`` must receive the raw molecule
-    (not a handle) since engines like OpenMM only accept Molecule.
-    """
+    def __init__(self, *, hessian: np.ndarray, hess_jac: np.ndarray, **kwargs: object) -> None:
+        super().__init__(hessian=hessian, **kwargs)
+        self._hess_jac = hess_jac
+        self._layout = MockLayout(np.asarray(hess_jac).shape[2])
+        self._info = BackendInfo(
+            name="hessjac_stub",
+            role=BackendRole.MM,
+            capabilities=self._info.capabilities | {Capability.HESSIAN_PARAMETER_JACOBIAN},
+            functional_forms=frozenset({"harmonic"}),
+            provenance=_PROV,
+        )
 
-    name = "runtime_handle_stub"
+    def _hessian_parameter_jacobian(self, request: object) -> HessianJacobianResult:
+        return HessianJacobianResult(
+            hessian=readonly_array(self._hess),
+            jacobian=readonly_array(self._hess_jac),
+            unit=HessianUnit.HARTREE_PER_BOHR2,
+            provenance=_PROV,
+        )
 
-    _HANDLE_SENTINEL = "runtime_handle"
 
-    def supports_runtime_params(self) -> bool:
-        return True
+class StubBackend:
+    """Minimal backend double whose ``prepare`` returns a stub prepared session."""
 
-    def create_context(self, mol: object, forcefield: object = None) -> str:
-        return self._HANDLE_SENTINEL
+    def __init__(self, prepared: StubPrepared) -> None:
+        self._prepared = prepared
+        self.info = prepared.info
 
-    def energy_and_param_grad(
-        self,
-        structure: object,
-        forcefield: object = None,
-    ) -> tuple[float, np.ndarray]:
-        if structure is self._HANDLE_SENTINEL:
-            raise TypeError("energy_and_param_grad received the runtime handle, expected Molecule")
-        return self._energy, np.array(self._param_grad)
+    def prepare(self, request: object) -> StubPrepared:
+        self._prepared._molecule = request.molecule  # type: ignore[attr-defined]
+        return self._prepared
 
 
 # ---- EnergyEvaluator tests ----
@@ -124,10 +173,10 @@ class TestEnergyEvaluator:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
 
         evaluator = EnergyEvaluator()
-        engine = StubEngine(energy=42.5)
+        backend = StubPrepared(energy=42.5)
         mol = make_water()
 
-        result = evaluator.compute(engine, mol, ff=None)
+        result = evaluator.compute(_prep(backend, mol), P)
         assert result.energy == 42.5
 
     def test_residuals_single(self) -> None:
@@ -164,14 +213,14 @@ class TestEnergyEvaluator:
         assert EnergyEvaluator.extract_value(calc, ref) == 99.9
 
     def test_compute_with_structure(self) -> None:
-        """When structure is provided, it should be passed to engine."""
+        """When structure is provided, it should be passed to backend."""
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
 
         evaluator = EnergyEvaluator()
-        engine = StubEngine(energy=1.0)
+        backend = StubPrepared(energy=1.0)
         mol = make_water()
 
-        result = evaluator.compute(engine, mol, ff=None, structure="handle")
+        result = evaluator.compute(_prep(backend, mol), P)
         assert result.energy == 1.0
 
 
@@ -183,10 +232,10 @@ class TestFrequencyEvaluator:
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
 
         evaluator = FrequencyEvaluator()
-        engine = StubEngine(frequencies=[100.0, 200.0, 300.0])
+        backend = StubPrepared(frequencies=[100.0, 200.0, 300.0])
         mol = make_water()
 
-        result = evaluator.compute(engine, mol, ff=None)
+        result = evaluator.compute(_prep(backend, mol), P)
         assert result.frequencies == [100.0, 200.0, 300.0]
 
     def test_residuals(self) -> None:
@@ -351,10 +400,10 @@ class TestEigenmatrixEvaluator:
             name="stub",
             hessian=hess,
         )
-        engine = StubEngine(hessian=hess)
+        backend = StubPrepared(hessian=hess)
         evaluator = EigenmatrixEvaluator()
 
-        result = evaluator.compute(engine, mol, ff=None, mol_idx=0)
+        result = evaluator.compute(_prep(backend, mol), P, mol_idx=0)
         eigmat = result.eigenmatrix
 
         # Self-projection → off-diagonal should be ~0
@@ -405,13 +454,13 @@ class TestEigenmatrixEvaluator:
             name="stub",
             hessian=hess,
         )
-        engine = StubEngine(hessian=hess)
+        backend = StubPrepared(hessian=hess)
         evaluator = EigenmatrixEvaluator()
 
-        evaluator.compute(engine, mol, ff=None, mol_idx=0)
+        evaluator.compute(_prep(backend, mol), P, mol_idx=0)
         assert 0 in evaluator._qm_eigenvectors
 
-        evaluator.compute(engine, mol, ff=None, mol_idx=0)
+        evaluator.compute(_prep(backend, mol), P, mol_idx=0)
         # Same key, same cached value
         assert 0 in evaluator._qm_eigenvectors
 
@@ -432,11 +481,11 @@ class TestEigenmatrixEvaluator:
             geometry=np.array([[0.0, 0.0, 0.0]]),
             name="stub",
         )
-        engine = StubEngine(hessian=np.eye(3))
+        backend = StubPrepared(hessian=np.eye(3))
         evaluator = EigenmatrixEvaluator()
 
         with pytest.raises(ValueError, match="no QM Hessian"):
-            evaluator.compute(engine, mol, ff=None, mol_idx=0)
+            evaluator.compute(_prep(backend, mol), P, mol_idx=0)
 
     def test_extract_value_diagonal(self) -> None:
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
@@ -491,26 +540,26 @@ class TestEnergyEvaluatorGradient:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
 
         evaluator = EnergyEvaluator()
-        engine = GradStubEngine(energy=1.0, param_grad=np.array([1.0, 2.0]))
-        assert evaluator.supports_analytical_gradient(engine) is True
+        backend = GradStubPrepared(energy=1.0, param_grad=np.array([1.0, 2.0]))
+        assert evaluator.supports_analytical_gradient(backend) is True
 
     def test_supports_analytical_gradient_false(self) -> None:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
 
         evaluator = EnergyEvaluator()
-        engine = StubEngine(energy=1.0)
-        assert evaluator.supports_analytical_gradient(engine) is False
+        backend = StubPrepared(energy=1.0)
+        assert evaluator.supports_analytical_gradient(backend) is False
 
     def test_gradient_single_ref(self) -> None:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
 
         evaluator = EnergyEvaluator()
         de_dp = np.array([3.0, -1.0])
-        engine = GradStubEngine(energy=10.0, param_grad=de_dp)
+        backend = GradStubPrepared(energy=10.0, param_grad=de_dp)
         mol = make_water()
         refs = [Observation(kind="energy", value=12.0, weight=2.0)]
 
-        grad = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=2)
+        grad = evaluator.gradient(_prep(backend, mol), P, references=refs, n_params=2)
         # d(score)/d(p) = -2 * w^2 * (ref - calc) * dE/dp
         # = -2 * 4.0 * 2.0 * [3.0, -1.0] = [-48.0, 16.0]
         expected = -2.0 * 2.0**2 * (12.0 - 10.0) * de_dp
@@ -521,14 +570,14 @@ class TestEnergyEvaluatorGradient:
 
         evaluator = EnergyEvaluator()
         de_dp = np.array([1.0, 0.5])
-        engine = GradStubEngine(energy=5.0, param_grad=de_dp)
+        backend = GradStubPrepared(energy=5.0, param_grad=de_dp)
         mol = make_water()
         refs = [
             Observation(kind="energy", value=5.0, weight=1.0),
             Observation(kind="energy", value=7.0, weight=0.5),
         ]
 
-        grad = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=2)
+        grad = evaluator.gradient(_prep(backend, mol), P, references=refs, n_params=2)
         expected = -2.0 * 0.5**2 * (7.0 - 5.0) * de_dp
         np.testing.assert_allclose(grad, expected)
 
@@ -536,12 +585,12 @@ class TestEnergyEvaluatorGradient:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
 
         evaluator = EnergyEvaluator()
-        engine = StubEngine(energy=1.0)
+        backend = StubPrepared(energy=1.0)
         mol = make_water()
         refs = [Observation(kind="energy", value=2.0, weight=1.0)]
 
-        with pytest.raises(TypeError, match="does not support"):
-            evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
+        with pytest.raises(UnsupportedCapabilityError):
+            evaluator.gradient(_prep(backend, mol), P, references=refs, n_params=1)
 
     def test_gradient_validates_de_dp_shape(self) -> None:
         from q2mm.optimizers.evaluators.energy import EnergyEvaluator
@@ -549,12 +598,12 @@ class TestEnergyEvaluatorGradient:
         evaluator = EnergyEvaluator()
         # Engine returns 2 derivatives but caller expects 3
         de_dp = np.array([1.0, 2.0])
-        engine = GradStubEngine(energy=5.0, param_grad=de_dp)
+        backend = GradStubPrepared(energy=5.0, param_grad=de_dp)
         mol = make_water()
         refs = [Observation(kind="energy", value=6.0, weight=1.0)]
 
         with pytest.raises(ValueError, match="returned 2 derivatives but expected 3"):
-            evaluator.gradient(engine, mol, ff=None, references=refs, n_params=3)
+            evaluator.gradient(_prep(backend, mol), P, references=refs, n_params=3)
 
 
 class TestFrequencyEvaluatorGradient:
@@ -562,19 +611,19 @@ class TestFrequencyEvaluatorGradient:
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
 
         evaluator = FrequencyEvaluator()
-        engine = GradStubEngine(energy=0.0, param_grad=np.array([1.0]))
-        assert evaluator.supports_analytical_gradient(engine) is False
+        backend = GradStubPrepared(energy=0.0, param_grad=np.array([1.0]))
+        assert evaluator.supports_analytical_gradient(backend) is False
 
     def test_gradient_raises_on_unsupported_engine(self) -> None:
         from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
 
         evaluator = FrequencyEvaluator()
-        engine = StubEngine(frequencies=[100.0])
+        backend = StubPrepared(frequencies=[100.0])
         mol = make_water()
         refs = [Observation(kind="frequency", value=105.0, data_idx=0)]
 
-        with pytest.raises(TypeError):
-            evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
+        with pytest.raises(UnsupportedCapabilityError):
+            evaluator.gradient(_prep(backend, mol), P, references=refs, n_params=1)
 
 
 class TestGeometryEvaluatorGradient:
@@ -582,18 +631,18 @@ class TestGeometryEvaluatorGradient:
         from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
 
         evaluator = GeometryEvaluator()
-        engine = GradStubEngine(energy=0.0, param_grad=np.array([1.0]))
-        assert evaluator.supports_analytical_gradient(engine) is False
+        backend = GradStubPrepared(energy=0.0, param_grad=np.array([1.0]))
+        assert evaluator.supports_analytical_gradient(backend) is False
 
     def test_gradient_returns_none(self) -> None:
         from q2mm.optimizers.evaluators.geometry import GeometryEvaluator
 
         evaluator = GeometryEvaluator()
-        engine = StubEngine()
+        backend = StubPrepared()
         mol = make_water()
         refs = [Observation(kind="bond_length", value=1.0, atom_indices=(0, 1))]
 
-        result = evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
+        result = evaluator.gradient(_prep(backend, mol), P, references=refs, n_params=1)
         assert result is None
 
 
@@ -602,19 +651,19 @@ class TestEigenmatrixEvaluatorGradient:
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
 
         evaluator = EigenmatrixEvaluator()
-        engine = GradStubEngine(energy=0.0, param_grad=np.array([1.0]))
-        assert evaluator.supports_analytical_gradient(engine) is False
+        backend = GradStubPrepared(energy=0.0, param_grad=np.array([1.0]))
+        assert evaluator.supports_analytical_gradient(backend) is False
 
     def test_gradient_raises_on_unsupported_engine(self) -> None:
         from q2mm.optimizers.evaluators.eigenmatrix import EigenmatrixEvaluator
 
         evaluator = EigenmatrixEvaluator()
-        engine = StubEngine()
+        backend = StubPrepared()
         mol = make_water()
         refs = [Observation(kind="eig_diagonal", value=1.0, data_idx=0)]
 
-        with pytest.raises(TypeError):
-            evaluator.gradient(engine, mol, ff=None, references=refs, n_params=1)
+        with pytest.raises(UnsupportedCapabilityError):
+            evaluator.gradient(_prep(backend, mol), P, references=refs, n_params=1)
 
 
 # ---- ObjectiveFunction.gradient() delegation tests ----
@@ -626,7 +675,7 @@ class TestObjectiveFunctionGradient:
         from q2mm.optimizers.objective import ObjectiveFunction
 
         de_dp = np.array([3.0, -1.0])
-        engine = GradStubEngine(energy=10.0, param_grad=de_dp)
+        backend = GradStubPrepared(energy=10.0, param_grad=de_dp)
         mol = make_water()
         ref = ObservationSet()
         ref = ref.with_energy(12.0, weight=2.0)
@@ -636,7 +685,7 @@ class TestObjectiveFunctionGradient:
         layout = _StubLayout(ff.n_params)
         obj = ObjectiveFunction(
             forcefield=ff,
-            engine=engine,
+            backend=StubBackend(backend),
             molecules=[mol],
             reference=ref,
             layout=layout,
@@ -653,7 +702,7 @@ class TestObjectiveFunctionGradient:
         # Engine supports analytical gradients (for energy)
         # but frequency evaluator always falls back to FD
         de_dp = np.array([1.0])
-        engine = GradStubEngine(
+        backend = GradStubPrepared(
             energy=10.0,
             param_grad=de_dp,
             frequencies=[100.0],
@@ -667,7 +716,7 @@ class TestObjectiveFunctionGradient:
         layout = _StubLayout(ff.n_params)
         obj = ObjectiveFunction(
             forcefield=ff,
-            engine=engine,
+            backend=StubBackend(backend),
             molecules=[mol],
             reference=ref,
             layout=layout,
@@ -683,7 +732,7 @@ class TestObjectiveFunctionGradient:
         from q2mm.optimizers.objective import ObjectiveFunction
 
         de_dp = np.array([2.0])
-        engine = GradStubEngine(
+        backend = GradStubPrepared(
             energy=10.0,
             param_grad=de_dp,
             frequencies=[100.0],
@@ -697,7 +746,7 @@ class TestObjectiveFunctionGradient:
         layout = _StubLayout(ff.n_params)
         obj = ObjectiveFunction(
             forcefield=ff,
-            engine=engine,
+            backend=StubBackend(backend),
             molecules=[mol],
             reference=ref,
             layout=layout,
@@ -710,12 +759,12 @@ class TestObjectiveFunctionGradient:
         np.testing.assert_allclose(grad, expected_energy_grad, atol=1e-6)
         assert grad[0] != 0.0
 
-    def test_runtime_handle_engine_receives_molecule_not_handle(self) -> None:
-        """Engine with supports_runtime_params=True: gradient passes raw molecule (not handle) to energy_and_param_grad."""
+    def test_objective_gradient_uses_prepared_parameter_gradient(self) -> None:
+        """The objective's analytical gradient routes through prepared.parameter_gradient."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
         de_dp = np.array([1.0])
-        engine = RuntimeHandleStubEngine(energy=10.0, param_grad=de_dp)
+        backend = GradStubPrepared(energy=10.0, param_grad=de_dp)
         mol = make_water()
         ref = ObservationSet()
         ref = ref.with_energy(12.0, weight=1.0)
@@ -724,15 +773,12 @@ class TestObjectiveFunctionGradient:
         layout = _StubLayout(ff.n_params)
         obj = ObjectiveFunction(
             forcefield=ff,
-            engine=engine,
+            backend=StubBackend(backend),
             molecules=[mol],
             reference=ref,
             layout=layout,
         )
 
-        # energy_and_param_grad always receives the raw molecule
-        # (not a handle), since some engines (e.g. OpenMM) only
-        # accept Molecule for parameter gradient computation.
         grad = obj.gradient(np.array([0.0]))
         expected = -2.0 * 1.0**2 * (12.0 - 10.0) * de_dp
         np.testing.assert_allclose(grad, expected)
@@ -795,33 +841,33 @@ class TestEvaluatorObjectiveParity:
     """Verify that evaluator delegation in ObjectiveFunction produces identical results."""
 
     def test_energy_parity(self) -> None:
-        """Energy evaluation via evaluator matches direct engine call."""
+        """Energy evaluation via evaluator matches direct backend call."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        engine = StubEngine(energy=42.0)
+        backend = StubPrepared(energy=42.0)
         mol = make_water()
         ref = ObservationSet()
         ref = ref.with_energy(40.0, weight=2.0)
 
-        obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
-        result = obj._evaluate_molecule(0, obj.forcefield)
+        obj = ObjectiveFunction(forcefield=None, backend=StubBackend(backend), molecules=[mol], reference=ref)
+        result = obj._evaluate_molecule(0, P)
 
         assert result["energy"] == 42.0
         calc_value = obj._extract_value(result, ref.values[0])
         assert calc_value == 42.0
 
     def test_frequency_parity(self) -> None:
-        """Frequency evaluation via evaluator matches direct engine call."""
+        """Frequency evaluation via evaluator matches direct backend call."""
         from q2mm.optimizers.objective import ObjectiveFunction
 
-        engine = StubEngine(frequencies=[100.0, 200.0, 300.0])
+        backend = StubPrepared(frequencies=[100.0, 200.0, 300.0])
         mol = make_water()
         ref = ObservationSet()
         ref = ref.with_frequency(105.0, data_idx=0, weight=1.0)
         ref = ref.with_frequency(195.0, data_idx=1, weight=1.0)
 
-        obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
-        result = obj._evaluate_molecule(0, obj.forcefield)
+        obj = ObjectiveFunction(forcefield=None, backend=StubBackend(backend), molecules=[mol], reference=ref)
+        result = obj._evaluate_molecule(0, P)
 
         assert result["frequencies"] == [100.0, 200.0, 300.0]
         assert obj._extract_value(result, ref.values[0]) == 100.0
@@ -838,9 +884,9 @@ class TestEvaluatorObjectiveParity:
         ref = ObservationSet()
         ref = ref.with_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
 
-        engine = StubEngine(hessian=qm_hessian)
-        obj = ObjectiveFunction(forcefield=None, engine=engine, molecules=[mol], reference=ref)
-        result = obj._evaluate_molecule(0, obj.forcefield)
+        backend = StubPrepared(hessian=qm_hessian)
+        obj = ObjectiveFunction(forcefield=None, backend=StubBackend(backend), molecules=[mol], reference=ref)
+        result = obj._evaluate_molecule(0, P)
 
         assert "eigenmatrix" in result
         eigmat = np.array(result["eigenmatrix"], dtype=float)

@@ -47,7 +47,7 @@ jaxopt: ModuleType | None = None
 _jax_initialized: bool = False
 
 
-def ensure_jax(engine_name: str = "JaxEngine") -> None:
+def ensure_jax(engine_name: str = "JaxBackend") -> None:
     """Import JAX and configure float64 on first call.
 
     Subsequent calls are no-ops.  Thin wrapper over the shared
@@ -236,8 +236,8 @@ def params_and_coords(
 ) -> tuple:
     """Extract parameter and coordinate JAX arrays.
 
-    Shared helper for :class:`~jax_engine.JaxEngine` and
-    :class:`~jax_md_engine.JaxMDEngine`.
+    Shared helper for :class:`~jax_engine.JaxBackend` and
+    :class:`~jax_md_engine.JaxMdBackend`.
 
     Args:
         molecule_geometry: ``handle.molecule.geometry`` array-like.

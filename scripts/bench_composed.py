@@ -41,7 +41,7 @@ def _param_names(layout: Any) -> list[str]:
 
 
 def run_workflow_b(
-    engine: Any,
+    backend: Any,
     sys_data: Any,
     backend_name: str,
     output_dir: Path,
@@ -49,7 +49,7 @@ def run_workflow_b(
     """Run Workflow B: multi-start n=10 → optax Adam refinement.
 
     Args:
-        engine: MM backend engine.
+        backend: MM backend.
         sys_data: Loaded system data.
         backend_name: Display name for the backend.
         output_dir: Directory for result and force field files.
@@ -76,7 +76,7 @@ def run_workflow_b(
     t0_total = time.perf_counter()
 
     p1_result = run_combo(
-        engine,
+        backend,
         sys_data,
         optimizer_method="multi:L-BFGS-B",
         optimizer_kwargs={"n_starts": 10},
@@ -123,7 +123,7 @@ def run_workflow_b(
     sys_data_p2 = dataclasses.replace(sys_data, problem=problem_p2)
 
     p2_result = run_combo(
-        engine,
+        backend,
         sys_data_p2,
         optimizer_method="optax:adam",
         optimizer_kwargs={"max_steps": 100},
@@ -237,28 +237,24 @@ def main() -> None:
 
     if args.backend in ("openmm", "all"):
         try:
-            from q2mm.backends.registry import registered_mm_engines
+            from q2mm.backends.registry import available_backends, load_backend
 
-            engines = registered_mm_engines()
-            if "openmm" in engines:
-                cls = engines["openmm"]
+            if "openmm" in available_backends():
                 if args.platform:
-                    engine = cls(platform_name=args.platform)
+                    backend = load_backend("openmm", platform_name=args.platform)
                 else:
-                    engine = cls()
-                backends_to_run.append((engine.name, engine))
+                    backend = load_backend("openmm")
+                backends_to_run.append((backend.info.name, backend))
         except Exception as e:
             print(f"  Skipping OpenMM: {e}")
 
     if args.backend in ("jax", "all"):
         try:
-            from q2mm.backends.registry import registered_mm_engines
+            from q2mm.backends.registry import available_backends, load_backend
 
-            engines = registered_mm_engines()
-            if "jax" in engines:
-                cls = engines["jax"]
-                engine = cls()
-                backends_to_run.append((engine.name, engine))
+            if "jax" in available_backends():
+                backend = load_backend("jax")
+                backends_to_run.append((backend.info.name, backend))
         except Exception as e:
             print(f"  Skipping JAX: {e}")
 
@@ -266,14 +262,14 @@ def main() -> None:
         print("No backends available!")
         return
 
-    for backend_name, engine in backends_to_run:
+    for backend_name, backend in backends_to_run:
         try:
-            sys_data = load_system("ch3f", engine=engine, functional_form=form)
+            sys_data = load_system("ch3f", backend=backend, functional_form=form)
         except Exception as e:
             print(f"  Cannot load CH3F {form} for {backend_name}: {e}")
             continue
 
-        result = run_workflow_b(engine, sys_data, backend_name, output_dir)
+        result = run_workflow_b(backend, sys_data, backend_name, output_dir)
         all_results.append(result)
 
     # Print summary

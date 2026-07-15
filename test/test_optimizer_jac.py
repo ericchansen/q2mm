@@ -18,6 +18,34 @@ from q2mm.optimizers.objective import ObjectiveFunction
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 
+def _mock_engine(supports_grad: bool) -> MagicMock:
+    """Return a MagicMock backend whose ``.info`` declares gradient capabilities."""
+    from q2mm.backends.contracts import BackendInfo, BackendProvenance, BackendRole, Capability
+
+    caps: set[Capability] = {Capability.ENERGY, Capability.HESSIAN, Capability.FREQUENCIES}
+    if supports_grad:
+        caps |= {Capability.PARAMETER_GRADIENT, Capability.HESSIAN_PARAMETER_JACOBIAN}
+    backend = MagicMock()
+    backend.info = BackendInfo(
+        name="mock",
+        role=BackendRole.MM,
+        capabilities=frozenset(caps),
+        functional_forms=frozenset({"harmonic"}),
+        provenance=BackendProvenance(backend="mock", role=BackendRole.MM),
+    )
+    # A prepared session exposes the same capability info as its backend.
+    backend.prepare.return_value.info = backend.info
+    return backend
+
+
+def _mock_mol() -> MagicMock:
+    """Return a mock molecule so the objective can build a prepared session."""
+    mol = MagicMock()
+    mol.symbols = ["H", "H"]
+    mol.name = "mock_mol"
+    return mol
+
+
 @dataclass(frozen=True)
 class MockForceField:
     """Minimal immutable force field for optimizer tests."""
@@ -86,8 +114,7 @@ class _MockObjective:
 
     def __init__(self, *, engine_supports_grad: bool = False) -> None:
         baseline = np.array([1.0, 2.0], dtype=np.float64)
-        self.engine = MagicMock()
-        self.engine.supports_analytical_gradients.return_value = engine_supports_grad
+        self.backend = _mock_engine(engine_supports_grad)
         self.forcefield = MockForceField(tuple(baseline.tolist()))
         self.layout = MockLayout(2)
         self.space = MockSpace(baseline, bounds=[(0.0, 10.0), (0.0, 10.0)])
@@ -116,8 +143,7 @@ class _MockFrozenObjective:
             bounds=[(-10.0, 10.0), (-10.0, 10.0), (-10.0, 10.0)],
             active_indices=np.array([0, 2]),
         )
-        self.engine = MagicMock()
-        self.engine.supports_analytical_gradients.return_value = method != "least_squares"
+        self.backend = _mock_engine(method != "least_squares")
         self.history: list[float] = []
         self.n_eval = 0
 
@@ -274,9 +300,7 @@ class TestResolveGradients:
     def _make_objective(
         *, engine_supports_grad: bool, kinds: tuple[str, ...] = ("energy", "frequency")
     ) -> ObjectiveFunction:
-        engine = MagicMock()
-        engine.supports_analytical_gradients.return_value = engine_supports_grad
-        engine.supports_analytical_hessian_gradients.return_value = engine_supports_grad
+        backend = _mock_engine(engine_supports_grad)
         ref = ObservationSet()
         for kind in kinds:
             if kind == "energy":
@@ -287,7 +311,7 @@ class TestResolveGradients:
                 ref = ref.with_bond_length(1.5, atom_indices=(0, 1))
             elif kind == "hessian_element":
                 ref = ref.with_hessian_element(0.1, row=0, col=0)
-        return ObjectiveFunction(None, engine, [], ref)
+        return ObjectiveFunction(None, backend, [_mock_mol()], ref)
 
     def test_auto_with_analytical_support(self) -> None:
         obj = self._make_objective(engine_supports_grad=True)
@@ -345,9 +369,7 @@ class TestPerEvaluatorGradientSupport:
 
     @staticmethod
     def _make_objective(*, engine_supports_grad: bool, kinds: tuple[str, ...]) -> ObjectiveFunction:
-        engine = MagicMock()
-        engine.supports_analytical_gradients.return_value = engine_supports_grad
-        engine.supports_analytical_hessian_gradients.return_value = engine_supports_grad
+        backend = _mock_engine(engine_supports_grad)
         ref = ObservationSet()
         for kind in kinds:
             if kind == "energy":
@@ -358,7 +380,7 @@ class TestPerEvaluatorGradientSupport:
                 ref = ref.with_bond_length(1.5, atom_indices=(0, 1))
             elif kind == "hessian_element":
                 ref = ref.with_hessian_element(0.1, row=0, col=0)
-        return ObjectiveFunction(None, engine, [], ref)
+        return ObjectiveFunction(None, backend, [_mock_mol()], ref)
 
     def test_energy_and_frequency_with_analytical_engine(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("energy", "frequency"))

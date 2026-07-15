@@ -1,6 +1,7 @@
 """Tests for BasinHoppingOptimizer."""
 
 from __future__ import annotations
+from test.backend_fixtures import mock_backend_info
 
 from dataclasses import dataclass
 from unittest.mock import MagicMock
@@ -92,8 +93,8 @@ class MockObjective:
         self.space = MockSpace(baseline, bounds=bounds)
         self.n_eval = 0
         self.history: list[float] = []
-        self.engine = MagicMock()
-        self.engine.supports_analytical_gradients.return_value = False
+        self.backend = MagicMock()
+        self.backend.info = mock_backend_info(param_grad=False)
 
     def __call__(self, x: np.ndarray) -> float:
         score = float(np.sum((np.asarray(x, dtype=np.float64) - self.target) ** 2))

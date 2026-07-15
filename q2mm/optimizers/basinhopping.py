@@ -94,7 +94,7 @@ class BasinHoppingOptimizer:
         """Run basin-hopping optimization.
 
         Args:
-            objective: Configured objective with forcefield, engine,
+            objective: Configured objective with forcefield, backend,
                 molecules, and reference data.
             space: The active/frozen projection over ``objective.layout``.
                 Only active parameters are perturbed/optimized;
@@ -215,8 +215,10 @@ class BasinHoppingOptimizer:
         if self.jac == "analytical":
             return lambda x_active: space.pack(objective.gradient(space.expand(x_active)))
         if self.jac == "auto":
-            if hasattr(objective, "engine") and hasattr(objective.engine, "supports_analytical_gradients"):
-                if objective.engine.supports_analytical_gradients():
+            if hasattr(objective, "backend"):
+                from q2mm.backends.contracts import Capability
+
+                if objective.backend.info.supports(Capability.PARAMETER_GRADIENT):
                     if self.verbose:
                         logger.info("  Basin-hopping: using analytical gradients")
                     return lambda x_active: space.pack(objective.gradient(space.expand(x_active)))

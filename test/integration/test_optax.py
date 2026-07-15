@@ -1,10 +1,11 @@
 """Integration tests for OptaxOptimizer with JAX backend.
 
 Verifies that OptaxOptimizer converges on real force field problems
-using the JAX engine's analytical gradients.
+using the JAX backend's analytical gradients.
 """
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 import importlib.util
 
@@ -29,7 +30,7 @@ from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.optimizers.objective import ObjectiveFunction
 
 # Module-level globals populated by autouse fixture
-JaxEngine = None
+JaxBackend = None
 
 
 def _layout(forcefield: ForceField) -> ParameterLayout:
@@ -41,11 +42,11 @@ def _params(forcefield: ForceField) -> np.ndarray:
 
 
 def _make_objective(
-    forcefield: ForceField, engine: object, molecules: list, reference: ObservationSet, **kwargs: object
+    forcefield: ForceField, backend: object, molecules: list, reference: ObservationSet, **kwargs: object
 ) -> ObjectiveFunction:
     return ObjectiveFunction(
         forcefield=forcefield,
-        engine=engine,
+        backend=backend,
         molecules=molecules,
         reference=reference,
         layout=_layout(forcefield),
@@ -83,17 +84,17 @@ def _init_jax() -> None:
     from q2mm.backends.mm._jax_common import ensure_jax
 
     ensure_jax()
-    global JaxEngine  # noqa: PLW0603
-    from q2mm.backends.mm.jax_engine import JaxEngine as _JE
+    global JaxBackend  # noqa: PLW0603
+    from q2mm.backends.mm.jax_engine import JaxBackend as _JE
 
-    JaxEngine = _JE
+    JaxBackend = _JE
 
 
 class TestOptaxJaxDiatomic:
-    """OptaxOptimizer on a simple H₂ diatomic with JAX engine."""
+    """OptaxOptimizer on a simple H₂ diatomic with JAX backend."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_adam_converges(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
@@ -104,7 +105,7 @@ class TestOptaxJaxDiatomic:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.1,
@@ -125,7 +126,7 @@ class TestOptaxJaxDiatomic:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="sgd",
             learning_rate=0.05,
@@ -146,7 +147,7 @@ class TestOptaxJaxDiatomic:
         ref = ObservationSet()
         ref = ref.with_energy(value=5.0, case_id="0", weight=1.0)
 
-        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.1,
@@ -161,10 +162,10 @@ class TestOptaxJaxDiatomic:
 
 
 class TestOptaxJaxWater:
-    """OptaxOptimizer on H₂O (bond + angle params) with JAX engine."""
+    """OptaxOptimizer on H₂O (bond + angle params) with JAX backend."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_adam_improves_water(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
@@ -175,7 +176,7 @@ class TestOptaxJaxWater:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.05,
@@ -192,7 +193,7 @@ class TestOptaxVsScipyBaseline:
     """Compare OptaxOptimizer against ScipyOptimizer L-BFGS-B."""
 
     def setup_method(self) -> None:
-        self.engine = JaxEngine()
+        self.backend = load_backend("jax")
 
     def test_adam_comparable_to_lbfgsb(self) -> None:
         """Adam should achieve comparable (if not better) results to L-BFGS-B."""
@@ -207,13 +208,13 @@ class TestOptaxVsScipyBaseline:
         ref = ObservationSet()
         ref = ref.with_energy(value=target_energy, case_id="0", weight=1.0)
 
-        obj_scipy = _make_objective(forcefield=ff_scipy, engine=self.engine, molecules=[mol], reference=ref)
+        obj_scipy = _make_objective(forcefield=ff_scipy, backend=self.backend, molecules=[mol], reference=ref)
         opt_scipy = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="analytical", verbose=False)
         res_scipy = opt_scipy.optimize(obj_scipy, _all_active_space(obj_scipy))
 
         # Run Adam
         ff_optax = _h2_ff(bond_k=215.8, bond_r0=0.74)
-        obj_optax = _make_objective(forcefield=ff_optax, engine=self.engine, molecules=[mol], reference=ref)
+        obj_optax = _make_objective(forcefield=ff_optax, backend=self.backend, molecules=[mol], reference=ref)
         opt_optax = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.1,
@@ -235,7 +236,7 @@ class TestOptaxVsScipyBaseline:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        objective = _make_objective(forcefield=ff, engine=self.engine, molecules=[mol], reference=ref)
+        objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
             optimizer="adam",
             learning_rate=0.01,
@@ -244,5 +245,5 @@ class TestOptaxVsScipyBaseline:
         )
         result = optimizer.optimize(objective, _all_active_space(objective))
 
-        # JAX engine → uses JaxLoss gradient path (memory-efficient)
+        # JAX backend → uses JaxLoss gradient path (memory-efficient)
         assert result.jac_mode == "jax_loss"

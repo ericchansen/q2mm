@@ -1,15 +1,19 @@
-"""Batched molecule evaluation using JAX vmap.
+"""Batched, topology-compatible Hessian evaluation using JAX vmap.
 
-Groups molecules by topology compatibility and uses ``jax.vmap`` to
-compute Hessians for multiple geometries in a single vectorized call.
+Groups topology-compatible prepared JAX sessions into typed batch objects and
+uses ``jax.vmap`` to compute Hessians for multiple geometries in a single
+vectorized call.  Every session keeps its own molecule/coordinates/native
+state; a batch shares only one compiled coordinate-Hessian kernel (the
+representative session's).  The batch's evaluation surface is a typed
+:class:`~q2mm.backends.contracts.BatchedHessianRequest` carrying one full
+parameter vector; no ForceField crosses the boundary.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
-from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -23,206 +27,218 @@ try:
 except ImportError:  # pragma: no cover
     _HAS_JAX = False
 
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Molecule
+from q2mm.backends.contracts import (
+    BatchedHessianRequest,
+    BatchedHessianResult,
+    EvaluationError,
+    HessianUnit,
+    readonly_array,
+)
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 
-if _HAS_JAX:
-    from q2mm.backends.mm.jax_engine import JaxEngine, JaxHandle
-
-
-@dataclass
-class TopologyGroup:
-    """A group of molecules sharing the same topology (handle).
-
-    All molecules in a group have the same atom count, bond connectivity,
-    angle terms, etc.  Only their coordinates differ.  ``handle`` owns the
-    shared compiled topology used by batched kernels, while ``case_handles``
-    preserves the molecule-specific state for non-batched calculations.
-    """
-
-    handle: object  # JaxHandle
-    mol_indices: list[int] = field(default_factory=list)
-    geometries: list[np.ndarray] = field(default_factory=list)
-    case_handles: list[object] = field(default_factory=list)
+if TYPE_CHECKING:
+    from q2mm.backends.mm.jax_engine import PreparedJax, _JaxState
 
 
 # ---------------------------------------------------------------------------
-# Grouping helpers
+# Topology signature
 # ---------------------------------------------------------------------------
 
 
-def _topology_signature(handle: JaxHandle) -> str:
-    """Create a hashable signature for a handle's topology using SHA-256.
+def _topology_signature(state: _JaxState) -> str:
+    """Create a hashable signature for a native state's topology using SHA-256.
 
-    Two handles with the same signature are guaranteed to share identical
+    Two states with the same signature are guaranteed to share identical
     connectivity and parameter mapping, so their energy functions are
     interchangeable up to coordinate differences.
     """
     h = hashlib.sha256()
-    # Atom count and type counts
-    n_atoms = handle.molecule.geometry.shape[0] if handle.molecule is not None else 0
+    n_atoms = state.molecule.geometry.shape[0] if state.molecule is not None else 0
     h.update(f"n_atoms={n_atoms}".encode())
-    h.update(f"n_bt={handle.n_bond_types}".encode())
-    h.update(f"n_at={handle.n_angle_types}".encode())
-    h.update(f"n_tt={handle.n_torsion_types}".encode())
-    h.update(f"n_vt={handle.n_vdw_types}".encode())
-    h.update(f"form={handle.functional_form}".encode())
-    # Full connectivity arrays (sorted for determinism)
+    h.update(f"n_bt={state.n_bond_types}".encode())
+    h.update(f"n_at={state.n_angle_types}".encode())
+    h.update(f"n_tt={state.n_torsion_types}".encode())
+    h.update(f"n_vt={state.n_vdw_types}".encode())
+    h.update(f"form={state.functional_form}".encode())
     for name, arr in [
-        ("bonds", handle.bond_indices),
-        ("angles", handle.angle_indices),
-        ("torsions", handle.torsion_indices),
-        ("vdw", handle.vdw_pair_indices),
+        ("bonds", state.bond_indices),
+        ("angles", state.angle_indices),
+        ("torsions", state.torsion_indices),
+        ("vdw", state.vdw_pair_indices),
     ]:
         h.update(f"{name}={sorted(map(tuple, arr))}".encode() if len(arr) > 0 else f"{name}=[]".encode())
-    # Parameter maps
     for name, arr in [
-        ("bmap", handle.bond_param_map),
-        ("amap", handle.angle_param_map),
-        ("tmap", handle.torsion_param_map),
+        ("bmap", state.bond_param_map),
+        ("amap", state.angle_param_map),
+        ("tmap", state.torsion_param_map),
     ]:
         h.update(f"{name}={list(arr)}".encode() if len(arr) > 0 else f"{name}=[]".encode())
     return h.hexdigest()
 
 
-def group_by_topology(
-    molecules: list[Molecule],
-    forcefield: ForceField,
-    engine: JaxEngine,
-    handles: dict[int, JaxHandle] | None = None,
-) -> list[TopologyGroup]:
-    """Group molecules that share compatible topologies.
+# ---------------------------------------------------------------------------
+# Typed batch object
+# ---------------------------------------------------------------------------
 
-    Two molecules are compatible if they have the same bond connectivity,
-    angle connectivity, torsion connectivity, vdW pair list, and parameter
-    mappings.  In practice this catches the common case of multiple
-    conformations (GS, TS) of the same molecule.
 
-    Args:
-        molecules: List of molecules to group.
-        forcefield: The force field (used to build handles if needed).
-        engine: The JaxEngine instance.
-        handles: Optional pre-built handle cache (mol_idx → JaxHandle).
+class PreparedJaxBatch:
+    """A typed batch of topology-compatible :class:`PreparedJax` sessions.
 
-    Returns:
-        List of :class:`TopologyGroup` instances.
-
+    All sessions share the same atom count, connectivity, and parameter mapping
+    (only their coordinates differ).  The batch shares one compiled
+    coordinate-Hessian kernel (the representative session's private native
+    state), while every session retains its own molecule/coordinates/native
+    state.  The only evaluation surface is :meth:`hessians`, which takes a typed
+    :class:`BatchedHessianRequest` carrying one full parameter vector and
+    returns a typed :class:`BatchedHessianResult`.
     """
-    groups: dict[str, TopologyGroup] = {}
 
-    for i, mol in enumerate(molecules):
-        if handles is not None and i in handles:
-            handle = handles[i]
-        else:
-            handle = engine.create_context(mol, forcefield)
+    def __init__(self, sessions: list[PreparedJax]) -> None:
+        from q2mm.backends.mm.jax_engine import PreparedJax
 
-        sig = _topology_signature(handle)
+        if not sessions:
+            raise EvaluationError("PreparedJaxBatch requires at least one prepared session.")
+        for s in sessions:
+            if not isinstance(s, PreparedJax):
+                raise EvaluationError(f"PreparedJaxBatch requires PreparedJax sessions; got {type(s).__name__}.")
 
-        if sig in groups:
-            groups[sig].mol_indices.append(i)
-            groups[sig].geometries.append(np.asarray(mol.geometry, dtype=np.float64))
-            groups[sig].case_handles.append(handle)
-        else:
-            groups[sig] = TopologyGroup(
-                handle=handle,
-                mol_indices=[i],
-                geometries=[np.asarray(mol.geometry, dtype=np.float64)],
-                case_handles=[handle],
+        rep = sessions[0]
+        rep_state = rep._state
+        rep_len = len(rep.layout)
+        rep_form = rep_state.functional_form
+        rep_natoms = len(rep.molecule.symbols)
+        rep_sig = _topology_signature(rep_state)
+        if rep.info.provenance is None:  # pragma: no cover - JAX always has provenance
+            raise EvaluationError("PreparedJaxBatch representative session has no provenance.")
+        rep_prov = rep.info.provenance
+
+        case_ids: list[str] = []
+        for s in sessions:
+            cid = s.case_id
+            if not isinstance(cid, str) or not cid:
+                raise EvaluationError("PreparedJaxBatch: every session must have a non-empty case_id.")
+            case_ids.append(cid)
+            prov = s.info.provenance
+            if prov is None or prov.backend != rep_prov.backend or prov.role is not rep_prov.role:
+                raise EvaluationError("PreparedJaxBatch: all sessions must share provenance backend/role.")
+            if len(s.layout) != rep_len:
+                raise EvaluationError(f"PreparedJaxBatch: incompatible layout length {len(s.layout)} != {rep_len}.")
+            if s._state.functional_form != rep_form:
+                raise EvaluationError(
+                    f"PreparedJaxBatch: incompatible functional form {s._state.functional_form!r} != {rep_form!r}."
+                )
+            if len(s.molecule.symbols) != rep_natoms:
+                raise EvaluationError(
+                    f"PreparedJaxBatch: incompatible atom count {len(s.molecule.symbols)} != {rep_natoms}."
+                )
+            if _topology_signature(s._state) != rep_sig:
+                raise EvaluationError("PreparedJaxBatch: all sessions must share the same topology signature.")
+        if len(set(case_ids)) != len(case_ids):
+            raise EvaluationError(f"PreparedJaxBatch: case IDs must be unique; got {case_ids}.")
+
+        self._sessions = list(sessions)
+        # The representative native state owns the shared compiled kernel.
+        self._state: _JaxState = rep_state
+        self._case_ids = tuple(case_ids)
+        # Defensive, read-only copies of each session's geometry.
+        self._geometries = [readonly_array(s.molecule.geometry) for s in sessions]
+        self._n_params = rep_len
+        self._provenance = rep_prov
+
+    @property
+    def case_ids(self) -> tuple[str, ...]:
+        """Stable case IDs of the batched sessions, in row order."""
+        return self._case_ids
+
+    def hessians(self, request: BatchedHessianRequest) -> BatchedHessianResult:
+        """Compute per-case Cartesian Hessians for one full parameter vector.
+
+        Args:
+            request: Typed request carrying a full parameter vector applied to
+                every case in the batch.
+
+        Returns:
+            BatchedHessianResult: ``(n_cases, 3N, 3N)`` Hessians in
+            Hartree/Bohr^2, one per case in :attr:`case_ids` order.
+
+        Raises:
+            EvaluationError: If the parameter vector length is wrong or the
+                batched evaluation fails.
+
+        """
+        if not isinstance(request, BatchedHessianRequest):
+            raise EvaluationError("PreparedJaxBatch.hessians expects a BatchedHessianRequest.")
+        params_np = np.asarray(request.parameters, dtype=np.float64)
+        if params_np.ndim != 1 or params_np.shape[0] != self._n_params:
+            raise EvaluationError(
+                f"PreparedJaxBatch: parameter vector has {params_np.shape} entries, "
+                f"expected ({self._n_params},) (len(layout))."
             )
+        try:
+            hess_list = self._batched_hessians(params_np)
+        except Exception as exc:  # noqa: BLE001 - normalize to typed error
+            raise EvaluationError(f"JAX batched-Hessian evaluation failed: {exc}") from exc
+        stacked = np.stack(hess_list, axis=0)
+        return BatchedHessianResult(
+            case_ids=self._case_ids,
+            hessians=readonly_array(stacked),
+            unit=HessianUnit.HARTREE_PER_BOHR2,
+            provenance=self._provenance,
+        )
 
-    return list(groups.values())
+    def _batched_hessians(self, params_np: np.ndarray) -> list[np.ndarray]:
+        """Vectorized coordinate-Hessian evaluation over the batch geometries."""
+        state = self._state
+        params = jnp.array(params_np, dtype=jnp.float64)
+
+        if state._coord_hess_fn is None:
+
+            def _energy_of_flat_coords(flat_coords: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
+                return state._energy_fn(params_, flat_coords.reshape(-1, 3))
+
+            state._coord_hess_fn = jax.jit(jax.hessian(_energy_of_flat_coords, argnums=0))
+
+        if len(self._geometries) == 1:
+            flat = jnp.array(self._geometries[0], dtype=jnp.float64).flatten()
+            hess = state._coord_hess_fn(flat, params)
+            return [np.asarray(hess) * KCALMOLA2_TO_HESSIAN_AU]
+
+        if state._batched_coord_hess_fn is None:
+            state._batched_coord_hess_fn = jax.jit(jax.vmap(state._coord_hess_fn, in_axes=(0, None)))
+
+        batch_coords = jnp.stack([jnp.array(g, dtype=jnp.float64).flatten() for g in self._geometries])
+        batch_hess = state._batched_coord_hess_fn(batch_coords, params)
+        return [np.asarray(batch_hess[i]) * KCALMOLA2_TO_HESSIAN_AU for i in range(len(self._geometries))]
 
 
 # ---------------------------------------------------------------------------
-# Batched Hessian computation
+# Grouping
 # ---------------------------------------------------------------------------
 
 
-def batched_hessians(
-    group: TopologyGroup,
-    forcefield: ForceField,
-) -> list[np.ndarray]:
-    """Compute Hessians for all molecules in a topology group using vmap.
+def group_by_topology(sessions: list[PreparedJax]) -> list[PreparedJaxBatch]:
+    """Group prepared sessions into typed batches by topology compatibility.
 
-    For groups with a single molecule, falls back to standard (non-vmap)
-    evaluation.  For groups with multiple molecules, uses ``jax.vmap``
-    over flattened coordinates so that all Hessians are computed in a
-    single vectorised call.
-
-    Args:
-        group: A :class:`TopologyGroup` with compatible molecules.
-        forcefield: The force field.
-
-    Returns:
-        List of ``(3N, 3N)`` Hessian arrays in Hartree/Bohr², one per
-        molecule in the order of ``group.mol_indices``.
-
-    """
-    handle: JaxHandle = group.handle  # type: ignore[assignment]
-    from q2mm.models.parameters import ParameterLayout
-
-    params = jnp.array(ParameterLayout.from_force_field(forcefield).vector(forcefield), dtype=jnp.float64)
-
-    # Ensure the single-molecule coord Hessian function is compiled
-    if handle._coord_hess_fn is None:
-
-        def _energy_of_flat_coords(
-            flat_coords: jnp.ndarray,
-            params_: jnp.ndarray,
-        ) -> jnp.ndarray:
-            return handle._energy_fn(params_, flat_coords.reshape(-1, 3))
-
-        handle._coord_hess_fn = jax.jit(
-            jax.hessian(_energy_of_flat_coords, argnums=0),
-        )
-
-    if len(group.geometries) == 1:
-        flat_coords = jnp.array(group.geometries[0], dtype=jnp.float64).flatten()
-        hess = handle._coord_hess_fn(flat_coords, params)
-        return [np.asarray(hess) * KCALMOLA2_TO_HESSIAN_AU]
-
-    # --- Multiple molecules: vmap path ---
-    if handle._batched_coord_hess_fn is None:
-        handle._batched_coord_hess_fn = jax.jit(
-            jax.vmap(handle._coord_hess_fn, in_axes=(0, None)),
-        )
-
-    batch_coords = jnp.stack(
-        [jnp.array(g, dtype=jnp.float64).flatten() for g in group.geometries],
-    )  # (n_mols, 3*n_atoms)
-
-    batch_hess = handle._batched_coord_hess_fn(batch_coords, params)
-    # batch_hess shape: (n_mols, 3N, 3N)
-
-    return [np.asarray(batch_hess[i]) * KCALMOLA2_TO_HESSIAN_AU for i in range(len(group.geometries))]
-
-
-def batched_frequencies(
-    group: TopologyGroup,
-    forcefield: ForceField,
-    symbols_per_mol: list[list[str]],
-    **kwargs: Any,
-) -> list[list[float]]:
-    """Compute frequencies for all molecules in a group.
-
-    Uses :func:`batched_hessians` internally, then converts each
-    Hessian to vibrational frequencies.
+    Two sessions are compatible if they share bond/angle/torsion connectivity,
+    vdW pair list, and parameter mappings -- in practice, multiple
+    conformations (GS, TS) of the same molecule.  Each returned
+    :class:`PreparedJaxBatch` shares only the compiled kernel of its
+    representative session; every session keeps its own coordinates and native
+    state.
 
     Args:
-        group: A :class:`TopologyGroup` with compatible molecules.
-        forcefield: The force field.
-        symbols_per_mol: Atomic symbols for each molecule (same order
-            as ``group.mol_indices``).
-        **kwargs: Forwarded to
-            :func:`~q2mm.models.hessian.hessian_to_frequencies`
-            (e.g. ``on_error="penalty"``).
+        sessions: Prepared JAX sessions to group.
 
     Returns:
-        List of frequency lists (cm⁻¹), one per molecule.
+        List of :class:`PreparedJaxBatch`, one per distinct topology.
 
     """
-    from q2mm.models.hessian import hessian_to_frequencies
-
-    hessians = batched_hessians(group, forcefield)
-    return [hessian_to_frequencies(hess, symbols_per_mol[i], **kwargs) for i, hess in enumerate(hessians)]
+    groups: dict[str, list[PreparedJax]] = {}
+    order: list[str] = []
+    for session in sessions:
+        sig = _topology_signature(session._state)
+        if sig not in groups:
+            groups[sig] = []
+            order.append(sig)
+        groups[sig].append(session)
+    return [PreparedJaxBatch(groups[sig]) for sig in order]

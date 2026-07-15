@@ -1,22 +1,48 @@
-"""Psi4 quantum mechanics engine backend.
+"""Psi4 quantum-mechanics backend.
 
 Wraps the Psi4 Python API for QM calculations: energy, Hessian, geometry
 optimization, and vibrational frequencies.
 
 Requires: ``conda install psi4 -c conda-forge``
+
+Psi4 is a QM backend: it consumes no force field, so its
+:class:`~q2mm.backends.contracts.BackendInfo` declares **no** functional
+forms.  Method and basis are fixed when the backend is constructed.
 """
 
 from __future__ import annotations
 
-
 import os
 import shutil
 import tempfile
+
 import numpy as np
 
-from q2mm.backends.base import QMEngine
-from q2mm.backends.registry import register_qm
+from q2mm.backends.contracts import (
+    AbstractPreparedBackend,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    BackendUnavailableError,
+    Capability,
+    EnergyResult,
+    EnergyUnit,
+    EvaluationError,
+    FrequencyResult,
+    FrequencyUnit,
+    GeometryResult,
+    HessianResult,
+    HessianUnit,
+    LengthUnit,
+    PreparationRequest,
+    QMEnergyRequest,
+    QMFrequencyRequest,
+    QMGeometryOptimizationRequest,
+    QMHessianRequest,
+    readonly_array,
+)
 from q2mm.constants import BOHR_TO_ANG
+from q2mm.models.molecule import Molecule
 
 try:
     import psi4 as _psi4
@@ -25,29 +51,6 @@ try:
 except ImportError:
     _psi4 = None
     _HAS_PSI4 = False
-
-
-def _read_xyz(path: str) -> tuple[list[str], np.ndarray]:
-    """Read an XYZ file.
-
-    Args:
-        path: Path to the XYZ file.
-
-    Returns:
-        tuple[list[str], np.ndarray]: ``(atom_labels, coordinates)`` where
-            coordinates are in Å with shape ``(N, 3)``.
-
-    """
-    with open(path) as f:
-        lines = f.readlines()
-    n_atoms = int(lines[0].strip())
-    atoms = []
-    coords = []
-    for line in lines[2 : 2 + n_atoms]:
-        parts = line.split()
-        atoms.append(parts[0])
-        coords.append([float(x) for x in parts[1:4]])
-    return atoms, np.array(coords)
 
 
 def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, multiplicity: int = 1) -> object:
@@ -64,14 +67,13 @@ def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, m
 
     """
     geom_str = f"    {charge} {multiplicity}\n"
-    for atom, (x, y, z) in zip(atoms, coords):
+    for atom, (x, y, z) in zip(atoms, coords, strict=False):
         geom_str += f"    {atom} {x:.10f} {y:.10f} {z:.10f}\n"
     return _psi4.geometry(geom_str)
 
 
-@register_qm("psi4")
-class Psi4Engine(QMEngine):
-    """Quantum mechanics engine using Psi4.
+class Psi4Backend:
+    """Quantum-mechanics backend using Psi4.
 
     Args:
         method: DFT functional or method (default: "b3lyp")
@@ -92,181 +94,102 @@ class Psi4Engine(QMEngine):
         charge: int = 0,
         multiplicity: int = 1,
     ) -> None:
-        """Initialize the Psi4 engine.
-
-        Args:
-            method: DFT functional or method (e.g. ``"b3lyp"``, ``"mp2"``).
-            basis: Basis set (e.g. ``"6-31+G(d)"``).
-            memory: Memory allocation string (e.g. ``"2 GB"``).
-            n_threads: Number of threads for parallel computation.
-            charge: Molecular charge.
-            multiplicity: Spin multiplicity.
+        """Initialize the Psi4 backend.
 
         Raises:
-            ImportError: If Psi4 is not installed.
+            BackendUnavailableError: If Psi4 is not installed.
 
         """
         if not _HAS_PSI4:
-            raise ImportError("Psi4 is not installed. Install via: conda install psi4 -c conda-forge")
+            raise BackendUnavailableError("Psi4 is not installed. Install via: conda install psi4 -c conda-forge")
         self._method = method
         self._basis = basis
         self._charge = charge
         self._multiplicity = multiplicity
         _psi4.set_memory(memory)
         _psi4.set_num_threads(n_threads)
-        # Suppress output by default
         self._tmpdir = tempfile.mkdtemp(prefix="q2mm_psi4_")
         _psi4.core.set_output_file(os.path.join(self._tmpdir, "psi4_output.dat"), False)
+        version = getattr(_psi4, "__version__", "")
+        self._provenance = BackendProvenance(
+            backend="psi4",
+            role=BackendRole.QM,
+            version=str(version),
+            detail=f"{method}/{basis}",
+        )
+        self._info = BackendInfo(
+            name=f"Psi4 ({method}/{basis})",
+            role=BackendRole.QM,
+            capabilities=frozenset(
+                {
+                    Capability.ENERGY,
+                    Capability.HESSIAN,
+                    Capability.FREQUENCIES,
+                    Capability.GEOMETRY_OPTIMIZATION,
+                }
+            ),
+            functional_forms=frozenset(),
+            provenance=self._provenance,
+        )
 
     @property
-    def name(self) -> str:
-        """Human-readable engine name.
+    def info(self) -> BackendInfo:
+        """Immutable capability declaration for this backend."""
+        return self._info
 
-        Returns:
-            str: Engine name including method and basis set.
-
-        """
-        return f"Psi4 ({self._method}/{self._basis})"
-
-    def is_available(self) -> bool:
-        """Check if Psi4 is installed.
-
-        Returns:
-            bool: ``True`` if the ``psi4`` package is importable.
-
-        """
-        return _HAS_PSI4
-
-    @classmethod
-    def deps_available(cls) -> bool:
-        """Check if Psi4 is importable."""
-        return _HAS_PSI4
-
-    def _load_molecule(self, structure: str | tuple[list[str], np.ndarray]) -> object:
-        """Load a molecule from an XYZ file path or ``(atoms, coords)`` tuple.
+    def prepare(self, request: PreparationRequest) -> PreparedPsi4:
+        """Build a prepared QM session for one training case.
 
         Args:
-            structure (str | tuple): Path to an XYZ file (``str``) or a tuple of
-                ``(atoms, coords)``.
+            request: Preparation request carrying the molecule.  ``force_field``
+                is ignored — Psi4 is a QM backend.
 
         Returns:
-            object: A Psi4 ``Molecule`` object with basis and reference set.
+            PreparedPsi4: A per-case QM session.
 
         """
-        if isinstance(structure, str):
-            atoms, coords = _read_xyz(structure)
-        else:
-            atoms, coords = structure
+        return PreparedPsi4(backend=self, case_id=request.case_id, molecule=request.molecule)
+
+    # -- internal Psi4 plumbing --------------------------------------------
+
+    def _load_molecule(self, molecule: Molecule) -> object:
+        atoms = list(molecule.symbols)
+        coords = np.asarray(molecule.geometry, dtype=float)
         mol = _make_psi4_geometry(atoms, coords, self._charge, self._multiplicity)
         ref = "rhf" if self._multiplicity == 1 else "uhf"
         _psi4.set_options({"basis": self._basis, "reference": ref})
         return mol
 
-    def energy(
-        self, structure: str | tuple[list[str], np.ndarray], method: str | None = None, basis: str | None = None
-    ) -> float:
-        """Calculate single-point energy in Hartrees.
+    def _evaluate_energy(self, molecule: Molecule) -> float:
+        mol = self._load_molecule(molecule)
+        return float(_psi4.energy(self._method, molecule=mol))
 
-        Args:
-            structure (str | tuple): XYZ file path or ``(atoms, coords)`` tuple.
-            method: Override the default QM method.
-            basis: Override the default basis set.
-
-        Returns:
-            float: Electronic energy in Hartrees.
-
-        """
-        mol = self._load_molecule(structure)
-        m = method or self._method
-        if basis:
-            _psi4.set_options({"basis": basis})
-        return _psi4.energy(m, molecule=mol)
-
-    def hessian(
-        self, structure: str | tuple[list[str], np.ndarray], method: str | None = None, basis: str | None = None
-    ) -> np.ndarray:
-        """Calculate Hessian matrix (second derivatives of energy).
-
-        Args:
-            structure (str | tuple): XYZ file path or ``(atoms, coords)`` tuple.
-            method: Override the default QM method.
-            basis: Override the default basis set.
-
-        Returns:
-            np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
-
-        """
-        mol = self._load_molecule(structure)
-        m = method or self._method
-        if basis:
-            _psi4.set_options({"basis": basis})
-        _, wfn = _psi4.frequency(m, molecule=mol, return_wfn=True)
+    def _evaluate_hessian(self, molecule: Molecule) -> np.ndarray:
+        mol = self._load_molecule(molecule)
+        _, wfn = _psi4.frequency(self._method, molecule=mol, return_wfn=True)
         return np.array(wfn.hessian())
 
-    def optimize(
-        self,
-        structure: str | tuple[list[str], np.ndarray],
-        method: str | None = None,
-        basis: str | None = None,
-        opt_type: str = "min",
-    ) -> tuple[float, list[str], np.ndarray]:
-        """Optimize geometry.
+    def _evaluate_frequencies(self, molecule: Molecule) -> list[float]:
+        mol = self._load_molecule(molecule)
+        _, wfn = _psi4.frequency(self._method, molecule=mol, return_wfn=True)
+        return list(np.array(wfn.frequencies()))
 
-        Args:
-            structure (str | tuple): XYZ file path or ``(atoms, coords)`` tuple.
-            method: Override the default QM method.
-            basis: Override the default basis set.
-            opt_type: ``"min"`` for minimization, ``"ts"`` for transition
-                state search.
-
-        Returns:
-            tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords_angstrom)`` with energy in Hartrees.
-
-        """
-        mol = self._load_molecule(structure)
-        m = method or self._method
-        if basis:
-            _psi4.set_options({"basis": basis})
+    def _evaluate_optimize(self, molecule: Molecule, opt_type: str) -> tuple[float, list[str], np.ndarray]:
+        mol = self._load_molecule(molecule)
         _psi4.set_options({"opt_type": opt_type, "geom_maxiter": 100})
-        energy = _psi4.optimize(m, molecule=mol)
+        energy = float(_psi4.optimize(self._method, molecule=mol))
         coords_bohr = mol.geometry().np
         coords_ang = coords_bohr * BOHR_TO_ANG
         atoms = [mol.symbol(i) for i in range(mol.natom())]
         return energy, atoms, coords_ang
-
-    def frequencies(
-        self, structure: str | tuple[list[str], np.ndarray], method: str | None = None, basis: str | None = None
-    ) -> list[float]:
-        """Calculate vibrational frequencies in cm⁻¹.
-
-        Args:
-            structure (str | tuple): XYZ file path or ``(atoms, coords)`` tuple.
-            method: Override the default QM method.
-            basis: Override the default basis set.
-
-        Returns:
-            list[float]: Vibrational frequencies in cm⁻¹.
-
-        """
-        mol = self._load_molecule(structure)
-        m = method or self._method
-        if basis:
-            _psi4.set_options({"basis": basis})
-        _, wfn = _psi4.frequency(m, molecule=mol, return_wfn=True)
-        return list(np.array(wfn.frequencies()))
 
     def close(self) -> None:
         """Clean up temporary files created by Psi4."""
         if hasattr(self, "_tmpdir") and os.path.exists(self._tmpdir):
             shutil.rmtree(self._tmpdir, ignore_errors=True)
 
-    def __enter__(self) -> Psi4Engine:
-        """Enter context manager.
-
-        Returns:
-            Psi4Engine: This engine instance.
-
-        """
+    def __enter__(self) -> Psi4Backend:
+        """Enter context manager."""
         return self
 
     def __exit__(self, *args: object) -> None:
@@ -276,3 +199,56 @@ class Psi4Engine(QMEngine):
     def __del__(self) -> None:
         """Destructor — clean up temporary files."""
         self.close()
+
+
+class PreparedPsi4(AbstractPreparedBackend):
+    """Prepared Psi4 QM session for a single molecule."""
+
+    def __init__(self, *, backend: Psi4Backend, case_id: str, molecule: Molecule) -> None:
+        super().__init__(
+            info=backend.info,
+            case_id=case_id,
+            molecule=molecule,
+            force_field=None,
+            layout=None,
+        )
+        self._backend = backend
+
+    def _energy(self, request: QMEnergyRequest) -> EnergyResult:  # type: ignore[override]
+        try:
+            value = self._backend._evaluate_energy(self.molecule)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"Psi4 energy evaluation failed: {exc}") from exc
+        return EnergyResult(energy=value, unit=EnergyUnit.HARTREE, provenance=self._backend.info.provenance)
+
+    def _hessian(self, request: QMHessianRequest) -> HessianResult:  # type: ignore[override]
+        try:
+            hess = self._backend._evaluate_hessian(self.molecule)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"Psi4 Hessian evaluation failed: {exc}") from exc
+        return HessianResult(
+            hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._backend.info.provenance
+        )
+
+    def _frequencies(self, request: QMFrequencyRequest) -> FrequencyResult:  # type: ignore[override]
+        try:
+            freqs = self._backend._evaluate_frequencies(self.molecule)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"Psi4 frequency evaluation failed: {exc}") from exc
+        return FrequencyResult(
+            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=self._backend.info.provenance
+        )
+
+    def _optimize_geometry(self, request: QMGeometryOptimizationRequest) -> GeometryResult:  # type: ignore[override]
+        try:
+            energy, atoms, coords = self._backend._evaluate_optimize(self.molecule, request.opt_type)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"Psi4 geometry optimization failed: {exc}") from exc
+        return GeometryResult(
+            energy=energy,
+            energy_unit=EnergyUnit.HARTREE,
+            symbols=tuple(atoms),
+            coordinates=readonly_array(coords),
+            coordinate_unit=LengthUnit.ANGSTROM,
+            provenance=self._backend.info.provenance,
+        )

@@ -33,6 +33,28 @@ from q2mm.io.mol2 import Mol2
 from q2mm.io.xyz import load_xyz
 
 DEFAULT_WORKTREE = REPO_ROOT.parent / f"{REPO_ROOT.name}-upstream-worktree"
+
+
+def _mm_energy(backend: object, mol: object, ff: object) -> float:
+    """Single-point MM energy via a prepared session."""
+    from q2mm.backends.contracts import EnergyRequest, PreparationRequest
+    from q2mm.models.parameters import ParameterLayout
+
+    prepared = backend.prepare(PreparationRequest(case_id="0", molecule=mol, force_field=ff))
+    params = ParameterLayout.from_force_field(ff).vector(ff)
+    return float(prepared.energy(EnergyRequest(parameters=params)).energy)
+
+
+def _mm_frequencies(backend: object, mol: object, ff: object) -> list[float]:
+    """MM vibrational frequencies via a prepared session."""
+    from q2mm.backends.contracts import FrequencyRequest, PreparationRequest
+    from q2mm.models.parameters import ParameterLayout
+
+    prepared = backend.prepare(PreparationRequest(case_id="0", molecule=mol, force_field=ff))
+    params = ParameterLayout.from_force_field(ff).vector(ff)
+    return [float(f) for f in prepared.frequencies(FrequencyRequest(parameters=params)).frequencies]
+
+
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "seminario_parity"
 
 RH_FIXTURE_PATH = FIXTURE_DIR / "rh_enamide_reference.json"
@@ -325,14 +347,14 @@ def _run_rh_pipeline_case(fixture_dir: Path, mode: Mode) -> CaseResult:
 def _run_openmm_tinker_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     case = CASE_MATRIX["openmm-tinker-mm3-shared"]
     try:
-        from q2mm.backends.mm.openmm import OpenMMEngine
-        from q2mm.backends.mm.tinker import TinkerEngine
+        from q2mm.backends.registry import load_backend
+
     except (ImportError, FileNotFoundError) as exc:
         return _blocked_result(case, mode, str(exc))
 
     try:
-        openmm = OpenMMEngine()
-        tinker = TinkerEngine()
+        openmm = load_backend("openmm")
+        tinker = load_backend("tinker")
     except (ImportError, FileNotFoundError) as exc:
         return _blocked_result(case, mode, str(exc))
 
@@ -364,8 +386,8 @@ def _run_openmm_tinker_case(fixture_dir: Path, mode: Mode) -> CaseResult:
     }
     max_abs_diff = 0.0
     for label, (molecule, tolerance) in comparisons.items():
-        openmm_energy = openmm.energy(molecule, forcefield)
-        tinker_energy = tinker.energy(molecule)
+        openmm_energy = _mm_energy(openmm, molecule, forcefield)
+        tinker_energy = _mm_energy(tinker, molecule, forcefield)
         diff = abs(openmm_energy - tinker_energy)
         max_abs_diff = max(max_abs_diff, diff)
         metrics[f"{label}_openmm"] = openmm_energy
@@ -398,7 +420,7 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
         )
 
     try:
-        from q2mm.backends.mm.openmm import OpenMMEngine
+        from q2mm.backends.registry import load_backend
         from q2mm.models.forcefield import AngleParam, BondParam, FunctionalForm
         from q2mm.models.observations import ObservationSet
         from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
@@ -412,7 +434,7 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
     # Reproduce the same water problem used to generate the fixture.
     # MM3, not HARMONIC: the fixture was generated under OpenMM's old
     # implicit-MM3 branch (see generate_optimization_fixtures.py).
-    engine = OpenMMEngine()
+    backend = load_backend("openmm")
     true_ff = ForceField(
         name="water-test",
         bonds=[BondParam(elements=("H", "O"), force_constant=503.6, equilibrium=0.96)],
@@ -438,8 +460,8 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
     mols = [_water(104.5, 0.96), _water(115.0, 0.96), _water(104.5, 1.05)]
     ref = ObservationSet()
     for i, mol in enumerate(mols):
-        ref = ref.with_energy(engine.energy(mol, true_ff), weight=1.0, case_id=str(i))
-    freqs = engine.frequencies(mols[0], true_ff)
+        ref = ref.with_energy(_mm_energy(backend, mol, true_ff), weight=1.0, case_id=str(i))
+    freqs = _mm_frequencies(backend, mols[0], true_ff)
     for j, f in enumerate(freqs):
         if abs(f) > 50.0:
             ref = ref.with_frequency(f, data_idx=j, weight=0.001, case_id="0")
@@ -453,7 +475,7 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
 
     layout = ParameterLayout.from_force_field(guess_ff)
     space = ActiveParameterSpace.all_active(layout, guess_ff)
-    obj = ObjectiveFunction(guess_ff, engine, mols, ref, layout=layout)
+    obj = ObjectiveFunction(guess_ff, backend, mols, ref, layout=layout)
     opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
     result = opt.optimize(obj, space)
 

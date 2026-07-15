@@ -17,6 +17,7 @@ References
 """
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 from pathlib import Path
 
@@ -103,11 +104,10 @@ class TestCh3fSn2System:
         the default ``qfuerza_replace_with=1.0`` applies during the
         Seminario projection.
         """
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
         from q2mm.benchmarks.systems.ch3f_sn2 import KEY
 
-        case = load_system(KEY, engine=JaxEngine(), functional_form="harmonic")
+        case = load_system(KEY, backend=load_backend("jax"), functional_form="harmonic")
         assert case.key == KEY
         assert len(case.qm_freqs_per_mol) == 1
         assert len(case.qm_freqs_per_mol[0]) >= 8, (
@@ -141,13 +141,12 @@ class TestCh3fSn2System:
         test verifies the same kwarg-controlled behavior we observed
         on rh-conjugate's C-C-O angle is present here.
         """
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
         from q2mm.benchmarks.systems.ch3f_sn2 import KEY
 
-        engine = JaxEngine()
-        case_large = load_system(KEY, engine=engine, qfuerza_replace_with=1.0, functional_form="harmonic")
-        case_small = load_system(KEY, engine=engine, qfuerza_replace_with=0.03, functional_form="harmonic")
+        backend = load_backend("jax")
+        case_large = load_system(KEY, backend=backend, qfuerza_replace_with=1.0, functional_form="harmonic")
+        case_small = load_system(KEY, backend=backend, qfuerza_replace_with=0.03, functional_form="harmonic")
 
         facaf_large = [
             a

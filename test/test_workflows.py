@@ -9,6 +9,7 @@ metrics as the direct call.
 """
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 import numpy as np
 import pytest
@@ -53,10 +54,9 @@ class TestStageResultDataclass:
     @pytest.mark.jax
     def test_workflow_result_default_lists(self) -> None:
         """Default lists/dicts are per-instance (not shared)."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
-        case = load_system("ch3f", engine=JaxEngine(), functional_form="harmonic")
+        case = load_system("ch3f", backend=load_backend("jax"), functional_form="harmonic")
         ff = case.problem.starting_force_field
         wr1 = WorkflowResult(
             workflow_name="x",
@@ -80,23 +80,22 @@ class TestSingleStageWorkflowParity:
 
     @staticmethod
     def _load() -> tuple[object, object]:
-        """Fresh ``(BenchmarkCase, engine)`` per test."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        """Fresh ``(BenchmarkCase, backend)`` per test."""
         from q2mm.benchmarks.systems import load_system
 
-        engine = JaxEngine()
-        return load_system("ch3f", engine=engine, functional_form="harmonic"), engine
+        backend = load_backend("jax")
+        return load_system("ch3f", backend=backend, functional_form="harmonic"), backend
 
     def test_workflow_matches_direct_call(self) -> None:
         """Same final score and parameter vector as the inline pattern."""
         from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case_direct, engine = self._load()
+        case_direct, backend = self._load()
         problem_direct = case_direct.problem
         obj_direct = ObjectiveFunction(
             problem_direct.starting_force_field,
-            engine,
+            backend,
             list(problem_direct.molecules),
             problem_direct.observations,
             case_ids=list(problem_direct.case_ids),
@@ -105,10 +104,10 @@ class TestSingleStageWorkflowParity:
         opt_direct = ScipyOptimizer(method="L-BFGS-B", maxiter=5, ftol=1e-6, verbose=False)
         direct_result = opt_direct.optimize(obj_direct, problem_direct.active_space)
 
-        case_workflow, engine = self._load()
+        case_workflow, backend = self._load()
         problem_workflow = case_workflow.problem
         opt_workflow = ScipyOptimizer(method="L-BFGS-B", maxiter=5, ftol=1e-6, verbose=False)
-        workflow_result = SingleStageWorkflow().run(problem_workflow, engine, opt_workflow, n_evals=0)
+        workflow_result = SingleStageWorkflow().run(problem_workflow, backend, opt_workflow, n_evals=0)
 
         np.testing.assert_array_equal(
             direct_result.final_params,
@@ -122,10 +121,10 @@ class TestSingleStageWorkflowParity:
         """Per-category metrics dict is populated for systems with eigenmatrix refs."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        result = SingleStageWorkflow().run(problem, engine, opt, n_evals=0)
+        result = SingleStageWorkflow().run(problem, backend, opt, n_evals=0)
 
         assert result.optimized_categories, "expected at least one residual category"
         for kind, stats in result.optimized_categories.items():
@@ -135,11 +134,11 @@ class TestSingleStageWorkflowParity:
         """``WorkflowResult.initial_ff`` is the immutable problem starting force field."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
 
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
-        result = SingleStageWorkflow().run(problem, engine, opt, n_evals=0)
+        result = SingleStageWorkflow().run(problem, backend, opt, n_evals=0)
 
         assert result.initial_ff is problem.starting_force_field
         assert result.initial_ff == problem.starting_force_field
@@ -148,10 +147,10 @@ class TestSingleStageWorkflowParity:
         """``n_evals > 0`` populates the sample lists with that many entries."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        result = SingleStageWorkflow().run(problem, engine, opt, n_evals=3)
+        result = SingleStageWorkflow().run(problem, backend, opt, n_evals=3)
         assert len(result.initial_obj_samples) == 3
         assert len(result.final_obj_samples) == 3
         assert all(isinstance(s, float) for s in result.initial_obj_samples)
@@ -160,10 +159,10 @@ class TestSingleStageWorkflowParity:
         """``n_evals=0`` produces empty sample lists."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        result = SingleStageWorkflow().run(problem, engine, opt, n_evals=0)
+        result = SingleStageWorkflow().run(problem, backend, opt, n_evals=0)
         assert result.initial_obj_samples == []
         assert result.final_obj_samples == []
 
@@ -172,11 +171,11 @@ class TestSingleStageWorkflowParity:
         from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.workflows.single_stage import _evaluate_samples
 
-        case, engine = self._load()
+        case, backend = self._load()
         problem = case.problem
         obj = ObjectiveFunction(
             problem.starting_force_field,
-            engine,
+            backend,
             list(problem.molecules),
             problem.observations,
             case_ids=list(problem.case_ids),

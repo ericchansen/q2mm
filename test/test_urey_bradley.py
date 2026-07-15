@@ -1,6 +1,12 @@
 """Tests for Urey-Bradley term support (#116)."""
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    ParameterGradientRequest,
+)
+from test.backend_fixtures import param_vector, prepare_case
+from q2mm.backends.registry import load_backend
 
 from dataclasses import replace
 
@@ -223,7 +229,7 @@ class TestForceFieldUBLayout:
 
 
 # ---------------------------------------------------------------------------
-# OpenMM engine tests
+# OpenMM backend tests
 # ---------------------------------------------------------------------------
 
 
@@ -233,8 +239,6 @@ class TestOpenMMUreyBradley:
 
     def test_ub_produces_nonzero_energy(self) -> None:
         """Water with UB should produce energy > 0 when geometry mismatches UB eq."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         mol = _water_molecule(angle_deg=120.0, bond_length=1.0)
         ff = _water_ff_with_ub(
             bond_k=5.0,
@@ -245,15 +249,13 @@ class TestOpenMMUreyBradley:
             ub_eq=1.0,  # deliberately different from actual 1-3 distance
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = OpenMMEngine()
-        energy = engine.energy(mol, ff)
+        backend = load_backend("openmm")
+        energy = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         # Energy should be nonzero because of UB strain
         assert energy != 0.0
 
     def test_ub_zero_at_equilibrium(self) -> None:
         """UB energy is zero when geometry matches equilibrium distance."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         mol = _water_molecule(angle_deg=104.5, bond_length=0.96)
         # Compute actual H-H distance for this geometry
         h1 = mol.geometry[1]
@@ -269,8 +271,8 @@ class TestOpenMMUreyBradley:
             ub_eq=actual_hh,
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = OpenMMEngine()
-        energy_with_ub = engine.energy(mol, ff)
+        backend = load_backend("openmm")
+        energy_with_ub = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
 
         # Compare with no-UB energy
         ff_no_ub = ForceField(
@@ -279,15 +281,15 @@ class TestOpenMMUreyBradley:
             angles=[AngleParam(elements=("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
             functional_form=FunctionalForm.HARMONIC,
         )
-        energy_no_ub = engine.energy(mol, ff_no_ub)
+        energy_no_ub = (
+            prepare_case(backend, mol, ff_no_ub).energy(EnergyRequest(parameters=param_vector(ff_no_ub))).energy
+        )
 
         # When UB eq matches actual distance, UB contributes zero
         np.testing.assert_allclose(energy_with_ub, energy_no_ub, atol=1e-6)
 
     def test_ub_known_energy(self) -> None:
         """Verify UB energy matches E = k * (r13 - r0)^2 for known geometry."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         mol = _water_molecule(angle_deg=104.5, bond_length=0.96)
         h1 = mol.geometry[1]
         h2 = mol.geometry[2]
@@ -307,14 +309,12 @@ class TestOpenMMUreyBradley:
             ub_eq=ub_eq,
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = OpenMMEngine()
-        energy = engine.energy(mol, ff)
+        backend = load_backend("openmm")
+        energy = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         np.testing.assert_allclose(energy, expected_ub_energy, atol=1e-6)
 
-    def test_no_ub_handle_fields(self) -> None:
-        """Without UB, handle has empty UB fields."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
+    def test_no_ub_state_fields(self) -> None:
+        """Without UB, the native state has empty UB fields."""
         mol = _water_molecule()
         ff = ForceField(
             name="no-ub",
@@ -322,15 +322,13 @@ class TestOpenMMUreyBradley:
             angles=[AngleParam(elements=("H", "O", "H"), equilibrium=104.5, force_constant=0.5)],
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = OpenMMEngine()
-        handle = engine.create_context(mol, ff)
-        assert handle.ub_force is None
-        assert handle.ub_terms == []
+        backend = load_backend("openmm")
+        state = backend._build_state(mol, ff)
+        assert state.ub_force is None
+        assert state.ub_terms == []
 
-    def test_update_forcefield_ub(self) -> None:
-        """update_forcefield should update UB parameters."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
+    def test_update_params_ub(self) -> None:
+        """Updating parameters in place should update UB parameters."""
         mol = _water_molecule(angle_deg=120.0, bond_length=1.0)
         ff1 = _water_ff_with_ub(
             bond_k=5.0,
@@ -341,9 +339,9 @@ class TestOpenMMUreyBradley:
             ub_eq=1.5,
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = OpenMMEngine()
-        handle = engine.create_context(mol, ff1)
-        e1 = engine.energy(handle, ff1)
+        backend = load_backend("openmm")
+        state = backend._build_state(mol, ff1)
+        e1 = backend._evaluate_energy(state, ff1)
 
         ff2 = _water_ff_with_ub(
             bond_k=5.0,
@@ -354,8 +352,8 @@ class TestOpenMMUreyBradley:
             ub_eq=1.5,
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine.update_forcefield(handle, ff2)
-        e2 = engine.energy(handle, ff2)
+        backend._update_params(state, ff2)
+        e2 = backend._evaluate_energy(state, ff2)
         # Doubling k should change the energy
         assert e1 != e2
 
@@ -367,8 +365,6 @@ class TestOpenMMUreyBradley:
         energy missing the UB contribution and a zero gradient for the UB
         parameters (which live at the tail of the param vector).
         """
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         mol = _water_molecule(angle_deg=120.0, bond_length=1.0)
         ff = _water_ff_with_ub(
             bond_k=5.0,
@@ -379,9 +375,10 @@ class TestOpenMMUreyBradley:
             ub_eq=1.0,  # mismatched → nonzero UB strain and gradient
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = OpenMMEngine()
-        e_scalar = engine.energy(mol, ff)
-        e_grad, grad = engine.energy_and_param_grad(mol, ff)
+        backend = load_backend("openmm")
+        e_scalar = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        e_grad, grad = _pg.energy, _pg.gradient
 
         # Diff-handle energy must match the scalar-energy path (UB included).
         np.testing.assert_allclose(e_grad, e_scalar, atol=1e-6)
@@ -391,8 +388,6 @@ class TestOpenMMUreyBradley:
 
     def test_energy_and_param_grad_ub_matches_finite_difference(self) -> None:
         """UB analytical gradients agree with central finite differences (F1)."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         mol = _water_molecule(angle_deg=118.0, bond_length=1.02)
         ff = _water_ff_with_ub(
             bond_k=5.0,
@@ -403,8 +398,9 @@ class TestOpenMMUreyBradley:
             ub_eq=1.1,
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = OpenMMEngine()
-        _e, grad = engine.energy_and_param_grad(mol, ff)
+        backend = load_backend("openmm")
+        _pg = prepare_case(backend, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        _e, grad = _pg.energy, _pg.gradient
 
         layout = ParameterLayout.from_force_field(ff)
         pv = layout.vector(ff)
@@ -414,14 +410,22 @@ class TestOpenMMUreyBradley:
             pv_plus[i] += step
             pv_minus = np.array(pv, copy=True)
             pv_minus[i] -= step
-            e_plus = engine.energy(mol, layout.replace(ff, pv_plus))
-            e_minus = engine.energy(mol, layout.replace(ff, pv_minus))
+            e_plus = (
+                prepare_case(backend, mol, layout.replace(ff, pv_plus))
+                .energy(EnergyRequest(parameters=param_vector(layout.replace(ff, pv_plus))))
+                .energy
+            )
+            e_minus = (
+                prepare_case(backend, mol, layout.replace(ff, pv_minus))
+                .energy(EnergyRequest(parameters=param_vector(layout.replace(ff, pv_minus))))
+                .energy
+            )
             fd = (e_plus - e_minus) / (2.0 * step)
             np.testing.assert_allclose(grad[i], fd, rtol=1e-4, atol=1e-6)
 
 
 # ---------------------------------------------------------------------------
-# JAX engine tests
+# JAX backend tests
 # ---------------------------------------------------------------------------
 
 
@@ -430,7 +434,6 @@ class TestJaxUreyBradley:
     """JAX UB energy evaluation."""
 
     def test_ub_produces_nonzero_energy(self) -> None:
-        from q2mm.backends.mm.jax_engine import JaxEngine
 
         mol = _water_molecule(angle_deg=120.0, bond_length=1.0)
         ff = _water_ff_with_ub(
@@ -442,14 +445,12 @@ class TestJaxUreyBradley:
             ub_eq=1.0,
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = JaxEngine()
-        energy = engine.energy(mol, ff)
+        backend = load_backend("jax")
+        energy = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         assert energy != 0.0
 
     def test_ub_known_energy(self) -> None:
         """Verify UB energy matches E = k * (r13 - r0)^2 for known geometry."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
-
         mol = _water_molecule(angle_deg=104.5, bond_length=0.96)
         h1 = mol.geometry[1]
         h2 = mol.geometry[2]
@@ -468,34 +469,31 @@ class TestJaxUreyBradley:
             ub_eq=ub_eq,
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = JaxEngine()
-        energy = engine.energy(mol, ff)
+        backend = load_backend("jax")
+        energy = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         np.testing.assert_allclose(energy, expected_ub_energy, atol=1e-6)
 
     def test_no_ub_backward_compat(self) -> None:
         """Without UB, JAX should work the same."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
-
         mol = _water_molecule()
         ff = replace(_water_ff_no_ub(), functional_form=FunctionalForm.HARMONIC)
-        engine = JaxEngine()
-        energy = engine.energy(mol, ff)
+        backend = load_backend("jax")
+        energy = prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         assert isinstance(energy, float)
 
 
 # ---------------------------------------------------------------------------
-# Cross-engine parity
+# Cross-backend parity
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.openmm
 @pytest.mark.jax
+@pytest.mark.cross_backend
 class TestUreyBradleyParity:
     """OpenMM vs JAX UB energy parity."""
 
     def test_ub_energy_parity(self) -> None:
-        from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.backends.mm.openmm import OpenMMEngine
 
         mol = _water_molecule(angle_deg=120.0, bond_length=1.0)
         ff = _water_ff_with_ub(
@@ -507,15 +505,16 @@ class TestUreyBradleyParity:
             ub_eq=1.5,
             functional_form=FunctionalForm.HARMONIC,
         )
-        omm_energy = OpenMMEngine().energy(mol, ff)
-        jax_energy = JaxEngine().energy(mol, ff)
+        omm_energy = (
+            prepare_case(load_backend("openmm"), mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
+        jax_energy = (
+            prepare_case(load_backend("jax"), mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
         np.testing.assert_allclose(omm_energy, jax_energy, atol=1e-5)
 
     def test_ub_only_energy_parity(self) -> None:
-        """UB-only energy (zero bond/angle k) should match between engines."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
+        """UB-only energy (zero bond/angle k) should match between backends."""
         mol = _water_molecule(angle_deg=110.0, bond_length=1.0)
         ff = _water_ff_with_ub(
             bond_k=0.0,
@@ -526,6 +525,10 @@ class TestUreyBradleyParity:
             ub_eq=1.3,
             functional_form=FunctionalForm.HARMONIC,
         )
-        omm_energy = OpenMMEngine().energy(mol, ff)
-        jax_energy = JaxEngine().energy(mol, ff)
+        omm_energy = (
+            prepare_case(load_backend("openmm"), mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
+        jax_energy = (
+            prepare_case(load_backend("jax"), mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
         np.testing.assert_allclose(omm_energy, jax_energy, atol=1e-5)

@@ -17,6 +17,12 @@ References
 
 """
 
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    FrequencyRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import param_vector, prepare_case
 import json
 import time
 from pathlib import Path
@@ -40,7 +46,7 @@ from test._shared import (
     SN2_XYZ,
 )
 
-from q2mm.backends.mm.openmm import OpenMMEngine
+from q2mm.backends.mm.openmm import OpenMMBackend
 from q2mm.diagnostics import TablePrinter, compute_distortions, frequency_mae, frequency_rmsd, load_normal_modes
 from q2mm.diagnostics.benchmark import real_frequencies
 from q2mm.io.xyz import load_xyz
@@ -103,12 +109,17 @@ def _with_atomic_hessian(molecule: Molecule, path: Path, *, source: str) -> Mole
 
 
 def _build_frequency_objective(
-    molecule: Molecule, forcefield: ForceField, engine: OpenMMEngine, qm_freqs: np.ndarray
+    molecule: Molecule, forcefield: ForceField, backend: OpenMMBackend, qm_freqs: np.ndarray
 ) -> tuple[ObjectiveFunction, ActiveParameterSpace]:
     """Build a frequency-only objective matching the legacy test behavior."""
     layout = ParameterLayout.from_force_field(forcefield)
 
-    mm_all = engine.frequencies(molecule, forcefield)
+    mm_all = [
+        float(_f)
+        for _f in prepare_case(backend, molecule, forcefield)
+        .frequencies(FrequencyRequest(parameters=param_vector(forcefield)))
+        .frequencies
+    ]
     mm_real_indices = sorted(i for i, f in enumerate(mm_all) if f > 50.0)
     qm_real = sorted(qm_freqs[qm_freqs > 50.0])
 
@@ -118,7 +129,7 @@ def _build_frequency_objective(
         ref = ref.with_frequency(float(qm_real[k]), data_idx=mm_real_indices[k], weight=0.001, case_id="0")
 
     objective = ObjectiveFunction(
-        forcefield=forcefield, engine=engine, molecules=[molecule], reference=ref, layout=layout
+        forcefield=forcefield, backend=backend, molecules=[molecule], reference=ref, layout=layout
     )
     space = ActiveParameterSpace.all_active(layout, forcefield)
     return objective, space
@@ -142,8 +153,8 @@ class TestCH3FGroundState:
     """
 
     @pytest.fixture(scope="class")
-    def engine(self) -> OpenMMEngine:
-        return OpenMMEngine()
+    def backend(self) -> OpenMMBackend:
+        return load_backend("openmm")
 
     @pytest.fixture(scope="class")
     def ch3f_mol(self) -> Molecule:
@@ -177,10 +188,10 @@ class TestCH3FGroundState:
 
     @pytest.fixture(scope="class")
     def optimized_result(
-        self, ch3f_mol: Molecule, seminario_ff: ForceField, engine: OpenMMEngine, qm_freqs: np.ndarray
+        self, ch3f_mol: Molecule, seminario_ff: ForceField, backend: OpenMMBackend, qm_freqs: np.ndarray
     ) -> tuple[ForceField, float, int]:
         """Q2MM-optimized FF: Seminario starting point -> optimize to match QM."""
-        objective, space = _build_frequency_objective(ch3f_mol, seminario_ff, engine, qm_freqs)
+        objective, space = _build_frequency_objective(ch3f_mol, seminario_ff, backend, qm_freqs)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
         t0 = time.perf_counter()
         result = opt.optimize(objective, space)
@@ -195,18 +206,30 @@ class TestCH3FGroundState:
     # ---- Stage 1: Default FF baseline ----
 
     def test_default_ff_frequencies_exist(
-        self, engine: OpenMMEngine, ch3f_mol: Molecule, default_ff: ForceField
+        self, backend: OpenMMBackend, ch3f_mol: Molecule, default_ff: ForceField
     ) -> None:
         """Default FF can compute frequencies without crashing."""
-        freqs = engine.frequencies(ch3f_mol, default_ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(backend, ch3f_mol, default_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(default_ff)))
+            .frequencies
+        ]
         real = real_frequencies(freqs)
         assert len(real) >= 6, f"Expected at least 6 real modes, got {len(real)}"
 
     def test_default_ff_vs_qm_is_poor(
-        self, engine: OpenMMEngine, ch3f_mol: Molecule, default_ff: ForceField, qm_freqs: np.ndarray
+        self, backend: OpenMMBackend, ch3f_mol: Molecule, default_ff: ForceField, qm_freqs: np.ndarray
     ) -> None:
         """Default (generic) FF should be a poor match to QM — establishing baseline."""
-        mm_freqs = real_frequencies(engine.frequencies(ch3f_mol, default_ff))
+        mm_freqs = real_frequencies(
+            [
+                float(_f)
+                for _f in prepare_case(backend, ch3f_mol, default_ff)
+                .frequencies(FrequencyRequest(parameters=param_vector(default_ff)))
+                .frequencies
+            ]
+        )
         qm_real = real_frequencies(qm_freqs)
         n = min(len(mm_freqs), len(qm_real))
         rmsd = frequency_rmsd(sorted(mm_freqs)[-n:], sorted(qm_real)[-n:])
@@ -226,7 +249,7 @@ class TestCH3FGroundState:
 
     def test_seminario_better_than_default(
         self,
-        engine: OpenMMEngine,
+        backend: OpenMMBackend,
         ch3f_mol: Molecule,
         default_ff: ForceField,
         seminario_ff: ForceField,
@@ -235,8 +258,26 @@ class TestCH3FGroundState:
         """Seminario FF should improve frequency match over generic defaults."""
         qm_real = sorted(real_frequencies(qm_freqs))
 
-        default_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, default_ff)))
-        seminario_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, seminario_ff)))
+        default_real = sorted(
+            real_frequencies(
+                [
+                    float(_f)
+                    for _f in prepare_case(backend, ch3f_mol, default_ff)
+                    .frequencies(FrequencyRequest(parameters=param_vector(default_ff)))
+                    .frequencies
+                ]
+            )
+        )
+        seminario_real = sorted(
+            real_frequencies(
+                [
+                    float(_f)
+                    for _f in prepare_case(backend, ch3f_mol, seminario_ff)
+                    .frequencies(FrequencyRequest(parameters=param_vector(seminario_ff)))
+                    .frequencies
+                ]
+            )
+        )
 
         n = min(len(default_real), len(seminario_real), len(qm_real))
         rmsd_default = frequency_rmsd(default_real[-n:], qm_real[-n:])
@@ -256,7 +297,7 @@ class TestCH3FGroundState:
 
     def test_optimized_better_than_seminario(
         self,
-        engine: OpenMMEngine,
+        backend: OpenMMBackend,
         ch3f_mol: Molecule,
         seminario_ff: ForceField,
         optimized_ff: ForceField,
@@ -265,8 +306,26 @@ class TestCH3FGroundState:
         """Q2MM-optimized FF should improve on Seminario initial guess."""
         qm_real = sorted(real_frequencies(qm_freqs))
 
-        sem_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, seminario_ff)))
-        opt_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, optimized_ff)))
+        sem_real = sorted(
+            real_frequencies(
+                [
+                    float(_f)
+                    for _f in prepare_case(backend, ch3f_mol, seminario_ff)
+                    .frequencies(FrequencyRequest(parameters=param_vector(seminario_ff)))
+                    .frequencies
+                ]
+            )
+        )
+        opt_real = sorted(
+            real_frequencies(
+                [
+                    float(_f)
+                    for _f in prepare_case(backend, ch3f_mol, optimized_ff)
+                    .frequencies(FrequencyRequest(parameters=param_vector(optimized_ff)))
+                    .frequencies
+                ]
+            )
+        )
 
         n = min(len(sem_real), len(opt_real), len(qm_real))
         rmsd_sem = frequency_rmsd(sem_real[-n:], qm_real[-n:])
@@ -278,11 +337,20 @@ class TestCH3FGroundState:
         )
 
     def test_optimized_frequency_rmsd_acceptable(
-        self, engine: OpenMMEngine, ch3f_mol: Molecule, optimized_ff: ForceField, qm_freqs: np.ndarray
+        self, backend: OpenMMBackend, ch3f_mol: Molecule, optimized_ff: ForceField, qm_freqs: np.ndarray
     ) -> None:
         """Optimized FF frequencies should be within reasonable RMSD of QM."""
         qm_real = sorted(real_frequencies(qm_freqs))
-        opt_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, optimized_ff)))
+        opt_real = sorted(
+            real_frequencies(
+                [
+                    float(_f)
+                    for _f in prepare_case(backend, ch3f_mol, optimized_ff)
+                    .frequencies(FrequencyRequest(parameters=param_vector(optimized_ff)))
+                    .frequencies
+                ]
+            )
+        )
         n = min(len(opt_real), len(qm_real))
         rmsd = frequency_rmsd(opt_real[-n:], qm_real[-n:])
         # Optimized FF should reproduce QM frequencies reasonably well
@@ -347,7 +415,7 @@ class TestCH3FGroundState:
 
     def test_improvement_progression_logged(
         self,
-        engine: OpenMMEngine,
+        backend: OpenMMBackend,
         ch3f_mol: Molecule,
         default_ff: ForceField,
         seminario_result: tuple[ForceField, float],
@@ -366,7 +434,16 @@ class TestCH3FGroundState:
         stages = [("QM Reference", qm_real, None, None, None)]
         for label, ff in [("Default FF", default_ff), ("Seminario FF", seminario_ff), ("Q2MM Optimized", optimized_ff)]:
             t0 = time.perf_counter()
-            mm_real = sorted(real_frequencies(engine.frequencies(ch3f_mol, ff)))
+            mm_real = sorted(
+                real_frequencies(
+                    [
+                        float(_f)
+                        for _f in prepare_case(backend, ch3f_mol, ff)
+                        .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+                        .frequencies
+                    ]
+                )
+            )
             t_freq = time.perf_counter() - t0
             n = min(len(mm_real), n_modes)
             rmsd = frequency_rmsd(mm_real[-n:], qm_real[-n:])
@@ -428,15 +505,15 @@ class TestCH3FGroundState:
     @pytest.fixture(scope="class")
     def distortion_results(
         self,
-        engine: OpenMMEngine,
+        backend: OpenMMBackend,
         ch3f_mol: Molecule,
         seminario_ff: ForceField,
         optimized_ff: ForceField,
         normal_modes: np.ndarray,
     ) -> dict[str, dict[str, object]]:
         """Compute PES distortions for both Seminario and optimized FFs."""
-        sem_results, e_eq_sem, t_sem = compute_distortions(ch3f_mol, seminario_ff, engine, normal_modes)
-        opt_results, e_eq_opt, t_opt = compute_distortions(ch3f_mol, optimized_ff, engine, normal_modes)
+        sem_results, e_eq_sem, t_sem = compute_distortions(ch3f_mol, seminario_ff, backend, normal_modes)
+        opt_results, e_eq_opt, t_opt = compute_distortions(ch3f_mol, optimized_ff, backend, normal_modes)
         return {
             "seminario": {"results": sem_results, "e_eq": e_eq_sem, "elapsed": t_sem},
             "optimized": {"results": opt_results, "e_eq": e_eq_opt, "elapsed": t_opt},
@@ -544,8 +621,8 @@ class TestSN2TransitionState:
     """
 
     @pytest.fixture(scope="class")
-    def engine(self) -> OpenMMEngine:
-        return OpenMMEngine()
+    def backend(self) -> OpenMMBackend:
+        return load_backend("openmm")
 
     @pytest.fixture(scope="class")
     def ts_mol(self) -> Molecule:
@@ -571,10 +648,10 @@ class TestSN2TransitionState:
 
     @pytest.fixture(scope="class")
     def optimized_result(
-        self, ts_mol: Molecule, seminario_ff: ForceField, engine: OpenMMEngine, qm_freqs: np.ndarray
+        self, ts_mol: Molecule, seminario_ff: ForceField, backend: OpenMMBackend, qm_freqs: np.ndarray
     ) -> tuple[ForceField, float, int]:
         """Q2MM-optimized TS FF."""
-        objective, space = _build_frequency_objective(ts_mol, seminario_ff, engine, qm_freqs)
+        objective, space = _build_frequency_objective(ts_mol, seminario_ff, backend, qm_freqs)
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
         t0 = time.perf_counter()
         result = opt.optimize(objective, space)
@@ -593,9 +670,14 @@ class TestSN2TransitionState:
         negative_fcs = [b for b in seminario_ff.bonds if b.force_constant < 0]
         assert len(negative_fcs) > 0, "Expected at least one negative FC for TS reaction coordinate"
 
-    def test_seminario_ts_frequencies(self, engine: OpenMMEngine, ts_mol: Molecule, seminario_ff: ForceField) -> None:
+    def test_seminario_ts_frequencies(self, backend: OpenMMBackend, ts_mol: Molecule, seminario_ff: ForceField) -> None:
         """Seminario TS FF should produce at least one imaginary frequency."""
-        freqs = engine.frequencies(ts_mol, seminario_ff)
+        freqs = [
+            float(_f)
+            for _f in prepare_case(backend, ts_mol, seminario_ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(seminario_ff)))
+            .frequencies
+        ]
         imag = _imaginary_frequencies(freqs)
         real = real_frequencies(freqs)
         # May not produce imaginary mode since OpenMM bonded terms are harmonic
@@ -610,11 +692,20 @@ class TestSN2TransitionState:
         assert len(optimized_ff.bonds) > 0
 
     def test_ts_optimized_real_freqs_match_qm(
-        self, engine: OpenMMEngine, ts_mol: Molecule, optimized_ff: ForceField, qm_freqs: np.ndarray
+        self, backend: OpenMMBackend, ts_mol: Molecule, optimized_ff: ForceField, qm_freqs: np.ndarray
     ) -> None:
         """Optimized TS FF real frequencies should reasonably match QM."""
         qm_real = sorted(real_frequencies(qm_freqs))
-        mm_real = sorted(real_frequencies(engine.frequencies(ts_mol, optimized_ff)))
+        mm_real = sorted(
+            real_frequencies(
+                [
+                    float(_f)
+                    for _f in prepare_case(backend, ts_mol, optimized_ff)
+                    .frequencies(FrequencyRequest(parameters=param_vector(optimized_ff)))
+                    .frequencies
+                ]
+            )
+        )
         n = min(len(mm_real), len(qm_real))
         if n > 0:
             rmsd = frequency_rmsd(mm_real[-n:], qm_real[-n:])
@@ -622,7 +713,7 @@ class TestSN2TransitionState:
 
     def test_ts_progression_logged(
         self,
-        engine: OpenMMEngine,
+        backend: OpenMMBackend,
         ts_mol: Molecule,
         seminario_result: tuple[ForceField, float],
         optimized_result: tuple[ForceField, float, int],
@@ -646,7 +737,14 @@ class TestSN2TransitionState:
         data.append({"label": "QM Reference", "real": qm_real, "imag": qm_imag, "rmsd": None})
         for label, ff in [("Seminario (D)", seminario_ff), ("Q2MM Optimized", optimized_ff)]:
             t0 = time.perf_counter()
-            mm_all = sorted(engine.frequencies(ts_mol, ff))
+            mm_all = sorted(
+                [
+                    float(_f)
+                    for _f in prepare_case(backend, ts_mol, ff)
+                    .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+                    .frequencies
+                ]
+            )
             t_freq = time.perf_counter() - t0
             mm_real = [f for f in mm_all if f > 50.0]
             mm_imag = [f for f in mm_all if f < -10.0]
@@ -722,8 +820,8 @@ class TestSN2ReactionProfile:
     """
 
     @pytest.fixture(scope="class")
-    def engine(self) -> OpenMMEngine:
-        return OpenMMEngine()
+    def backend(self) -> OpenMMBackend:
+        return load_backend("openmm")
 
     @pytest.fixture(scope="class")
     def ext_ref(self) -> dict[str, object]:
@@ -769,13 +867,13 @@ class TestSN2ReactionProfile:
             f"QM barrier changed: {barrier:.2f} vs expected {our_value:.2f} kcal/mol"
         )
 
-    def test_mm_energies_are_finite(self, engine: OpenMMEngine, ch3f_ff: ForceField, ts_ff: ForceField) -> None:
+    def test_mm_energies_are_finite(self, backend: OpenMMBackend, ch3f_ff: ForceField, ts_ff: ForceField) -> None:
         """MM energies should be finite for both GS and TS geometries."""
         ch3f_mol = _load_molecule(CH3F_XYZ, bond_tolerance=1.5)
         ts_mol = _load_molecule(TS_XYZ, bond_tolerance=1.6)
 
-        e_ch3f = engine.energy(ch3f_mol, ch3f_ff)
-        e_ts = engine.energy(ts_mol, ts_ff)
+        e_ch3f = prepare_case(backend, ch3f_mol, ch3f_ff).energy(EnergyRequest(parameters=param_vector(ch3f_ff))).energy
+        e_ts = prepare_case(backend, ts_mol, ts_ff).energy(EnergyRequest(parameters=param_vector(ts_ff))).energy
 
         assert np.isfinite(e_ch3f), f"CH3F energy not finite: {e_ch3f}"
         assert np.isfinite(e_ts), f"TS energy not finite: {e_ts}"

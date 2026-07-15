@@ -1,6 +1,11 @@
 """Integration tests for OpenMM XML export functionality."""
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+)
+from q2mm.backends.registry import load_backend
+from test.backend_fixtures import param_vector, prepare_case
 
 import importlib.util
 import xml.etree.ElementTree as ET
@@ -9,7 +14,6 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from q2mm.backends.mm.openmm import OpenMMEngine
 
 HAS_OPENMM = importlib.util.find_spec("openmm") is not None
 
@@ -20,7 +24,7 @@ pytestmark = [
 
 from test._shared import SN2_HESSIAN as TS_HESS, SN2_XYZ as TS_XYZ, make_diatomic, make_noble_gas_pair, make_water
 
-from q2mm.io.openmm import save_openmm_xml
+from q2mm.io.openmm import load_openmm_system_xml, save_openmm_system_xml, save_openmm_xml
 from q2mm.io.xyz import load_xyz
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionParam, VdwParam, FunctionalForm
 from q2mm.models.hessian import HessianProvenance, HessianUnits
@@ -63,10 +67,10 @@ def _sn2_ts_molecule() -> Molecule:
 
 
 class TestSystemXMLExport:
-    """Test OpenMMEngine.export_system_xml() round-trip serialization."""
+    """Test OpenMM System XML round-trip serialization via q2mm.io.openmm."""
 
     def setup_method(self) -> None:
-        self.engine = OpenMMEngine()
+        self.backend = load_backend("openmm")
 
     def test_export_creates_valid_xml_file(self, tmp_path: Path) -> None:
         molecule = _diatomic()
@@ -74,7 +78,7 @@ class TestSystemXMLExport:
             bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)], functional_form=FunctionalForm.MM3
         )
 
-        out = self.engine.export_system_xml(tmp_path / "system.xml", molecule, ff)
+        out = save_openmm_system_xml(prepare_case(self.backend, molecule, ff), tmp_path / "system.xml")
 
         assert out.exists()
         tree = ET.parse(out)
@@ -86,13 +90,15 @@ class TestSystemXMLExport:
             bonds=[BondParam(("H", "H"), equilibrium=0.74, force_constant=71.9)], functional_form=FunctionalForm.MM3
         )
 
-        original_energy = self.engine.energy(molecule, ff)
+        original_energy = (
+            prepare_case(self.backend, molecule, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
 
         xml_path = tmp_path / "system.xml"
-        self.engine.export_system_xml(xml_path, molecule, ff)
+        save_openmm_system_xml(prepare_case(self.backend, molecule, ff), xml_path)
 
         # Deserialize and compute energy with the loaded system
-        loaded_system = OpenMMEngine.load_system_xml(xml_path)
+        loaded_system = load_openmm_system_xml(xml_path)
         assert isinstance(loaded_system, mm.System)
         assert loaded_system.getNumParticles() == 2
 
@@ -114,12 +120,14 @@ class TestSystemXMLExport:
             functional_form=FunctionalForm.MM3,
         )
 
-        original_energy = self.engine.energy(molecule, ff)
+        original_energy = (
+            prepare_case(self.backend, molecule, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
 
         xml_path = tmp_path / "water_system.xml"
-        self.engine.export_system_xml(xml_path, molecule, ff)
+        save_openmm_system_xml(prepare_case(self.backend, molecule, ff), xml_path)
 
-        loaded_system = OpenMMEngine.load_system_xml(xml_path)
+        loaded_system = load_openmm_system_xml(xml_path)
         assert loaded_system.getNumParticles() == 3
 
         from openmm import unit
@@ -136,11 +144,13 @@ class TestSystemXMLExport:
         molecule = make_noble_gas_pair(distance=3.5)
         ff = ForceField(vdws=[VdwParam("He", radius=1.2, epsilon=0.02)], functional_form=FunctionalForm.MM3)
 
-        original_energy = self.engine.energy(molecule, ff)
+        original_energy = (
+            prepare_case(self.backend, molecule, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
         xml_path = tmp_path / "vdw_system.xml"
-        self.engine.export_system_xml(xml_path, molecule, ff)
+        save_openmm_system_xml(prepare_case(self.backend, molecule, ff), xml_path)
 
-        loaded_system = OpenMMEngine.load_system_xml(xml_path)
+        loaded_system = load_openmm_system_xml(xml_path)
 
         from openmm import unit
 
@@ -158,12 +168,14 @@ class TestSystemXMLExport:
         molecule = _sn2_ts_molecule()
         ff = qfuerza_fresh(molecule, functional_form=FunctionalForm.MM3)
 
-        original_energy = self.engine.energy(molecule, ff)
+        original_energy = (
+            prepare_case(self.backend, molecule, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+        )
 
         xml_path = tmp_path / "sn2_system.xml"
-        self.engine.export_system_xml(xml_path, molecule, ff)
+        save_openmm_system_xml(prepare_case(self.backend, molecule, ff), xml_path)
 
-        loaded_system = OpenMMEngine.load_system_xml(xml_path)
+        loaded_system = load_openmm_system_xml(xml_path)
 
         from openmm import unit
 

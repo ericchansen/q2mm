@@ -16,6 +16,7 @@ its own module rather than through a monkeypatched dictionary entry.
 """
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 from pathlib import Path
 
@@ -199,12 +200,11 @@ class TestStartingPoint:
     @pytest.mark.jax
     def test_qfuerza_is_noop_for_qfuerza_fresh_strategy(self) -> None:
         """For CH3F (qfuerza_fresh), starting_point='qfuerza' is a no-op."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
-        engine = JaxEngine()
-        case_default = load_system("ch3f", engine=engine, functional_form="harmonic")
-        case_explicit = load_system("ch3f", engine=engine, starting_point="qfuerza", functional_form="harmonic")
+        backend = load_backend("jax")
+        case_default = load_system("ch3f", backend=backend, functional_form="harmonic")
+        case_explicit = load_system("ch3f", backend=backend, starting_point="qfuerza", functional_form="harmonic")
         layout = case_default.problem.layout
         assert np.allclose(
             layout.vector(case_default.problem.starting_force_field),
@@ -221,13 +221,13 @@ class TestStartingPoint:
     def test_unknown_starting_point_raises(self) -> None:
         """Typos in ``starting_point`` must raise rather than silently passing through.
 
-        Any placeholder ``engine`` works — validation happens before the
-        engine or molecule is ever touched.
+        Any placeholder ``backend`` works — validation happens before the
+        backend or molecule is ever touched.
         """
         from q2mm.benchmarks.systems import load_system
 
         with pytest.raises(ValueError, match="Unknown starting_point"):
-            load_system("ch3f", engine=object(), starting_point="qferza", functional_form="harmonic")  # type: ignore[arg-type]
+            load_system("ch3f", backend=object(), starting_point="qferza", functional_form="harmonic")  # type: ignore[arg-type]
 
     @pytest.mark.external_data
     def test_qfuerza_replace_with_default_preserves_behavior(self) -> None:
@@ -304,12 +304,11 @@ class TestStationaryPointRoutesInversion:
         """CH3F (StationaryPointKind.GROUND_STATE) must call with invert_ts_curvature=False."""
         from unittest.mock import patch
 
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import _assembly, load_system
 
         real_load_qfuerza_fresh = _assembly.load_qfuerza_fresh
         with patch.object(_assembly, "load_qfuerza_fresh", wraps=real_load_qfuerza_fresh) as spy:
-            load_system("ch3f", engine=JaxEngine(), functional_form="harmonic")
+            load_system("ch3f", backend=load_backend("jax"), functional_form="harmonic")
 
         assert spy.call_count == 1
         assert spy.call_args.kwargs["invert_ts_curvature"] is False
@@ -319,12 +318,11 @@ class TestStationaryPointRoutesInversion:
         """CH3F-SN2 (StationaryPointKind.TRANSITION_STATE) must call with invert_ts_curvature=True."""
         from unittest.mock import patch
 
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import _assembly, load_system
 
         real_load_qfuerza_fresh = _assembly.load_qfuerza_fresh
         with patch.object(_assembly, "load_qfuerza_fresh", wraps=real_load_qfuerza_fresh) as spy:
-            load_system("ch3f-sn2", engine=JaxEngine(), functional_form="harmonic")
+            load_system("ch3f-sn2", backend=load_backend("jax"), functional_form="harmonic")
 
         assert spy.call_count == 1
         assert spy.call_args.kwargs["invert_ts_curvature"] is True
@@ -343,10 +341,9 @@ class TestStationaryPointRoutesInversion:
         """
         import numpy as np
 
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
-        case = load_system("ch3f", engine=JaxEngine(), functional_form="harmonic")
+        case = load_system("ch3f", backend=load_backend("jax"), functional_form="harmonic")
         hessian = case.problem.cases[0].molecule.hessian
         assert hessian is not None
         eigenvalues = np.linalg.eigvalsh(hessian)
@@ -365,44 +362,40 @@ class TestCh3fLoaderRequiresFunctionalForm:
     default ``functional_form=None``, and ``assemble_qfuerza_fresh_case``
     then silently fell back to whatever ``qfuerza_fresh`` happened to
     hardcode internally. Since CH3F is evaluated by both harmonic
-    (JAX/JAX-MD) and MM3 (OpenMM/Tinker) engines with no single
+    (JAX/JAX-MD) and MM3 (OpenMM/Tinker) backends with no single
     scientifically correct default, every caller must decide explicitly.
     """
 
     @pytest.mark.jax
     def test_ch3f_rejects_omitted_functional_form(self) -> None:
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
         with pytest.raises(TypeError, match="functional_form"):
-            load_system("ch3f", engine=JaxEngine())  # type: ignore[call-arg]
+            load_system("ch3f", backend=load_backend("jax"))  # type: ignore[call-arg]
 
     @pytest.mark.jax
     def test_ch3f_sn2_rejects_omitted_functional_form(self) -> None:
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
 
         with pytest.raises(TypeError, match="functional_form"):
-            load_system("ch3f-sn2", engine=JaxEngine())  # type: ignore[call-arg]
+            load_system("ch3f-sn2", backend=load_backend("jax"))  # type: ignore[call-arg]
 
     @pytest.mark.jax
     @pytest.mark.parametrize("form", ["harmonic", "mm3"])
     def test_ch3f_preserves_requested_functional_form(self, form: str) -> None:
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
         from q2mm.models.forcefield import FunctionalForm
 
-        case = load_system("ch3f", engine=JaxEngine(), functional_form=form)
+        case = load_system("ch3f", backend=load_backend("jax"), functional_form=form)
         assert case.problem.starting_force_field.functional_form is FunctionalForm(form)
         assert case.metadata["functional_form"] == form
 
     @pytest.mark.jax
     @pytest.mark.parametrize("form", ["harmonic", "mm3"])
     def test_ch3f_sn2_preserves_requested_functional_form(self, form: str) -> None:
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.benchmarks.systems import load_system
         from q2mm.models.forcefield import FunctionalForm
 
-        case = load_system("ch3f-sn2", engine=JaxEngine(), functional_form=form)
+        case = load_system("ch3f-sn2", backend=load_backend("jax"), functional_form=form)
         assert case.problem.starting_force_field.functional_form is FunctionalForm(form)
         assert case.metadata["functional_form"] == form

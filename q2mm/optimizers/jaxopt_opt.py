@@ -59,7 +59,7 @@ class JaxOptOptimizer:
 
     This optimizer requires:
 
-    1. A **JaxEngine** backend (other engines are not supported).
+    1. A **JaxBackend** backend (other engines are not supported).
     2. Reference types supported by the JIT loss: energy, frequency,
        hessian-element, eigenmatrix, and geometry (bond_length,
        bond_angle, torsion_angle).  Geometry references are handled via
@@ -97,9 +97,9 @@ class JaxOptOptimizer:
         objective's spec and runs the JAX-native optimizer.
 
         Args:
-            objective: Configured objective with forcefield, engine,
+            objective: Configured objective with forcefield, backend,
                 molecules, and reference data.  Engine must be a
-                JaxEngine.
+                JaxBackend.
             space: The active/frozen projection over ``objective.layout``.
                 ``objective.forcefield`` is never mutated — materialize
                 the optimized force field explicitly via
@@ -110,19 +110,19 @@ class JaxOptOptimizer:
             (length ``space.n_full``) and history.
 
         Raises:
-            TypeError: If the engine is not a JaxEngine.
+            TypeError: If the engine is not a JaxBackend.
             ImportError: If jaxopt is not installed.
 
         """
         _ensure_jaxopt()
 
         from q2mm.backends.mm._jax_common import jax, jnp
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        from q2mm.backends.mm.jax_engine import JaxBackend
         from q2mm.optimizers.jaxloss import JaxLoss
 
-        if not isinstance(objective.engine, JaxEngine):
+        if not isinstance(objective.backend, JaxBackend):
             raise TypeError(
-                f"JaxOptOptimizer requires a JaxEngine, got {type(objective.engine).__name__}. "
+                f"JaxOptOptimizer requires a JaxBackend, got {type(objective.backend).__name__}. "
                 "Use ScipyOptimizer or OptaxOptimizer for other backends."
             )
 
@@ -130,7 +130,9 @@ class JaxOptOptimizer:
 
         # Build the JIT loss
         spec = objective.to_jax_spec()
-        jax_loss = JaxLoss(spec, objective.engine, objective.molecules, objective.forcefield)
+        jax_loss = JaxLoss(
+            spec, objective.backend, objective.molecules, objective.forcefield, sessions=objective.jax_sessions(spec)
+        )
 
         layout = objective.layout
         initial_full = layout.vector(objective.forcefield)

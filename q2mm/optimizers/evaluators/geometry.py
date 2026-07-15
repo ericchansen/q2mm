@@ -11,9 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from q2mm.backends.base import MMEngine
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Molecule
+from q2mm.backends.contracts import MinimizationRequest, PreparedBackend
 from q2mm.models.observations import Observation
 
 
@@ -67,7 +65,7 @@ class GeometryResult:
 class GeometryEvaluator:
     """Evaluates MM-optimized geometry against QM reference geometry.
 
-    Runs ``engine.minimize()`` to get an optimized structure, then
+    Runs ``prepared.minimize()`` to get an optimized structure, then
     extracts bond lengths, bond angles, and torsion angles for comparison
     with reference data.
 
@@ -83,20 +81,16 @@ class GeometryEvaluator:
 
     def compute(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
         *,
-        structure: Any | None = None,
         needed_kinds: frozenset[str] | None = None,
     ) -> GeometryResult:
         """Minimize the molecule and extract geometry observables.
 
         Args:
-            engine: The MM backend.
-            mol: The molecule being evaluated.
-            ff: The current force field.
-            structure: Ignored (minimization always uses raw molecule).
+            prepared: The prepared per-case backend session.
+            parameters: Full parameter vector.
             needed_kinds: Which geometry kinds are needed. Defaults to
                 all geometry kinds.
 
@@ -108,7 +102,9 @@ class GeometryEvaluator:
         if needed_kinds is None:
             needed_kinds = self.GEOMETRY_KINDS
 
-        _energy, _atoms, opt_coords = engine.minimize(mol, ff)
+        mol = prepared.molecule
+        min_result = prepared.minimize(MinimizationRequest(parameters=parameters))
+        opt_coords = np.asarray(min_result.coordinates)
 
         # Use the ORIGINAL molecule's bond/angle/torsion topology —
         # bonding is a user-level decision from the QM input, not
@@ -232,47 +228,41 @@ class GeometryEvaluator:
 
         raise ValueError(f"GeometryEvaluator cannot handle kind: {ref.kind}")
 
-    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
+    def supports_analytical_gradient(self, prepared: PreparedBackend) -> bool:
         """Whether the geometry evaluator supports analytical gradients.
 
         Returns ``False``: geometry gradients require differentiating
-        through a geometry minimization, which this method would
-        compute via :meth:`gradient` on a per-reference basis — not
-        yet implemented.
-
-        The JAX backend *does* support fully-differentiable geometry
-        loss via :class:`~q2mm.optimizers.jaxloss.JaxLoss`, but that is
-        a separate end-to-end code path used by
-        :class:`~q2mm.optimizers.jaxopt_opt.JaxOptOptimizer` and does
-        not flow through :meth:`ObjectiveFunction.gradient`.
+        through a geometry minimization.  The JAX backend *does* support a
+        fully-differentiable geometry loss via
+        :class:`~q2mm.optimizers.jaxloss.JaxLoss`, but that is a separate
+        end-to-end code path that does not flow through
+        :meth:`ObjectiveFunction.gradient`.
 
         Args:
-            engine: The MM backend to check.
+            prepared: The prepared backend session to check.
 
         Returns:
-            Always ``False`` — not yet implemented for this path.
+            Always ``False`` — not supported through this path.
 
         """
         return False
 
     def gradient(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
         references: list[Observation],
         n_params: int,
         *,
-        structure: Any | None = None,
         mol_idx: int = 0,
     ) -> np.ndarray | None:
-        """Not yet implemented — geometry analytical gradients.
+        """Not supported — geometry analytical gradients.
 
-        Differentiating through the MM geometry optimizer is planned
-        for a future release.
+        Differentiating through the MM geometry optimizer flows through the
+        JAX loss path, not this evaluator.
 
         Returns:
-            ``None`` — analytical gradients are not yet supported.
+            ``None`` — analytical gradients are not supported here.
 
         """
         return None

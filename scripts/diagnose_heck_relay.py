@@ -308,14 +308,14 @@ def evaluate_baseline(
     n_active: int,
     molecules: list[Any],
     reference: Any,
-    engine: Any,
+    backend: Any,
 ) -> dict[str, Any]:
     """Compute the full diagnostic block for one baseline."""
     from q2mm.models.parameters import ParameterLayout
     from q2mm.optimizers.objective import ObjectiveFunction
 
     layout = ParameterLayout.from_force_field(ff)
-    obj = ObjectiveFunction(ff, engine, molecules, reference, layout=layout)
+    obj = ObjectiveFunction(ff, backend, molecules, reference, layout=layout)
     x = layout.vector(ff)
     obj_score = float(obj(x))
 
@@ -328,12 +328,12 @@ def evaluate_baseline(
     jaxloss_val: float | None = None
     jaxloss_finite: bool | None = None
     try:
-        from q2mm.backends.mm.jax_engine import JaxEngine
+        from q2mm.backends.mm.jax_engine import JaxBackend
         from q2mm.optimizers.jaxloss import JaxLoss
 
-        if isinstance(engine, JaxEngine):
+        if isinstance(backend, JaxBackend):
             spec = obj.to_jax_spec()
-            jl = JaxLoss(spec, engine, molecules, ff)
+            jl = JaxLoss(spec, backend, molecules, ff, sessions=obj.jax_sessions(spec))
             val_jax, _ = jl.value_and_grad_jax(x)
             raw = float(val_jax)
             jaxloss_finite = math.isfinite(raw)
@@ -389,12 +389,12 @@ def main() -> int:
         datefmt="%H:%M:%S",
     )
 
-    from q2mm.backends.mm.jax_engine import JaxEngine
+    from q2mm.backends.mm.jax_engine import JaxBackend
     from q2mm.benchmarks.systems.heck_relay import load_molecules as load_heck_relay_molecules
     from q2mm.models.observations import ObservationSet
 
     logger.info("Loading 23 Heck-relay molecules + QM Hessians")
-    engine = JaxEngine()
+    backend = JaxBackend()
     molecules = load_heck_relay_molecules()
     reference = ObservationSet.from_molecules(
         molecules,
@@ -416,7 +416,7 @@ def main() -> int:
     results: dict[str, Any] = {}
     for label, ff, n_active in baselines:
         logger.info("Evaluating baseline %s", label)
-        results[label] = evaluate_baseline(label, ff, n_active, molecules, reference, engine)
+        results[label] = evaluate_baseline(label, ff, n_active, molecules, reference, backend)
         r = results[label]
         cats = r["categories"]
         logger.info(

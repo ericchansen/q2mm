@@ -18,6 +18,11 @@ References
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    FrequencyRequest,
+)
+from test.backend_fixtures import param_vector, prepare_case
+from q2mm.backends.registry import load_backend
 
 import json
 import time
@@ -28,7 +33,7 @@ import numpy as np
 import pytest
 
 if TYPE_CHECKING:
-    from q2mm.backends.base import MMEngine
+    from q2mm.backends.contracts import Backend
     from q2mm.models.molecule import Molecule
     from q2mm.models.observations import ObservationSet
 
@@ -78,7 +83,7 @@ def _qm_frequencies_from_hessian(
     """Compute harmonic frequencies (cm⁻¹) from a Cartesian Hessian in AU.
 
     Uses the same unit-conversion pipeline as
-    :meth:`~q2mm.backends.mm.openmm.OpenMMEngine.frequencies` to ensure
+    :meth:`~q2mm.backends.mm.openmm.OpenMMBackend.frequencies` to ensure
     QM–MM frequency comparisons are on identical footing.
     """
     from q2mm.constants import (
@@ -128,7 +133,7 @@ def _build_frequency_reference(
 
 
 # ===========================================================================
-# Rh-enamide Seminario parity + timing (no MM engine needed)
+# Rh-enamide Seminario parity + timing (no MM backend needed)
 # ===========================================================================
 
 
@@ -224,7 +229,6 @@ class TestRhEnamideFullLoop:
     @pytest.fixture(scope="class")
     def pipeline_result(self) -> dict[str, object]:
         """Run the full rh-enamide pipeline."""
-        from q2mm.backends.mm import OpenMMEngine
         from q2mm.benchmarks.systems._forcefield import load_published_opt
         from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
         from q2mm.models.seminario import qfuerza_into
@@ -249,11 +253,16 @@ class TestRhEnamideFullLoop:
         seminario_params = layout.vector(ff).copy()
 
         # Build multi-molecule frequency reference
-        engine = OpenMMEngine()
+        backend = load_backend("openmm")
         freq_ref = None
         n_freqs_per_mol = []
         for mol_idx, mol in enumerate(molecules):
-            mm_freqs = engine.frequencies(mol, ff)
+            mm_freqs = [
+                float(_f)
+                for _f in prepare_case(backend, mol, ff)
+                .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+                .frequencies
+            ]
             qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
             freq_ref, qm_real = _build_frequency_reference(
                 qm_freqs,
@@ -264,7 +273,7 @@ class TestRhEnamideFullLoop:
             n_freqs_per_mol.append(len(qm_real))
 
         # Initial score
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=molecules, reference=freq_ref, layout=layout)
+        obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=molecules, reference=freq_ref, layout=layout)
         initial_score = obj(seminario_params)
 
         # Optimize — just enough iterations to verify our optimizer wrapper
@@ -371,7 +380,6 @@ class TestEthaneFullLoop:
     @pytest.fixture(scope="class")
     def pipeline_result(self) -> dict[str, object]:
         """Run the full pipeline and return all intermediate results."""
-        from q2mm.backends.mm import OpenMMEngine
         from q2mm.io.fchk import load_fchk
         from q2mm.models.forcefield import FunctionalForm
         from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
@@ -395,12 +403,17 @@ class TestEthaneFullLoop:
         seminario_params = layout.vector(ff).copy()
 
         # MM frequencies + reference data
-        engine = OpenMMEngine()
-        mm_all = engine.frequencies(mol, ff)
+        backend = load_backend("openmm")
+        mm_all = [
+            float(_f)
+            for _f in prepare_case(backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
         freq_ref, qm_real = _build_frequency_reference(qm_freqs, mm_all)
 
         # Penalty score
-        obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=freq_ref, layout=layout)
+        obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=[mol], reference=freq_ref, layout=layout)
         seminario_score = obj(seminario_params)
 
         # Optimize
@@ -412,7 +425,7 @@ class TestEthaneFullLoop:
         return {
             "mol": mol,
             "ff": ff,
-            "engine": engine,
+            "backend": backend,
             "seminario_params": seminario_params,
             "seminario_score": seminario_score,
             "optimized_params": result.final_params.copy(),
@@ -617,7 +630,6 @@ class TestPipelineDeterminism:
 
     def test_full_pipeline_is_deterministic(self) -> None:
         """Two independent pipeline runs yield identical scores and params."""
-        from q2mm.backends.mm import OpenMMEngine
         from q2mm.io.fchk import load_fchk
         from q2mm.models.forcefield import FunctionalForm
         from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
@@ -632,14 +644,19 @@ class TestPipelineDeterminism:
         for _ in range(2):
             mol = load_fchk(GS_FCHK, bond_tolerance=1.4)
             ff = qfuerza_fresh(mol, functional_form=FunctionalForm.MM3, au_hessian=True)
-            engine = OpenMMEngine()
+            backend = load_backend("openmm")
             layout = ParameterLayout.from_force_field(ff)
 
             qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
-            mm_all = engine.frequencies(mol, ff)
+            mm_all = [
+                float(_f)
+                for _f in prepare_case(backend, mol, ff)
+                .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+                .frequencies
+            ]
             freq_ref, _ = _build_frequency_reference(qm_freqs, mm_all)
 
-            obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=[mol], reference=freq_ref, layout=layout)
+            obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=[mol], reference=freq_ref, layout=layout)
             opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
             result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
             results.append((result.final_score, result.final_params.copy()))
@@ -658,7 +675,7 @@ class TestPipelineDeterminism:
 
 
 def _rh_enamide_harmonic_pipeline(
-    engine: MMEngine,
+    backend: Backend,
     molecules: list[Molecule],
 ) -> dict[str, object]:
     """Shared pipeline for JAX/JAX-MD Rh-enamide full-loop tests.
@@ -697,7 +714,12 @@ def _rh_enamide_harmonic_pipeline(
     freq_ref = None
     n_freqs_per_mol = []
     for mol_idx, mol in enumerate(molecules):
-        mm_freqs = engine.frequencies(mol, ff)
+        mm_freqs = [
+            float(_f)
+            for _f in prepare_case(backend, mol, ff)
+            .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+            .frequencies
+        ]
         qm_freqs = _qm_frequencies_from_hessian(mol.hessian, mol.symbols)
         freq_ref, qm_real = _build_frequency_reference(
             qm_freqs,
@@ -708,7 +730,7 @@ def _rh_enamide_harmonic_pipeline(
         n_freqs_per_mol.append(len(qm_real))
 
     # Initial score
-    obj = ObjectiveFunction(forcefield=ff, engine=engine, molecules=molecules, reference=freq_ref, layout=layout)
+    obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=molecules, reference=freq_ref, layout=layout)
     initial_score = obj(seminario_params)
 
     # Optimize (3 iterations, just enough to validate the pipeline)
@@ -741,10 +763,10 @@ def _rh_enamide_harmonic_pipeline(
 @pytest.mark.jax
 @pytest.mark.nightly
 class TestRhEnamideFullLoopJax:
-    """Rh-enamide full pipeline with JaxEngine (harmonic functional form).
+    """Rh-enamide full pipeline with JaxBackend (harmonic functional form).
 
     Same 9 organometallic structures as TestRhEnamideFullLoop, but using
-    JaxEngine with harmonic energy expressions instead of OpenMM with MM3.
+    JaxBackend with harmonic energy expressions instead of OpenMM with MM3.
     This validates JAX backend compatibility with real-world multi-molecule
     systems and enables GPU benchmarking via ``pytest -m jax --run-nightly``.
     """
@@ -757,11 +779,9 @@ class TestRhEnamideFullLoopJax:
 
     @pytest.fixture(scope="class")
     def pipeline_result(self, rh_molecules: list[Molecule]) -> dict[str, object]:
-        """Run the full rh-enamide pipeline with JaxEngine."""
-        from q2mm.backends.mm.jax_engine import JaxEngine
-
-        engine = JaxEngine()
-        return _rh_enamide_harmonic_pipeline(engine, rh_molecules)
+        """Run the full rh-enamide pipeline with JaxBackend."""
+        backend = load_backend("jax")
+        return _rh_enamide_harmonic_pipeline(backend, rh_molecules)
 
     def test_loads_9_molecules(self, pipeline_result: dict[str, object]) -> None:
         assert pipeline_result["n_molecules"] == 9
@@ -809,9 +829,9 @@ class TestRhEnamideFullLoopJax:
 @pytest.mark.jax_md
 @pytest.mark.nightly
 class TestRhEnamideFullLoopJaxMD:
-    """Rh-enamide full pipeline with JaxMDEngine (harmonic functional form).
+    """Rh-enamide full pipeline with JaxMdBackend (harmonic functional form).
 
-    Same 9 organometallic structures, using JaxMDEngine with harmonic energy
+    Same 9 organometallic structures, using JaxMdBackend with harmonic energy
     expressions. Validates JAX-MD backend on a real organometallic system.
     Enables GPU benchmarking via ``pytest -m jax_md --run-nightly``.
     """
@@ -824,11 +844,9 @@ class TestRhEnamideFullLoopJaxMD:
 
     @pytest.fixture(scope="class")
     def pipeline_result(self, rh_molecules: list[Molecule]) -> dict[str, object]:
-        """Run the full rh-enamide pipeline with JaxMDEngine."""
-        from q2mm.backends.mm.jax_md_engine import JaxMDEngine
-
-        engine = JaxMDEngine()
-        return _rh_enamide_harmonic_pipeline(engine, rh_molecules)
+        """Run the full rh-enamide pipeline with JaxMdBackend."""
+        backend = load_backend("jax-md")
+        return _rh_enamide_harmonic_pipeline(backend, rh_molecules)
 
     def test_loads_9_molecules(self, pipeline_result: dict[str, object]) -> None:
         assert pipeline_result["n_molecules"] == 9

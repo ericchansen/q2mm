@@ -1,6 +1,6 @@
 """Tests for analytical Hessian-based gradients (frequency, hessian_element, eigenmatrix).
 
-Unit tests using synthetic Hessians and mock engines — no JAX needed.
+Unit tests using synthetic Hessians and mock backends — no JAX needed.
 Validates the eigenvalue sensitivity formula and evaluator gradient chains.
 """
 
@@ -25,6 +25,62 @@ from q2mm.optimizers.evaluators.frequency import FrequencyEvaluator
 from q2mm.optimizers.evaluators.hessian_element import HessianElementEvaluator
 from q2mm.models.observations import Observation
 
+from q2mm.backends.contracts import (
+    AbstractPreparedBackend,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    Capability,
+    HessianJacobianResult,
+    HessianResult as _CHessianResult,
+    HessianUnit,
+    readonly_array,
+)
+from test.backend_fixtures import MockLayout
+
+#: Dummy full parameter vector (fakes ignore it).
+P = np.zeros(2)
+
+
+class _FakePrepared(AbstractPreparedBackend):
+    """Prepared-session double returning fixed Hessian/Jacobian data."""
+
+    def __init__(
+        self, *, hess: object = None, dH_dp: object = None, supports_jac: bool = True, molecule: object = None
+    ) -> None:
+        caps = {Capability.HESSIAN}
+        if supports_jac:
+            caps.add(Capability.HESSIAN_PARAMETER_JACOBIAN)
+        info = BackendInfo(
+            name="mock",
+            role=BackendRole.MM,
+            capabilities=frozenset(caps),
+            functional_forms=frozenset({"harmonic"}),
+            provenance=BackendProvenance(backend="mock", role=BackendRole.MM),
+        )
+        super().__init__(
+            info=info,
+            case_id="0",
+            molecule=molecule,
+            force_field=None,
+            layout=MockLayout(np.asarray(dH_dp).shape[2]) if dH_dp is not None else None,
+        )
+        self._h = hess
+        self._j = dH_dp
+
+    def _hessian(self, request: object) -> _CHessianResult:
+        return _CHessianResult(
+            hessian=readonly_array(self._h), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._info.provenance
+        )
+
+    def _hessian_parameter_jacobian(self, request: object) -> HessianJacobianResult:
+        return HessianJacobianResult(
+            hessian=readonly_array(self._h),
+            jacobian=readonly_array(self._j),
+            unit=HessianUnit.HARTREE_PER_BOHR2,
+            provenance=self._info.provenance,
+        )
+
 
 def _make_symmetric(n: int, rng: np.random.Generator) -> np.ndarray:
     """Create a random symmetric positive-definite matrix."""
@@ -32,13 +88,9 @@ def _make_symmetric(n: int, rng: np.random.Generator) -> np.ndarray:
     return A @ A.T + np.eye(n) * 0.1
 
 
-def _make_mock_engine(hess: np.ndarray, dH_dp: np.ndarray) -> MagicMock:
-    """Create a mock engine that returns given Hessian and Jacobian."""
-    engine = MagicMock()
-    engine.supports_analytical_hessian_gradients.return_value = True
-    engine.hessian_and_param_jacobian.return_value = (hess, dH_dp)
-    engine.hessian.return_value = hess
-    return engine
+def _make_mock_engine(hess: np.ndarray, dH_dp: np.ndarray) -> _FakePrepared:
+    """Create a prepared-session double returning given Hessian and Jacobian."""
+    return _FakePrepared(hess=hess, dH_dp=dH_dp, supports_jac=True)
 
 
 def _make_mol(symbols: list[str], hessian: np.ndarray | None = None) -> MagicMock:
@@ -48,6 +100,14 @@ def _make_mol(symbols: list[str], hessian: np.ndarray | None = None) -> MagicMoc
     mol.name = "test_mol"
     mol.hessian = hessian
     return mol
+
+
+def _grad(
+    evaluator: Any, backend: _FakePrepared, mol: object, refs: list, n_params: int, **kwargs: object
+) -> np.ndarray:
+    """Attach *mol* to the prepared double and invoke the evaluator gradient."""
+    backend._molecule = mol  # type: ignore[attr-defined]
+    return evaluator.gradient(backend, P, refs, n_params, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -162,21 +222,19 @@ class TestFrequencyParamJacobian:
 
 
 class TestFrequencyEvaluatorGradient:
-    """Test FrequencyEvaluator.gradient() with mock engine."""
+    """Test FrequencyEvaluator.gradient() with mock backend."""
 
     def test_supports_analytical_gradient_true(self) -> None:
-        """Returns True when engine supports Hessian param Jacobians."""
-        engine = MagicMock()
-        engine.supports_analytical_hessian_gradients.return_value = True
+        """Returns True when backend supports Hessian param Jacobians."""
+        backend = _FakePrepared(supports_jac=True)
         evaluator = FrequencyEvaluator()
-        assert evaluator.supports_analytical_gradient(engine) is True
+        assert evaluator.supports_analytical_gradient(backend) is True
 
     def test_supports_analytical_gradient_false(self) -> None:
-        """Returns False when engine does not support Hessian param Jacobians."""
-        engine = MagicMock()
-        engine.supports_analytical_hessian_gradients.return_value = False
+        """Returns False when backend does not support Hessian param Jacobians."""
+        backend = _FakePrepared(supports_jac=False)
         evaluator = FrequencyEvaluator()
-        assert evaluator.supports_analytical_gradient(engine) is False
+        assert evaluator.supports_analytical_gradient(backend) is False
 
     def test_gradient_shape(self) -> None:
         """Gradient vector has the right shape."""
@@ -188,7 +246,7 @@ class TestFrequencyEvaluatorGradient:
         for j in range(n_params):
             dH_dp[:, :, j] = 0.5 * (dH_dp[:, :, j] + dH_dp[:, :, j].T)
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(["C", "H"])
         ff = MagicMock()
 
@@ -198,7 +256,7 @@ class TestFrequencyEvaluatorGradient:
         ]
 
         evaluator = FrequencyEvaluator()
-        grad = evaluator.gradient(engine, mol, ff, refs, n_params)
+        grad = _grad(evaluator, backend, mol, refs, n_params)
         assert grad.shape == (n_params,)
 
     def test_gradient_vs_finite_difference(self) -> None:
@@ -219,12 +277,12 @@ class TestFrequencyEvaluatorGradient:
             Observation(kind="frequency", value=freqs[4] - 3.0, weight=0.8, data_idx=4, case_id="0"),
         ]
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(symbols)
         ff = MagicMock()
 
         evaluator = FrequencyEvaluator()
-        grad = evaluator.gradient(engine, mol, ff, refs, n_params)
+        grad = _grad(evaluator, backend, mol, refs, n_params)
 
         # FD: perturb Hessian, recompute score
         delta = 1e-6
@@ -246,18 +304,16 @@ class TestFrequencyEvaluatorGradient:
 
 
 class TestHessianElementEvaluatorGradient:
-    """Test HessianElementEvaluator.gradient() with mock engine."""
+    """Test HessianElementEvaluator.gradient() with mock backend."""
 
     def test_supports_analytical_gradient(self) -> None:
-        """Returns True/False based on engine capability."""
+        """Returns True/False based on backend capability."""
         evaluator = HessianElementEvaluator()
-        engine_yes = MagicMock()
-        engine_yes.supports_analytical_hessian_gradients.return_value = True
-        assert evaluator.supports_analytical_gradient(engine_yes) is True
+        backend_yes = _FakePrepared(supports_jac=True)
+        assert evaluator.supports_analytical_gradient(backend_yes) is True
 
-        engine_no = MagicMock()
-        engine_no.supports_analytical_hessian_gradients.return_value = False
-        assert evaluator.supports_analytical_gradient(engine_no) is False
+        backend_no = _FakePrepared(supports_jac=False)
+        assert evaluator.supports_analytical_gradient(backend_no) is False
 
     def test_gradient_shape(self) -> None:
         """Gradient has correct shape."""
@@ -267,7 +323,7 @@ class TestHessianElementEvaluatorGradient:
         hess = _make_symmetric(n3, rng)
         dH_dp = rng.standard_normal((n3, n3, n_params))
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(["C", "H"])
         ff = MagicMock()
 
@@ -283,7 +339,7 @@ class TestHessianElementEvaluatorGradient:
         ]
 
         evaluator = HessianElementEvaluator()
-        grad = evaluator.gradient(engine, mol, ff, refs, n_params)
+        grad = _grad(evaluator, backend, mol, refs, n_params)
         assert grad.shape == (n_params,)
 
     def test_gradient_vs_finite_difference(self) -> None:
@@ -308,12 +364,12 @@ class TestHessianElementEvaluatorGradient:
             ),
         ]
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(["C", "H"])
         ff = MagicMock()
 
         evaluator = HessianElementEvaluator()
-        grad = evaluator.gradient(engine, mol, ff, refs, n_params)
+        grad = _grad(evaluator, backend, mol, refs, n_params)
 
         # FD
         delta = 1e-7
@@ -334,18 +390,16 @@ class TestHessianElementEvaluatorGradient:
 
 
 class TestEigenmatrixEvaluatorGradient:
-    """Test EigenmatrixEvaluator.gradient() with mock engine."""
+    """Test EigenmatrixEvaluator.gradient() with mock backend."""
 
     def test_supports_analytical_gradient(self) -> None:
-        """Returns True/False based on engine capability."""
+        """Returns True/False based on backend capability."""
         evaluator = EigenmatrixEvaluator()
-        engine_yes = MagicMock()
-        engine_yes.supports_analytical_hessian_gradients.return_value = True
-        assert evaluator.supports_analytical_gradient(engine_yes) is True
+        backend_yes = _FakePrepared(supports_jac=True)
+        assert evaluator.supports_analytical_gradient(backend_yes) is True
 
-        engine_no = MagicMock()
-        engine_no.supports_analytical_hessian_gradients.return_value = False
-        assert evaluator.supports_analytical_gradient(engine_no) is False
+        backend_no = _FakePrepared(supports_jac=False)
+        assert evaluator.supports_analytical_gradient(backend_no) is False
 
     def test_gradient_diagonal_shape(self) -> None:
         """Gradient for diagonal eigenmatrix element has correct shape."""
@@ -356,7 +410,7 @@ class TestEigenmatrixEvaluatorGradient:
         qm_hess = _make_symmetric(n3, rng)
         dH_dp = rng.standard_normal((n3, n3, n_params))
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(["C", "H"], hessian=qm_hess)
         ff = MagicMock()
 
@@ -374,7 +428,7 @@ class TestEigenmatrixEvaluatorGradient:
         ]
 
         evaluator = EigenmatrixEvaluator()
-        grad = evaluator.gradient(engine, mol, ff, refs, n_params, mol_idx=0)
+        grad = _grad(evaluator, backend, mol, refs, n_params, mol_idx=0)
         assert grad.shape == (n_params,)
 
     def test_gradient_diagonal_vs_fd(self) -> None:
@@ -401,12 +455,12 @@ class TestEigenmatrixEvaluatorGradient:
             ),
         ]
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(["C", "H"], hessian=qm_hess)
         ff = MagicMock()
 
         evaluator = EigenmatrixEvaluator()
-        grad = evaluator.gradient(engine, mol, ff, refs, n_params, mol_idx=0)
+        grad = _grad(evaluator, backend, mol, refs, n_params, mol_idx=0)
 
         # FD
         delta = 1e-7
@@ -447,12 +501,12 @@ class TestEigenmatrixEvaluatorGradient:
             ),
         ]
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(["C", "H"], hessian=qm_hess)
         ff = MagicMock()
 
         evaluator = EigenmatrixEvaluator()
-        grad = evaluator.gradient(engine, mol, ff, refs, n_params, mol_idx=0)
+        grad = _grad(evaluator, backend, mol, refs, n_params, mol_idx=0)
 
         # FD
         delta = 1e-7
@@ -483,12 +537,12 @@ class TestEigenmatrixEvaluatorGradient:
             Observation(kind="eig_diagonal", value=eigmat[0, 0], weight=1.0, data_idx=0, case_id="0"),
         ]
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(["C", "H"], hessian=qm_hess)
         ff = MagicMock()
 
         evaluator = EigenmatrixEvaluator()
-        evaluator.gradient(engine, mol, ff, refs, n_params, mol_idx=5)
+        _grad(evaluator, backend, mol, refs, n_params, mol_idx=5)
 
         assert 5 in evaluator._qm_eigenvectors
         np.testing.assert_allclose(evaluator._qm_eigenvectors[5], qm_evecs, atol=1e-14)
@@ -505,60 +559,30 @@ class TestEigenmatrixEvaluatorGradient:
             Observation(kind="eig_diagonal", value=0.0, weight=1.0, data_idx=0, case_id="0"),
         ]
 
-        engine = _make_mock_engine(hess, dH_dp)
+        backend = _make_mock_engine(hess, dH_dp)
         mol = _make_mol(["C", "H"], hessian=None)
         ff = MagicMock()
 
         evaluator = EigenmatrixEvaluator()
         with pytest.raises(ValueError, match="no QM Hessian"):
-            evaluator.gradient(engine, mol, ff, refs, n_params, mol_idx=0)
+            _grad(evaluator, backend, mol, refs, n_params, mol_idx=0)
 
 
 # ---------------------------------------------------------------------------
-# Base engine API tests
+# Base backend API tests
 # ---------------------------------------------------------------------------
 
 
 class TestBaseEngineHessianAPI:
-    """Test base engine defaults for new Hessian Jacobian API."""
+    """Test prepared-session capability gating for the Hessian Jacobian API."""
 
-    def test_default_returns_false(self) -> None:
-        from q2mm.backends.base import MMEngine
+    def test_default_does_not_declare_jacobian(self) -> None:
+        prepared = _FakePrepared(supports_jac=False)
+        assert prepared.info.supports(Capability.HESSIAN_PARAMETER_JACOBIAN) is False
 
-        class _StubEngine(MMEngine):
-            @property
-            def name(self) -> str:
-                return "stub"
+    def test_unsupported_call_raises(self) -> None:
+        from q2mm.backends.contracts import HessianJacobianRequest, UnsupportedCapabilityError
 
-            def energy(self, structure: Any, forcefield: Any) -> float:
-                return 0.0
-
-            def hessian(self, structure: Any, forcefield: Any) -> np.ndarray:
-                return np.zeros((3, 3))
-
-            def minimize(self, structure: Any, forcefield: Any, max_iterations: int = 200) -> tuple:
-                return 0.0, [], np.zeros((1, 3))
-
-        engine = _StubEngine()
-        assert engine.supports_analytical_hessian_gradients() is False
-
-    def test_default_raises(self) -> None:
-        from q2mm.backends.base import MMEngine
-
-        class _StubEngine(MMEngine):
-            @property
-            def name(self) -> str:
-                return "stub"
-
-            def energy(self, structure: Any, forcefield: Any) -> float:
-                return 0.0
-
-            def hessian(self, structure: Any, forcefield: Any) -> np.ndarray:
-                return np.zeros((3, 3))
-
-            def minimize(self, structure: Any, forcefield: Any, max_iterations: int = 200) -> tuple:
-                return 0.0, [], np.zeros((1, 3))
-
-        engine = _StubEngine()
-        with pytest.raises(NotImplementedError):
-            engine.hessian_and_param_jacobian(MagicMock(), MagicMock())
+        prepared = _FakePrepared(hess=np.zeros((3, 3)), supports_jac=False)
+        with pytest.raises(UnsupportedCapabilityError):
+            prepared.hessian_parameter_jacobian(HessianJacobianRequest(parameters=P))

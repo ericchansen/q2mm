@@ -23,15 +23,45 @@ from __future__ import annotations
 import functools
 import logging
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-from q2mm.backends.base import MMEngine, coerce_molecule
-from q2mm.backends.registry import register_mm
+from q2mm.backends.contracts import (
+    AbstractPreparedBackend,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    BackendUnavailableError,
+    BatchedEnergyRequest,
+    BatchedEnergyResult,
+    Capability,
+    EnergyRequest,
+    EnergyResult,
+    EnergyUnit,
+    EvaluationError,
+    FrequencyRequest,
+    FrequencyResult,
+    FrequencyUnit,
+    GeometryResult,
+    HessianJacobianRequest,
+    HessianJacobianResult,
+    HessianRequest,
+    HessianResult,
+    HessianUnit,
+    LengthUnit,
+    MinimizationRequest,
+    ParameterGradientRequest,
+    ParameterGradientResult,
+    PreparationError,
+    PreparationRequest,
+    PreparedBackend,
+    readonly_array,
+)
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.constants import (
     MM3_BOND_C3,
@@ -44,7 +74,7 @@ from q2mm.constants import (
     MM3_VDW_B,
     MM3_VDW_C,
 )
-from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
+from q2mm.models.forcefield import BondParam, ForceField
 from q2mm.models.molecule import Molecule
 
 from q2mm.backends.mm._jax_common import (
@@ -56,6 +86,9 @@ from q2mm.backends.mm._jax_common import (
     match_vdw as _match_vdw,
     params_and_coords as _params_and_coords_impl,
 )
+
+if TYPE_CHECKING:
+    from q2mm.backends.mm.batched import PreparedJaxBatch
 
 # Lazy placeholders — populated by _ensure_jax().
 jax = None
@@ -152,7 +185,7 @@ def _angle_from_vectors_impl() -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarr
 
     The decorator can't be applied at module import because ``jax`` is
     populated by ``_ensure_jax()`` — applying ``@jax.custom_vjp`` at
-    decoration time would crash before the first ``JaxEngine()`` call.
+    decoration time would crash before the first ``JaxBackend()`` call.
     Cached so the custom-VJP function is built exactly once per process.
     """
     _ensure_jax()
@@ -635,7 +668,7 @@ def _torsion_energy(
 
 
 # ---------------------------------------------------------------------------
-# Topology / handle data structures
+# Topology / state data structures
 # ---------------------------------------------------------------------------
 
 
@@ -674,10 +707,13 @@ def _build_vdw_pairs(n_atoms: int, bond_pairs: list[tuple[int, int]]) -> np.ndar
 
 
 @dataclass
-class JaxHandle:
-    """Cached topology and parameter mapping for a molecule.
+class _JaxState:
+    """Private compiled topology and parameter mapping for one molecule.
 
-    Created once per molecule, reused across parameter updates.
+    Created once per prepared case, reused across parameter updates.  Owned
+    exclusively by a :class:`PreparedJax` session; never shared as a public
+    state.  Compatible conformers may share only the compiled kernel
+    (``_energy_fn``), never coordinates or this state object.
 
     Attributes:
         molecule: Deep copy of the input molecule.
@@ -746,12 +782,11 @@ class JaxHandle:
 
 
 # ---------------------------------------------------------------------------
-# JaxEngine
+# JaxBackend
 # ---------------------------------------------------------------------------
 
 
-@register_mm("jax")
-class JaxEngine(MMEngine):
+class JaxBackend:
     """Differentiable MM backend using JAX.
 
     Provides analytical gradients of the energy with respect to force field
@@ -759,101 +794,106 @@ class JaxEngine(MMEngine):
     in parameter optimization.
 
     Supports both harmonic/LJ and MM3 (cubic bond, sextic angle, Buckingham
-    exp-6 vdW) functional forms. Select the form via the required
-    :attr:`ForceField.functional_form` attribute — every force field
-    must state which form it uses explicitly.
-
-    Example:
-        >>> engine = JaxEngine()
-        >>> energy = engine.energy(molecule, forcefield)
-        >>> energy, grad = engine.energy_and_param_grad(molecule, forcefield)
-
+    exp-6 vdW) functional forms.  A prepared session compiles the per-molecule
+    energy kernel once and reuses it across parameter vectors.
     """
 
     def __init__(self) -> None:
-        """Initialize the JAX engine.
+        """Initialize the JAX backend.
 
         Raises:
-            ImportError: If JAX is not installed.
+            BackendUnavailableError: If JAX is not installed.
 
         """
+        if not _HAS_JAX:
+            raise BackendUnavailableError("JAX is not installed. Install with `pip install jax jaxlib`.")
         _ensure_jax()
 
     @property
-    def name(self) -> str:
-        """Human-readable engine name including device type.
+    def info(self) -> BackendInfo:
+        """Immutable capability declaration for this backend."""
+        device = jax.default_backend()
+        provenance = BackendProvenance(
+            backend="jax", role=BackendRole.MM, version=getattr(jax, "__version__", ""), detail=device
+        )
+        return BackendInfo(
+            name=f"JAX ({device})",
+            role=BackendRole.MM,
+            capabilities=frozenset(
+                {
+                    Capability.ENERGY,
+                    Capability.MINIMIZE,
+                    Capability.HESSIAN,
+                    Capability.FREQUENCIES,
+                    Capability.PARAMETER_GRADIENT,
+                    Capability.HESSIAN_PARAMETER_JACOBIAN,
+                    Capability.BATCHED_ENERGY,
+                    Capability.BATCHED_HESSIAN,
+                    Capability.REUSABLE_STATE,
+                }
+            ),
+            functional_forms=frozenset({"harmonic", "mm3"}),
+            provenance=provenance,
+        )
 
-        Returns:
-            str: e.g. ``"JAX (gpu)"`` or ``"JAX (cpu)"``.
-
-        """
-        backend = jax.default_backend()
-        return f"JAX ({backend})"
-
-    def supported_functional_forms(self) -> frozenset[str]:
-        """JAX supports harmonic and MM3 functional forms.
-
-        Returns:
-            frozenset[str]: ``{"harmonic", "mm3"}``.
-
-        """
-        return frozenset({"harmonic", "mm3"})
-
-    def is_available(self) -> bool:
-        """Check if JAX is installed.
-
-        Returns:
-            bool: ``True`` if the ``jax`` package is importable.
-
-        """
-        return _HAS_JAX
-
-    @classmethod
-    def deps_available(cls) -> bool:
-        """Check if JAX is importable without triggering CUDA init."""
-        return _HAS_JAX
-
-    def supports_runtime_params(self) -> bool:
-        """Whether parameters can be updated without rebuilding the system.
-
-        Returns:
-            bool: Always ``True`` for JAX.
-
-        """
-        return True
-
-    def supports_analytical_gradients(self) -> bool:
-        """Whether this engine provides analytical parameter gradients.
-
-        Returns:
-            bool: Always ``True`` for JAX.
-
-        """
-        return True
-
-    def create_context(self, structure: Molecule | JaxHandle, forcefield: ForceField | None = None) -> JaxHandle:
-        """Build topology and compile energy function for a molecule.
+    def prepare(self, request: PreparationRequest) -> PreparedJax:
+        """Build a prepared session for one training case.
 
         Args:
-            structure (Molecule | JaxHandle): A :class:`Molecule` or :class:`JaxHandle`.
-            forcefield: Force field to apply. Auto-generated from the
-                molecule if ``None``.
+            request: Preparation request carrying the molecule and base
+                force field.
 
         Returns:
-            JaxHandle: Compiled handle for energy evaluation and gradient
-                computation.
+            PreparedJax: A per-case session owning a compiled
+                :class:`_JaxState`.
 
         Raises:
-            ValueError: If vdW parameters are defined but not all atoms
-                have matching entries.
+            PreparationError: If no force field is supplied or its functional
+                form is unsupported.
 
         """
-        if forcefield is not None:
-            self._validate_forcefield(forcefield)
-        molecule = coerce_molecule(structure, engine_name="JaxEngine")
-        if forcefield is None:
-            forcefield = ForceField.create_for_molecule(molecule, functional_form=FunctionalForm.HARMONIC)
+        from q2mm.models.parameters import ParameterLayout
 
+        if request.force_field is None:
+            raise PreparationError("JAX requires a base ForceField in the PreparationRequest.")
+        info = self.info
+        form = request.force_field.functional_form.value
+        if not info.supports_form(form):
+            raise PreparationError(
+                f"JAX does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
+            )
+        layout = ParameterLayout.from_force_field(request.force_field)
+        try:
+            state = self._build_state(request.molecule, request.force_field)
+        except Exception as exc:  # noqa: BLE001
+            raise PreparationError(f"JAX failed to prepare case {request.case_id!r}: {exc}") from exc
+        return PreparedJax(
+            backend=self,
+            info=info,
+            case_id=request.case_id,
+            molecule=request.molecule,
+            force_field=request.force_field,
+            layout=layout,
+            state=state,
+        )
+
+    def prepare_hessian_batches(self, sessions: Sequence[PreparedBackend]) -> list[PreparedJaxBatch]:
+        """Group prepared JAX sessions into topology-compatible Hessian batches.
+
+        Implements the :class:`~q2mm.backends.contracts.HessianBatchPreparer`
+        protocol paired with :attr:`Capability.BATCHED_HESSIAN`.  The concrete
+        topology grouping lives in :mod:`q2mm.backends.mm.batched`.
+        """
+        from q2mm.backends.mm.batched import group_by_topology
+
+        return group_by_topology(list(sessions))
+
+    def _build_state(self, molecule: Molecule, forcefield: ForceField) -> _JaxState:
+        """Build a compiled private native state for *molecule* + *forcefield*.
+
+        Requires an explicit :class:`ForceField`; no auto-generation and no
+        state pass-through union.
+        """
         # Match bonds
         bond_atom_indices = []
         bond_param_map = []
@@ -1036,7 +1076,7 @@ class JaxEngine(MMEngine):
             np.array(ub_atom_indices, dtype=np.int32) if ub_atom_indices else np.empty((0, 2), dtype=np.int32)
         )
 
-        handle = JaxHandle(
+        state = _JaxState(
             molecule=molecule,
             bond_indices=bond_indices_arr,
             angle_indices=angle_indices_arr,
@@ -1070,157 +1110,62 @@ class JaxEngine(MMEngine):
         )
 
         # Compile energy function
-        handle._energy_fn = _compile_energy_fn(handle, forcefield)
-        return handle
+        state._energy_fn = _compile_energy_fn(state, forcefield)
+        return state
 
-    def _get_handle(self, structure: Molecule | JaxHandle, forcefield: ForceField) -> JaxHandle:
-        """Get or create a :class:`JaxHandle`.
-
-        Args:
-            structure: A :class:`Molecule` or existing :class:`JaxHandle`.
-            forcefield: Force field for creating a new handle.
-
-        Returns:
-            JaxHandle: Ready-to-use handle.
-
-        """
-        if isinstance(structure, JaxHandle):
-            return structure
-        molecule = coerce_molecule(structure, engine_name="JaxEngine")
-        return self.create_context(molecule, forcefield)
-
-    def _params_and_coords(self, handle: JaxHandle, forcefield: ForceField) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def _params_and_coords(self, state: _JaxState, forcefield: ForceField) -> tuple[jnp.ndarray, jnp.ndarray]:
         """Extract JAX arrays from force field and molecule."""
-        return _params_and_coords_impl(handle.molecule.geometry, forcefield)
+        return _params_and_coords_impl(state.molecule.geometry, forcefield)
 
-    def energy(self, structure: Molecule | JaxHandle, forcefield: ForceField) -> float:
-        """Calculate energy in kcal/mol.
+    def _evaluate_energy(self, state: _JaxState, forcefield: ForceField) -> float:
+        """Potential energy in kcal/mol for a prepared native state."""
+        params, coords = self._params_and_coords(state, forcefield)
+        return float(state._energy_fn(params, coords))
 
-        Args:
-            structure (Molecule | JaxHandle): A :class:`Molecule` or :class:`JaxHandle`.
-            forcefield (ForceField): Force field parameters.
-
-        Returns:
-            float: Potential energy in kcal/mol.
-
-        """
-        handle = self._get_handle(structure, forcefield)
-        params, coords = self._params_and_coords(handle, forcefield)
-        return float(handle._energy_fn(params, coords))
-
-    def energy_and_param_grad(
-        self, structure: Molecule | JaxHandle, forcefield: ForceField
-    ) -> tuple[float, np.ndarray]:
-        """Compute energy and analytical gradient w.r.t. FF parameters.
-
-        Args:
-            structure (Molecule | JaxHandle): A :class:`Molecule` or :class:`JaxHandle`.
-            forcefield (ForceField): Force field parameters.
-
-        Returns:
-            tuple[float, np.ndarray]: ``(energy, grad)`` where ``energy``
-                is in kcal/mol and ``grad`` has the same shape as
-                ``ParameterLayout.from_force_field(forcefield).vector(forcefield)``.
-
-        """
-        handle = self._get_handle(structure, forcefield)
-        params, coords = self._params_and_coords(handle, forcefield)
-
-        if handle._grad_fn is None:
-            handle._grad_fn = jax.jit(jax.value_and_grad(handle._energy_fn, argnums=0))
-
-        val, grad = handle._grad_fn(params, coords)
+    def _evaluate_param_grad(self, state: _JaxState, forcefield: ForceField) -> tuple[float, np.ndarray]:
+        """Energy and analytical gradient w.r.t. FF parameters (kcal/mol)."""
+        params, coords = self._params_and_coords(state, forcefield)
+        if state._grad_fn is None:
+            state._grad_fn = jax.jit(jax.value_and_grad(state._energy_fn, argnums=0))
+        val, grad = state._grad_fn(params, coords)
         return float(val), np.asarray(grad)
 
-    def supports_batched_energy(self) -> bool:  # noqa: D102
-        """Return True; JaxEngine supports batched energy evaluation via jax.vmap."""
-        return True
-
-    def batched_energy(
+    def _evaluate_batched_energy(
         self,
-        structure: Molecule | JaxHandle,
+        state: _JaxState,
         forcefield: ForceField,
         param_matrix: np.ndarray,
     ) -> np.ndarray:
-        """Evaluate energy for a batch of parameter vectors via ``jax.vmap``.
-
-        All ``param_matrix`` rows are evaluated in a single vectorised
-        call, enabling GPU-parallel sensitivity analysis.
-
-        Args:
-            structure: Molecule or cached :class:`JaxHandle`.
-            forcefield: Base force field (topology only).
-            param_matrix: Shape ``(batch, n_params)`` parameter vectors.
-
-        Returns:
-            np.ndarray: Shape ``(batch,)`` energies in kcal/mol.
-
-        """
-        handle = self._get_handle(structure, forcefield)
-        coords = jnp.array(handle.molecule.geometry, dtype=jnp.float64)
+        """Evaluate a batch of parameter vectors via ``jax.vmap`` (kcal/mol)."""
+        coords = jnp.array(state.molecule.geometry, dtype=jnp.float64)
         batch_params = jnp.array(param_matrix, dtype=jnp.float64)
+        if not hasattr(state, "_batched_energy_fn") or state._batched_energy_fn is None:
+            state._batched_energy_fn = jax.jit(jax.vmap(state._energy_fn, in_axes=(0, None)))
+        return np.asarray(state._batched_energy_fn(batch_params, coords))
 
-        if not hasattr(handle, "_batched_energy_fn") or handle._batched_energy_fn is None:
-            handle._batched_energy_fn = jax.jit(jax.vmap(handle._energy_fn, in_axes=(0, None)))
-
-        return np.asarray(handle._batched_energy_fn(batch_params, coords))
-
-    def hessian(self, structure: Molecule | JaxHandle, forcefield: ForceField) -> np.ndarray:
-        """Compute Hessian via ``jax.hessian`` (d²E/dcoords²) in Hartree/Bohr².
-
-        Args:
-            structure (Molecule | JaxHandle): A :class:`Molecule` or :class:`JaxHandle`.
-            forcefield (ForceField): Force field parameters.
-
-        Returns:
-            np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
-
-        """
-        handle = self._get_handle(structure, forcefield)
-        params, coords = self._params_and_coords(handle, forcefield)
-
-        if handle._coord_hess_fn is None:
+    def _evaluate_hessian(self, state: _JaxState, forcefield: ForceField) -> np.ndarray:
+        """Coordinate Hessian d2E/dcoords2 in Hartree/Bohr2."""
+        params, coords = self._params_and_coords(state, forcefield)
+        if state._coord_hess_fn is None:
 
             def _energy_of_flat_coords(flat_coords: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
-                return handle._energy_fn(params_, flat_coords.reshape(-1, 3))
+                return state._energy_fn(params_, flat_coords.reshape(-1, 3))
 
-            handle._coord_hess_fn = jax.jit(jax.hessian(_energy_of_flat_coords, argnums=0))
+            state._coord_hess_fn = jax.jit(jax.hessian(_energy_of_flat_coords, argnums=0))
 
         flat_coords = coords.flatten()
-        hess_kcal_a2 = handle._coord_hess_fn(flat_coords, params)
+        hess_kcal_a2 = state._coord_hess_fn(flat_coords, params)
         return np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU
 
-    def supports_analytical_hessian_gradients(self) -> bool:  # noqa: D102
-        """Return True; JaxEngine supports Hessian parameter Jacobians via jax.jacrev."""
-        return True
-
-    def hessian_and_param_jacobian(
-        self, structure: Molecule | JaxHandle, forcefield: ForceField
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Compute Hessian and its Jacobian w.r.t. FF parameters.
-
-        Uses ``jax.jacrev(jax.hessian(E))`` to compute both the
-        coordinate Hessian and its derivatives with respect to force
-        field parameters in a single JIT-compiled call.
-
-        Args:
-            structure: A :class:`Molecule` or :class:`JaxHandle`.
-            forcefield: Force field parameters.
-
-        Returns:
-            ``(hessian, dH_dp)`` where ``hessian`` has shape ``(3N, 3N)``
-            and ``dH_dp`` has shape ``(3N, 3N, n_params)``, both in
-            Hartree/Bohr².
-
-        """
-        handle = self._get_handle(structure, forcefield)
-        params, coords = self._params_and_coords(handle, forcefield)
+    def _evaluate_hessian_param_jac(self, state: _JaxState, forcefield: ForceField) -> tuple[np.ndarray, np.ndarray]:
+        """Coordinate Hessian and its Jacobian w.r.t. FF parameters (Hartree/Bohr2)."""
+        params, coords = self._params_and_coords(state, forcefield)
         flat_coords = coords.flatten()
 
-        if handle._hess_param_jac_fn is None:
+        if state._hess_param_jac_fn is None:
 
             def _energy_of_flat_coords(flat_coords_: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
-                return handle._energy_fn(params_, flat_coords_.reshape(-1, 3))
+                return state._energy_fn(params_, flat_coords_.reshape(-1, 3))
 
             hess_fn = jax.hessian(_energy_of_flat_coords, argnums=0)
 
@@ -1229,47 +1174,30 @@ class JaxEngine(MMEngine):
                 dh_dp = jax.jacrev(hess_fn, argnums=1)(flat_coords_, params_)
                 return h, dh_dp
 
-            handle._hess_param_jac_fn = jax.jit(_hess_and_jac)
+            state._hess_param_jac_fn = jax.jit(_hess_and_jac)
 
-        hess_kcal_a2, dhess_dp_kcal_a2 = handle._hess_param_jac_fn(flat_coords, params)
+        hess_kcal_a2, dhess_dp_kcal_a2 = state._hess_param_jac_fn(flat_coords, params)
         return (
             np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU,
             np.asarray(dhess_dp_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU,
         )
 
-    def minimize(
-        self, structure: Molecule | JaxHandle, forcefield: ForceField, max_iterations: int = 200
+    def _evaluate_minimize(
+        self, state: _JaxState, forcefield: ForceField, *, max_iterations: int = 200
     ) -> tuple[float, list[str], np.ndarray]:
-        """Minimize energy w.r.t. coordinates using analytical JAX gradients.
-
-        Uses ``scipy.optimize.minimize`` with the L-BFGS-B method.
-
-        Args:
-            structure (Molecule | JaxHandle): A :class:`Molecule` or :class:`JaxHandle`.
-            forcefield (ForceField): Force field parameters.
-            max_iterations (int): Maximum number of L-BFGS-B iterations.
-
-        Returns:
-            tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords)``
-                where energy is in kcal/mol and coords are in Å.
-
-        """
+        """Minimize coordinates with analytical JAX gradients (L-BFGS-B)."""
         from scipy.optimize import minimize as scipy_minimize
 
-        handle = self._get_handle(structure, forcefield)
-        params, coords = self._params_and_coords(handle, forcefield)
-
-        energy_fn = handle._energy_fn
+        params, coords = self._params_and_coords(state, forcefield)
+        energy_fn = state._energy_fn
         coord_grad_fn = jax.jit(jax.grad(lambda c, p: energy_fn(p, c.reshape(-1, 3)), argnums=0))
 
         x0 = np.asarray(coords.flatten())
 
         def objective(x: np.ndarray) -> float:
-            """Evaluate energy at flat coordinate vector *x*."""
             return float(energy_fn(params, jnp.array(x).reshape(-1, 3)))
 
         def gradient(x: np.ndarray) -> np.ndarray:
-            """Return energy gradient w.r.t. flat coordinate vector *x*."""
             return np.asarray(coord_grad_fn(jnp.array(x), params))
 
         result = scipy_minimize(
@@ -1282,7 +1210,136 @@ class JaxEngine(MMEngine):
 
         opt_coords = result.x.reshape(-1, 3)
         opt_energy = float(result.fun)
-        return opt_energy, list(handle.molecule.symbols), opt_coords
+        return opt_energy, list(state.molecule.symbols), opt_coords
+
+
+class PreparedJax(AbstractPreparedBackend):
+    """Prepared JAX session for a single training case.
+
+    Owns the molecule, base force field, parameter layout, and one compiled
+    private :class:`_JaxState`.  Every evaluation reuses the state's compiled
+    energy kernel; only the parameter vector and coordinates change between
+    calls, so no state object, coordinates, or native state is shared across
+    cases.  Compatible conformers may share only the compiled kernel.
+    """
+
+    def __init__(
+        self,
+        *,
+        backend: JaxBackend,
+        info: BackendInfo,
+        case_id: str,
+        molecule: Molecule,
+        force_field: ForceField,
+        layout: object,
+        state: _JaxState,
+    ) -> None:
+        super().__init__(
+            info=info,
+            case_id=case_id,
+            molecule=molecule,
+            force_field=force_field,
+            layout=layout,
+        )
+        self._backend = backend
+        self._state = state
+
+    def _ff_for(self, parameters: np.ndarray) -> ForceField:
+        vec = self._validate_vector(parameters)
+        return self.layout.replace(self.force_field, vec)
+
+    def _energy_kernel(self) -> Callable:
+        """Return this session's compiled ``energy_fn(params, coords)`` kernel.
+
+        Narrowly-typed private accessor used by
+        :class:`~q2mm.optimizers.jaxloss.JaxLoss` so compatible conformers can
+        share a compiled topology kernel without exposing the private native
+        state as a public handle.
+        """
+        return self._state._energy_fn
+
+    def _energy(self, request: EnergyRequest) -> EnergyResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        try:
+            value = self._backend._evaluate_energy(self._state, ff)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"JAX energy evaluation failed: {exc}") from exc
+        return EnergyResult(energy=float(value), unit=EnergyUnit.KCAL_PER_MOL, provenance=self._info.provenance)
+
+    def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        max_iterations = request.max_iterations if request.max_iterations is not None else 200
+        try:
+            energy, atoms, coords = self._backend._evaluate_minimize(self._state, ff, max_iterations=max_iterations)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"JAX minimization failed: {exc}") from exc
+        return GeometryResult(
+            energy=float(energy),
+            energy_unit=EnergyUnit.KCAL_PER_MOL,
+            symbols=tuple(atoms),
+            coordinates=readonly_array(coords),
+            coordinate_unit=LengthUnit.ANGSTROM,
+            provenance=self._info.provenance,
+        )
+
+    def _hessian(self, request: HessianRequest) -> HessianResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        try:
+            hess = self._backend._evaluate_hessian(self._state, ff)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"JAX Hessian evaluation failed: {exc}") from exc
+        return HessianResult(
+            hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._info.provenance
+        )
+
+    def _frequencies(self, request: FrequencyRequest) -> FrequencyResult:  # type: ignore[override]
+        from q2mm.models.hessian import hessian_to_frequencies
+
+        ff = self._ff_for(request.parameters)
+        try:
+            hess_au = self._backend._evaluate_hessian(self._state, ff)
+            freqs = hessian_to_frequencies(hess_au, list(self.molecule.symbols), on_error=request.on_error)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"JAX frequency evaluation failed: {exc}") from exc
+        return FrequencyResult(
+            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=self._info.provenance
+        )
+
+    def _parameter_gradient(self, request: ParameterGradientRequest) -> ParameterGradientResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        try:
+            energy, grad = self._backend._evaluate_param_grad(self._state, ff)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"JAX parameter-gradient evaluation failed: {exc}") from exc
+        return ParameterGradientResult(
+            energy=float(energy),
+            gradient=readonly_array(grad),
+            unit=EnergyUnit.KCAL_PER_MOL,
+            provenance=self._info.provenance,
+        )
+
+    def _hessian_parameter_jacobian(self, request: HessianJacobianRequest) -> HessianJacobianResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        try:
+            hess, jac = self._backend._evaluate_hessian_param_jac(self._state, ff)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"JAX Hessian-Jacobian evaluation failed: {exc}") from exc
+        return HessianJacobianResult(
+            hessian=readonly_array(hess),
+            jacobian=readonly_array(jac),
+            unit=HessianUnit.HARTREE_PER_BOHR2,
+            provenance=self._info.provenance,
+        )
+
+    def _batched_energy(self, request: BatchedEnergyRequest) -> BatchedEnergyResult:  # type: ignore[override]
+        mat = self._validate_matrix(request.parameter_matrix)
+        try:
+            energies = self._backend._evaluate_batched_energy(self._state, self.force_field, mat)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"JAX batched-energy evaluation failed: {exc}") from exc
+        return BatchedEnergyResult(
+            energies=readonly_array(energies), unit=EnergyUnit.KCAL_PER_MOL, provenance=self._info.provenance
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1295,7 +1352,7 @@ def _resolve_form(forcefield: ForceField) -> str:
     return forcefield.functional_form.value
 
 
-def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
+def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
     """Create a JIT-compiled energy function for a specific topology.
 
     The returned function has signature ``(params, coords) -> energy``
@@ -1304,10 +1361,10 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     ``(n_atoms, 3)`` in Å. Energy is returned in kcal/mol.
 
     Selects harmonic or MM3 energy functions based on
-    ``handle.functional_form``.
+    ``state.functional_form``.
 
     Args:
-        handle: A :class:`JaxHandle` with topology arrays populated.
+        state: A :class:`_JaxState` with topology arrays populated.
         forcefield: Force field used to extract static torsion
             periodicity and phase values.
 
@@ -1315,28 +1372,28 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
         Callable: JIT-compiled ``energy_fn(params, coords)`` closure.
 
     """
-    use_mm3 = handle.functional_form == "mm3"
+    use_mm3 = state.functional_form == "mm3"
 
     # Capture topology as JAX arrays in the closure
-    has_bonds = handle.n_bond_types > 0 and len(handle.bond_indices) > 0
-    has_angles = handle.n_angle_types > 0 and len(handle.angle_indices) > 0
-    has_torsions = handle.n_torsion_types > 0 and len(handle.torsion_indices) > 0
-    has_vdw = handle.n_vdw_types > 0 and len(handle.vdw_pair_indices) > 0
+    has_bonds = state.n_bond_types > 0 and len(state.bond_indices) > 0
+    has_angles = state.n_angle_types > 0 and len(state.angle_indices) > 0
+    has_torsions = state.n_torsion_types > 0 and len(state.torsion_indices) > 0
+    has_vdw = state.n_vdw_types > 0 and len(state.vdw_pair_indices) > 0
 
-    _bond_indices = jnp.array(handle.bond_indices) if has_bonds else None
-    _bond_map = jnp.array(handle.bond_param_map) if has_bonds else None
-    _angle_indices = jnp.array(handle.angle_indices) if has_angles else None
-    _angle_map = jnp.array(handle.angle_param_map) if has_angles else None
-    _torsion_indices = jnp.array(handle.torsion_indices) if has_torsions else None
-    _torsion_map = jnp.array(handle.torsion_param_map) if has_torsions else None
-    _vdw_pairs = jnp.array(handle.vdw_pair_indices) if has_vdw else None
-    _atom_vdw_map = jnp.array(handle.atom_vdw_map) if has_vdw else None
+    _bond_indices = jnp.array(state.bond_indices) if has_bonds else None
+    _bond_map = jnp.array(state.bond_param_map) if has_bonds else None
+    _angle_indices = jnp.array(state.angle_indices) if has_angles else None
+    _angle_map = jnp.array(state.angle_param_map) if has_angles else None
+    _torsion_indices = jnp.array(state.torsion_indices) if has_torsions else None
+    _torsion_map = jnp.array(state.torsion_param_map) if has_torsions else None
+    _vdw_pairs = jnp.array(state.vdw_pair_indices) if has_vdw else None
+    _atom_vdw_map = jnp.array(state.atom_vdw_map) if has_vdw else None
 
     # Capture torsion periodicity/phase as static arrays (not optimized)
     if has_torsions:
         per_term_n = []
         per_term_gamma = []
-        for ff_idx in handle.torsion_param_map:
+        for ff_idx in state.torsion_param_map:
             tp = forcefield.torsions[ff_idx]
             per_term_n.append(float(tp.periodicity))
             per_term_gamma.append(math.radians(tp.phase))
@@ -1346,12 +1403,12 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
         _torsion_n = None
         _torsion_gamma = None
 
-    n_bt = handle.n_bond_types
-    n_at = handle.n_angle_types
-    n_tt = handle.n_torsion_types
-    n_vt = handle.n_vdw_types
-    n_ubt = handle.n_ub_types
-    n_sbt = handle.n_sb_types
+    n_bt = state.n_bond_types
+    n_at = state.n_angle_types
+    n_tt = state.n_torsion_types
+    n_vt = state.n_vdw_types
+    n_ubt = state.n_ub_types
+    n_sbt = state.n_sb_types
 
     # Param vector offsets
     from q2mm.models.parameters import ParameterLayout
@@ -1365,26 +1422,26 @@ def _compile_energy_fn(handle: JaxHandle, forcefield: ForceField) -> Callable:
     ub_offset = _offsets["ub"]
 
     # Urey-Bradley topology
-    has_ub = n_ubt > 0 and len(handle.ub_indices) > 0
-    _ub_indices = jnp.array(handle.ub_indices) if has_ub else None
-    _ub_map = jnp.array(handle.ub_param_map) if has_ub else None
+    has_ub = n_ubt > 0 and len(state.ub_indices) > 0
+    _ub_indices = jnp.array(state.ub_indices) if has_ub else None
+    _ub_map = jnp.array(state.ub_param_map) if has_ub else None
 
     # Stretch-bend topology
-    has_sb = n_sbt > 0 and len(handle.sb_angle_indices) > 0
-    _sb_angle_indices = jnp.array(handle.sb_angle_indices) if has_sb else None
-    _sb_map = jnp.array(handle.sb_param_map) if has_sb else None
+    has_sb = n_sbt > 0 and len(state.sb_angle_indices) > 0
+    _sb_angle_indices = jnp.array(state.sb_angle_indices) if has_sb else None
+    _sb_map = jnp.array(state.sb_param_map) if has_sb else None
     # Indices into the bond/angle param blocks — used at runtime to gather
     # equilibrium values from the param vector (not frozen constants).
-    _sb_bond_ij_idx = jnp.array(handle.sb_bond_ij_idx) if has_sb else None
-    _sb_bond_jk_idx = jnp.array(handle.sb_bond_jk_idx) if has_sb else None
-    _sb_angle_idx = jnp.array(handle.sb_angle_idx) if has_sb else None
+    _sb_bond_ij_idx = jnp.array(state.sb_bond_ij_idx) if has_sb else None
+    _sb_bond_jk_idx = jnp.array(state.sb_bond_jk_idx) if has_sb else None
+    _sb_angle_idx = jnp.array(state.sb_angle_idx) if has_sb else None
     sb_offset = _offsets["sb"]
 
     # Bond-dipole electrostatics (frozen — not in the param vector)
-    has_dipoles = len(handle.dipole_pair_indices) > 0
-    _dipole_moments = jnp.array(handle.dipole_moments) if has_dipoles else None
-    _dipole_bond_indices = jnp.array(handle.dipole_bond_indices) if has_dipoles else None
-    _dipole_pair_indices = jnp.array(handle.dipole_pair_indices) if has_dipoles else None
+    has_dipoles = len(state.dipole_pair_indices) > 0
+    _dipole_moments = jnp.array(state.dipole_moments) if has_dipoles else None
+    _dipole_bond_indices = jnp.array(state.dipole_bond_indices) if has_dipoles else None
+    _dipole_pair_indices = jnp.array(state.dipole_pair_indices) if has_dipoles else None
 
     if use_mm3:
 

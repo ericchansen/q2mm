@@ -1,6 +1,6 @@
 """JAX vs OpenMM parity for improper torsions.
 
-Regression test for the bug where ``JaxEngine`` silently dropped improper
+Regression test for the bug where ``JaxBackend`` silently dropped improper
 torsion contributions because :func:`_compile_energy_fn` only iterated
 ``molecule.torsions`` (proper) and never ``molecule.improper_torsions``.
 OpenMM (see ``q2mm/backends/mm/openmm.py``) routes both proper and improper
@@ -13,6 +13,11 @@ form to OpenMM's periodic torsion).
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+)
+from test.backend_fixtures import param_vector, prepare_case
+from q2mm.backends.registry import load_backend
 
 import importlib.util
 from typing import TYPE_CHECKING
@@ -31,6 +36,7 @@ _HAS_OPENMM = importlib.util.find_spec("openmm") is not None
 pytestmark = [
     pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"),
     pytest.mark.skipif(not _HAS_OPENMM, reason="OpenMM not installed"),
+    pytest.mark.cross_backend,
     pytest.mark.jax,
     pytest.mark.openmm,
 ]
@@ -142,10 +148,13 @@ def _energy_pair(mol: Molecule, ff: ForceField) -> tuple[float, float]:
     deterministic across machines (GPU mixed-precision can drift the
     result by more than ``1e-6 kcal/mol``).
     """
-    from q2mm.backends.mm.jax_engine import JaxEngine
-    from q2mm.backends.mm.openmm import OpenMMEngine
-
-    return float(JaxEngine().energy(mol, ff)), float(OpenMMEngine(platform_name="CPU").energy(mol, ff))
+    return float(
+        prepare_case(load_backend("jax"), mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
+    ), float(
+        prepare_case(load_backend("openmm", platform_name="CPU"), mol, ff)
+        .energy(EnergyRequest(parameters=param_vector(ff)))
+        .energy
+    )
 
 
 class TestJaxOpenMMImproperParity:
@@ -191,10 +200,9 @@ class TestJaxOpenMMImproperParity:
     def test_pre_fix_regression_guard(self) -> None:
         """Without the fix, JAX would equal an FF with the improper removed.
 
-        Verifies that the improper term genuinely contributes to JaxEngine
+        Verifies that the improper term genuinely contributes to JaxBackend
         output (not just OpenMM) by comparing against a no-improper FF.
         """
-        from q2mm.backends.mm.jax_engine import JaxEngine
         from q2mm.models.forcefield import (
             AngleParam,
             BondParam,
@@ -216,9 +224,11 @@ class TestJaxOpenMMImproperParity:
             ],
             torsions=[],
         )
-        eng = JaxEngine()
-        e_with = float(eng.energy(mol, ff_with))
-        e_without = float(eng.energy(mol, ff_without))
+        eng = load_backend("jax")
+        e_with = float(prepare_case(eng, mol, ff_with).energy(EnergyRequest(parameters=param_vector(ff_with))).energy)
+        e_without = float(
+            prepare_case(eng, mol, ff_without).energy(EnergyRequest(parameters=param_vector(ff_without))).energy
+        )
         # If the improper is being routed, the two energies must differ by
         # the improper contribution (definitely non-trivial at out_of_plane=0.20).
         assert abs(e_with - e_without) > 1e-3, (

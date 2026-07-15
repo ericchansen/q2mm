@@ -1,6 +1,7 @@
 """Unit tests for OpenMM platform detection."""
 
 from __future__ import annotations
+from q2mm.backends.registry import load_backend
 
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -9,8 +10,8 @@ import pytest
 
 openmm = pytest.importorskip("openmm")
 
+from q2mm.backends.contracts import BackendConfigurationError  # noqa: E402
 from q2mm.backends.mm.openmm import (  # noqa: E402
-    OpenMMEngine,
     _PLATFORM_PRIORITY,
     detect_best_platform,
 )
@@ -85,25 +86,25 @@ class TestDetectBestPlatform:
 
 
 class TestPrecisionValidation:
-    """Tests for precision parameter validation in OpenMMEngine."""
+    """Tests for precision parameter validation in OpenMMBackend."""
 
     def test_valid_precision_accepted(self) -> None:
         for p in ("single", "mixed", "double"):
-            engine = OpenMMEngine(precision=p)
-            assert engine._precision == p
+            backend = load_backend("openmm", precision=p)
+            assert backend._precision == p
 
     def test_precision_normalized_to_lowercase(self) -> None:
-        engine = OpenMMEngine(precision="Mixed")
-        assert engine._precision == "mixed"
+        backend = load_backend("openmm", precision="Mixed")
+        assert backend._precision == "mixed"
 
     def test_precision_strips_whitespace(self) -> None:
-        engine = OpenMMEngine(precision="  double  ")
-        assert engine._precision == "double"
+        backend = load_backend("openmm", precision="  double  ")
+        assert backend._precision == "double"
 
     def test_invalid_precision_raises(self) -> None:
-        with pytest.raises(ValueError, match="Invalid precision"):
-            OpenMMEngine(precision="half")
+        with pytest.raises(BackendConfigurationError, match="Invalid precision"):
+            load_backend("openmm", precision="half")
 
     def test_none_precision_allowed(self) -> None:
-        engine = OpenMMEngine(precision=None)
-        assert engine._precision is None
+        backend = load_backend("openmm", precision=None)
+        assert backend._precision is None

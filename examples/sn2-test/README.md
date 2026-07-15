@@ -30,7 +30,7 @@ Tinker are only needed if you want to regenerate either dataset.
 | `compare_rh_enamide.py` | Compare Rh-enamide bond projections against pinned fixtures |
 | `compute_barrier.py` | Compute SN2 reaction barrier height for literature comparison |
 | `demo_pipeline.py` | Demonstrate the Q2MM pipeline on the SN2 system |
-| `demo_backends.py` | Demonstrate backend engine usage |
+| `demo_backends.py` | Demonstrate backend usage |
 
 ### Reference data
 

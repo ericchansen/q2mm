@@ -65,7 +65,7 @@ def build_frequency_reference(
     """Build an ObservationSet of matched real-mode frequencies.
 
     Used only by the ``qfuerza_fresh``-strategy systems (CH3F, CH3F-SN2)
-    whose reference is a frequency-only fit against the engine's computed
+    whose reference is a frequency-only fit against the backend's computed
     frequencies at the starting force field — see the "Frequency-only
     refs for TS" pitfall in AGENTS.md: this is appropriate for CH3F-style
     ground-state/single-molecule benchmarks, not TS publication
@@ -315,7 +315,7 @@ def assemble_qfuerza_fresh_case(
     name: str,
     molecule: Molecule,
     stationary_point: StationaryPointKind,
-    engine: Any,
+    backend: Any,
     starting_point: StartingPoint,
     qfuerza_replace_with: float,
     functional_form: str,
@@ -329,7 +329,7 @@ def assemble_qfuerza_fresh_case(
 
     Shared by CH3F and the CH3F-SN2 transition state: build a brand-new
     force field entirely from QFUERZA (no published OPT block to start
-    from), then a frequency-only reference against the engine's computed
+    from), then a frequency-only reference against the backend's computed
     frequencies at the starting force field (see the "Frequency-only
     refs for TS" pitfall in AGENTS.md — appropriate here, not for TS
     publication reproduction).
@@ -345,7 +345,7 @@ def assemble_qfuerza_fresh_case(
             for why this must never be hardcoded to ``True``: a genuine
             ground state's Hessian routinely carries tiny spurious
             negative eigenvalues that inversion would otherwise corrupt).
-        engine: MM backend used to compute frequencies at the starting
+        backend: MM backend used to compute frequencies at the starting
             force field.
         starting_point: Accepted for interface symmetry with the
             published-FF systems; it is a no-op here (the force field is
@@ -394,7 +394,10 @@ def assemble_qfuerza_fresh_case(
     if molecule.hessian is None:
         raise ValueError(f"Training molecule {molecule.name!r} has no QM Hessian attached.")
     qm_freqs_all = qm_frequencies_from_hessian(molecule.hessian, molecule.symbols)
-    mm_all = engine.frequencies(molecule, ff)
+    from q2mm.backends.contracts import FrequencyRequest, PreparationRequest
+
+    prepared = backend.prepare(PreparationRequest(case_id=key, molecule=molecule, force_field=ff))
+    mm_all = np.asarray(prepared.frequencies(FrequencyRequest(parameters=layout.vector(ff))).frequencies)
     observations, qm_real = build_frequency_reference(qm_freqs_all, mm_all, case_id=key)
 
     problem = OptimizationProblem(

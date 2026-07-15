@@ -1,16 +1,24 @@
-"""JAX-MD-engine-specific tests.
+"""JAX-MD-backend-specific tests.
 
 Contract tests (energy, hessian, frequencies, minimize, gradients) are
-in test_engine_contract.py and run for every registered engine.  This
+in test_engine_contract.py and run for every registered backend.  This
 file covers only behaviour unique to the JAX-MD backend:
 
 * Known-value LJ numeric check using sigma/epsilon conversion
-* Cross-engine parity (JAX-MD vs JAX)
-* Per-term energy breakdown API (JaxMDEngine-only)
+* Cross-backend parity (JAX-MD vs JAX)
+* Per-term energy breakdown API (JaxMdBackend-only)
 * Optimizer integration with analytical gradients
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    FrequencyRequest,
+    HessianRequest,
+    ParameterGradientRequest,
+)
+from test.backend_fixtures import param_vector, prepare_case
+from q2mm.backends.registry import load_backend
 
 import importlib.util
 from typing import Any
@@ -34,14 +42,14 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, VdwParam, 
 def _init_jax_md() -> None:
     """Lazily import JAX-MD before each test so module collection is CUDA-free."""
     try:
-        from q2mm.backends.mm.jax_md_engine import JaxMDEngine as _JME, _HAS_JAX_MD as _avail
+        from q2mm.backends.mm.jax_md_engine import JaxMdBackend as _JME, _HAS_JAX_MD as _avail
     except ImportError as exc:
         pytest.skip(f"jax-md not usable: {exc}")
 
     if not _avail:
         pytest.skip("jax-md not available")
-    global JaxMDEngine  # noqa: PLW0603
-    JaxMDEngine = _JME
+    global JaxMdBackend  # noqa: PLW0603
+    JaxMdBackend = _JME
 
 
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
@@ -68,16 +76,16 @@ def _vdw_ff() -> ForceField:
     )
 
 
-def _engine(**kwargs: Any) -> JaxMDEngine:
+def _engine(**kwargs: Any) -> JaxMdBackend:
     kwargs.setdefault("box", (50.0, 50.0, 50.0))
-    return JaxMDEngine(**kwargs)
+    return load_backend("jax-md", **kwargs)
 
 
-class TestJaxMDEngineLJNumeric:
+class TestJaxMdBackendLJNumeric:
     """Verify LJ energy against analytical sigma/epsilon formula."""
 
     def setup_method(self) -> None:
-        self.engine = _engine()
+        self.backend = _engine()
 
     def test_vdw_lj_numeric(self) -> None:
         distance = 4.0
@@ -88,70 +96,103 @@ class TestJaxMDEngineLJNumeric:
         sr6 = (sigma / distance) ** 6
         expected = 4.0 * 0.02 * (sr6**2 - sr6)
 
-        assert self.engine.energy(mol, ff) == pytest.approx(expected, abs=1e-10)
+        assert prepare_case(self.backend, mol, ff).energy(
+            EnergyRequest(parameters=param_vector(ff))
+        ).energy == pytest.approx(expected, abs=1e-10)
 
 
-class TestJaxMDEngineParity:
-    """Compare JaxMDEngine vs JaxEngine for consistency."""
+@pytest.mark.cross_backend
+@pytest.mark.jax
+class TestJaxMdBackendParity:
+    """Compare JaxMdBackend vs JaxBackend for consistency."""
 
     def setup_method(self) -> None:
-        from q2mm.backends.mm.jax_engine import JaxEngine
 
         self.jaxmd = _engine()
-        self.jax = JaxEngine()
+        self.jax = load_backend("jax")
 
     def test_bond_energy_matches(self) -> None:
         mol = make_diatomic(distance=0.78, bond_tolerance=1.5)
         ff = _h2_ff()
-        assert self.jaxmd.energy(mol, ff) == pytest.approx(self.jax.energy(mol, ff), abs=1e-10)
+        assert prepare_case(self.jaxmd, mol, ff).energy(
+            EnergyRequest(parameters=param_vector(ff))
+        ).energy == pytest.approx(
+            prepare_case(self.jax, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy, abs=1e-10
+        )
 
     def test_angle_energy_matches(self) -> None:
         mol = make_water(angle_deg=110.0)
         ff = _water_ff()
-        assert self.jaxmd.energy(mol, ff) == pytest.approx(self.jax.energy(mol, ff), abs=1e-10)
+        assert prepare_case(self.jaxmd, mol, ff).energy(
+            EnergyRequest(parameters=param_vector(ff))
+        ).energy == pytest.approx(
+            prepare_case(self.jax, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy, abs=1e-10
+        )
 
     def test_gradient_matches(self) -> None:
         mol = make_water(angle_deg=110.0)
         ff = _water_ff()
-        e1, g1 = self.jaxmd.energy_and_param_grad(mol, ff)
-        e2, g2 = self.jax.energy_and_param_grad(mol, ff)
+        _pg = prepare_case(self.jaxmd, mol, ff).parameter_gradient(
+            ParameterGradientRequest(parameters=param_vector(ff))
+        )
+        e1, g1 = _pg.energy, _pg.gradient
+        _pg = prepare_case(self.jax, mol, ff).parameter_gradient(ParameterGradientRequest(parameters=param_vector(ff)))
+        e2, g2 = _pg.energy, _pg.gradient
         assert e1 == pytest.approx(e2, abs=1e-10)
         np.testing.assert_allclose(g1, g2, atol=1e-10)
 
     def test_hessian_matches(self) -> None:
         mol = make_water()
         ff = _water_ff()
-        np.testing.assert_allclose(self.jaxmd.hessian(mol, ff), self.jax.hessian(mol, ff), atol=1e-12)
+        np.testing.assert_allclose(
+            prepare_case(self.jaxmd, mol, ff).hessian(HessianRequest(parameters=param_vector(ff))).hessian,
+            prepare_case(self.jax, mol, ff).hessian(HessianRequest(parameters=param_vector(ff))).hessian,
+            atol=1e-12,
+        )
 
     def test_frequencies_match(self) -> None:
         mol = make_water()
         ff = _water_ff()
-        np.testing.assert_allclose(self.jaxmd.frequencies(mol, ff), self.jax.frequencies(mol, ff), atol=1e-2)
+        np.testing.assert_allclose(
+            [
+                float(_f)
+                for _f in prepare_case(self.jaxmd, mol, ff)
+                .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+                .frequencies
+            ],
+            [
+                float(_f)
+                for _f in prepare_case(self.jax, mol, ff)
+                .frequencies(FrequencyRequest(parameters=param_vector(ff)))
+                .frequencies
+            ],
+            atol=1e-2,
+        )
 
 
-class TestJaxMDEngineBreakdown:
+class TestJaxMdBackendBreakdown:
     """Per-term energy breakdown tests."""
 
     def setup_method(self) -> None:
-        self.engine = _engine()
+        self.backend = _engine()
 
     def test_breakdown_keys(self) -> None:
         mol = make_water()
         ff = _water_ff()
-        bd = self.engine.energy_breakdown(mol, ff)
+        bd = self.backend._evaluate_energy_breakdown(self.backend._build_state(mol, ff), ff)
         assert set(bd.keys()) == {"bond", "angle", "torsion", "lj", "coulomb", "total"}
 
     def test_breakdown_sums_to_total(self) -> None:
         mol = make_water()
         ff = _water_ff()
-        bd = self.engine.energy_breakdown(mol, ff)
+        bd = self.backend._evaluate_energy_breakdown(self.backend._build_state(mol, ff), ff)
         expected_total = bd["bond"] + bd["angle"] + bd["torsion"] + bd["lj"] + bd["coulomb"]
         assert bd["total"] == pytest.approx(expected_total, abs=1e-12)
 
     def test_only_bond_contributes(self) -> None:
         mol = make_diatomic(distance=0.78, bond_tolerance=1.5)
         ff = _h2_ff()
-        bd = self.engine.energy_breakdown(mol, ff)
+        bd = self.backend._evaluate_energy_breakdown(self.backend._build_state(mol, ff), ff)
         assert bd["bond"] > 0
         assert bd["angle"] == pytest.approx(0.0, abs=1e-12)
         assert bd["torsion"] == pytest.approx(0.0, abs=1e-12)
@@ -161,7 +202,7 @@ class TestJaxMDOptimizerIntegration:
     """Full optimization loop with analytical gradients."""
 
     def setup_method(self) -> None:
-        self.engine = _engine()
+        self.backend = _engine()
 
     def test_optimize_bond_k(self) -> None:
         from scipy.optimize import minimize as scipy_minimize
@@ -171,12 +212,18 @@ class TestJaxMDOptimizerIntegration:
 
         def objective(params: np.ndarray) -> float:
             ff = _h2_ff(bond_k=params[0], bond_r0=0.74)
-            e, _grad = self.engine.energy_and_param_grad(mol, ff)
+            _pg = prepare_case(self.backend, mol, ff).parameter_gradient(
+                ParameterGradientRequest(parameters=param_vector(ff))
+            )
+            e, _grad = _pg.energy, _pg.gradient
             return (e - target_energy) ** 2
 
         def objective_grad(params: np.ndarray) -> np.ndarray:
             ff = _h2_ff(bond_k=params[0], bond_r0=0.74)
-            e, grad = self.engine.energy_and_param_grad(mol, ff)
+            _pg = prepare_case(self.backend, mol, ff).parameter_gradient(
+                ParameterGradientRequest(parameters=param_vector(ff))
+            )
+            e, grad = _pg.energy, _pg.gradient
             return np.array([2.0 * (e - target_energy) * grad[0]], dtype=float)
 
         result = scipy_minimize(objective, x0=[300.0], method="L-BFGS-B", bounds=[(1.0, 1000.0)], jac=objective_grad)

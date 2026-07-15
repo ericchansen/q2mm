@@ -7,6 +7,12 @@ Tests the full CMAP pipeline:
 """
 
 from __future__ import annotations
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    ParameterGradientRequest,
+)
+from test.backend_fixtures import param_vector, prepare_case
+from q2mm.backends.registry import load_backend
 
 import textwrap
 from pathlib import Path
@@ -248,7 +254,7 @@ class TestCmapParser:
 
 @pytest.mark.openmm
 class TestCmapOpenMM:
-    """Tests for CMAP force creation in the OpenMM engine."""
+    """Tests for CMAP force creation in the OpenMM backend."""
 
     @pytest.fixture
     def _alanine_dipeptide_ff(self) -> ForceField:
@@ -310,37 +316,31 @@ class TestCmapOpenMM:
 
     def test_cmap_force_created(self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule) -> None:
         """CMAP force should be created when FF has cmap grids."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
-        engine = OpenMMEngine(platform_name="CPU")
-        handle = engine.create_context(_linear_chain_molecule, _alanine_dipeptide_ff)
-        assert handle.cmap_force is not None
-        assert len(handle.cmap_terms) > 0
+        backend = load_backend("openmm", platform_name="CPU")
+        state = backend._build_state(_linear_chain_molecule, _alanine_dipeptide_ff)
+        assert state.cmap_force is not None
+        assert len(state.cmap_terms) > 0
 
     def test_no_cmap_when_ff_has_none(self, _linear_chain_molecule: Molecule) -> None:
         """No CMAP force when FF has no cmap grids."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         ff = ForceField(
             bonds=[BondParam(("C", "C"), equilibrium=1.53, force_constant=100.0)],
             vdws=[VdwParam("C", radius=1.7, epsilon=0.05)],
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine = OpenMMEngine(platform_name="CPU")
-        handle = engine.create_context(_linear_chain_molecule, ff)
-        assert handle.cmap_force is None
-        assert handle.cmap_terms == []
+        backend = load_backend("openmm", platform_name="CPU")
+        state = backend._build_state(_linear_chain_molecule, ff)
+        assert state.cmap_force is None
+        assert state.cmap_terms == []
 
     def test_cmap_energy_contribution(
         self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule
     ) -> None:
         """CMAP should contribute to the total energy."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         # Energy with CMAP
-        engine = OpenMMEngine(platform_name="CPU")
-        handle_cmap = engine.create_context(_linear_chain_molecule, _alanine_dipeptide_ff)
-        energy_with_cmap = engine.energy(handle_cmap)
+        backend = load_backend("openmm", platform_name="CPU")
+        state_cmap = backend._build_state(_linear_chain_molecule, _alanine_dipeptide_ff)
+        energy_with_cmap = backend._evaluate_energy(state_cmap, _alanine_dipeptide_ff)
 
         # Energy without CMAP
         ff_no_cmap = ForceField(
@@ -350,20 +350,18 @@ class TestCmapOpenMM:
             vdws=_alanine_dipeptide_ff.vdws,
             functional_form=FunctionalForm.HARMONIC,
         )
-        handle_no_cmap = engine.create_context(_linear_chain_molecule, ff_no_cmap)
-        energy_without_cmap = engine.energy(handle_no_cmap)
+        state_no_cmap = backend._build_state(_linear_chain_molecule, ff_no_cmap)
+        energy_without_cmap = backend._evaluate_energy(state_no_cmap, ff_no_cmap)
 
         # The CMAP should change the energy
         assert energy_with_cmap != energy_without_cmap
 
     def test_cmap_term_records(self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule) -> None:
         """CMAP term records should contain correct atom indices and types."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
+        backend = load_backend("openmm", platform_name="CPU")
+        state = backend._build_state(_linear_chain_molecule, _alanine_dipeptide_ff)
 
-        engine = OpenMMEngine(platform_name="CPU")
-        handle = engine.create_context(_linear_chain_molecule, _alanine_dipeptide_ff)
-
-        for term in handle.cmap_terms:
+        for term in state.cmap_terms:
             assert len(term.phi_atoms) == 4
             assert len(term.psi_atoms) == 4
             assert term.phi_types == ("A", "B", "C", "D")
@@ -374,14 +372,12 @@ class TestCmapOpenMM:
     def test_cmap_immutable_during_update(
         self, _alanine_dipeptide_ff: ForceField, _linear_chain_molecule: Molecule
     ) -> None:
-        """CMAP should not change when update_forcefield is called."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
-        engine = OpenMMEngine(platform_name="CPU")
-        handle = engine.create_context(_linear_chain_molecule, _alanine_dipeptide_ff)
+        """CMAP should not change when parameters are updated in-place."""
+        backend = load_backend("openmm", platform_name="CPU")
+        state = backend._build_state(_linear_chain_molecule, _alanine_dipeptide_ff)
 
         # Get energy before update
-        e1 = engine.energy(handle)
+        e1 = backend._evaluate_energy(state, _alanine_dipeptide_ff)
 
         # Update force field (change a bond parameter)
         new_ff = ForceField(
@@ -392,18 +388,16 @@ class TestCmapOpenMM:
             cmaps=_alanine_dipeptide_ff.cmaps,
             functional_form=FunctionalForm.HARMONIC,
         )
-        engine.update_forcefield(handle, new_ff)
-        e2 = engine.energy(handle)
+        backend._update_params(state, new_ff)
+        e2 = backend._evaluate_energy(state, new_ff)
 
         # Energy should change (bond params changed) but CMAP part stays fixed
         assert e1 != e2
         # CMAP force should still be present
-        assert handle.cmap_force is not None
+        assert state.cmap_force is not None
 
     def test_zero_cmap_grid_no_energy_change(self, _linear_chain_molecule: Molecule) -> None:
         """A CMAP grid of all zeros should not change the energy."""
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
         zero_grid = CmapGrid(
             atom_types_phi=("A", "B", "C", "D"),
             atom_types_psi=("B", "C", "D", "E"),
@@ -426,9 +420,9 @@ class TestCmapOpenMM:
             functional_form=FunctionalForm.HARMONIC,
         )
 
-        engine = OpenMMEngine(platform_name="CPU")
-        e_cmap = engine.energy(engine.create_context(_linear_chain_molecule, ff_cmap))
-        e_none = engine.energy(engine.create_context(_linear_chain_molecule, ff_no_cmap))
+        backend = load_backend("openmm", platform_name="CPU")
+        e_cmap = backend._evaluate_energy(backend._build_state(_linear_chain_molecule, ff_cmap), ff_cmap)
+        e_none = backend._evaluate_energy(backend._build_state(_linear_chain_molecule, ff_no_cmap), ff_no_cmap)
 
         assert abs(e_cmap - e_none) < 1e-10
 
@@ -442,11 +436,16 @@ class TestCmapOpenMM:
         that disagreed with ``energy()`` by the CMAP contribution.  CMAP has
         no tunable parameters, so only the scalar energy must agree.
         """
-        from q2mm.backends.mm.openmm import OpenMMEngine
-
-        engine = OpenMMEngine(platform_name="CPU")
-        e_scalar = engine.energy(_linear_chain_molecule, _alanine_dipeptide_ff)
-        e_grad, _grad = engine.energy_and_param_grad(_linear_chain_molecule, _alanine_dipeptide_ff)
+        backend = load_backend("openmm", platform_name="CPU")
+        e_scalar = (
+            prepare_case(backend, _linear_chain_molecule, _alanine_dipeptide_ff)
+            .energy(EnergyRequest(parameters=param_vector(_alanine_dipeptide_ff)))
+            .energy
+        )
+        _pg = prepare_case(backend, _linear_chain_molecule, _alanine_dipeptide_ff).parameter_gradient(
+            ParameterGradientRequest(parameters=param_vector(_alanine_dipeptide_ff))
+        )
+        e_grad, _grad = _pg.energy, _pg.gradient
         np.testing.assert_allclose(e_grad, e_scalar, atol=1e-6)
 
 

@@ -119,7 +119,7 @@ class Workflow(Protocol):
     def run(
         self,
         problem: OptimizationProblem,
-        engine: Any,  # noqa: ANN401
+        backend: Any,  # noqa: ANN401
         optimizer: _Optimizer,
         *,
         n_evals: int = 1,
@@ -132,7 +132,7 @@ class Workflow(Protocol):
                 supplies the training cases, starting force field,
                 parameter layout, active space, and observations.  Never
                 mutated by the workflow or the optimizer.
-            engine: MM backend used to evaluate the objective.
+            backend: MM backend used to evaluate the objective.
             optimizer: Pre-configured search algorithm.  Constructor
                 kwargs (method, bounds strategy, ftol, etc.) belong
                 here, not on the workflow.

@@ -22,7 +22,7 @@ import numpy as np
 from q2mm.constants import REAL_FREQUENCY_THRESHOLD
 
 if TYPE_CHECKING:
-    from q2mm.backends.base import MMEngine
+    from q2mm.backends.contracts import Backend
     from q2mm.benchmarks.cases import BenchmarkCase
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Molecule
@@ -562,7 +562,7 @@ def _param_names(layout: ParameterLayout) -> list[str]:
 
 
 def run_combo(
-    engine: MMEngine,
+    backend: Backend,
     case: BenchmarkCase,
     *,
     optimizer_method: str = "L-BFGS-B",
@@ -576,7 +576,7 @@ def run_combo(
     separate single-molecule vs multi-molecule code.
 
     Args:
-        engine: The MM backend engine to use.
+        backend: The MM backend to use.
         case: Fully-loaded benchmark case (training molecules, starting
             force field, parameter layout, active space, and
             observations — see :attr:`BenchmarkCase.problem`).
@@ -614,9 +614,13 @@ def run_combo(
     all_qm_real = np.sort(np.concatenate(case.qm_freqs_per_mol))
 
     # Aggregate MM frequencies across all molecules for initial RMSD
+    from q2mm.backends.contracts import FrequencyRequest, PreparationRequest
+
+    init_params = layout.vector(ff)
     all_mm_real_init: list[float] = []
-    for mol in molecules:
-        mm_freqs = engine.frequencies(mol, ff)
+    for mol_idx, mol in enumerate(molecules):
+        prepared = backend.prepare(PreparationRequest(case_id=str(mol_idx), molecule=mol, force_field=ff))
+        mm_freqs = list(prepared.frequencies(FrequencyRequest(parameters=init_params)).frequencies)
         all_mm_real_init.extend(real_frequencies(mm_freqs).tolist())
     all_mm_real_init_arr = np.array(sorted(all_mm_real_init))
 
@@ -665,7 +669,7 @@ def run_combo(
 
     optimizer_kwargs = {k: v for k, v in optimizer_kwargs.items() if k not in _obj_only_keys}
     obj = ObjectiveFunction(
-        ff, engine, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout, **obj_kwargs
+        ff, backend, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout, **obj_kwargs
     )
     initial_score = obj(seminario_params)
 
@@ -726,7 +730,9 @@ def run_combo(
         if loop.full_jac == "analytical":
             uses_scipy_fd = False
         elif loop.full_jac == "auto":
-            if obj.engine.supports_analytical_gradients():
+            from q2mm.backends.contracts import Capability
+
+            if obj.backend.info.supports(Capability.PARAMETER_GRADIENT):
                 uses_scipy_fd = False
         eps = loop.eps if uses_scipy_fd else None
 
@@ -947,9 +953,12 @@ def run_combo(
     final_ff = layout.replace(ff, final_params)
 
     # Final aggregate frequencies and RMSD
+    from q2mm.backends.contracts import FrequencyRequest, PreparationRequest
+
     all_mm_real_final: list[float] = []
-    for mol in molecules:
-        mm_freqs = engine.frequencies(mol, final_ff)
+    for mol_idx, mol in enumerate(molecules):
+        prepared = backend.prepare(PreparationRequest(case_id=str(mol_idx), molecule=mol, force_field=final_ff))
+        mm_freqs = list(prepared.frequencies(FrequencyRequest(parameters=final_params)).frequencies)
         all_mm_real_final.extend(real_frequencies(mm_freqs).tolist())
     all_mm_real_final_arr = np.array(sorted(all_mm_real_final))
 
@@ -981,7 +990,7 @@ def run_combo(
         distortion_results, _, dist_elapsed = compute_distortions(
             molecules[0],
             final_ff,
-            engine,
+            backend,
             case.normal_modes,
         )
         all_errs: list[float] = []

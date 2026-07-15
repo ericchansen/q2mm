@@ -192,7 +192,7 @@ class OptaxOptimizer:
         """Run the optimization.
 
         Args:
-            objective: Configured objective with forcefield, engine,
+            objective: Configured objective with forcefield, backend,
                 molecules, and reference data.
             space: The active/frozen projection over ``objective.layout``.
                 ``objective.forcefield`` is never mutated — materialize
@@ -242,24 +242,30 @@ class OptaxOptimizer:
 
         opt = self._build_optimizer()
 
-        # When using JaxEngine, route gradients through JaxLoss to avoid
+        # When using the JAX backend, route gradients through JaxLoss to avoid
         # materializing the (3N, 3N, n_params) Hessian-parameter Jacobian
         # that causes GPU OOM.  See issue analysis in AGENTS.md §9.
         use_jax_loss = False
         jax_loss = None
         try:
-            from q2mm.backends.mm.jax_engine import JaxEngine
+            from q2mm.backends.mm.jax_engine import JaxBackend
 
-            if hasattr(objective, "engine") and isinstance(objective.engine, JaxEngine):
+            if hasattr(objective, "backend") and isinstance(objective.backend, JaxBackend):
                 from q2mm.optimizers.jaxloss import JaxLoss
 
                 spec = objective.to_jax_spec()
-                jax_loss = JaxLoss(spec, objective.engine, objective.molecules, objective.forcefield)
+                jax_loss = JaxLoss(
+                    spec,
+                    objective.backend,
+                    objective.molecules,
+                    objective.forcefield,
+                    sessions=objective.jax_sessions(spec),
+                )
                 use_jax_loss = True
                 jac_mode = "jax_loss"
                 logger.info("OptaxOptimizer: using JaxLoss gradient path (memory-efficient)")
         except ImportError:
-            pass  # JaxEngine not available
+            pass  # JAX backend not available
 
         params = jnp.array(x0, dtype=jnp.float64)
         opt_state = opt.init(params)

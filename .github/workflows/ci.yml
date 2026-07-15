@@ -68,7 +68,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m openmm -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m "openmm and not cross_backend" -q
 
   test-tinker:
     needs: [lint, test-core]
@@ -83,7 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m tinker -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m "tinker and not cross_backend" -q
 
   test-jax:
     needs: [lint, test-core]
@@ -94,11 +94,11 @@ jobs:
     container:
       image: ghcr.io/ericchansen/q2mm/ci-jax:latest
       options: --user root
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m jax -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m "jax and not cross_backend" -q
 
   test-jax-md:
     needs: [lint, test-core]
@@ -113,7 +113,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m jax_md -q
+      - run: python -m pip install -e . --no-deps && python -m pytest -m "jax_md and not cross_backend" -q
 
   test-psi4:
     needs: [lint, test-core]
@@ -131,10 +131,10 @@ jobs:
       - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 -q
 
   # ================================================================
-  # Tier 2b — Cross-backend parity tests (~5-10 min)
-  # Runs unit tests with every backend available to catch
-  # cross-backend regressions.  Integration tests (--run-integration)
-  # are too slow for GitHub-hosted runners — run locally instead.
+  # Tier 2b — Explicit cross-backend parity surface
+  # The cross_backend marker owns tests that execute two or more backends.
+  # --run-integration enables only those explicitly selected parity tests;
+  # the full integration/validation/nightly tiers remain local-only.
   # ================================================================
   test-cross-backend:
     needs: [lint, test-core]
@@ -149,7 +149,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -q
+      - run: python -m pip install -e . --no-deps && python -m pytest --run-integration -m cross_backend -q
 
   # ================================================================
   # Validation, nightly, and integration tiers removed from CI.

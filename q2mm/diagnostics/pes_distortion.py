@@ -15,7 +15,7 @@ import numpy as np
 from q2mm.constants import AMU_TO_KG, BOHR_TO_ANG, HARTREE_TO_J, SPEED_OF_LIGHT_MS
 
 if TYPE_CHECKING:
-    from q2mm.backends.base import MMEngine
+    from q2mm.backends.contracts import Backend
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Molecule
 
@@ -47,7 +47,7 @@ def load_normal_modes(path: Path) -> dict:
 def compute_distortions(
     mol: Molecule,
     ff: ForceField,
-    engine: MMEngine,
+    backend: Backend,
     modes: dict,
     target_norms_ang: list[float] | None = None,
 ) -> tuple[list[dict], float, float]:
@@ -56,7 +56,7 @@ def compute_distortions(
     Args:
         mol (Molecule): Equilibrium geometry molecule.
         ff (ForceField): Force field to evaluate MM energies with.
-        engine (MMEngine): Any backend engine with an ``energy()`` method.
+        backend (Backend): Any MM backend that can prepare per-case sessions.
         modes (dict): Output from ``load_normal_modes()``.
         target_norms_ang (list[float] | None): Cartesian displacement
             magnitudes in Angstrom. Defaults to ``[0.05, 0.10, 0.15]``.
@@ -70,10 +70,18 @@ def compute_distortions(
             - **elapsed** (*float*) — Wall-clock time in seconds.
 
     """
+    from q2mm.backends.contracts import EnergyRequest, PreparationRequest
     from q2mm.models.molecule import Molecule as _Mol
+    from q2mm.models.parameters import ParameterLayout
 
     if target_norms_ang is None:
         target_norms_ang = [0.05, 0.10, 0.15]
+
+    params = ParameterLayout.from_force_field(ff).vector(ff)
+
+    def _mm_energy(structure: Molecule, case_id: str) -> float:
+        prepared = backend.prepare(PreparationRequest(case_id=case_id, molecule=structure, force_field=ff))
+        return float(prepared.energy(EnergyRequest(parameters=params)).energy)
 
     eigenvalues = modes["eigenvalues"]
     eigenvectors = modes["eigenvectors"]
@@ -85,7 +93,7 @@ def compute_distortions(
     # Identify real vibrational modes (skip 6 trans/rot near zero)
     real_mode_indices = [i for i, ev in enumerate(eigenvalues) if ev > 1e-3]
 
-    e_eq = engine.energy(mol, ff)
+    e_eq = _mm_energy(mol, "eq")
 
     t0 = time.perf_counter()
     results = []
@@ -121,7 +129,7 @@ def compute_distortions(
                 multiplicity=mol.multiplicity,
                 bond_tolerance=mol.bond_tolerance,
             )
-            e_mm = engine.energy(disp_mol, ff) - e_eq
+            e_mm = _mm_energy(disp_mol, f"disp_{mi}_{d_ang}") - e_eq
 
             pct_err = ((e_mm - e_qm) / e_qm * 100.0) if abs(e_qm) > 1e-8 else 0.0
             displacements.append({"d_ang": d_ang, "e_qm": e_qm, "e_mm": e_mm, "pct_err": pct_err})

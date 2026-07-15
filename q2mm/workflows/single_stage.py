@@ -64,7 +64,8 @@ def _per_category_metrics(obj: ObjectiveFunction, ff: Any) -> dict[str, dict[str
     ``weight == 0.0`` are skipped (e.g. the imaginary mode in TS
     eigenmatrix fits).
     """
-    residuals = obj._compute_residuals(ff)  # noqa: SLF001 — diagnostics-only API
+    assert obj.layout is not None  # diagnostics helper is only called with a layout-backed objective
+    residuals = obj._compute_residuals(obj.layout.vector(ff))  # noqa: SLF001 — diagnostics-only API
     buckets: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for ref, weighted in zip(obj.reference.values, residuals, strict=True):
         if ref.weight == 0.0:
@@ -112,7 +113,7 @@ class SingleStageWorkflow:
 
     Equivalent to::
 
-        obj = ObjectiveFunction(problem.starting_force_field, engine,
+        obj = ObjectiveFunction(problem.starting_force_field, backend,
                                 list(problem.molecules), problem.observations,
                                 case_ids=list(problem.case_ids), layout=problem.layout)
         result = optimizer.optimize(obj, problem.active_space)
@@ -129,7 +130,7 @@ class SingleStageWorkflow:
     def run(
         self,
         problem: OptimizationProblem,
-        engine: Any,  # noqa: ANN401
+        backend: Any,  # noqa: ANN401
         optimizer: _Optimizer,
         *,
         n_evals: int = 1,
@@ -140,7 +141,7 @@ class SingleStageWorkflow:
             problem: Loaded optimization problem.  ``problem.starting_force_field``
                 is the starting point and — being immutable — is never
                 mutated; it is also returned as ``WorkflowResult.initial_ff``.
-            engine: MM backend.
+            backend: MM backend.
             optimizer: Pre-configured optimizer (e.g. ``ScipyOptimizer``).
             n_evals: Real-objective samples at initial and final params.
                 ``0`` skips sampling.
@@ -155,7 +156,7 @@ class SingleStageWorkflow:
         initial_ff = problem.starting_force_field
         obj = ObjectiveFunction(
             initial_ff,
-            engine,
+            backend,
             list(problem.molecules),
             problem.observations,
             case_ids=list(problem.case_ids),

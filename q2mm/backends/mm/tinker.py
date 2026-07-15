@@ -1,10 +1,14 @@
-"""Tinker molecular mechanics engine backend.
+"""Tinker molecular mechanics backend.
 
-Wraps Tinker executables (``analyze``, ``minimize``, ``vibrate``) for MM
-calculations with MM3 and other force fields.
+Wraps Tinker executables (``analyze``, ``minimize``, ``testhess``) for MM
+calculations with the MM3 functional form.
 
 Requires: Tinker binaries on ``PATH`` or configured via *tinker_dir*
 parameter.  Download from: https://dasher.wustl.edu/tinker/
+
+Tinker is a subprocess backend: each evaluation writes a fresh Tinker XYZ and
+parameter file and shells out.  There is no reusable native state, so the
+backend does **not** declare :attr:`~q2mm.backends.contracts.Capability.REUSABLE_STATE`.
 """
 
 from __future__ import annotations
@@ -15,12 +19,32 @@ import re
 import subprocess
 import tempfile
 import shutil
-from typing import Any
 
 import numpy as np
 
-from q2mm.backends.base import MMEngine
-from q2mm.backends.registry import register_mm
+from q2mm.backends.contracts import (
+    AbstractPreparedBackend,
+    BackendInfo,
+    BackendProvenance,
+    BackendRole,
+    Capability,
+    EnergyRequest,
+    EnergyResult,
+    EnergyUnit,
+    EvaluationError,
+    FrequencyRequest,
+    FrequencyResult,
+    FrequencyUnit,
+    GeometryResult,
+    HessianRequest,
+    HessianResult,
+    HessianUnit,
+    LengthUnit,
+    MinimizationRequest,
+    PreparationError,
+    PreparationRequest,
+    readonly_array,
+)
 from q2mm.constants import (
     DEFAULT_BOND_TOLERANCE,
     MM3_BOND_C3,
@@ -33,9 +57,26 @@ from q2mm.constants import (
 )
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Molecule
+from q2mm.models.parameters import ParameterLayout
 from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
 
 logger = logging.getLogger(__name__)
+
+_TINKER_PROVENANCE = BackendProvenance(backend="tinker", role=BackendRole.MM, detail="MM3")
+_TINKER_INFO = BackendInfo(
+    name="Tinker",
+    role=BackendRole.MM,
+    capabilities=frozenset(
+        {
+            Capability.ENERGY,
+            Capability.MINIMIZE,
+            Capability.HESSIAN,
+            Capability.FREQUENCIES,
+        }
+    ),
+    functional_forms=frozenset({"mm3"}),
+    provenance=_TINKER_PROVENANCE,
+)
 
 
 def _find_tinker_dir() -> str | None:
@@ -89,9 +130,26 @@ def _exe(tinker_dir: str, name: str) -> str:
     raise FileNotFoundError(f"Tinker executable '{name}' not found in {tinker_dir}")
 
 
-@register_mm("tinker")
-class TinkerEngine(MMEngine):
-    """Molecular mechanics engine using Tinker.
+def _validate_form(forcefield: ForceField, info: BackendInfo) -> None:
+    """Raise ``PreparationError`` if the FF functional form is unsupported.
+
+    Args:
+        forcefield: Force field whose functional form is checked.
+        info: Backend info declaring supported functional forms.
+
+    Raises:
+        PreparationError: If the form is not declared in *info*.
+
+    """
+    form = forcefield.functional_form.value
+    if not info.supports_form(form):
+        raise PreparationError(
+            f"{info.name} does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
+        )
+
+
+class TinkerBackend:
+    """Molecular mechanics backend using the Tinker executables.
 
     Args:
         tinker_dir: Path to Tinker bin directory (auto-detected if None)
@@ -108,7 +166,7 @@ class TinkerEngine(MMEngine):
         params_file: str | None = None,
         bond_tolerance: float = DEFAULT_BOND_TOLERANCE,
     ) -> None:
-        """Initialize the Tinker engine.
+        """Initialize the Tinker backend.
 
         Args:
             tinker_dir: Path to Tinker bin directory. Auto-detected if
@@ -120,14 +178,16 @@ class TinkerEngine(MMEngine):
                 ``bond_tolerance * (r_cov_A + r_cov_B)``.
 
         Raises:
-            FileNotFoundError: If Tinker binaries or the MM3 parameter file
-                cannot be found.
+            BackendUnavailableError: If Tinker binaries or the MM3 parameter
+                file cannot be found.
 
         """
+        from q2mm.backends.contracts import BackendUnavailableError
+
         self._tinker_dir = tinker_dir or _find_tinker_dir()
         self._bond_tolerance = bond_tolerance
         if self._tinker_dir is None:
-            raise FileNotFoundError(
+            raise BackendUnavailableError(
                 "Tinker not found. Install from https://dasher.wustl.edu/tinker/ or pass tinker_dir parameter."
             )
 
@@ -143,109 +203,75 @@ class TinkerEngine(MMEngine):
                     break
         self._params_file = params_file
         if self._params_file is None:
-            raise FileNotFoundError(
+            raise BackendUnavailableError(
                 "MM3 parameter file not found. Provide params_file parameter "
                 "or place mm3.prm alongside the Tinker bin directory."
             )
 
     @property
-    def name(self) -> str:
-        """Human-readable engine name.
+    def info(self) -> BackendInfo:
+        """Immutable capability declaration for this backend."""
+        return _TINKER_INFO
 
-        Returns:
-            str: ``"Tinker"``.
-
-        """
-        return "Tinker"
-
-    def supported_functional_forms(self) -> frozenset[str]:
-        """Tinker with MM3 params supports MM3 functional forms only.
-
-        Returns:
-            frozenset[str]: ``{"mm3"}``.
-
-        """
-        return frozenset({"mm3"})
-
-    def is_available(self) -> bool:
-        """Check if Tinker ``analyze`` executable is accessible.
-
-        Returns:
-            bool: ``True`` if the executable can be located.
-
-        """
-        try:
-            _exe(self._tinker_dir, "analyze")
-            return True
-        except FileNotFoundError:
-            return False
-
-    @classmethod
-    def deps_available(cls) -> bool:
-        """Check if Tinker binaries and MM3 parameter file can be found."""
-        tinker_dir = _find_tinker_dir()
-        if tinker_dir is None:
-            return False
-        # __init__ also requires mm3.prm — mirror that check here.
-        candidates = [
-            os.path.join(os.path.dirname(tinker_dir), "params", "mm3.prm"),
-            os.path.join(tinker_dir, "mm3.prm"),
-        ]
-        return any(os.path.isfile(c) for c in candidates)
-
-    def _write_tinker_xyz(
-        self, structure: str | Molecule, forcefield: ForceField | dict[str, int] | str | None, workdir: str
-    ) -> str:
-        """Write a Tinker-format XYZ file from a standard XYZ file.
+    def prepare(self, request: PreparationRequest) -> PreparedTinker:
+        """Build a prepared session for one training case.
 
         Args:
-            structure: Path to standard XYZ file
-            forcefield: Force field object or dict mapping element -> atom type
-            workdir: Directory to write the file
+            request: Preparation request carrying the molecule and base MM3
+                force field.
 
         Returns:
-            Path to the Tinker XYZ file
+            PreparedTinker: A per-case session.
+
+        Raises:
+            PreparationError: If no force field is supplied or its functional
+                form is unsupported.
 
         """
-        # Default MM3 atom type mapping
+        if request.force_field is None:
+            raise PreparationError("Tinker requires a base ForceField in the PreparationRequest.")
+        _validate_form(request.force_field, _TINKER_INFO)
+        layout = ParameterLayout.from_force_field(request.force_field)
+        return PreparedTinker(
+            backend=self,
+            case_id=request.case_id,
+            molecule=request.molecule,
+            force_field=request.force_field,
+            layout=layout,
+        )
+
+    def _write_tinker_xyz(self, molecule: Molecule, forcefield: ForceField, workdir: str) -> str:
+        """Write a Tinker-format XYZ + key file for a Molecule and MM3 force field.
+
+        Args:
+            molecule: The molecule to write (Tinker types come from its
+                ``atom_types``, falling back to the MM3 element map).
+            forcefield: The MM3 force field whose (possibly modified) parameters
+                are exported to a workdir ``.prm``.
+            workdir: Directory to write the files.
+
+        Returns:
+            str: Path to the Tinker XYZ file.
+
+        """
+        _validate_form(forcefield, _TINKER_INFO)
+
+        # Default MM3 atom type mapping (fallback for atoms without numeric types).
         _default_type_map = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
-        if forcefield is None or isinstance(forcefield, str):
-            type_map = _default_type_map
-        elif isinstance(forcefield, dict):
-            type_map = forcefield
-        else:
-            type_map = getattr(forcefield, "atom_type_map", _default_type_map)
 
-        if isinstance(structure, Molecule):
-            atoms = list(structure.symbols)
-            coords = np.asarray(structure.geometry, dtype=float).tolist()
-            n_atoms = len(atoms)
-            bonds = {i: [] for i in range(n_atoms)}
-            for bond in structure.bonds:
-                bonds[bond.atom_i].append(bond.atom_j)
-                bonds[bond.atom_j].append(bond.atom_i)
-            atom_type_numbers = []
-            for atom, atom_type in zip(atoms, structure.atom_types, strict=False):
-                try:
-                    atom_type_numbers.append(int(atom_type))
-                except (TypeError, ValueError):
-                    atom_type_numbers.append(type_map.get(atom, 1))
-        else:
-            # Read standard XYZ
-            with open(structure) as f:
-                lines = f.readlines()
-            n_atoms = int(lines[0].strip())
-            atoms = []
-            coords = []
-            for line in lines[2 : 2 + n_atoms]:
-                parts = line.split()
-                atoms.append(parts[0])
-                coords.append([float(x) for x in parts[1:4]])
-
-            # Build connectivity (simple distance-based)
-            coords_arr = np.array(coords)
-            bonds = self._detect_bonds(atoms, coords_arr, self._bond_tolerance)
-            atom_type_numbers = [type_map.get(atom, 1) for atom in atoms]
+        atoms = list(molecule.symbols)
+        coords = np.asarray(molecule.geometry, dtype=float).tolist()
+        n_atoms = len(atoms)
+        bonds: dict[int, list[int]] = {i: [] for i in range(n_atoms)}
+        for bond in molecule.bonds:
+            bonds[bond.atom_i].append(bond.atom_j)
+            bonds[bond.atom_j].append(bond.atom_i)
+        atom_type_numbers = []
+        for atom, atom_type in zip(atoms, molecule.atom_types, strict=False):
+            try:
+                atom_type_numbers.append(int(atom_type))
+            except (TypeError, ValueError):
+                atom_type_numbers.append(_default_type_map.get(atom, 1))
 
         # Write Tinker XYZ
         txyz_path = os.path.join(workdir, "molecule.xyz")
@@ -256,62 +282,28 @@ class TinkerEngine(MMEngine):
                 bond_str = "     ".join(bonded)
                 f.write(f"     {i + 1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}    {atype:2d}     {bond_str}\n")
 
-        # Determine which parameter file to use
-        params_path = self._params_file or ""
+        # Export the force field's (possibly modified) parameters to a workdir .prm
+        # so Tinker evaluates the updated values.
+        exported_prm = os.path.join(workdir, "molecule.prm")
+        if forcefield.source_format == "tinker_prm" and (forcefield.source_path or self._params_file):
+            # FF came from a .prm file — use template-based export
+            from q2mm.io.tinker import save_tinker_prm
 
-        # If a ForceField model was supplied, export its (possibly modified)
-        # parameters to a workdir .prm so Tinker evaluates the updated values.
-        from q2mm.models.forcefield import ForceField
-
-        if isinstance(forcefield, ForceField):
-            self._validate_forcefield(forcefield)
-            exported_prm = os.path.join(workdir, "molecule.prm")
-            if forcefield.source_format == "tinker_prm" and (forcefield.source_path or self._params_file):
-                # FF came from a .prm file — use template-based export
-                from q2mm.io.tinker import save_tinker_prm
-
-                save_tinker_prm(
-                    forcefield,
-                    exported_prm,
-                    template_path=forcefield.source_path or self._params_file,
-                )
-            else:
-                # Programmatic FF — write standalone .prm with atom defs
-                self._write_standalone_prm(forcefield, exported_prm, atoms, atom_type_numbers)
-            params_path = exported_prm
+            save_tinker_prm(
+                forcefield,
+                exported_prm,
+                template_path=forcefield.source_path or self._params_file,
+            )
+        else:
+            # Programmatic FF — write standalone .prm with atom defs
+            self._write_standalone_prm(forcefield, exported_prm, atoms, atom_type_numbers)
 
         # Write key file
         key_path = os.path.join(workdir, "molecule.key")
         with open(key_path, "w") as f:
-            f.write(f"parameters {params_path}\n")
+            f.write(f"parameters {exported_prm}\n")
 
         return txyz_path
-
-    @staticmethod
-    def _detect_bonds(atoms: list[str], coords: np.ndarray, bond_tolerance: float = DEFAULT_BOND_TOLERANCE) -> dict:
-        """Detect bonds using distance-based shared covalent radii.
-
-        Args:
-            atoms: Element symbols for each atom.
-            coords: Cartesian coordinates, shape ``(N, 3)``, in Å.
-            bond_tolerance: Multiplier applied to the sum of covalent radii.
-
-        Returns:
-            dict: Mapping of atom index to list of bonded atom indices.
-
-        """
-        from q2mm.models.molecule import COVALENT_RADII
-
-        bonds = {i: [] for i in range(len(atoms))}
-        for i in range(len(atoms)):
-            for j in range(i + 1, len(atoms)):
-                ri = COVALENT_RADII.get(atoms[i], 0.76)
-                rj = COVALENT_RADII.get(atoms[j], 0.76)
-                dist = np.linalg.norm(coords[i] - coords[j])
-                if dist < bond_tolerance * (ri + rj):
-                    bonds[i].append(j)
-                    bonds[j].append(i)
-        return bonds
 
     # Atomic numbers and masses for standalone .prm generation
     _ATOMIC_DATA: dict[str, tuple[int, float, int]] = {
@@ -488,13 +480,12 @@ class TinkerEngine(MMEngine):
             raise RuntimeError(f"Tinker {exe_name} failed (exit {result.returncode}):\n{result.stderr}")
         return result
 
-    def energy(self, structure: str | Molecule, forcefield: ForceField | dict[str, int] | None = None) -> float:
+    def _evaluate_energy(self, structure: Molecule, forcefield: ForceField) -> float:
         """Calculate MM energy in kcal/mol.
 
         Args:
-            structure (str | Molecule): Path to XYZ file or :class:`Molecule`.
-            forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
-                types if ``None``.
+            structure (Molecule): Molecule to evaluate.
+            forcefield (ForceField): Force field with the parameter values.
 
         Returns:
             float: Total potential energy in kcal/mol.
@@ -511,18 +502,17 @@ class TinkerEngine(MMEngine):
                     return float(line.split(":")[1].split()[0])
         raise RuntimeError(f"Could not parse energy from Tinker output:\n{result.stdout}")
 
-    def minimize(
+    def _evaluate_minimize(
         self,
-        structure: str | Molecule,
-        forcefield: ForceField | dict[str, int] | None = None,
+        structure: Molecule,
+        forcefield: ForceField,
         rms_grad: float = 0.01,
     ) -> tuple[float, list[str], np.ndarray]:
         """Energy-minimize structure.
 
         Args:
-            structure (str | Molecule): Path to XYZ file or :class:`Molecule`.
-            forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
-                types if ``None``.
+            structure (Molecule): Molecule to minimize.
+            forcefield (ForceField): Force field with the parameter values.
             rms_grad: RMS gradient convergence criterion in kcal/mol/Å.
 
         Returns:
@@ -564,7 +554,7 @@ class TinkerEngine(MMEngine):
 
             return energy, atoms, np.array(coords)
 
-    def hessian(self, structure: str | Molecule, forcefield: ForceField | dict[str, int] | None = None) -> np.ndarray:
+    def _evaluate_hessian(self, structure: Molecule, forcefield: ForceField) -> np.ndarray:
         """Calculate MM Hessian matrix via Tinker ``testhess``.
 
         Calls ``testhess`` to compute the analytical Cartesian Hessian,
@@ -573,8 +563,8 @@ class TinkerEngine(MMEngine):
         unit contract (Hartree/Bohr²).
 
         Args:
-            structure (str | Molecule): Path to XYZ file or :class:`Molecule`.
-            forcefield (ForceField | dict | None): Force field or atom-type mapping.
+            structure (Molecule): Molecule to evaluate.
+            forcefield (ForceField): Force field with the parameter values.
 
         Returns:
             np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
@@ -646,18 +636,16 @@ class TinkerEngine(MMEngine):
             # Tinker outputs Hessian in kcal/(mol·Å²); convert to Hartree/Bohr²
             return hessian * KCALMOLA2_TO_HESSIAN_AU
 
-    def frequencies(
-        self, structure: str | Molecule, forcefield: ForceField | dict[str, int] | None = None, **kwargs: Any
+    def _evaluate_frequencies(
+        self, structure: Molecule, forcefield: ForceField, on_error: str = "raise"
     ) -> list[float]:
         """Calculate vibrational frequencies in cm⁻¹.
 
         Args:
-            structure (str | Molecule): Path to XYZ file or :class:`Molecule`.
-            forcefield (ForceField | dict | None): Force field or atom-type mapping. Uses default MM3
-                types if ``None``.
-            **kwargs: Forwarded to
-                :func:`~q2mm.models.hessian.hessian_to_frequencies`
-                (e.g. ``on_error="penalty"``).
+            structure (Molecule): Molecule to evaluate.
+            forcefield (ForceField): Force field with the parameter values.
+            on_error: Forwarded to
+                :func:`~q2mm.models.hessian.hessian_to_frequencies`.
 
         Returns:
             list[float]: Vibrational frequencies in cm⁻¹.
@@ -665,14 +653,72 @@ class TinkerEngine(MMEngine):
         """
         from q2mm.models.hessian import hessian_to_frequencies
 
-        hessian_au = self.hessian(structure, forcefield)
+        hessian_au = self._evaluate_hessian(structure, forcefield)
+        symbols = list(structure.symbols)
+        return hessian_to_frequencies(hessian_au, symbols, on_error=on_error)
 
-        if isinstance(structure, Molecule):
-            symbols = list(structure.symbols)
-        else:
-            with open(structure) as f:
-                lines = f.readlines()
-            n_atoms = int(lines[0].strip())
-            symbols = [lines[2 + i].split()[0] for i in range(n_atoms)]
 
-        return hessian_to_frequencies(hessian_au, symbols, **kwargs)
+class PreparedTinker(AbstractPreparedBackend):
+    """Prepared Tinker session for a single training case.
+
+    Owns the molecule, base force field, and parameter layout.  Tinker has no
+    reusable native state, so each evaluation reconstructs the force field from
+    the incoming full parameter vector and shells out.
+    """
+
+    def __init__(
+        self,
+        *,
+        backend: TinkerBackend,
+        case_id: str,
+        molecule: Molecule,
+        force_field: ForceField,
+        layout: ParameterLayout,
+    ) -> None:
+        super().__init__(
+            info=_TINKER_INFO,
+            case_id=case_id,
+            molecule=molecule,
+            force_field=force_field,
+            layout=layout,
+        )
+        self._backend = backend
+
+    def _ff_for(self, parameters: np.ndarray) -> ForceField:
+        vec = self._validate_vector(parameters)
+        return self.layout.replace(self.force_field, vec)
+
+    def _energy(self, request: EnergyRequest) -> EnergyResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        value = self._backend._evaluate_energy(self.molecule, ff)
+        return EnergyResult(energy=float(value), unit=EnergyUnit.KCAL_PER_MOL, provenance=_TINKER_PROVENANCE)
+
+    def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        rms_grad = request.tolerance if request.tolerance is not None else 0.01
+        energy, atoms, coords = self._backend._evaluate_minimize(self.molecule, ff, rms_grad=rms_grad)
+        return GeometryResult(
+            energy=float(energy),
+            energy_unit=EnergyUnit.KCAL_PER_MOL,
+            symbols=tuple(atoms),
+            coordinates=readonly_array(coords),
+            coordinate_unit=LengthUnit.ANGSTROM,
+            provenance=_TINKER_PROVENANCE,
+        )
+
+    def _hessian(self, request: HessianRequest) -> HessianResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        hess = self._backend._evaluate_hessian(self.molecule, ff)
+        return HessianResult(
+            hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=_TINKER_PROVENANCE
+        )
+
+    def _frequencies(self, request: FrequencyRequest) -> FrequencyResult:  # type: ignore[override]
+        ff = self._ff_for(request.parameters)
+        try:
+            freqs = self._backend._evaluate_frequencies(self.molecule, ff, on_error=request.on_error)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"Tinker frequency evaluation failed: {exc}") from exc
+        return FrequencyResult(
+            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=_TINKER_PROVENANCE
+        )

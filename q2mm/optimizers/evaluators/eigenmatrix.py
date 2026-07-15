@@ -11,9 +11,13 @@ from typing import Any
 
 import numpy as np
 
-from q2mm.backends.base import MMEngine
-from q2mm.models.forcefield import ForceField
-from q2mm.models.molecule import Molecule
+from q2mm.backends.contracts import (
+    Capability,
+    HessianJacobianRequest,
+    HessianRequest,
+    PreparedBackend,
+    UnsupportedCapabilityError,
+)
 from q2mm.models.observations import Observation
 
 
@@ -50,20 +54,17 @@ class EigenmatrixEvaluator:
 
     def compute(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
         *,
-        structure: Any | None = None,
         mol_idx: int = 0,
     ) -> EigenmatrixResult:
         """Compute MM eigenmatrix by projecting MM Hessian onto QM eigenvectors.
 
         Args:
-            engine: The MM backend.
-            mol: The molecule being evaluated (must have a QM Hessian).
-            ff: The current force field.
-            structure: Optional pre-built engine context/handle.
+            prepared: The prepared per-case backend session (its molecule must
+                have a QM Hessian).
+            parameters: Full parameter vector.
             mol_idx: Molecule index for eigenvector caching.
 
         Returns:
@@ -75,8 +76,8 @@ class EigenmatrixEvaluator:
         """
         from q2mm.models.hessian import mass_weighted_eigenmatrix, mass_weighted_normal_modes
 
-        target = structure if structure is not None else mol
-        mm_hess = engine.hessian(target, ff)
+        mol = prepared.molecule
+        mm_hess = np.asarray(prepared.hessian(HessianRequest(parameters=parameters)).hessian)
 
         if mol_idx not in self._qm_eigenvectors:
             if mol.hessian is None:
@@ -140,27 +141,25 @@ class EigenmatrixEvaluator:
             return float(computed.eigenmatrix[row, col])
         raise ValueError(f"EigenmatrixEvaluator cannot handle kind: {ref.kind}")
 
-    def supports_analytical_gradient(self, engine: MMEngine) -> bool:
-        """Check if the engine supports Hessian parameter Jacobians.
+    def supports_analytical_gradient(self, prepared: PreparedBackend) -> bool:
+        """Check if the backend declares Hessian parameter Jacobians.
 
         Args:
-            engine: The MM backend to check.
+            prepared: The prepared backend session to check.
 
         Returns:
-            ``True`` if the engine supports ``hessian_and_param_jacobian()``.
+            ``True`` if the backend declares ``HESSIAN_PARAMETER_JACOBIAN``.
 
         """
-        return engine.supports_analytical_hessian_gradients()
+        return prepared.info.supports(Capability.HESSIAN_PARAMETER_JACOBIAN)
 
     def gradient(
         self,
-        engine: MMEngine,
-        mol: Molecule,
-        ff: ForceField,
+        prepared: PreparedBackend,
+        parameters: np.ndarray,
         references: list[Observation],
         n_params: int,
         *,
-        structure: Any | None = None,
         mol_idx: int = 0,
     ) -> np.ndarray:
         """Compute analytical gradient of the eigenmatrix score contribution.
@@ -169,12 +168,11 @@ class EigenmatrixEvaluator:
         Q is the (constant) QM eigenvector matrix.
 
         Args:
-            engine: The MM backend (must support Hessian parameter Jacobians).
-            mol: The molecule being evaluated (must have a QM Hessian).
-            ff: The current force field.
+            prepared: The prepared backend session (must support Hessian
+                parameter Jacobians; its molecule must have a QM Hessian).
+            parameters: Full parameter vector.
             references: Reference eigenmatrix values for this molecule.
             n_params: Length of the gradient vector.
-            structure: Optional pre-built engine context/handle.
             mol_idx: Molecule index for QM eigenvector caching.
 
         Returns:
@@ -183,14 +181,13 @@ class EigenmatrixEvaluator:
         """
         from q2mm.models.hessian import mass_weight_scale_3n, mass_weighted_normal_modes
 
-        if not engine.supports_analytical_hessian_gradients():
-            raise TypeError(
-                f"{engine.name} does not support hessian_and_param_jacobian(). "
-                "Cannot compute analytical eigenmatrix gradient."
-            )
+        if not prepared.info.supports(Capability.HESSIAN_PARAMETER_JACOBIAN):
+            raise UnsupportedCapabilityError(prepared.info.name, Capability.HESSIAN_PARAMETER_JACOBIAN)
 
-        target = structure if structure is not None else mol
-        hess, dH_dp = engine.hessian_and_param_jacobian(target, ff)
+        mol = prepared.molecule
+        result = prepared.hessian_parameter_jacobian(HessianJacobianRequest(parameters=parameters))
+        hess = np.asarray(result.hessian)
+        dH_dp = np.asarray(result.jacobian)
 
         # Get cached QM normal modes (or compute and cache)
         if mol_idx not in self._qm_eigenvectors:
