@@ -59,7 +59,7 @@ area are linked in the table below.
 | GPU | Subprocess; depends on backend | [In-process CUDA](../benchmarks/gpu.md) (OpenMM, JAX, JAX-MD) |
 | Functional forms | MM3 only (implicit) | [MM3 + Harmonic](architecture.md) (explicit enum) |
 | Force field model | Format-coupled (`ParamMM3`) | [Format-agnostic `ForceField` dataclass](#evaluators-force-field-model) |
-| Diagnostics | [Utility scripts](https://github.com/Q2MM/q2mm/tree/b26404b/tools) | [Full CLI benchmark suite](#diagnostics) |
+| Benchmarking | [Utility scripts](https://github.com/Q2MM/q2mm/tree/b26404b/tools) | [Full `q2mm-benchmark` CLI](#benchmarking) |
 | Test suite | [9 test files](https://github.com/Q2MM/q2mm/tree/b26404b/test) | 1,100+ unit tests |
 
 ---
@@ -182,12 +182,16 @@ for honest context, then use the merged system pages for the detailed comparison
 
 ---
 
-## Diagnostics
+## Benchmarking
 
 q2mm/q2mm includes a [`tools/`](https://github.com/Q2MM/q2mm/tree/b26404b/tools)
 directory with utility scripts (score graphing, FF formatting, structure
 setup) and a test suite.
 
-q2mm (this repo) provides a CLI diagnostics suite: benchmark matrix runner,
-system registry (CH₃F, Rh-enamide), JSON result archival, leaderboard reports,
-parameter comparison tables, Hessian quality checks, and PES distortion scans.
+q2mm (this repo) provides the `q2mm-benchmark` CLI: explicit `list`,
+`preflight`, `single`, `batch`, `matrix`, and `load` operations over a
+lazy system registry (CH₃F, Rh-enamide, Heck relay, …). Every requested
+candidate is resolved to a provenance-complete run profile, evaluated
+against one acceptance policy, and persisted incrementally; only accepted
+candidates are promoted to canonical result/force-field names. Frequency
+and PES-distortion analysis run as benchmark analysis inside the runner.

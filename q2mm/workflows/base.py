@@ -102,6 +102,7 @@ class Workflow(Protocol):
         optimizer: _Optimizer,
         *,
         n_evals: int = 1,
+        regularization: float = 0.0,
     ) -> OptimizationResult:
         """Execute the workflow and return the canonical result.
 
@@ -111,6 +112,9 @@ class Workflow(Protocol):
             optimizer: Pre-configured optimizer.
             n_evals: Real-objective samples at the initial and final
                 parameters for noise-floor quantification (``0`` skips).
+            regularization: Non-negative L2 penalty threaded into every
+                :class:`~q2mm.objectives.plan.ObjectivePlan` the workflow
+                compiles, so optimization and reporting share one objective.
 
         """
         ...

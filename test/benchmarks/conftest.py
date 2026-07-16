@@ -46,7 +46,6 @@ from test._shared import (
     CH3F_HESS,
     CH3F_MODES,
     CH3F_XYZ,
-    REPO_ROOT,
 )
 
 if TYPE_CHECKING:
@@ -192,34 +191,3 @@ def jax_md_backend() -> object:
         pytest.skip("JAX-MD not available")
 
     return load_backend("jax-md")
-
-
-# ---------------------------------------------------------------------------
-# Archived benchmark results (golden values)
-# ---------------------------------------------------------------------------
-
-_BENCHMARK_DIR = REPO_ROOT / "benchmarks" / "ch3f" / "results"
-
-
-@pytest.fixture(scope="session")
-def golden_results() -> dict[str, dict[str, object]]:
-    """Load archived benchmark JSON results keyed by filename stem.
-
-    Only loads BenchmarkResult-shaped JSONs (must contain ``metadata``
-    and ``default_ff`` keys).  Cycling logs and error-only results are
-    skipped.
-
-    Returns a dict like ``{"ch3f_openmm_mm3_cpu_lbfgsb": {...}, ...}``.
-    """
-    import json
-
-    results: dict[str, dict[str, object]] = {}
-    if not _BENCHMARK_DIR.exists():
-        pytest.skip("Archived benchmark results not found")
-    for path in sorted(_BENCHMARK_DIR.glob("*.json")):
-        with open(path) as fh:
-            data = json.load(fh)
-        if "metadata" not in data or not data.get("default_ff"):
-            continue
-        results[path.stem] = data
-    return results

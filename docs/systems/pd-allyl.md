@@ -86,7 +86,7 @@ Per-category fit of the optimized force field (post-L-BFGS-B):
 | eig_diagonal | 2,412 | −2.82 |
 
 These numbers are from the published-start baseline. Reproduce with
-`scripts/benchmark.py --starting-point published --system pd-allyl --n-evals 10`;
+`q2mm-benchmark single --starting-point published --system pd-allyl --n-evals 10`;
 raw JSON output with provenance lives at
 [`q2mm-data/benchmarks/pd-allyl-amination/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/from-published).
 The canonical QFUERZA-start results (current default since q2mm#290)
@@ -149,7 +149,7 @@ Configure both `Q2MM_SUPPORTING_INFO` and `Q2MM_MM3_BASE` as described in
 before running this command.
 
 ```bash
-python -m q2mm.diagnostics.cli --system pd-allyl --backend jax --optimizer optax-adam-cosine
+q2mm-benchmark matrix --system pd-allyl --backend jax --optimizer optax-adam-cosine
 ```
 
 Raw data: [`q2mm-data/benchmarks/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks) → `pd-allyl-amination/`.

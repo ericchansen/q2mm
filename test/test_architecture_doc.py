@@ -62,6 +62,22 @@ _REQUIRED_PHASE2_PATHS = (
     PACKAGE_ROOT / "objectives" / "jax.py",
     PACKAGE_ROOT / "objectives" / "metrics.py",
 )
+_REQUIRED_PHASE5_PATHS = (
+    PACKAGE_ROOT / "benchmarks" / "profiles.py",
+    PACKAGE_ROOT / "benchmarks" / "acceptance.py",
+    PACKAGE_ROOT / "benchmarks" / "runner.py",
+    PACKAGE_ROOT / "benchmarks" / "cli.py",
+)
+_DELETED_PHASE5_PATHS = (
+    PACKAGE_ROOT / "benchmark_runner.py",
+    PACKAGE_ROOT / "diagnostics",
+    PACKAGE_ROOT / "diagnostics" / "benchmark.py",
+    PACKAGE_ROOT / "diagnostics" / "cli.py",
+    PACKAGE_ROOT / "diagnostics" / "report.py",
+    PACKAGE_ROOT / "diagnostics" / "tables.py",
+    PACKAGE_ROOT / "diagnostics" / "pes_distortion.py",
+    REPO_ROOT / "scripts" / "benchmark.py",
+)
 _DELETED_PHASE1_MODULES = frozenset(
     {
         "datum.py",
@@ -173,6 +189,87 @@ def test_phase2_module_surface_is_present() -> None:
         assert path.exists(), f"{path.relative_to(REPO_ROOT)} is part of the phase-2 surface and should exist on disk."
 
 
+def test_phase5_module_surface_is_present() -> None:
+    """The phase-5 benchmark package exists and the superseded modules are gone."""
+    for path in _DELETED_PHASE5_PATHS:
+        assert not path.exists(), (
+            f"{path.relative_to(REPO_ROOT)} was superseded by the q2mm.benchmarks package and should stay deleted."
+        )
+    for path in _REQUIRED_PHASE5_PATHS:
+        assert path.exists(), f"{path.relative_to(REPO_ROOT)} is part of the phase-5 benchmark package and must exist."
+
+
+_DELETED_API_LITERALS = (
+    "benchmark_runner",
+    "q2mm.diagnostics",
+    "scripts/benchmark.py",
+    "TablePrinter",
+    "BenchmarkResult",
+    "run_combo",
+)
+
+# Files/dirs allowed to mention the deleted names: this deletion-audit file,
+# historical changelogs, and frozen golden fixtures/metadata.
+_AUDIT_ALLOWED = (
+    REPO_ROOT / "test" / "test_architecture_doc.py",
+    REPO_ROOT / "CHANGELOG.md",
+)
+_AUDIT_ROOTS = ("q2mm", "scripts", "examples", "docs", ".copilot")
+_AUDIT_TOP_FILES = ("README.md", "AGENTS.md", "CONTRIBUTING.md")
+
+
+def _audit_files() -> list[Path]:
+    files: list[Path] = []
+    for name in _AUDIT_TOP_FILES:
+        p = REPO_ROOT / name
+        if p.is_file():
+            files.append(p)
+    for root in _AUDIT_ROOTS:
+        base = REPO_ROOT / root
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if not path.is_file() or "__pycache__" in path.parts:
+                continue
+            if path.suffix.lower() in {".py", ".md", ".sh", ".toml", ".cfg", ".yml", ".yaml"}:
+                files.append(path)
+    return files
+
+
+def test_no_deleted_api_literals_in_current_surface() -> None:
+    """No deleted benchmark/diagnostics API name survives in a live surface.
+
+    The deletion-audit test itself, historical changelogs, and frozen
+    fixtures may still reference the old names; every other current file
+    (docs, instructions, code, scripts, examples) must be clean.
+    """
+    allowed = {p.resolve() for p in _AUDIT_ALLOWED}
+    offenders: dict[str, list[str]] = {}
+    for path in _audit_files():
+        if path.resolve() in allowed:
+            continue
+        # Skip frozen golden fixtures (JSON metadata snapshots).
+        if "golden" in path.parts or path.name.endswith(".golden.json"):
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        hits = [name for name in _DELETED_API_LITERALS if name in text]
+        if hits:
+            offenders[path.relative_to(REPO_ROOT).as_posix()] = hits
+    assert not offenders, f"deleted-API literals leaked into current surfaces: {offenders}"
+
+
+def test_no_duplicate_benchmark_or_metric_modules() -> None:
+    """There is exactly one runner, one metrics module, and one results model."""
+    real = _real_module_counts()
+    assert real["runner.py"] == 1, "expected exactly one benchmarks/runner.py"
+    assert real["metrics.py"] == 1, "expected exactly one objectives/metrics.py"
+    assert real["results.py"] == 1, "expected exactly one models/results.py"
+    # The old parallel benchmark/diagnostics stack must be fully gone.
+    assert real["benchmark_runner.py"] == 0
+    assert real["tables.py"] == 0
+    assert real["report.py"] == 0
+
+
 def test_module_tree_sanity() -> None:
     """The parser found a non-trivial tree (guards against a silent no-op)."""
     documented = _documented_module_counts()
@@ -186,16 +283,15 @@ def test_module_tree_sanity() -> None:
 
 _MODELS_ROOT = PACKAGE_ROOT / "models"
 # Every one of these depends on q2mm.models (parsers/serializers, MM
-# backends, optimizers, workflows, benchmark registry, diagnostics) —
-# never the other way around. A models/*.py file importing any of them
-# would create a layering violation (and a real risk of import cycles).
+# backends, optimizers, workflows, benchmark registry) — never the other
+# way around. A models/*.py file importing any of them would create a
+# layering violation (and a real risk of import cycles).
 _FORBIDDEN_OUTER_LAYERS = (
     "q2mm.io",
     "q2mm.backends",
     "q2mm.optimizers",
     "q2mm.workflows",
     "q2mm.benchmarks",
-    "q2mm.diagnostics",
 )
 
 
@@ -234,11 +330,11 @@ def test_models_package_never_imports_outer_layers() -> None:
     """``q2mm.models`` is the foundational layer; it must never import outer layers.
 
     Outer layers include ``q2mm.io``, ``q2mm.backends``, ``q2mm.optimizers``,
-    ``q2mm.workflows``, ``q2mm.benchmarks``, and ``q2mm.diagnostics``, all of
-    which depend on ``q2mm.models`` and not the reverse. This check walks
-    the entire AST of every ``q2mm/models/*.py`` file, including nested
-    function bodies, not just module-top-level statements, so a lazy,
-    function-scoped import of an outer layer is caught too.
+    ``q2mm.workflows``, and ``q2mm.benchmarks``, all of which depend on
+    ``q2mm.models`` and not the reverse. This check walks the entire AST of
+    every ``q2mm/models/*.py`` file, including nested function bodies, not
+    just module-top-level statements, so a lazy, function-scoped import of
+    an outer layer is caught too.
 
     Regression guards for two real phase-2 layering violations:
 
@@ -270,3 +366,107 @@ def test_models_package_never_imports_outer_layers() -> None:
         f"the reverse), or introduce a dependency-free top-level helper (see "
         f"q2mm/_jax_support.py) for optional heavy-dependency imports."
     )
+
+
+# ---------------------------------------------------------------------------
+# Full layer-graph import-direction guard
+# ---------------------------------------------------------------------------
+
+# The dependency direction is "a package may import layers to its left":
+#
+#   constants/elements <- models <- backends <- objectives <- optimizers
+#       <- workflows <- benchmarks/CLI
+#
+# q2mm.io is a model-dependent boundary composed by apps/benchmarks. Each
+# entry maps a package directory to the dotted-module prefixes it must NOT
+# import. Concrete backend *engines* (jax_engine/openmm/tinker/jax_md_engine)
+# are called out explicitly for optimizers/workflows, which receive an
+# evaluator + parameter space and never construct an engine.
+_ENGINE_PREFIXES = (
+    "q2mm.backends.mm.jax_engine",
+    "q2mm.backends.mm.jax_md_engine",
+    "q2mm.backends.mm.openmm",
+    "q2mm.backends.mm.tinker",
+    "q2mm.backends.qm",
+)
+_LAYER_FORBIDDEN: dict[str, tuple[str, ...]] = {
+    "io": ("q2mm.objectives", "q2mm.optimizers", "q2mm.workflows", "q2mm.benchmarks"),
+    "objectives": ("q2mm.optimizers", "q2mm.workflows", "q2mm.benchmarks"),
+    "optimizers": (*_ENGINE_PREFIXES, "q2mm.workflows", "q2mm.benchmarks"),
+    "workflows": (*_ENGINE_PREFIXES, "q2mm.benchmarks"),
+}
+
+
+def test_layer_import_direction() -> None:
+    """Enforce the final left-to-right dependency direction across packages.
+
+    Walks the entire AST of every module in each package (lazy and eager
+    imports alike) and fails if any package imports a forbidden higher
+    layer. This is the composition-root guarantee: benchmarks compose the
+    lower layers, and no lower layer reaches back up into optimizers,
+    workflows, benchmarks, or a concrete backend engine.
+    """
+    violations: dict[str, list[str]] = {}
+    for package, forbidden in _LAYER_FORBIDDEN.items():
+        for path in (PACKAGE_ROOT / package).rglob("*.py"):
+            if "__pycache__" in path.parts:
+                continue
+            bad = sorted(
+                mod
+                for mod in _imported_dotted_modules(path)
+                if any(mod == layer or mod.startswith(layer + ".") for layer in forbidden)
+            )
+            if bad:
+                violations[str(path.relative_to(PACKAGE_ROOT))] = bad
+    assert not violations, f"import-direction violations (a package imports a higher layer): {violations}"
+
+
+def test_benchmarks_is_the_composition_root() -> None:
+    """No module outside q2mm.benchmarks may import q2mm.benchmarks."""
+    offenders: dict[str, list[str]] = {}
+    for path in PACKAGE_ROOT.rglob("*.py"):
+        if "__pycache__" in path.parts:
+            continue
+        rel = path.relative_to(PACKAGE_ROOT)
+        if rel.parts and rel.parts[0] == "benchmarks":
+            continue
+        bad = sorted(
+            m for m in _imported_dotted_modules(path) if m == "q2mm.benchmarks" or m.startswith("q2mm.benchmarks.")
+        )
+        if bad:
+            offenders[str(rel)] = bad
+    assert not offenders, f"lower layers must not import the benchmarks composition root: {offenders}"
+
+
+# ---------------------------------------------------------------------------
+# Benchmark system registry: one concrete module per scientific system
+# ---------------------------------------------------------------------------
+
+_EXPECTED_SYSTEM_KEYS = frozenset(
+    {"ch3f", "ch3f-sn2", "rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate"}
+)
+
+
+def test_registry_maps_every_key_to_one_concrete_module() -> None:
+    """Every registry key resolves to exactly one importable system module."""
+    from q2mm.benchmarks.systems import SYSTEM_KEYS
+    from q2mm.benchmarks.systems import _REGISTRY  # type: ignore[attr-defined]
+
+    assert set(SYSTEM_KEYS) == _EXPECTED_SYSTEM_KEYS
+    assert set(_REGISTRY) == _EXPECTED_SYSTEM_KEYS
+    seen_modules: set[str] = set()
+    systems_dir = PACKAGE_ROOT / "benchmarks" / "systems"
+    for key, module_path in _REGISTRY.items():
+        assert module_path not in seen_modules, f"registry key {key!r} shares a module with another key"
+        seen_modules.add(module_path)
+        rel = module_path.removeprefix("q2mm.benchmarks.systems.").replace(".", "/") + ".py"
+        assert (systems_dir / rel).is_file(), f"registry key {key!r} points at missing module {module_path!r}"
+
+
+def test_no_monolithic_systems_module() -> None:
+    """The one-module-per-system split leaves no monolithic systems.py."""
+    assert not (PACKAGE_ROOT / "benchmarks" / "systems.py").exists()
+    assert not (PACKAGE_ROOT / "systems.py").exists()
+    # CH3F ground state and CH3F-SN2 remain distinct modules.
+    assert (PACKAGE_ROOT / "benchmarks" / "systems" / "ch3f.py").is_file()
+    assert (PACKAGE_ROOT / "benchmarks" / "systems" / "ch3f_sn2.py").is_file()

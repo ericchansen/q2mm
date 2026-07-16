@@ -121,9 +121,11 @@ print(f"Bonds: {len(ff.bonds)}, Angles: {len(ff.angles)}")
 q2mm/
 ├── io/            # File format I/O (Gaussian, Jaguar, MM3, MOL2, AMBER, etc.)
 ├── backends/      # QM/MM backend integrations (OpenMM, Tinker, JAX, Psi4)
-├── diagnostics/   # Benchmarking and convergence analysis
 ├── models/        # Molecule/force-field models + QFUERZA estimation
-└── optimizers/    # Optimizers that consume objective executors
+├── objectives/    # Objective plans, executors, and fit metrics
+├── optimizers/    # Optimizers that consume objective executors
+├── workflows/     # Multi-stage parameterization workflows
+└── benchmarks/    # Benchmark systems, run profiles, acceptance, and the runner
 ```
 
 ## Next steps

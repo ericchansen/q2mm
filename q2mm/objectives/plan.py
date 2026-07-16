@@ -29,8 +29,8 @@ __all__ = ["ObjectivePlan", "KIND_TO_CATEGORY"]
 
 
 # Map every observation kind to its evaluator category.  This is the one
-# canonical, immutable kind→category vocabulary shared by both executors, the
-# metrics module, and diagnostics.
+# canonical, immutable kind->category vocabulary shared by both executors, the
+# metrics module, and the benchmark runner.
 KIND_TO_CATEGORY: MappingProxyType[str, str] = MappingProxyType(
     {
         "energy": "energy",

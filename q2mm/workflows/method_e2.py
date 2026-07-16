@@ -152,6 +152,7 @@ class MethodE2Workflow:
         optimizer: _Optimizer,
         *,
         n_evals: int = 1,
+        regularization: float = 0.0,
     ) -> OptimizationResult:
         """Execute the two-stage Method E2 protocol; return the canonical result."""
         layout = problem.layout
@@ -159,7 +160,7 @@ class MethodE2Workflow:
         fingerprint = layout.fingerprint
 
         # --- Round 1: Method D (unmodified Hessian) ---
-        plan_round1 = ObjectivePlan.from_problem(problem)
+        plan_round1 = ObjectivePlan.from_problem(problem, regularization=regularization)
         obj_round1 = make_evaluator(plan_round1)
         t0 = time.perf_counter()
         round1_result = optimizer.optimize(obj_round1, problem.active_space)

@@ -104,7 +104,7 @@ Per-category fit of the optimized force field (post-L-BFGS-B):
 | eig_diagonal | 1,395 | 0.968 |
 
 These numbers are from the published-start baseline. Reproduce with
-`scripts/benchmark.py --starting-point published --system rh-enamide`;
+`q2mm-benchmark single --starting-point published --system rh-enamide`;
 raw JSON output with provenance lives at
 [`q2mm-data/benchmarks/rh-enamide/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-enamide/from-published).
 The canonical QFUERZA-start results (current default since q2mm#290)
@@ -188,7 +188,7 @@ before running this command.
 
 ```bash
 # Multi-target (correct methodology)
-python -m q2mm.diagnostics.cli --system rh-enamide --backend jax --optimizer scipy-lbfgsb
+q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb
 ```
 
 Raw data: [`q2mm-data/benchmarks/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks) → `rh-enamide/`.

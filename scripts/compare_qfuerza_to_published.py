@@ -36,8 +36,8 @@ from q2mm.models.forcefield import ForceField  # noqa: E402
 def _load_published(system_key: str) -> tuple[ForceField, frozenset[int], frozenset[int]]:
     """Load the published (literature, verbatim OPT values) FF for a system.
 
-    Uses the ``starting_point="published"`` load path — the same one
-    ``q2mm.benchmark_runner`` uses for publication-baseline runs — so
+    Uses the ``starting_point="published"`` load path — the same one the
+    ``q2mm-benchmark`` runner uses for publication-baseline runs — so
     this script never re-implements per-system path resolution.
 
     Returns:
@@ -245,7 +245,7 @@ def main() -> int:
     args = ap.parse_args()
 
     pub, active_bonds, active_angles = _load_published(args.system)
-    opt = load_mm3_fld(args.optimized, include_standard=False)
+    opt = load_mm3_fld(args.optimized, include_standard=True)
     diffs = list(_iter_diffs(pub, opt, active_bonds, active_angles))
 
     md_parts = [

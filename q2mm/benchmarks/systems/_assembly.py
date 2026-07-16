@@ -412,7 +412,7 @@ def assemble_qfuerza_fresh_case(
     if normal_modes_path is not None:
         modes_path = normal_modes_path(data_dir)
         if modes_path is not None and modes_path.exists():
-            from q2mm.diagnostics.pes_distortion import load_normal_modes
+            from q2mm.io.reference import load_normal_modes
 
             normal_modes = load_normal_modes(modes_path)
 

@@ -166,72 +166,7 @@ class TestFrequencyParity:
 
 
 # ---------------------------------------------------------------------------
-# Golden-value validation (archived benchmark results)
+# Golden-value validation against archived benchmark results was removed;
+# canonical benchmark artifacts now live in the ``q2mm-data`` repo and are
+# validated there.
 # ---------------------------------------------------------------------------
-
-
-class TestGoldenValues:
-    """Validate current backend output against archived benchmark results."""
-
-    @pytest.mark.openmm
-    def test_openmm_frequencies_match_golden(
-        self,
-        openmm_backend: object,
-        ch3f_mol: Molecule,
-        ch3f_ff: ForceField,
-        golden_results: dict[str, dict[str, object]],
-    ) -> None:
-        """Current OpenMM frequencies should match archived values."""
-        key = "ch3f_openmm_mm3_cpu_lbfgsb"
-        if key not in golden_results:
-            pytest.skip(f"No golden result for {key}")
-
-        golden_default_freqs = golden_results[key]["default_ff"]["frequencies_cm1"]
-        n_golden = len(golden_default_freqs)
-
-        # Backend returns all 3N modes; archived results store only 3N-6.
-        current_freqs = [
-            float(f)
-            for f in prepare_case(openmm_backend, ch3f_mol, ch3f_ff)
-            .frequencies(FrequencyRequest(parameters=param_vector(ch3f_ff)))
-            .frequencies
-        ]
-        current_vib = current_freqs[-n_golden:]
-
-        np.testing.assert_allclose(
-            current_vib,
-            golden_default_freqs,
-            atol=0.1,
-            err_msg="OpenMM default-FF frequencies drifted from archived values",
-        )
-
-    @pytest.mark.openmm
-    def test_qm_reference_consistency(
-        self,
-        ch3f_qm_freqs: np.ndarray,
-        golden_results: dict[str, dict[str, object]],
-    ) -> None:
-        """QM reference frequencies should match what the benchmarks used."""
-        key = "ch3f_openmm_mm3_cpu_lbfgsb"
-        if key not in golden_results:
-            pytest.skip(f"No golden result for {key}")
-
-        archived_qm = np.asarray(golden_results[key]["qm_reference"]["frequencies_cm1"])
-        np.testing.assert_allclose(
-            ch3f_qm_freqs,
-            archived_qm,
-            atol=1e-6,
-            err_msg="QM reference frequencies differ from archived benchmark",
-        )
-
-    def test_golden_rmsd_sanity(
-        self,
-        golden_results: dict[str, dict[str, object]],
-    ) -> None:
-        """All archived benchmarks should have optimized RMSD < default RMSD."""
-        for name, result in golden_results.items():
-            default_rmsd = result["default_ff"]["rmsd"]
-            optimized_rmsd = result["optimized"]["rmsd"]
-            assert optimized_rmsd < default_rmsd, (
-                f"{name}: optimized RMSD ({optimized_rmsd:.1f}) >= default ({default_rmsd:.1f})"
-            )

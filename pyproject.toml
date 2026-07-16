@@ -114,7 +114,7 @@ all = [
 ]
 
 [project.scripts]
-q2mm-benchmark = "q2mm.diagnostics.cli:main"
+q2mm-benchmark = "q2mm.benchmarks.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ericchansen/q2mm"
@@ -227,10 +227,6 @@ module = [
   "q2mm.backends.mm.tinker",
   "q2mm.backends.qm.psi4",
   "q2mm.backends.registry",
-  "q2mm.benchmark_runner",
-  "q2mm.diagnostics.benchmark",
-  "q2mm.diagnostics.cli",
-  "q2mm.diagnostics.tables",
   "q2mm.io._helpers",
   "q2mm.io.amber",
   "q2mm.io.cmap",

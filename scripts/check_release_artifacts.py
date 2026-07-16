@@ -305,6 +305,40 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
         env=environment,
         stdout=subprocess.DEVNULL,
     )
+    # The `list` subcommand must be side-effect-free (cheap backend catalog
+    # probes only, no device/XLA/CUDA init) and work in a fresh install.
+    subprocess.run(
+        [str(cli), "list"],
+        check=True,
+        cwd=destination,
+        env=environment,
+        stdout=subprocess.DEVNULL,
+    )
+    # An installed single run against a registered-but-unavailable backend must
+    # terminate as a persisted skipped candidate (exit 0), exercising the full
+    # CLI wiring without requiring any optional backend in the smoke venv.
+    # (An *unknown* backend is a configuration error and would exit non-zero.)
+    single_out = destination / "cli-single"
+    subprocess.run(
+        [
+            str(cli),
+            "single",
+            "--system",
+            "ch3f",
+            "--backend",
+            "openmm",
+            "--optimizer",
+            "scipy-lbfgsb",
+            "--output",
+            str(single_out),
+        ],
+        check=True,
+        cwd=destination,
+        env=environment,
+        stdout=subprocess.DEVNULL,
+    )
+    if not list((single_out / "candidates").glob("*.json")):
+        raise ArtifactContractError("installed `q2mm-benchmark single` wrote no candidate record")
     smoke_code = """
 import numpy as np
 from q2mm.backends.contracts import (
@@ -357,7 +391,7 @@ class SmokeBackend:
 validate_sn2_resources()
 case = load_system("ch3f", backend=SmokeBackend(), functional_form="harmonic")
 assert case.problem.molecules[0].hessian.shape == (15, 15)
-print("installed-import=ok cli-help=ok sn2-resource=ok ch3f-system=ok")
+print("installed-import=ok cli-help=ok cli-list=ok cli-single-skip=ok sn2-resource=ok ch3f-system=ok")
 """
     completed = subprocess.run(
         [str(python), "-I", "-c", smoke_code],

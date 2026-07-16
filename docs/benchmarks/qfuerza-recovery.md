@@ -46,7 +46,7 @@ of the bond/angle scalars it is defined to estimate.
 | Torsion `V₁/V₂/V₃` | Zero | Per Farrugia 2025, torsions are intentionally zeroed at QFUERZA-init time |
 | van der Waals `r₀`, `ε`, stretch-bend coefficients | Literature `.fld` | Outside QFUERZA's defined scope; supplied by skeleton |
 | Reference data (geometries, eigenmatrix, charges) | Identical to publication-baseline runs | — |
-| Optimizer | SciPy L-BFGS-B + JAX analytical executor, `--executor-ratio-tol -1` | — |
+| Optimizer | SciPy L-BFGS-B + JAX analytical executor, `--executor-ratio-tol none` | — |
 
 The **per-system overwrite count** in §3.5 reports how many active OPT
 scalars QFUERZA touches: this is the count of bond/angle parameters in
@@ -73,7 +73,7 @@ published TSFF?
 ## 3. Results
 
 All runs: WSL2 + RTX 5090, SciPy L-BFGS-B + JAX analytical executor,
-`--executor-ratio-tol -1`, TS Hessian inversion on, **fractional bounds**
+`--executor-ratio-tol none`, TS Hessian inversion on, **fractional bounds**
 (`fc_fraction=0.20`, `eq_fraction=0.05`; heck-relay overridden to
 `fc_fraction=0.05` per the fragile-TS guidance in
 [AGENTS.md §9](https://github.com/ericchansen/q2mm/blob/main/AGENTS.md)),
@@ -356,7 +356,7 @@ from any physical basin for fractional bounds around it to make sense.
 
 QFUERZA is now the canonical default (`starting_point="qfuerza"` on
 `load_system`; `--starting-point qfuerza` on
-`scripts/benchmark.py`). Three of the five TS systems do
+`q2mm-benchmark`). Three of the five TS systems do
 **not** converge cleanly from QFUERZA with default bounds:
 
 | System | Symptom | Workaround |
@@ -382,21 +382,21 @@ python -c "import jax; print(jax.devices())"   # must show CudaDevice
 # 2. Run a single system (canonical default = QFUERZA; recommended
 #    bounds for non-heck-relay TS).  --starting-point qfuerza is the
 #    default and can be omitted.
-python scripts/benchmark.py \
+python -m q2mm.benchmarks.cli single \
     --system rh-enamide \
     --executor-ratio-tol none \
     --ftol 1e-12 \
     --fc-fraction 0.20 \
     --eq-fraction 0.05 \
-    --output-dir /path/to/q2mm-data/benchmarks
+    --output /path/to/q2mm-data/benchmarks
 
 # 3. Heck-relay or any 3/5-divergence system: see "Known limitations"
 #    in §5 — fall back to the publication-baseline path
-python scripts/benchmark.py \
+python -m q2mm.benchmarks.cli single \
     --system heck-relay \
     --starting-point published \
     --executor-ratio-tol none \
-    --output-dir /path/to/q2mm-data/benchmarks
+    --output /path/to/q2mm-data/benchmarks
 
 # 4. Generate the cross-system R²/RMSD table
 python scripts/build_qfuerza_recovery_tables.py \
@@ -417,7 +417,7 @@ The QFUERZA-start artifacts live in
 [`q2mm-data/benchmarks/<system>/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks)
 (opt-in `--starting-point published` path).
 
-The `--executor-ratio-tol -1` flag bypasses the JAX/Python executor ratio
+The `--executor-ratio-tol none` flag bypasses the JAX/Python executor ratio
 gate (which would otherwise reject all 5 TS systems at the QFUERZA
 start because the surrogate is poorly aligned).
 
@@ -442,7 +442,7 @@ from the literature `.fld`.
 
 - Code: [`q2mm/benchmarks/systems/__init__.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/systems/__init__.py) (`load_system` registry); `starting_point` is accepted by each publication-system loader, e.g. [`q2mm/benchmarks/systems/rh_enamide.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/systems/rh_enamide.py)
 - Bounds: [`q2mm/models/parameters.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/models/parameters.py) (`fractional_bounds`)
-- CLI: [`scripts/benchmark.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/benchmark.py) (`--starting-point`, `--executor-ratio-tol`, `--ftol`, `--fc-fraction`, `--eq-fraction`)
+- CLI: [`q2mm-benchmark`](https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/cli.py) (`single`/`batch`/`matrix` with `--starting-point`, `--executor-ratio-tol`, `--ftol`, `--fc-fraction`, `--eq-fraction`)
 - Analysis scripts:
   - [`scripts/compare_opt_rows.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/compare_opt_rows.py) — per-param row-by-row comparison
   - [`scripts/build_qfuerza_recovery_tables.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/build_qfuerza_recovery_tables.py) — R²/RMSD cross-system rollup

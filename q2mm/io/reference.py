@@ -665,3 +665,46 @@ def save_reference_yaml(
 
     with open(path, "w", encoding="utf-8") as f:
         yaml.safe_dump(output, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+
+# Arrays a normal-mode ``.npz`` archive must contain (from a mass-weighted
+# Hessian eigendecomposition).
+_NORMAL_MODE_KEYS: tuple[str, ...] = ("eigenvalues", "eigenvectors", "masses_amu")
+
+
+def load_normal_modes(path: str | Path) -> dict[str, np.ndarray]:
+    """Load a pre-computed normal-mode eigendecomposition from a ``.npz`` file.
+
+    The archive must contain the three arrays ``eigenvalues``,
+    ``eigenvectors``, and ``masses_amu`` produced by a mass-weighted
+    Hessian eigendecomposition. Parsing normal-mode archives is an I/O
+    concern, so it lives here alongside the other reference-data loaders;
+    the numerical PES-distortion analysis that consumes the result lives
+    in the benchmark runner.
+
+    Args:
+        path: Path to the ``.npz`` archive.
+
+    Returns:
+        A dict with keys ``"eigenvalues"``, ``"eigenvectors"``, and
+        ``"masses_amu"``, each mapping to a :class:`numpy.ndarray`.
+
+    Raises:
+        ReferenceYAMLError: If any of the required arrays is missing.
+
+    """
+    data = np.load(path, allow_pickle=False)
+    try:
+        missing = [key for key in _NORMAL_MODE_KEYS if key not in data]
+        if missing:
+            raise ReferenceYAMLError(f"normal-mode archive {path} is missing array(s): {missing}")
+        modes: dict[str, np.ndarray] = {}
+        for key in _NORMAL_MODE_KEYS:
+            arr = np.array(data[key], copy=True)
+            arr.setflags(write=False)
+            modes[key] = arr
+    finally:
+        close = getattr(data, "close", None)
+        if callable(close):
+            close()
+    return modes

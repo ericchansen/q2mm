@@ -2,9 +2,9 @@
 
 One implementation of the weighted/unweighted residual convention, L2
 regularization, per-category fit metrics (R² / RMSD / MAE), and post-hoc
-sampling — used by both executors, the workflows, diagnostics, and the
-benchmark runner.  Keeping this in one module guarantees the Python and
-JAX executors share identical residual/regularization/metric semantics.
+sampling — used by both executors, the workflows, and the benchmark
+runner.  Keeping this in one module guarantees the Python and JAX
+executors share identical residual/regularization/metric semantics.
 
 Residual convention (matches the historical objective):
 
