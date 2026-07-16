@@ -195,9 +195,12 @@ q2mm/
 ├── resources.py          # Installed scientific-resource lookup and integrity checks
 ├── _jax_support.py       # Foundational lazy JAX import guard (has_jax/load_jax); shared by models.hessian and backends.mm._jax_common
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
-├── benchmark_runner.py   # Canonical convergence benchmark runner (backs q2mm.benchmark)
-├── benchmarks/           # Scientific benchmark-system loaders and metadata
+├── benchmarks/           # Benchmark systems, run profiles, acceptance, and the runner (composition root)
 │   ├── cases.py         # BenchmarkCase wrapper around OptimizationProblem
+│   ├── profiles.py      # Immutable RunProfile + deterministic ResolvedProfile/provenance/fingerprint
+│   ├── acceptance.py    # Closed candidate-status vocabulary + the single no-progress decision
+│   ├── runner.py        # The one execution/result/persistence/promotion path (single/batch/matrix)
+│   ├── cli.py           # q2mm-benchmark console entry point (list/preflight/single/batch/matrix/load)
 │   └── systems/         # load_system(), SYSTEM_KEYS, per-system modules
 │
 ├── models/               # Format-neutral data structures
@@ -261,17 +264,10 @@ q2mm/
 │   ├── cmap.py           # parse_cmap_section, load_cmap_from_prm
 │   └── reference.py      # load_reference_yaml, save_reference_yaml
 │
-├── workflows/            # Multi-stage parameterization protocols
-│   ├── base.py           # Workflow Protocol returning OptimizationResult + StageRecord data
-│   ├── single_stage.py   # SingleStageWorkflow
-│   └── method_e2.py      # MethodE2Workflow (two-stage)
-│
-└── diagnostics/          # Analysis and reporting
-    ├── cli.py            # q2mm-benchmark console entry point
-    ├── benchmark.py      # Multi-backend leaderboard benchmarks (run_combo)
-    ├── pes_distortion.py # PES distortion analysis
-    ├── report.py         # Summary report generation
-    └── tables.py         # Formatted table output
+└── workflows/            # Multi-stage parameterization protocols
+    ├── base.py           # Workflow Protocol returning OptimizationResult + StageRecord data
+    ├── single_stage.py   # SingleStageWorkflow
+    └── method_e2.py      # MethodE2Workflow (two-stage)
 ```
 
 ### Release and scientific-data boundary

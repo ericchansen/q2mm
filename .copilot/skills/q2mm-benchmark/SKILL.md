@@ -40,16 +40,16 @@ For **canonical-default QFUERZA-start** runs (the default; or any from-poor-star
 
 For **publication-baseline (`--starting-point published`)** runs, sanity bounds are usually fine — the starting FF is already in the published basin.
 
-Pass via `--fc-fraction` / `--eq-fraction` CLI flags on `scripts/benchmark.py`.
+Pass via `--fc-fraction` / `--eq-fraction` CLI flags on `q2mm-benchmark`.
 
 ### Convergence tolerance (`scipy_opt.py` → `_run_minimize`)
 
-The script default L-BFGS-B `ftol=1e-8` is loose for from-poor-start runs — `nfev` will often be ≤ 5 with no real optimization. Override with `--ftol 1e-12` (or tighter) for any run where you actually want the optimizer to work.
+The default L-BFGS-B `ftol=1e-8` is loose for from-poor-start runs — `nfev` will often be ≤ 5 with no real optimization. Override with `--ftol 1e-12` (or tighter) for any run where you actually want the optimizer to work.
 
-### Executor-ratio gate (`benchmark_runner.py` → executor-ratio check)
+### Executor-ratio gate (`q2mm/benchmarks/runner.py` → executor-ratio check)
 
 For TS systems with a poor starting FF, the JAX/Python executor ratio can be 0.1–0.4 or even diverge to 1e74 (heck-relay from QFUERZA). The default executor-ratio check rejects these. Two options:
-- `--executor-ratio-tol -1` to bypass entirely (use for from-QFUERZA TS runs)
+- `--executor-ratio-tol none` to bypass entirely (use for from-QFUERZA TS runs)
 - Document the explosion honestly in the analysis instead of pretending it didn't happen
 
 ## Step 3 — Pre-flight checklist
@@ -61,7 +61,7 @@ Walk through this LITERALLY before running. Each item must be checked.
 - [ ] `ftol` / `gtol` tight enough for real optimization
 - [ ] Per-system overrides documented if any system needs special handling
 - [ ] GPU verified: `python -c "import jax; print(jax.devices())"` shows CudaDevice
-- [ ] Output directory chosen (`q2mm-data/benchmarks/<system>/convergence/` for the canonical QFUERZA-start default; `q2mm-data/benchmarks/<system>/from-published/` for opt-in publication-baseline runs)
+- [ ] Output directory chosen (`--output <dir>`; the runner writes every candidate to `<dir>/candidates/` and promotes accepted ones to `<dir>/accepted/` and `<dir>/forcefields/`)
 - [ ] PYTHONPATH set if running from a worktree (editable install points to master)
 
 ## Step 4 — Run the FIRST system in isolation
@@ -71,28 +71,33 @@ Do NOT launch all systems in a batch. Run **only the first system**:
 ```bash
 # Canonical default is --starting-point qfuerza; pass --starting-point
 # published only when reproducing publication-baseline benchmarks.
-PYTHONPATH=/path/to/worktree python scripts/benchmark.py \
+PYTHONPATH=/path/to/worktree q2mm-benchmark single \
     --system <first-system> \
+    --workflow method-e2 \
+    --optimizer scipy-lbfgsb-jax \
     --ftol 1e-12 \
     --fc-fraction 0.20 \
     --eq-fraction 0.05 \
-    --executor-ratio-tol <value> \
-    --output-dir /path/to/q2mm-data/benchmarks
+    --executor-ratio-tol none \
+    --output /path/to/results
 ```
 
 ## Step 5 — AUDIT GATE (do not skip)
 
-After the first system completes, inspect `<output-dir>/validation_results.json`:
+After the first system completes, inspect its candidate record under
+`<output>/candidates/<stem>.json` (the `summary` object):
 
 ```python
-import json
-with open("<first-system>/convergence/validation_results.json") as f:
-    r = json.load(f)["result"]
+import glob, json
+path = sorted(glob.glob("/path/to/results/candidates/*.json"))[0]
+rec = json.load(open(path))
+r = rec["summary"]
+print("status:       ", rec["status"])
 print("n_evaluations:", r["n_evaluations"])
-print("n_iterations:", r["n_iterations"])
-print("real OF:      ", r["initial_obj_score"], "→", r["final_obj_score"])
+print("n_iterations: ", r["n_iterations"])
+print("real OF:      ", r["initial_obj_score"], "->", r["final_obj_score"])
 print("improvement%: ", r["improvement_pct"])
-print("executor ratio:", r["executor_ratio"])
+print("executor ratio:", r.get("executor_ratio"))
 print("Seminario R²: ", r["seminario"])
 print("Optimized R²: ", r["optimized"])
 ```
@@ -116,8 +121,8 @@ Launch the remaining systems, one at a time or in a small batch. Continue to spo
 
 Before writing the analysis doc:
 - All systems have `n_evaluations > 5` (or each exception is documented with a chemical/physical reason)
-- All systems have `validation_results.json` with full provenance
-- Spot-check at least two `validation_results.json` files for sanity
+- All systems have a persisted candidate record under `<output>/candidates/` with full provenance
+- Spot-check at least two candidate records for sanity
 
 If a benchmark batch ends with multiple systems exiting at `n_evals=2`, that's a silent protocol failure — even if all the JSON files were written.
 
@@ -127,12 +132,12 @@ If a benchmark batch ends with multiple systems exiting at `n_evals=2`, that's a
 - "Should I use sanity bounds or fractional bounds?" → fractional for the canonical QFUERZA-start default; sanity is fine for `--starting-point published` runs
 - "Why does `nfev=2` happen on every system?" → default `ftol` is 1e-8, way too loose for from-poor-start; use `--ftol 1e-12`
 - "Heck-relay's executor ratio is 1e74, is that OK?" → no, the JAX objective executor exploded; document honestly and consider tighter bounds or FF pre-conditioning
-- "Should I just bypass the executor-ratio gate with `--executor-ratio-tol -1`?" → only if you understand why it's failing; the gate exists for a reason
+- "Should I just bypass the executor-ratio gate with `--executor-ratio-tol none`?" → only if you understand why it's failing; the gate exists for a reason
 
 ## Anti-patterns to refuse
 
 - Launching all 5 systems in a batch without auditing the first one
 - Shipping results where `n_evaluations <= 2` on every system as if optimization happened
 - Comparing only `final_obj_score` when the user asked about parameter values or R²
-- Bypassing the executor-ratio gate with `--executor-ratio-tol -1` without diagnosing why it's failing
+- Bypassing the executor-ratio gate with `--executor-ratio-tol none` without diagnosing why it's failing
 - Writing the analysis doc before re-reading the user's literal question

@@ -147,7 +147,7 @@ situation transforms:
 system into the standard optimization pipeline.
 
 The numbers above are from the published-start baseline. Reproduce with
-`scripts/benchmark.py --starting-point published --system heck-relay`;
+`q2mm-benchmark single --starting-point published --system heck-relay`;
 raw JSON output with provenance lives at
 [`q2mm-data/benchmarks/heck-relay/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/heck-relay/from-published)
 and the three-baseline diagnostic that diagnosed the loader bug lives at
@@ -185,7 +185,7 @@ Configure `Q2MM_SUPPORTING_INFO` as described in
 before running this command.
 
 ```bash
-python -m q2mm.diagnostics.cli --system heck-relay --backend jax --optimizer optax-adam-cosine
+q2mm-benchmark matrix --system heck-relay --backend jax --optimizer optax-adam-cosine
 ```
 
 Raw data: [`q2mm-data/benchmarks/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks) → `heck-relay/`.

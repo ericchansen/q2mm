@@ -1,61 +1,27 @@
 """Q2MM: Quantum-guided molecular mechanics force field optimization.
 
-Subpackages:
-    models: Clean domain objects (molecules, force fields, parameters, observations, problems).
-    backends: QM and MM engine integrations (OpenMM, Tinker, JAX, JAX-MD, Psi4).
-    optimizers: Objective functions and optimizers (SciPy, Optax, JaxOpt).
-    io: File format readers/writers (Gaussian, Jaguar, Mol2, MM3, AMBER, Tinker).
-    workflows: Multi-stage parameterisation protocols (single-stage, Method E2).
-    benchmarks: Scientific benchmark systems and case metadata.
+The package root intentionally exposes **only** version metadata.  Import
+the concrete submodules you need directly — there is no top-level facade:
 
-Quick start
------------
+- :mod:`q2mm.models` — immutable domain objects (molecules, force fields,
+  parameters, observations, problems, results).
+- :mod:`q2mm.io` — file-format readers/writers.
+- :mod:`q2mm.backends` — MM/QM engine contracts and implementations.
+- :mod:`q2mm.objectives` — objective plans, executors, and metrics.
+- :mod:`q2mm.optimizers` — SciPy/Optax/JaxOpt optimizers.
+- :mod:`q2mm.workflows` — multi-stage parameterization workflows.
+- :mod:`q2mm.benchmarks` — benchmark systems, run profiles, and the runner.
 
-::
-
-    from q2mm.benchmark_runner import run_benchmark
-
-    result = run_benchmark("rh-enamide")
-    print(result.summary["improvement_pct"])
-
-See :mod:`q2mm.benchmark_runner` for the full ``run_benchmark`` API.
+Run benchmarks from the ``q2mm-benchmark`` CLI or compose
+:class:`q2mm.benchmarks.profiles.RunProfile` with
+:func:`q2mm.benchmarks.runner.run_profiles`.
 """
 
+from importlib.metadata import PackageNotFoundError, version
+
 try:
-    from importlib.metadata import version
-
     __version__ = version("q2mm")
-except Exception:
-    __version__ = "0.0.0.dev0"  # fallback for editable/uninstalled
+except PackageNotFoundError:
+    __version__ = "0.0.0.dev0"  # fallback for an uninstalled source checkout
 
-# Public API — the most commonly used classes at the top level
-from q2mm.benchmark_runner import (  # noqa: E402
-    BatchOutcome,
-    BenchmarkRunResult,
-    run_benchmark as benchmark,
-    run_benchmark_batch,
-)
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField  # noqa: E402
-from q2mm.models.molecule import Molecule  # noqa: E402
-from q2mm.models.observations import ObservationSet  # noqa: E402
-from q2mm.models.results import OptimizationResult  # noqa: E402
-from q2mm.models.seminario import qfuerza_fresh, qfuerza_into  # noqa: E402
-from q2mm.objectives import ObjectivePlan, PythonObjectiveExecutor  # noqa: E402
-
-__all__ = [
-    "AngleParam",
-    "BatchOutcome",
-    "benchmark",
-    "BenchmarkRunResult",
-    "BondParam",
-    "ForceField",
-    "ObjectivePlan",
-    "ObservationSet",
-    "OptimizationResult",
-    "PythonObjectiveExecutor",
-    "Molecule",
-    "qfuerza_fresh",
-    "qfuerza_into",
-    "run_benchmark_batch",
-    "__version__",
-]
+__all__ = ["__version__"]

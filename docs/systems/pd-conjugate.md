@@ -148,7 +148,7 @@ Configure both `Q2MM_SUPPORTING_INFO` and `Q2MM_MM3_BASE` as described in
 before running this command.
 
 ```bash
-python -m q2mm.diagnostics.cli --system pd-conjugate --backend jax --optimizer optax-adam-cosine
+q2mm-benchmark matrix --system pd-conjugate --backend jax --optimizer optax-adam-cosine
 ```
 
 Raw data:

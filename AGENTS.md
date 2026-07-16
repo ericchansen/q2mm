@@ -27,7 +27,7 @@ repeatedly cited the wrong reference here.
 |-------|-----|-----------------|
 | **Farrugia, Helquist, Norrby & Wiest 2025** — "Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement", *J. Chem. Theory Comput.* **22**, 469. | [10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751) | **QFUERZA** — the methodology of record for `q2mm/models/seminario.py`. Defines the FUERZA + H-angle-substitution variant we ship; documents that torsions are intentionally zeroed at initial-parameter time; explains the "mixing literature + custom params" workflow our loaders implement. |
 | Seminario 1996 — "Calculation of intramolecular force fields from second-derivative tensors", *Int. J. Quantum Chem.* **60**, 1271. | [10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W) | Original **FUERZA** projection.  Background only; QFUERZA above supersedes it for us. |
-| Limé & Norrby 2015 — *J. Chem. Theory Comput.* **11**, 3696. | [10.1021/acs.jctc.5b00461](https://doi.org/10.1021/acs.jctc.5b00461) | TS Hessian inversion (`invert_ts_curvature=True`).  See the "TS Hessian Inversion" warning below. |
+| Limé & Norrby 2014 (vol. 36, 2015) — "Improving the Q2MM method for transition state force field modeling", *J. Comput. Chem.* **36**, 244–250. | [10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797) | TS Hessian inversion (`invert_ts_curvature=True`) and Method E2.  See the "TS Hessian Inversion" warning below. |
 | Donoghue, Helquist, Norrby & Wiest 2008 — *J. Chem. Theory Comput.* **4**, 1313. | [10.1021/ct800132a](https://doi.org/10.1021/ct800132a) | Rh-enamide TSFF reference paper.  Governs `examples/rh-enamide/`, `load_rh_enamide`, and the 9-molecule benchmark system. |
 | Rosales, Helquist, Norrby & Wiest 2020 — *J. Am. Chem. Soc.* **142**, 9700. | [10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979) | Heck-relay TSFF reference paper.  Governs `load_heck_relay` and the 23-molecule benchmark system. |
 | Wahlers, *Ph.D. Dissertation*, University of Notre Dame, 2022. | (dissertation, no DOI) | pd-allyl, pd 1,4-conjugate-addition, rh 1,4-conjugate-addition TSFFs.  Governs `load_pd_allyl`, `load_pd_conjugate`, `load_rh_conjugate`. |
@@ -62,7 +62,7 @@ saddle point.
    fix is to improve the starting FF, not to change the relaxation
    approach.
 
-3. **Reference:** Limé & Norrby, *J. Chem. Theory Comput.* **2015**, 11, 3696.
+3. **Reference:** Limé & Norrby, *J. Comput. Chem.* **2014** (vol. **36**, 244–250, 2015). [10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797)
 
 ---
 
@@ -239,8 +239,10 @@ python -c "import jax; print(jax.devices())"
 
 1. **Verify GPU platform first** — see §4. No exceptions.
 2. **Use WSL2** for all GPU benchmarks.
-3. **Never use `--no-save`** — always save results and force fields so they
-   can be reviewed and compared.
+3. **Output is always persisted** — the `q2mm-benchmark` runner has no
+   `--no-save`; every candidate lands under `<output>/candidates/` and each
+   accepted candidate is promoted to `<output>/accepted/` and
+   `<output>/forcefields/`. Pass `--output` to choose the location.
 4. **Save outputs** to a local results directory such as `results/<system>/`
    (e.g., `results/ch3f/`, `results/rh-enamide/`). Archive the canonical
    benchmark artifacts in [`ericchansen/q2mm-data`](https://github.com/ericchansen/q2mm-data)
@@ -270,8 +272,8 @@ frequency RMSD.
 
 ### Starting Point (`starting_point` kwarg / `--starting-point` CLI flag)
 
-`q2mm.benchmarks.systems.load_system()` and `benchmark.py` accept a
-`starting_point` of either `"qfuerza"` (canonical default) or
+`q2mm.benchmarks.systems.load_system()` and the `q2mm-benchmark` runner
+accept a `starting_point` of either `"qfuerza"` (canonical default) or
 `"published"`:
 
 - **`"qfuerza"` (default, Farrugia 2025)** — the FF skeleton (atom types,
@@ -286,9 +288,9 @@ frequency RMSD.
   no QFUERZA overwrite. Pass this to reproduce historical
   publication-baseline runs.
 
-Output subdirectory of the CLI follows the same naming:
-`convergence/` for the canonical default (qfuerza); `from-published/`
-for the publication-baseline path.
+The runner is invoked as `q2mm-benchmark single`/`batch`/`matrix` with the
+same `--starting-point` flag; the `RunProfile.starting_point` field records
+which path a run used, and the resolved run provenance embeds it.
 
 ### TS Curvature Inversion
 
@@ -431,7 +433,7 @@ metadata in this project.
 | **One-off / timestamped dirs** | `grad_simp_jax_fix_test/`, `results_2026-04-03/` — impossible to find later | Use the canonical directory; delete one-offs immediately after merging |
 | **OpenCL ≠ CUDA** | Benchmark shows `OpenMM (OpenCL)` — 14% GPU utilization, hours wasted | Install `openmm-cuda-12` or use WSL2 |
 | **JAX on Windows** | JAX CPU works but JAX CUDA is excluded in `pyproject.toml` | Use WSL2 for GPU |
-| **`--no-save`** | Benchmark results and force fields are lost | Never use `--no-save` — always save artifacts |
+| **Assuming output is optional** | Expecting a `--no-save` flag that no longer exists | The `q2mm-benchmark` runner always persists every candidate; choose the location with `--output` (default `./results`) |
 | **Long benchmarks** | OpenMM L-BFGS-B can take hours | Check CPU/GPU utilization periodically with `nvidia-smi` |
 | **Rewriting without full context** | Page rewrite introduces errors because not all data sources were checked | Gather ALL related dirs, issues, PRs, and prior work before rewriting (§2) |
 | **Wrong publication year** | CrossRef has multiple date fields that disagree; using the wrong one corrupts citations | Always validate via Zotero MCP (§10) |
@@ -442,7 +444,7 @@ metadata in this project.
 | **Heck relay bounds** | ±20% bounds cause 35–92% NaN rate due to fragile TS landscape with large negative FCs (−3753) | Use ±5% bounds for heck-relay specifically |
 | **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible objective-executor score change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--ftol` (e.g. `1e-12`); apply `--fc-fraction`/`--eq-fraction` to keep optimizer in starting basin; check the `executor_ratio`. The diagnostic warning in `scipy_opt._run_minimize` flags this. |
 | **Default sanity bounds for from-poor-start runs** | `DEFAULT_BOUNDS` (bond_k ±3600, bond_eq 0.5–3.0 Å) let L-BFGS-B escape the QFUERZA / random-default starting basin → final FF unrelated to start | Use `ScipyOptimizer(fc_fraction=0.20, eq_fraction=0.05)` (or CLI flags `--fc-fraction --eq-fraction`) to bound each param to a ± fraction of its current value. |
-| **Benchmark batch never optimized** | All systems exit at `nfev≤2` with no OF change but the batch reports "success" | The runner now emits ERROR + non-zero exit code (`scripts/benchmark.py`). Re-tune `ftol` or bounds and re-run. See §11. |
+| **Benchmark batch never optimized** | All systems exit at `nfev≤2` with no OF change but the batch reports "success" | The runner rejects no-progress candidates and `run_profiles` returns `outcome.ok is False` when optimizations ran but none was accepted (`q2mm/benchmarks/runner.py`). Re-tune `ftol` or bounds and re-run. See §11. |
 
 ---
 
@@ -513,7 +515,7 @@ See `validation/published_ffs/README.md` for the full table. As of April 2026:
 
 ## 11. Benchmark Pre-Flight Checklist
 
-> **Before launching any q2mm batch >30 min (e.g. `benchmark.py` on >1 system, or any from-scratch FF generation), walk through every step below.**
+> **Before launching any q2mm batch >30 min (e.g. `q2mm-benchmark batch`/`matrix` on >1 system, or any from-scratch FF generation), walk through every step below.**
 
 Many hours of GPU time have been wasted on batches where the optimizer never actually optimized. The pattern is silent — scipy reports `success=True`, the runner writes its JSON, and the misleading result is only caught during post-hoc analysis. This checklist prevents that.
 
@@ -531,21 +533,23 @@ Many hours of GPU time have been wasted on batches where the optimizer never act
 
 4. **Run the FIRST system alone.** Do NOT launch all systems sequentially in one call.
 
-5. **AUDIT GATE — read the first system's JSON before launching the rest:**
+5. **AUDIT GATE — read the first candidate's persisted record (`<output>/candidates/<stem>.json`, its `summary`) before launching the rest:**
    - `n_iterations > 5` (not just `n_evaluations`; that counter can be misleading on the JAX executor path — see `scipy_opt._run_minimize`).
    - `|improvement_pct| > 1%` on the Python objective-executor score of record (the `improvement_pct` field, not `final_optimizer_score`).
    - `executor_ratio = initial_jax_score / initial_obj_score` in `[0.1, 10]` (or document why it's outside).
-   - Per-category R² (`seminario` → `optimized_categories`) improves on at least one of bond_length, bond_angle, eigenmatrix.
+   - Per-category R² (`seminario` → `optimized`) improves on at least one of bond_length, bond_angle, eigenmatrix.
+   - The candidate `status` is `accepted` (not `rejected`/`skipped`/`error`).
    - If ANY of these fail, **STOP**. Re-tune and re-run the single system. Do not launch the batch.
 
 6. **Launch remaining systems.** Check `nvidia-smi` periodically (>50% utilization expected).
 
-7. **Post-batch validation** — read every JSON, not just the combined output. The runner emits a batch-level ERROR + non-zero exit code if all optimized systems failed the no-progress check; treat that as a hard failure even if individual files exist.
+7. **Post-batch validation** — read every candidate record under `<output>/candidates/`, not just the console summary. `run_profiles` logs a batch-level failure and returns `outcome.ok is False` when optimizations ran but none was accepted; treat that as a hard failure even if individual files exist.
 
 ### Source-code safety nets
 
 These exist to back up the checklist; do not rely on them alone:
 - `q2mm/optimizers/scipy_opt.py::_run_minimize` — WARNING when `n_iterations<=2` and `|delta|/init<0.01`
-- `scripts/benchmark.py::main` — ERROR + non-zero exit when the whole batch failed the no-progress test
+- `q2mm/benchmarks/acceptance.py::NoProgressPolicy.made_progress` — the single no-progress decision that rejects a stalled candidate
+- `q2mm/benchmarks/runner.py::run_profiles` — logs BATCH FAILURE and reports `outcome.ok is False` when optimizations ran but none was accepted
 - `.copilot/skills/q2mm-benchmark/SKILL.md` — agent skill that walks through this checklist automatically before launching any batch
 - `.copilot/skills/q2mm-analysis-design/SKILL.md` — agent skill that forces design-first analysis methodology before writing comparison docs

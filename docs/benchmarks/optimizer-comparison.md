@@ -191,10 +191,10 @@ q2mm's supported path is therefore:
 
 ```bash
 # Full convergence regeneration for all systems; writes results under results/
-python scripts/benchmark.py
+q2mm-benchmark batch
 
 # Example: statistically sampled pd-allyl verdict
-python scripts/benchmark.py --system pd-allyl --n-evals 10
+q2mm-benchmark single --system pd-allyl --n-evals 10
 ```
 
 Archive any result JSON or optimized force field used in documentation in the

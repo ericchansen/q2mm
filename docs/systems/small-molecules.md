@@ -267,8 +267,8 @@ where multi-start and global search methods show material differences:
 ## Convergence baseline (executor-ratio-gated end-to-end)
 
 In addition to the optimizer matrix above, CH₃F is run through the
-**convergence-baseline** pipeline at
-`scripts/benchmark.py`, which is the standard
+**convergence-baseline** pipeline via
+`q2mm-benchmark single`/`batch`, which is the standard
 pipeline used for all published-FF systems
 ([rh-enamide](rh-enamide.md), [pd-allyl](pd-allyl.md), etc.).  For
 CH₃F the strategy is `qfuerza_fresh` (the FF is built from the QM
@@ -309,33 +309,26 @@ This page uses the current full-matrix artifact set in
 ## Reproducing
 
 ```bash
-# Run full matrix (all backends, all optimizers)
-q2mm-benchmark --system ch3f --output results/ch3f --platform CUDA
+# Run the full matrix (all backends, all optimizers)
+q2mm-benchmark matrix --system ch3f --output results/ch3f --platform CUDA
 
 # Run optax optimizers only (JAX backend)
-q2mm-benchmark --system ch3f --output results/ch3f --backend jax \
-  --optimizer optax-adam optax-adam-cosine optax-adagrad optax-sgd \
-  --learning-rate 0.01 --optax-max-steps 2000
+q2mm-benchmark matrix --system ch3f --output results/ch3f --backend jax \
+  --optimizer optax-adam --optimizer optax-adam-cosine \
+  --optimizer optax-adagrad --optimizer optax-sgd
 
-# Run global optimizers only (fast backends)
-q2mm-benchmark --system ch3f --output results/ch3f --backend jax \
-  --optimizer basinhopping basinhopping-cold \
-  multi-lbfgsb-5 multi-lbfgsb-10 \
-  --platform CUDA
-
-# Run L2-regularized optimizers
-q2mm-benchmark --system ch3f --output results/ch3f --backend jax \
-  --optimizer scipy-lbfgsb-l2 optax-adam-l2 \
-  --platform CUDA
+# Run global / multi-start optimizers only (JAX backend)
+q2mm-benchmark matrix --system ch3f --output results/ch3f --backend jax \
+  --optimizer basinhopping --optimizer basinhopping-cold \
+  --optimizer multi-lbfgsb-5 --optimizer multi-lbfgsb-10
 
 # Run JaxOpt optimizers (JAX backend, end-to-end differentiable)
-q2mm-benchmark --system ch3f --output results/ch3f --backend jax \
-  --optimizer jaxopt-lbfgs jaxopt-lbfgsb --max-iter 500 \
-  --platform CUDA
+q2mm-benchmark matrix --system ch3f --output results/ch3f --backend jax \
+  --optimizer jaxopt-lbfgs --optimizer jaxopt-lbfgsb --maxiter 500
 
-# Load and display results
-q2mm-benchmark --load results/ch3f
+# Load and display persisted candidate records
+q2mm-benchmark load results/ch3f
 
-# List available optimizers
-q2mm-benchmark --list
+# List available systems, backends, forms, and optimizers
+q2mm-benchmark list
 ```

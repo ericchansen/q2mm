@@ -11,7 +11,6 @@ import pytest
 
 pytest.importorskip("scipy")
 
-from q2mm.diagnostics.benchmark import _resolve_gradients
 from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
@@ -345,74 +344,6 @@ class TestOptimizationResultFields:
         assert result.fd_step == 5e-4
 
 
-class TestResolveGradients:
-    """Verify _resolve_gradients produces correct per-category gradient maps."""
-
-    @staticmethod
-    def _make_objective(
-        *, gradient_mode: GradientMode, kinds: tuple[str, ...] = ("energy", "frequency")
-    ) -> _MockObjective:
-        obj = _MockObjective(gradient_mode=gradient_mode)
-        category_map = {
-            "energy": "energy",
-            "frequency": "frequency",
-            "bond_length": "geometry",
-            "hessian_element": "hessian",
-        }
-        obj.plan = SimpleNamespace(categories=frozenset(category_map[k] for k in kinds))
-        return obj
-
-    def test_auto_with_analytical_support(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL)
-        result = _resolve_gradients(obj)
-        assert result == {"energy": "analytical", "frequency": "analytical"}
-
-    def test_auto_without_analytical_support(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.NONE)
-        result = _resolve_gradients(obj)
-        assert result == {"energy": "finite-diff", "frequency": "finite-diff"}
-
-    def test_jac_none_is_fd(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.NONE)
-        result = _resolve_gradients(obj)
-        assert result == {"energy": "finite-diff", "frequency": "finite-diff"}
-
-    def test_analytical_with_support(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL)
-        result = _resolve_gradients(obj)
-        assert result == {"energy": "analytical", "frequency": "analytical"}
-
-    def test_derivative_free_method_overrides_jac(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL)
-        result = _resolve_gradients(obj, method="Powell")
-        assert result == {"energy": "n/a", "frequency": "n/a"}
-
-    def test_nelder_mead_is_derivative_free(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL)
-        result = _resolve_gradients(obj, method="Nelder-Mead")
-        assert result == {"energy": "n/a", "frequency": "n/a"}
-
-    def test_energy_only_objective(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL, kinds=("energy",))
-        result = _resolve_gradients(obj)
-        assert result == {"energy": "analytical"}
-
-    def test_frequency_only_objective(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL, kinds=("frequency",))
-        result = _resolve_gradients(obj)
-        assert result == {"frequency": "analytical"}
-
-    def test_geometry_refs_always_fd(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.NONE, kinds=("energy", "bond_length"))
-        result = _resolve_gradients(obj)
-        assert result == {"energy": "finite-diff", "geometry": "finite-diff"}
-
-    def test_hessian_refs_with_support(self) -> None:
-        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL, kinds=("energy", "hessian_element"))
-        result = _resolve_gradients(obj)
-        assert result == {"energy": "analytical", "hessian": "analytical"}
-
-
 class TestPerEvaluatorGradientSupport:
     """Verify explicit Python executor analytical-gradient support checks."""
 
@@ -449,13 +380,3 @@ class TestPerEvaluatorGradientSupport:
     def test_hessian_with_support(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("hessian_element",))
         assert obj.gradient_mode is GradientMode.ANALYTICAL
-
-    def test_result_is_sorted_by_category(self) -> None:
-        evaluator = PythonObjectiveExecutor(
-            _plan_for_kinds(("frequency", "energy", "hessian_element", "bond_length")),
-            _mock_engine(True),
-            _h2_ff(),
-            gradient_mode=GradientMode.NONE,
-        )
-        result = _resolve_gradients(evaluator)
-        assert list(result.keys()) == ["energy", "frequency", "geometry", "hessian"]

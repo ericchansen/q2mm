@@ -118,29 +118,37 @@ ruff format --check q2mm test scripts examples
 
 ## Benchmarks
 
-When running benchmarks with `q2mm-benchmark`, **always save the output force
-fields**.  Benchmark runs can take minutes to hours depending on the system
-and optimizer.  With SciPy L-BFGS-B + JAX objective executor on GPU, all 5 TS systems
-complete in ~15 minutes total (dominated by JIT compilation, not optimization).
-Results are not reproducible bit-for-bit due to floating-point reduction-order
-differences between devices.
+When running benchmarks with `q2mm-benchmark`, the runner **always** saves
+its output — every requested candidate is written to `<output>/candidates/`
+and each accepted candidate is promoted to `<output>/accepted/` and
+`<output>/forcefields/`.  Benchmark runs can take minutes to hours depending
+on the system and optimizer.  With SciPy L-BFGS-B + the JAX objective
+executor on GPU, all 5 TS systems complete in ~15 minutes total (dominated
+by JIT compilation, not optimization).  Results are not reproducible
+bit-for-bit due to floating-point reduction-order differences between
+devices.
 
 ```bash
-# CORRECT — saves output FFs and results locally for later archival
-q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --output results/rh-enamide
+# Convergence run for one system (writes candidate + promoted artifacts)
+q2mm-benchmark single --system rh-enamide --backend jax --optimizer scipy-lbfgsb-jax \
+  --workflow method-e2 --output results/rh-enamide
 
-# WRONG — discards optimized force fields forever
-q2mm-benchmark --system rh-enamide --backend jax --optimizer L-BFGS-B --no-save
+# Convergence batch across all systems
+q2mm-benchmark batch --output results
+
+# Backend x form x optimizer matrix for one system
+q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb \
+  --output results/rh-enamide
 ```
 
 **Rules:**
 
-1. **Never use `--no-save`** unless you are debugging or testing the benchmark
-   harness itself.
+1. **Output is always persisted** — there is no `--no-save`; pass `--output`
+   to choose the location (defaults to `./results`).
 2. **Commit output force fields** to the separate `q2mm-data` repo under
    `benchmarks/<system>/forcefields/` so they are tracked in version control.
-3. **Commit result JSON files** to `q2mm-data/benchmarks/<system>/results/`
-   for reproducibility and future analysis.
+3. **Commit result JSON files** to `q2mm-data/benchmarks/<system>/` for
+   reproducibility and future analysis.
 4. If running GPU vs CPU comparisons, run them **sequentially** on an idle
    system — parallel benchmark runs produce invalid timing data.
 

@@ -38,9 +38,10 @@ class SingleStageWorkflow:
         optimizer: _Optimizer,
         *,
         n_evals: int = 1,
+        regularization: float = 0.0,
     ) -> OptimizationResult:
         """Execute one optimizer pass; return the canonical result."""
-        plan = ObjectivePlan.from_problem(problem)
+        plan = ObjectivePlan.from_problem(problem, regularization=regularization)
         evaluator = make_evaluator(plan)
 
         t0 = time.perf_counter()

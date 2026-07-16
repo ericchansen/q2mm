@@ -47,8 +47,8 @@ from test._shared import (
 )
 
 from q2mm.backends.mm.openmm import OpenMMBackend
-from q2mm.diagnostics import TablePrinter, compute_distortions, frequency_mae, frequency_rmsd, load_normal_modes
-from q2mm.diagnostics.benchmark import real_frequencies
+from q2mm.benchmarks.runner import compute_distortions, frequency_mae, frequency_rmsd, real_frequencies
+from q2mm.io.reference import load_normal_modes
 from q2mm.io.xyz import load_xyz
 from q2mm.models.forcefield import ForceField, FunctionalForm
 from q2mm.models.hessian import HessianProvenance, HessianUnits
@@ -75,6 +75,41 @@ EXT_REF = FIXTURES / "sn2_external_reference.json"
 
 
 # ---- Helpers ----
+
+
+class _SiTable:
+    """Minimal ASCII table printer for this test's diagnostic output.
+
+    A tiny private display helper; it only supports the handful of methods
+    this validation test uses to log human-readable SI tables.
+    """
+
+    _WIDTH = 78
+
+    def __init__(self) -> None:
+        self._lines: list[str] = []
+
+    def blank(self) -> None:
+        self._lines.append("")
+
+    def bar(self) -> None:
+        self._lines.append("=" * self._WIDTH)
+
+    def sep(self) -> None:
+        self._lines.append("-" * self._WIDTH)
+
+    def title(self, text: str) -> None:
+        self._lines.append(text.center(self._WIDTH))
+
+    def row(self, text: str) -> None:
+        self._lines.append(text)
+
+    def to_string(self) -> str:
+        return "\n".join(self._lines)
+
+    def flush(self) -> None:
+        print(self.to_string())
+        self._lines.clear()
 
 
 def _load_qm_frequencies(path: Path) -> np.ndarray:
@@ -400,7 +435,7 @@ class TestCH3FGroundState:
 
         # Print comparison table
         col1, col2, col3, col4, col5 = 17, 12, 12, 12, 10
-        t = TablePrinter()
+        t = _SiTable()
         t.blank()
         t.bar()
         t.title("CH3F QM vs NIST EXPERIMENTAL (cm^-1)")
@@ -461,7 +496,7 @@ class TestCH3FGroundState:
 
         # Print mode-by-mode table
         col_w = 16
-        t = TablePrinter()
+        t = _SiTable()
         t.blank()
         t.bar()
         t.title("CH3F GROUND STATE -- Vibrational Frequencies (cm^-1)")
@@ -566,7 +601,7 @@ class TestCH3FGroundState:
             results = data["results"]
             elapsed = data["elapsed"]
 
-            t = TablePrinter()
+            t = _SiTable()
             t.blank()
             t.bar()
             t.title(f"PES DISTORTION -- MM vs QM Harmonic Energy (kcal/mol) [{ff_label}]")
@@ -761,7 +796,7 @@ class TestSN2TransitionState:
             rmsd = frequency_rmsd(sorted(mm_real)[-n:], sorted(qm_real)[-n:]) if n > 0 else None
             data.append({"label": label, "real": mm_real, "imag": mm_imag, "rmsd": rmsd, "t_freq": t_freq})
 
-        t = TablePrinter()
+        t = _SiTable()
         t.blank()
         t.bar()
         t.title("SN2 TRANSITION STATE -- Vibrational Frequencies (cm^-1)")
@@ -904,7 +939,7 @@ class TestSN2ReactionProfile:
         lit_complex = ext_ref["sn2_barrier_ts_minus_complex_kcal_mol"]
 
         col1, col2, col3 = 35, 15, 15
-        t = TablePrinter()
+        t = _SiTable()
         t.blank()
         t.bar()
         t.title("SN2 REACTION PROFILE -- QM Energetics (kcal/mol)")
