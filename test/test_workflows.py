@@ -1,7 +1,7 @@
 """Tests for :mod:`q2mm.workflows`.
 
 The acceptance criterion for ``SingleStageWorkflow`` is **bit-identical
-parity** with the inline ``ObjectiveFunction → ScipyOptimizer.optimize``
+parity** with the inline ``ObjectivePlan → ObjectiveExecutor → ScipyOptimizer.optimize``
 pattern that the codebase has used to date. These tests run both code
 paths on the smallest available system (CH3F) and assert the workflow
 produces the same final score, parameter vector, and per-category
@@ -14,8 +14,10 @@ from q2mm.backends.registry import load_backend
 import numpy as np
 import pytest
 
-from q2mm.workflows import SingleStageWorkflow, StageResult, Workflow, WorkflowResult
-from q2mm.workflows.base import _Optimizer
+from q2mm.models.results import CandidateRecord, OptimizationResult, StageRecord
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.optimizers.protocols import _Optimizer
+from q2mm.workflows import SingleStageWorkflow, Workflow, make_evaluator_factory
 
 
 class TestWorkflowProtocol:
@@ -32,46 +34,152 @@ class TestWorkflowProtocol:
         assert isinstance(ScipyOptimizer(), _Optimizer)
 
 
-class TestStageResultDataclass:
+class TestStageRecordDataclass:
     """Field defaults and dataclass semantics."""
 
-    def test_stage_result_required_fields(self) -> None:
+    def test_stage_record_required_fields(self) -> None:
         """All non-default fields must be supplied."""
-        sr = StageResult(
+        sr = StageRecord(
             name="opt",
+            n_params=2,
+            layout_fingerprint="sha256:test",
             initial_score=1.0,
             final_score=0.5,
             n_iterations=10,
             n_evaluations=20,
             converged=True,
             message="ok",
-            jac_mode="analytical",
+            gradient_mode="analytical",
             elapsed_s=1.5,
         )
-        assert sr.locked_param_indices == []
+        assert sr.locked_param_indices == ()
         assert sr.notes == {}
 
-    @pytest.mark.jax
-    def test_workflow_result_default_lists(self) -> None:
-        """Default lists/dicts are per-instance (not shared)."""
-        from q2mm.benchmarks.systems import load_system
+    def test_stage_record_locked_indices_validated(self) -> None:
+        """Locked indices must be unique and within [0, n_params)."""
+        common = dict(
+            name="opt",
+            n_params=3,
+            layout_fingerprint="sha256:test",
+            initial_score=1.0,
+            final_score=0.5,
+            n_iterations=1,
+            n_evaluations=1,
+            converged=True,
+            message="ok",
+            gradient_mode="analytical",
+        )
+        with pytest.raises(ValueError, match="unique"):
+            StageRecord(locked_param_indices=(0, 0), **common)
+        with pytest.raises(ValueError, match="out of range"):
+            StageRecord(locked_param_indices=(3,), **common)
 
-        case = load_system("ch3f", backend=load_backend("jax"), functional_form="harmonic")
-        ff = case.problem.starting_force_field
-        wr1 = WorkflowResult(
-            workflow_name="x",
-            final_ff=ff,
-            initial_ff=ff,
-            stages=[],
+    def test_stage_record_fd_step_must_be_positive(self) -> None:
+        with pytest.raises(ValueError, match="fd_step"):
+            StageRecord(
+                name="opt",
+                n_params=1,
+                layout_fingerprint="sha256:test",
+                initial_score=1.0,
+                final_score=0.5,
+                n_iterations=1,
+                n_evaluations=1,
+                converged=True,
+                message="ok",
+                gradient_mode="finite_difference",
+                fd_step=0.0,
+            )
+
+    def test_optimization_result_category_metrics_frozen(self) -> None:
+        """Default category_metrics are independent and deeply immutable."""
+        common = dict(
+            success=True,
+            initial_score=1.0,
+            final_score=1.0,
+            n_iterations=0,
+            n_evaluations=0,
+            n_params=1,
+            layout_fingerprint="sha256:test",
+            initial_params=np.array([1.0]),
+            final_params=np.array([1.0]),
         )
-        wr2 = WorkflowResult(
-            workflow_name="y",
-            final_ff=ff,
-            initial_ff=ff,
-            stages=[],
+        wr1 = OptimizationResult(message="x", **common)
+        wr2 = OptimizationResult(message="y", **common)
+        # Independent per-instance defaults (not a shared mutable dict).
+        assert wr1.category_metrics == {}
+        assert wr2.category_metrics == {}
+        assert wr1.category_metrics is not wr2.category_metrics
+        # Deeply frozen: assignment is rejected.
+        with pytest.raises(TypeError):
+            wr1.category_metrics["x"] = {"n_refs": 1.0}  # type: ignore[index]
+        assert wr2.category_metrics == {}
+
+    def test_result_records_use_identity_equality(self) -> None:
+        candidate_one = CandidateRecord(
+            index=0,
+            status="success",
+            n_params=3,
+            layout_fingerprint="sha256:test",
+            initial_params=np.array([1.0, 2.0, 3.0]),
+            final_params=np.array([1.1, 2.1, 3.1]),
+            initial_score=2.0,
+            final_score=1.0,
         )
-        wr1.initial_obj_samples.append(1.0)
-        assert wr2.initial_obj_samples == []
+        candidate_two = CandidateRecord(
+            index=0,
+            status="success",
+            n_params=3,
+            layout_fingerprint="sha256:test",
+            initial_params=np.array([1.0, 2.0, 3.0]),
+            final_params=np.array([1.1, 2.1, 3.1]),
+            initial_score=2.0,
+            final_score=1.0,
+        )
+        stage_one = StageRecord(
+            name="stage",
+            n_params=3,
+            layout_fingerprint="sha256:test",
+            initial_score=2.0,
+            final_score=1.0,
+            n_iterations=1,
+            n_evaluations=2,
+            converged=True,
+            message="ok",
+            gradient_mode="analytical",
+            notes={"vector": np.array([1.0, 2.0, 3.0])},
+        )
+        stage_two = StageRecord(
+            name="stage",
+            n_params=3,
+            layout_fingerprint="sha256:test",
+            initial_score=2.0,
+            final_score=1.0,
+            n_iterations=1,
+            n_evaluations=2,
+            converged=True,
+            message="ok",
+            gradient_mode="analytical",
+            notes={"vector": np.array([1.0, 2.0, 3.0])},
+        )
+        common = {
+            "success": True,
+            "message": "ok",
+            "initial_score": 2.0,
+            "final_score": 1.0,
+            "n_iterations": 1,
+            "n_evaluations": 2,
+            "n_params": 3,
+            "layout_fingerprint": "sha256:test",
+            "initial_params": np.array([1.0, 2.0, 3.0]),
+            "final_params": np.array([1.1, 2.1, 3.1]),
+        }
+        result_one = OptimizationResult(**common)
+        result_two = OptimizationResult(**common)
+
+        assert candidate_one != candidate_two
+        assert stage_one != stage_two
+        assert result_one != result_two
+        assert len({candidate_one, candidate_two, stage_one, stage_two, result_one, result_two}) == 6
 
 
 @pytest.mark.jax
@@ -88,31 +196,30 @@ class TestSingleStageWorkflowParity:
 
     def test_workflow_matches_direct_call(self) -> None:
         """Same final score and parameter vector as the inline pattern."""
-        from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         case_direct, backend = self._load()
         problem_direct = case_direct.problem
-        obj_direct = ObjectiveFunction(
-            problem_direct.starting_force_field,
+        make_evaluator_direct = make_evaluator_factory(
             backend,
-            list(problem_direct.molecules),
-            problem_direct.observations,
-            case_ids=list(problem_direct.case_ids),
-            layout=problem_direct.layout,
+            problem_direct.starting_force_field,
+            executor="jax",
         )
+        obj_direct = make_evaluator_direct(ObjectivePlan.from_problem(problem_direct))
         opt_direct = ScipyOptimizer(method="L-BFGS-B", maxiter=5, ftol=1e-6, verbose=False)
         direct_result = opt_direct.optimize(obj_direct, problem_direct.active_space)
 
         case_workflow, backend = self._load()
         problem_workflow = case_workflow.problem
-        opt_workflow = ScipyOptimizer(method="L-BFGS-B", maxiter=5, ftol=1e-6, verbose=False)
-        workflow_result = SingleStageWorkflow().run(problem_workflow, backend, opt_workflow, n_evals=0)
-
-        np.testing.assert_array_equal(
-            direct_result.final_params,
-            problem_workflow.layout.vector(workflow_result.final_ff),
+        make_evaluator_workflow = make_evaluator_factory(
+            backend,
+            problem_workflow.starting_force_field,
+            executor="jax",
         )
+        opt_workflow = ScipyOptimizer(method="L-BFGS-B", maxiter=5, ftol=1e-6, verbose=False)
+        workflow_result = SingleStageWorkflow().run(problem_workflow, make_evaluator_workflow, opt_workflow, n_evals=0)
+
+        np.testing.assert_array_equal(direct_result.final_params, workflow_result.final_params)
         assert direct_result.final_score == workflow_result.stages[0].final_score
         assert direct_result.n_iterations == workflow_result.stages[0].n_iterations
         assert direct_result.n_evaluations == workflow_result.stages[0].n_evaluations
@@ -124,24 +231,25 @@ class TestSingleStageWorkflowParity:
         case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        result = SingleStageWorkflow().run(problem, backend, opt, n_evals=0)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = SingleStageWorkflow().run(problem, make_evaluator, opt, n_evals=0)
 
-        assert result.optimized_categories, "expected at least one residual category"
-        for kind, stats in result.optimized_categories.items():
+        assert result.category_metrics, "expected at least one residual category"
+        for kind, stats in result.category_metrics.items():
             assert {"n_refs", "r2", "rmsd", "mae"} <= set(stats.keys()), f"missing keys for {kind}"
 
-    def test_workflow_result_reuses_problem_starting_force_field(self) -> None:
-        """``WorkflowResult.initial_ff`` is the immutable problem starting force field."""
+    def test_workflow_result_records_problem_starting_vector(self) -> None:
+        """``OptimizationResult.initial_params`` is the problem starting force-field vector."""
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         case, backend = self._load()
         problem = case.problem
 
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
-        result = SingleStageWorkflow().run(problem, backend, opt, n_evals=0)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = SingleStageWorkflow().run(problem, make_evaluator, opt, n_evals=0)
 
-        assert result.initial_ff is problem.starting_force_field
-        assert result.initial_ff == problem.starting_force_field
+        np.testing.assert_array_equal(result.initial_params, problem.layout.vector(problem.starting_force_field))
 
     def test_n_evals_samples_objective(self) -> None:
         """``n_evals > 0`` populates the sample lists with that many entries."""
@@ -150,10 +258,11 @@ class TestSingleStageWorkflowParity:
         case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        result = SingleStageWorkflow().run(problem, backend, opt, n_evals=3)
-        assert len(result.initial_obj_samples) == 3
-        assert len(result.final_obj_samples) == 3
-        assert all(isinstance(s, float) for s in result.initial_obj_samples)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = SingleStageWorkflow().run(problem, make_evaluator, opt, n_evals=3)
+        assert len(result.initial_samples) == 3
+        assert len(result.final_samples) == 3
+        assert all(isinstance(s, float) for s in result.initial_samples)
 
     def test_n_evals_zero_skips_sampling(self) -> None:
         """``n_evals=0`` produces empty sample lists."""
@@ -162,34 +271,32 @@ class TestSingleStageWorkflowParity:
         case, backend = self._load()
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        result = SingleStageWorkflow().run(problem, backend, opt, n_evals=0)
-        assert result.initial_obj_samples == []
-        assert result.final_obj_samples == []
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = SingleStageWorkflow().run(problem, make_evaluator, opt, n_evals=0)
+        assert result.initial_samples == ()
+        assert result.final_samples == ()
 
     def test_post_hoc_sampling_does_not_pollute_optimizer_bookkeeping(self) -> None:
-        """``_evaluate_samples`` restores n_eval and truncates history."""
-        from q2mm.optimizers.objective import ObjectiveFunction
-        from q2mm.workflows.single_stage import _evaluate_samples
+        """``evaluate_samples`` restores n_evaluations and truncates history."""
+        from q2mm.objectives.metrics import evaluate_samples
 
         case, backend = self._load()
         problem = case.problem
-        obj = ObjectiveFunction(
-            problem.starting_force_field,
+        make_evaluator = make_evaluator_factory(
             backend,
-            list(problem.molecules),
-            problem.observations,
-            case_ids=list(problem.case_ids),
-            layout=problem.layout,
+            problem.starting_force_field,
+            executor="jax",
         )
+        obj = make_evaluator(ObjectivePlan.from_problem(problem))
         params = problem.layout.vector(problem.starting_force_field)
-        _ = obj(params)
-        n_eval_baseline = obj.n_eval
+        _ = obj.value(params)
+        n_eval_baseline = obj.n_evaluations
         history_len_baseline = len(obj.history)
 
-        samples = _evaluate_samples(obj, params, 5)
+        samples = evaluate_samples(obj, params, 5)
         assert len(samples) == 5
-        assert obj.n_eval == n_eval_baseline, (
-            f"Sampling leaked into n_eval: baseline={n_eval_baseline}, after sampling={obj.n_eval}"
+        assert obj.n_evaluations == n_eval_baseline, (
+            f"Sampling leaked into n_evaluations: baseline={n_eval_baseline}, after sampling={obj.n_evaluations}"
         )
         assert len(obj.history) == history_len_baseline, (
             f"Sampling leaked into history: baseline len={history_len_baseline}, after sampling len={len(obj.history)}"

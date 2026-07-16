@@ -1,10 +1,9 @@
-"""Tests for ScipyOptimizer auto-detection of analytical gradients."""
+"""Tests for executor-driven SciPy gradient behavior."""
 
 from __future__ import annotations
 
-import contextlib
-import logging
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -13,9 +12,15 @@ import pytest
 pytest.importorskip("scipy")
 
 from q2mm.diagnostics.benchmark import _resolve_gradients
+from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
 from q2mm.models.observations import ObservationSet
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import GradientMode, ObjectiveGradientError
+from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from test._shared import make_diatomic
 
 
 def _mock_engine(supports_grad: bool) -> MagicMock:
@@ -33,17 +38,8 @@ def _mock_engine(supports_grad: bool) -> MagicMock:
         functional_forms=frozenset({"harmonic"}),
         provenance=BackendProvenance(backend="mock", role=BackendRole.MM),
     )
-    # A prepared session exposes the same capability info as its backend.
     backend.prepare.return_value.info = backend.info
     return backend
-
-
-def _mock_mol() -> MagicMock:
-    """Return a mock molecule so the objective can build a prepared session."""
-    mol = MagicMock()
-    mol.symbols = ["H", "H"]
-    mol.name = "mock_mol"
-    return mol
 
 
 @dataclass(frozen=True)
@@ -61,6 +57,10 @@ class MockLayout:
 
     def __len__(self) -> int:
         return self.n_params
+
+    @property
+    def fingerprint(self) -> str:
+        return f"mock:{self.n_params}"
 
     def vector(self, forcefield: MockForceField) -> np.ndarray:
         return np.asarray(forcefield.params, dtype=np.float64)
@@ -80,6 +80,7 @@ class MockSpace:
         active_indices: np.ndarray | None = None,
     ) -> None:
         self.baseline = np.asarray(baseline, dtype=np.float64).copy()
+        self.layout = MockLayout(self.baseline.size)
         self.active_indices = (
             np.arange(self.baseline.size, dtype=int)
             if active_indices is None
@@ -108,32 +109,63 @@ class MockSpace:
         full[self.active_indices] = np.asarray(active_vector, dtype=np.float64)
         return full
 
+    def with_baseline(self, vector: np.ndarray) -> MockSpace:
+        return MockSpace(np.asarray(vector, dtype=float), self._full_bounds.tolist(), self.active_indices)
+
 
 class _MockObjective:
-    """Lightweight mock of ObjectiveFunction for testing jac resolution."""
+    """Lightweight objective evaluator for testing executor-driven gradient modes."""
 
-    def __init__(self, *, engine_supports_grad: bool = False) -> None:
+    def __init__(self, *, gradient_mode: GradientMode = GradientMode.NONE) -> None:
         baseline = np.array([1.0, 2.0], dtype=np.float64)
-        self.backend = _mock_engine(engine_supports_grad)
         self.forcefield = MockForceField(tuple(baseline.tolist()))
         self.layout = MockLayout(2)
         self.space = MockSpace(baseline, bounds=[(0.0, 10.0), (0.0, 10.0)])
+        self.plan = SimpleNamespace(categories=frozenset({"energy"}))
         self.history: list[float] = []
-        self.n_eval = 0
+        self._n_eval = 0
+        self._gradient_mode = gradient_mode
 
-    def __call__(self, x: np.ndarray) -> float:
-        self.n_eval += 1
-        self.history.append(1.0)
-        return 1.0
+    @property
+    def gradient_mode(self) -> GradientMode:
+        return self._gradient_mode
 
-    def gradient(self, x: np.ndarray) -> np.ndarray:
-        return np.array([0.1, 0.2])
+    @property
+    def finite_difference_step(self) -> float | None:
+        return None
+
+    @property
+    def n_evaluations(self) -> int:
+        return self._n_eval
+
+    def record_evaluation(self, score: float) -> None:
+        self._n_eval += 1
+        self.history.append(float(score))
+
+    def value(self, x: np.ndarray) -> float:
+        x = np.asarray(x, dtype=float)
+        score = float(np.sum((x - np.array([0.5, 1.5])) ** 2))
+        self._n_eval += 1
+        self.history.append(score)
+        return score
+
+    def value_and_gradient(self, x: np.ndarray) -> tuple[float, np.ndarray]:
+        if self.gradient_mode is GradientMode.NONE:
+            raise ObjectiveGradientError("No evaluator gradient available")
+        value = self.value(x)
+        return value, 2.0 * (np.asarray(x, dtype=float) - np.array([0.5, 1.5]))
+
+    def residuals(self, x: np.ndarray) -> np.ndarray:
+        return np.asarray(x, dtype=float) - np.array([0.5, 1.5])
+
+    def least_squares_residuals(self, x: np.ndarray) -> np.ndarray:
+        return self.residuals(x)
 
 
 class _MockFrozenObjective:
     """Quadratic objective over a full parameter vector with frozen entries."""
 
-    def __init__(self, *, method: str) -> None:
+    def __init__(self, *, gradient_mode: GradientMode = GradientMode.NONE) -> None:
         baseline = np.array([0.0, 5.0, 0.0], dtype=float)
         self.target = np.array([1.0, 4.0, 3.0], dtype=float)
         self.forcefield = MockForceField(tuple(baseline.tolist()))
@@ -143,93 +175,119 @@ class _MockFrozenObjective:
             bounds=[(-10.0, 10.0), (-10.0, 10.0), (-10.0, 10.0)],
             active_indices=np.array([0, 2]),
         )
-        self.backend = _mock_engine(method != "least_squares")
+        self.plan = SimpleNamespace(categories=frozenset({"energy"}))
         self.history: list[float] = []
-        self.n_eval = 0
+        self._n_eval = 0
+        self._gradient_mode = gradient_mode
 
-    def __call__(self, x: np.ndarray) -> float:
+    @property
+    def gradient_mode(self) -> GradientMode:
+        return self._gradient_mode
+
+    @property
+    def finite_difference_step(self) -> float | None:
+        return None
+
+    @property
+    def n_evaluations(self) -> int:
+        return self._n_eval
+
+    def record_evaluation(self, score: float) -> None:
+        self._n_eval += 1
+        self.history.append(float(score))
+
+    def value(self, x: np.ndarray) -> float:
         score = float(np.sum((np.asarray(x, dtype=float) - self.target) ** 2))
-        self.n_eval += 1
+        self._n_eval += 1
         self.history.append(score)
         return score
 
-    def gradient(self, x: np.ndarray) -> np.ndarray:
+    def value_and_gradient(self, x: np.ndarray) -> tuple[float, np.ndarray]:
+        if self.gradient_mode is GradientMode.NONE:
+            raise ObjectiveGradientError("No evaluator gradient available")
         x = np.asarray(x, dtype=float)
-        return 2.0 * (x - self.target)
+        return self.value(x), 2.0 * (x - self.target)
 
     def residuals(self, x: np.ndarray) -> np.ndarray:
-        x = np.asarray(x, dtype=float)
-        residuals = x - self.target
-        self.n_eval += 1
-        self.history.append(float(np.sum(residuals**2)))
-        return residuals
+        return np.asarray(x, dtype=float) - self.target
+
+    def least_squares_residuals(self, x: np.ndarray) -> np.ndarray:
+        return self.residuals(x)
 
 
 def _run_ignoring_errors(opt: ScipyOptimizer, obj: _MockObjective) -> None:
-    """Run optimizer, suppressing errors from mock returning non-standard types."""
-    with contextlib.suppress(Exception):
-        opt.optimize(obj, obj.space)
+    opt.optimize(obj, obj.space)
+
+
+def _h2_ff() -> ForceField:
+    return ForceField(
+        bonds=[BondParam(elements=("H", "H"), force_constant=359.7, equilibrium=0.74)],
+        functional_form=FunctionalForm.HARMONIC,
+    )
+
+
+def _plan_for_kinds(kinds: tuple[str, ...]) -> ObjectivePlan:
+    ff = _h2_ff()
+    mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
+    ref = ObservationSet()
+    for kind in kinds:
+        if kind == "energy":
+            ref = ref.with_energy(0.0, case_id="0")
+        elif kind == "frequency":
+            ref = ref.with_frequency(100.0, data_idx=0, case_id="0")
+        elif kind == "bond_length":
+            ref = ref.with_bond_length(1.5, atom_indices=(0, 1), case_id="0")
+        elif kind == "hessian_element":
+            ref = ref.with_hessian_element(0.1, row=0, col=0, case_id="0")
+    layout = ParameterLayout.from_force_field(ff)
+    return ObjectivePlan(
+        case_ids=("0",),
+        molecules=(mol,),
+        stationary_points=(StationaryPointKind.GROUND_STATE,),
+        observations=ref,
+        layout=layout,
+        active_space=ActiveParameterSpace.all_active(layout, ff),
+    )
 
 
 class TestJacAutoDetection:
-    """Verify the optimizer auto-detects analytical gradient support."""
+    """Verify the optimizer follows executor-declared gradient support."""
 
     def test_lbfgsb_auto_enables_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
-        obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True, jac="auto")
-
-        with caplog.at_level(logging.INFO):
-            _run_ignoring_errors(opt, obj)
-
-        assert "Auto-detected analytical gradient support" in caplog.text
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)
+        assert result.gradient_mode == "analytical"
+        assert result.fd_step is None
 
     def test_lbfgsb_no_analytical_when_unsupported(self, caplog: pytest.LogCaptureFixture) -> None:
-        obj = _MockObjective(engine_supports_grad=False)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True, jac="auto")
-
-        with caplog.at_level(logging.INFO):
-            _run_ignoring_errors(opt, obj)
-
-        assert "Auto-detected" not in caplog.text
+        obj = _MockObjective(gradient_mode=GradientMode.NONE)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)
+        assert result.gradient_mode == "finite_difference"
+        assert result.fd_step == 1e-3
 
     def test_lbfgsb_default_jac_none_uses_fd(self, caplog: pytest.LogCaptureFixture) -> None:
-        obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True)
-
-        with caplog.at_level(logging.INFO):
-            _run_ignoring_errors(opt, obj)
-
-        assert "Auto-detected" not in caplog.text
-        assert "analytical" not in caplog.text.lower()
+        obj = _MockObjective(gradient_mode=GradientMode.NONE)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)
+        assert result.gradient_mode == "finite_difference"
+        assert result.fd_step == 1e-3
 
     def test_nelder_mead_never_uses_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
-        obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=1, verbose=True, jac="auto")
-
-        with caplog.at_level(logging.INFO):
-            _run_ignoring_errors(opt, obj)
-
-        assert "Auto-detected" not in caplog.text
-        assert "analytical" not in caplog.text.lower()
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+        result = ScipyOptimizer(method="Nelder-Mead", maxiter=1, verbose=True).optimize(obj, obj.space)
+        assert result.gradient_mode == "none"
+        assert result.fd_step is None
 
     def test_powell_never_uses_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
-        obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="Powell", maxiter=1, verbose=True, jac="auto")
-
-        with caplog.at_level(logging.INFO):
-            _run_ignoring_errors(opt, obj)
-
-        assert "Auto-detected" not in caplog.text
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+        result = ScipyOptimizer(method="Powell", maxiter=1, verbose=True).optimize(obj, obj.space)
+        assert result.gradient_mode == "none"
+        assert result.fd_step is None
 
     def test_explicit_analytical_overrides_auto(self, caplog: pytest.LogCaptureFixture) -> None:
-        obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True, jac="analytical")
-
-        with caplog.at_level(logging.INFO):
-            _run_ignoring_errors(opt, obj)
-
-        assert "Using analytical gradients (jac='analytical')" in caplog.text
-        assert "Auto-detected" not in caplog.text
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)
+        assert result.gradient_mode == "analytical"
+        assert result.fd_step is None
 
     def test_derivative_free_methods_set(self) -> None:
         assert "Nelder-Mead" in ScipyOptimizer.DERIVATIVE_FREE_METHODS
@@ -241,9 +299,8 @@ class TestFrozenParameterSupport:
     """Frozen parameters are excluded from optimizer updates."""
 
     def test_lbfgsb_updates_only_active_params(self) -> None:
-        obj = _MockFrozenObjective(method="L-BFGS-B")
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False, jac="analytical")
-        result = opt.optimize(obj, obj.space)
+        obj = _MockFrozenObjective(gradient_mode=GradientMode.ANALYTICAL)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False).optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.initial_params, [0.0, 5.0, 0.0])
         np.testing.assert_allclose(result.final_params[[1]], [5.0])
@@ -253,9 +310,8 @@ class TestFrozenParameterSupport:
         np.testing.assert_allclose(obj.layout.vector(obj.forcefield), [0.0, 5.0, 0.0])
 
     def test_least_squares_updates_only_active_params(self) -> None:
-        obj = _MockFrozenObjective(method="least_squares")
-        opt = ScipyOptimizer(method="least_squares", maxiter=50, verbose=False)
-        result = opt.optimize(obj, obj.space)
+        obj = _MockFrozenObjective(gradient_mode=GradientMode.NONE)
+        result = ScipyOptimizer(method="least_squares", maxiter=50, verbose=False).optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.final_params[[1]], [5.0])
         assert result.final_score < result.initial_score
@@ -263,159 +319,143 @@ class TestFrozenParameterSupport:
 
 
 class TestOptimizationResultFields:
-    """Verify jac_mode and eps are set correctly on OptimizationResult."""
+    """Verify gradient_mode and fd_step are set correctly on OptimizationResult."""
 
     def test_lbfgsb_auto_with_support_sets_eps_none(self) -> None:
-        obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, jac="auto")
-        result = opt.optimize(obj, obj.space)
-        assert result.jac_mode == "auto"
-        assert result.eps is None
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1).optimize(obj, obj.space)
+        assert result.gradient_mode == "analytical"
+        assert result.fd_step is None
 
     def test_lbfgsb_fd_sets_eps(self) -> None:
-        obj = _MockObjective(engine_supports_grad=False)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, jac=None)
-        result = opt.optimize(obj, obj.space)
-        assert result.jac_mode is None
-        assert result.eps == 1e-3
+        obj = _MockObjective(gradient_mode=GradientMode.NONE)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1).optimize(obj, obj.space)
+        assert result.gradient_mode == "finite_difference"
+        assert result.fd_step == 1e-3
 
     def test_derivative_free_sets_eps_none(self) -> None:
-        obj = _MockObjective(engine_supports_grad=True)
-        opt = ScipyOptimizer(method="Powell", maxiter=1, jac="auto")
-        result = opt.optimize(obj, obj.space)
-        assert result.jac_mode == "auto"
-        assert result.eps is None
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+        result = ScipyOptimizer(method="Powell", maxiter=1).optimize(obj, obj.space)
+        assert result.gradient_mode == "none"
+        assert result.fd_step is None
 
     def test_custom_eps_value(self) -> None:
-        obj = _MockObjective(engine_supports_grad=False)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, jac=None, eps=5e-4)
-        result = opt.optimize(obj, obj.space)
-        assert result.eps == 5e-4
+        obj = _MockObjective(gradient_mode=GradientMode.NONE)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, eps=5e-4).optimize(obj, obj.space)
+        assert result.fd_step == 5e-4
 
 
 class TestResolveGradients:
-    """Verify _resolve_gradients produces correct per-evaluator gradient maps."""
+    """Verify _resolve_gradients produces correct per-category gradient maps."""
 
     @staticmethod
     def _make_objective(
-        *, engine_supports_grad: bool, kinds: tuple[str, ...] = ("energy", "frequency")
-    ) -> ObjectiveFunction:
-        backend = _mock_engine(engine_supports_grad)
-        ref = ObservationSet()
-        for kind in kinds:
-            if kind == "energy":
-                ref = ref.with_energy(0.0)
-            elif kind == "frequency":
-                ref = ref.with_frequency(100.0, data_idx=0)
-            elif kind == "bond_length":
-                ref = ref.with_bond_length(1.5, atom_indices=(0, 1))
-            elif kind == "hessian_element":
-                ref = ref.with_hessian_element(0.1, row=0, col=0)
-        return ObjectiveFunction(None, backend, [_mock_mol()], ref)
+        *, gradient_mode: GradientMode, kinds: tuple[str, ...] = ("energy", "frequency")
+    ) -> _MockObjective:
+        obj = _MockObjective(gradient_mode=gradient_mode)
+        category_map = {
+            "energy": "energy",
+            "frequency": "frequency",
+            "bond_length": "geometry",
+            "hessian_element": "hessian",
+        }
+        obj.plan = SimpleNamespace(categories=frozenset(category_map[k] for k in kinds))
+        return obj
 
     def test_auto_with_analytical_support(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True)
-        result = _resolve_gradients("auto", obj)
+        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL)
+        result = _resolve_gradients(obj)
         assert result == {"energy": "analytical", "frequency": "analytical"}
 
     def test_auto_without_analytical_support(self) -> None:
-        obj = self._make_objective(engine_supports_grad=False)
-        result = _resolve_gradients("auto", obj)
+        obj = self._make_objective(gradient_mode=GradientMode.NONE)
+        result = _resolve_gradients(obj)
         assert result == {"energy": "finite-diff", "frequency": "finite-diff"}
 
     def test_jac_none_is_fd(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True)
-        result = _resolve_gradients(None, obj)
+        obj = self._make_objective(gradient_mode=GradientMode.NONE)
+        result = _resolve_gradients(obj)
         assert result == {"energy": "finite-diff", "frequency": "finite-diff"}
 
     def test_analytical_with_support(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True)
-        result = _resolve_gradients("analytical", obj)
+        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL)
+        result = _resolve_gradients(obj)
         assert result == {"energy": "analytical", "frequency": "analytical"}
 
     def test_derivative_free_method_overrides_jac(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True)
-        result = _resolve_gradients("auto", obj, method="Powell")
+        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL)
+        result = _resolve_gradients(obj, method="Powell")
         assert result == {"energy": "n/a", "frequency": "n/a"}
 
     def test_nelder_mead_is_derivative_free(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True)
-        result = _resolve_gradients("auto", obj, method="Nelder-Mead")
+        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL)
+        result = _resolve_gradients(obj, method="Nelder-Mead")
         assert result == {"energy": "n/a", "frequency": "n/a"}
 
     def test_energy_only_objective(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True, kinds=("energy",))
-        result = _resolve_gradients("auto", obj)
+        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL, kinds=("energy",))
+        result = _resolve_gradients(obj)
         assert result == {"energy": "analytical"}
 
     def test_frequency_only_objective(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True, kinds=("frequency",))
-        result = _resolve_gradients("auto", obj)
+        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL, kinds=("frequency",))
+        result = _resolve_gradients(obj)
         assert result == {"frequency": "analytical"}
 
     def test_geometry_refs_always_fd(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True, kinds=("energy", "bond_length"))
-        result = _resolve_gradients("auto", obj)
-        assert result == {"energy": "analytical", "geometry": "finite-diff"}
+        obj = self._make_objective(gradient_mode=GradientMode.NONE, kinds=("energy", "bond_length"))
+        result = _resolve_gradients(obj)
+        assert result == {"energy": "finite-diff", "geometry": "finite-diff"}
 
     def test_hessian_refs_with_support(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True, kinds=("energy", "hessian_element"))
-        result = _resolve_gradients("auto", obj)
+        obj = self._make_objective(gradient_mode=GradientMode.ANALYTICAL, kinds=("energy", "hessian_element"))
+        result = _resolve_gradients(obj)
         assert result == {"energy": "analytical", "hessian": "analytical"}
 
 
 class TestPerEvaluatorGradientSupport:
-    """Verify ObjectiveFunction.per_evaluator_gradient_support()."""
+    """Verify explicit Python executor analytical-gradient support checks."""
 
     @staticmethod
-    def _make_objective(*, engine_supports_grad: bool, kinds: tuple[str, ...]) -> ObjectiveFunction:
-        backend = _mock_engine(engine_supports_grad)
-        ref = ObservationSet()
-        for kind in kinds:
-            if kind == "energy":
-                ref = ref.with_energy(0.0)
-            elif kind == "frequency":
-                ref = ref.with_frequency(100.0, data_idx=0)
-            elif kind == "bond_length":
-                ref = ref.with_bond_length(1.5, atom_indices=(0, 1))
-            elif kind == "hessian_element":
-                ref = ref.with_hessian_element(0.1, row=0, col=0)
-        return ObjectiveFunction(None, backend, [_mock_mol()], ref)
+    def _make_objective(*, engine_supports_grad: bool, kinds: tuple[str, ...]) -> PythonObjectiveExecutor:
+        ff = _h2_ff()
+        return PythonObjectiveExecutor(
+            _plan_for_kinds(kinds),
+            _mock_engine(engine_supports_grad),
+            ff,
+            gradient_mode=GradientMode.ANALYTICAL,
+        )
 
     def test_energy_and_frequency_with_analytical_engine(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("energy", "frequency"))
-        result = obj.per_evaluator_gradient_support()
-        assert result == {"energy": True, "frequency": True}
+        assert obj.gradient_mode is GradientMode.ANALYTICAL
 
     def test_energy_and_frequency_without_analytical_engine(self) -> None:
-        obj = self._make_objective(engine_supports_grad=False, kinds=("energy", "frequency"))
-        result = obj.per_evaluator_gradient_support()
-        assert result == {"energy": False, "frequency": False}
+        with pytest.raises(ObjectiveGradientError, match="PARAMETER_GRADIENT|HESSIAN_PARAMETER_JACOBIAN"):
+            self._make_objective(engine_supports_grad=False, kinds=("energy", "frequency"))
 
     def test_energy_only(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("energy",))
-        result = obj.per_evaluator_gradient_support()
-        assert result == {"energy": True}
+        assert obj.gradient_mode is GradientMode.ANALYTICAL
 
     def test_frequency_only(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("frequency",))
-        result = obj.per_evaluator_gradient_support()
-        assert result == {"frequency": True}
+        assert obj.gradient_mode is GradientMode.ANALYTICAL
 
     def test_geometry_always_false(self) -> None:
-        obj = self._make_objective(engine_supports_grad=True, kinds=("bond_length",))
-        result = obj.per_evaluator_gradient_support()
-        assert result == {"geometry": False}
+        with pytest.raises(ObjectiveGradientError, match="geometry references"):
+            self._make_objective(engine_supports_grad=True, kinds=("bond_length",))
 
     def test_hessian_with_support(self) -> None:
         obj = self._make_objective(engine_supports_grad=True, kinds=("hessian_element",))
-        result = obj.per_evaluator_gradient_support()
-        assert result == {"hessian": True}
+        assert obj.gradient_mode is GradientMode.ANALYTICAL
 
     def test_result_is_sorted_by_category(self) -> None:
-        obj = self._make_objective(
-            engine_supports_grad=True,
-            kinds=("frequency", "energy", "hessian_element", "bond_length"),
+        evaluator = PythonObjectiveExecutor(
+            _plan_for_kinds(("frequency", "energy", "hessian_element", "bond_length")),
+            _mock_engine(True),
+            _h2_ff(),
+            gradient_mode=GradientMode.NONE,
         )
-        result = obj.per_evaluator_gradient_support()
+        result = _resolve_gradients(evaluator)
         assert list(result.keys()) == ["energy", "frequency", "geometry", "hessian"]

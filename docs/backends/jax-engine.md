@@ -1,4 +1,4 @@
-# JAX Engine
+# JAX Backend
 
 A pure-[JAX](https://jax.readthedocs.io/) implementation supporting both harmonic (OPLSAA-style) and MM3
 functional forms, including bond, angle, torsion, stretch-bend cross-term,
@@ -50,12 +50,12 @@ pip install jax[cuda12]
 ## Configuration
 
 ```python
-from q2mm.backends.mm import JaxEngine
+from q2mm.backends.mm import JaxBackend
 
-engine = JaxEngine()
+backend = JaxBackend()
 ```
 
-JaxEngine has no constructor parameters.  It runs on whichever JAX backend
+JaxBackend has no constructor parameters.  It runs on whichever JAX backend
 is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
 
 ---
@@ -68,25 +68,24 @@ is active (`cpu` or `gpu`), detected via `jax.default_backend()`.
 | `minimize()` | ✅ | JAX gradients + SciPy L-BFGS-B |
 | `hessian()` | ✅ | **Analytical** via `jax.hessian` |
 | `frequencies()` | ✅ | From analytical Hessian |
-| `energy_and_param_grad()` | ✅ | **Analytical** via `jax.grad` |
+| `parameter_gradient()` | ✅ | **Analytical** via `jax.grad` |
 | `batched_energy()` | ✅ | **Vectorized** via `jax.vmap` |
-| `supports_runtime_params()` | ✅ | — |
-| `supports_analytical_gradients()` | ✅ | — |
+| `hessian_parameter_jacobian()` | ✅ | **Analytical** Hessian-parameter derivatives |
 
 ---
 
 ## GPU support
 
-JaxEngine runs on whichever device JAX selects.  To use a GPU:
+JaxBackend runs on whichever device JAX selects.  To use a GPU:
 
 1. Install the CUDA-enabled JAX: `pip install jax[cuda12]`
 2. Verify: `python -c "import jax; print(jax.default_backend())"`
 
-The engine name includes the backend string (e.g., `JAX (harmonic, gpu)`
+The backend name includes the JAX device string (e.g., `JAX (harmonic, gpu)`
 or `JAX (harmonic, cpu)`).
 
 !!! info "Performance"
-    In the current benchmark set, JaxEngine is one of the fastest in-process
+    In the current benchmark set, JaxBackend is one of the fastest in-process
     backends for harmonic CH₃F optimization and offers analytical gradients
     for energy-based evaluators.  Exact speedups depend on system size,
     objective, and device, so use the
@@ -94,7 +93,7 @@ or `JAX (harmonic, cpu)`).
     [GPU benchmarks](../benchmarks/gpu.md) for workload-specific numbers.
 
 !!! tip "Optax optimizers"
-    JaxEngine pairs naturally with
+    JaxBackend pairs naturally with
     [optax adaptive optimizers](../how-it-works/optimization-guide.md#workflow-b-small-rugged)
     (Adam, AdaGrad, SGD) via `OptaxOptimizer`. These use JAX's analytical
     gradients automatically — no finite-difference overhead. On CH₃F MM3,
@@ -102,9 +101,9 @@ or `JAX (harmonic, cpu)`).
     See [Small Molecules](../systems/small-molecules.md) for full results.
 
 !!! tip "Analytical-gradient optimization"
-    For multi-molecule transition-state systems, pair JaxEngine with
-    [`ScipyOptimizer(method="L-BFGS-B", jac="auto")`](../how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax).
-    That route builds per-molecule JaxLoss functions and feeds analytical
+    For multi-molecule transition-state systems, pair JaxBackend with
+    [`JaxObjectiveExecutor` + `ScipyOptimizer(method="L-BFGS-B")`](../how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax).
+    That route builds per-case JIT loss fragments and feeds analytical
     gradients to SciPy's L-BFGS-B implementation without placing all
     molecules in one XLA program. `JaxOptOptimizer` remains useful for
     small single-molecule systems, but it is not the recommended default
@@ -124,27 +123,36 @@ or `JAX (harmonic, cpu)`).
 ## Example
 
 ```python
-from q2mm.backends.mm import JaxEngine
+from q2mm.backends.mm import JaxBackend
+from q2mm.backends.contracts import (
+    EnergyRequest,
+    ParameterGradientRequest,
+    PreparationRequest,
+)
 from q2mm.io.xyz import load_xyz
 from q2mm.models.forcefield import ForceField
+from q2mm.models.parameters import ParameterLayout
 
 mol = load_xyz("molecule.xyz")
 ff = ForceField.create_for_molecule(mol)
+layout = ParameterLayout.from_force_field(ff)
+params = layout.vector(ff)
 
-engine = JaxEngine()
-e = engine.energy(mol, ff)
+backend = JaxBackend()
+session = backend.prepare(PreparationRequest(case_id="0", molecule=mol, force_field=ff))
+e = session.energy(EnergyRequest(parameters=params)).energy
 print(f"JAX energy: {e:.4f} kcal/mol")
 
 # Analytical parameter gradients
-e, grad = engine.energy_and_param_grad(mol, ff)
-print(f"Energy: {e:.4f}, grad shape: {grad.shape}")
+grad_result = session.parameter_gradient(ParameterGradientRequest(parameters=params))
+print(f"Energy: {grad_result.energy:.4f}, grad shape: {grad_result.gradient.shape}")
 ```
 
 ---
 
 ## See also
 
-- [JaxMDEngine](jax-md.md) — periodic boundaries, neighbor lists, 1-4 scaling
-- [Engine comparison table](index.md#engine-overview)
+- [JaxMdBackend](jax-md.md) — periodic boundaries, neighbor lists, 1-4 scaling
+- [Backend comparison table](index.md#backend-overview)
 - [GPU benchmarks](../benchmarks/gpu.md)
-- [API Reference: JaxEngine](../reference/q2mm/backends/mm/jax_engine.md)
+- [API Reference: JaxBackend](../reference/q2mm/backends/mm/jax_engine.md)

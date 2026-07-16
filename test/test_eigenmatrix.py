@@ -1,8 +1,8 @@
 """Tests for eigenmatrix training data pipeline.
 
 Tests the building blocks in hessian.py (transform_to_eigenmatrix,
-extract_eigenmatrix_data) and the ObservationSet/ObjectiveFunction
-integration in objective.py.
+extract_eigenmatrix_data) and the ObservationSet/PythonObjectiveExecutor
+integration in objectives/python.py.
 """
 
 from __future__ import annotations
@@ -19,7 +19,10 @@ from q2mm.models.hessian import (
     transform_to_eigenmatrix,
 )
 from q2mm.models.observations import Observation, ObservationSet
-from q2mm.models.parameters import ParameterLayout
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.io.fchk import load_fchk_reference
 # ---- Fixtures ----
 
@@ -265,39 +268,34 @@ class TestObservationSetEigenvalues:
         assert n_eig == 3 * mol.n_atoms  # 24 for ethane
 
 
-# ---- ObjectiveFunction eigenvalue extraction ----
+# ---- PythonObjectiveExecutor eigenmatrix extraction ----
 
 
-class TestObjectiveFunctionEigenmatrix:
+class TestPythonObjectiveExecutorEigenmatrix:
     def test_extract_eig_diagonal(self) -> None:
-        """_extract_value handles eig_diagonal kind."""
-        from q2mm.optimizers.objective import ObjectiveFunction
+        """extract_calc_value handles the eig_diagonal kind."""
+        from q2mm.objectives._observables import extract_calc_value
 
         eigenmatrix = np.diag([1.0, 2.0, 3.0])
-        calc = {"eigenmatrix": eigenmatrix}
         ref = Observation(kind="eig_diagonal", value=1.0, data_idx=1)
 
-        result = ObjectiveFunction._extract_value(calc, ref)
+        result = extract_calc_value({"eigenmatrix": eigenmatrix}, ref)
         assert result == 2.0  # eigenmatrix[1, 1]
 
     def test_extract_eig_offdiagonal(self) -> None:
-        """_extract_value handles eig_offdiagonal kind."""
-        from q2mm.optimizers.objective import ObjectiveFunction
+        """extract_calc_value handles the eig_offdiagonal kind."""
+        from q2mm.objectives._observables import extract_calc_value
 
         eigenmatrix = np.array([[1.0, 0.5, 0.1], [0.5, 2.0, 0.3], [0.1, 0.3, 3.0]])
-        calc = {"eigenmatrix": eigenmatrix}
         ref = Observation(kind="eig_offdiagonal", value=0.0, atom_indices=(2, 1))
 
-        result = ObjectiveFunction._extract_value(calc, ref)
+        result = extract_calc_value({"eigenmatrix": eigenmatrix}, ref)
         assert result == 0.3  # eigenmatrix[2, 1]
 
     def test_evaluate_molecule_eigenmatrix_projection_and_caching(self) -> None:
-        """_evaluate_molecule computes eigenmatrix from backend.hessian using cached QM eigenvectors."""
-        from q2mm.optimizers.objective import ObjectiveFunction
-
+        """Executor computes eigenmatrix from backend.hessian using cached QM eigenvectors."""
         _ref_data, mol = load_fchk_reference(str(GS_FCHK))
         assert mol.hessian is not None
-
         qm_hessian = np.array(mol.hessian, dtype=float)
 
         from q2mm.backends.contracts import (
@@ -310,6 +308,7 @@ class TestObjectiveFunctionEigenmatrix:
             HessianUnit,
             readonly_array,
         )
+        from q2mm.models.forcefield import ForceField, FunctionalForm
 
         _PROV = BackendProvenance(backend="stub", role=BackendRole.MM)
         _INFO = BackendInfo(
@@ -319,10 +318,12 @@ class TestObjectiveFunctionEigenmatrix:
             functional_forms=frozenset({"harmonic"}),
             provenance=_PROV,
         )
+        stub_ff = ForceField(functional_form=FunctionalForm.HARMONIC)
+        layout = ParameterLayout.from_force_field(stub_ff)
 
         class _StubPrepared(AbstractPreparedBackend):
             def __init__(self, backend: StubBackend, molecule: object) -> None:
-                super().__init__(info=_INFO, case_id="0", molecule=molecule, force_field=None, layout=None)
+                super().__init__(info=_INFO, case_id="0", molecule=molecule, force_field=stub_ff, layout=layout)
                 self._backend = backend
 
             def _hessian(self, request: object) -> _CHessianResult:
@@ -347,51 +348,39 @@ class TestObjectiveFunctionEigenmatrix:
             def prepare(self, request: object) -> _StubPrepared:
                 return _StubPrepared(self, request.molecule)
 
-        # Build reference data with eigenmatrix entries
-        ref = ObservationSet()
-        ref = ref.with_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
-
-        # Use MM Hessian == QM Hessian → self-projection should be diagonal
+        ref = ObservationSet().with_eigenmatrix_from_hessian(qm_hessian, diagonal_only=True)
         backend = StubBackend(qm_hessian)
-        from q2mm.models.forcefield import ForceField, FunctionalForm
-
-        stub_ff = ForceField(functional_form=FunctionalForm.HARMONIC)
-        layout = ParameterLayout.from_force_field(stub_ff)
-        obj = ObjectiveFunction(
-            forcefield=stub_ff,
-            backend=backend,
-            molecules=[mol],
-            reference=ref,
+        plan = ObjectivePlan(
+            case_ids=("0",),
+            molecules=(mol,),
+            stationary_points=(StationaryPointKind.GROUND_STATE,),
+            observations=ref,
             layout=layout,
+            active_space=ActiveParameterSpace.all_active(layout, stub_ff),
         )
+        obj = PythonObjectiveExecutor(plan, backend, stub_ff)
+        x = layout.vector(stub_ff)
 
-        result = obj._evaluate_molecule(0, layout.vector(stub_ff))
+        result = obj._compute_case("0", x, {"eig_diagonal"})
         assert "eigenmatrix" in result
-
         eigmat = np.array(result["eigenmatrix"], dtype=float)
         assert eigmat.shape == qm_hessian.shape
-
-        # Self-projection → eigenmatrix should be diagonal
         diag_only = np.diag(np.diag(eigmat))
         assert np.allclose(eigmat, diag_only, atol=1e-8)
         assert backend.hessian_calls == 1
 
-        # Second call: swap in a scaled backend, eigenvectors stay cached
-        backend2 = StubBackend(2.0 * qm_hessian)
-        obj.backend = backend2
+        backend._hessian = 2.0 * qm_hessian
         obj._prepared.clear()
-        result2 = obj._evaluate_molecule(0, layout.vector(stub_ff))
+        result2 = obj._compute_case("0", x, {"eig_diagonal"})
         eigmat2 = np.array(result2["eigenmatrix"], dtype=float)
-
-        # Diagonal should scale by 2
         assert np.allclose(np.diag(eigmat2), 2.0 * np.diag(eigmat), atol=1e-8)
-        assert backend2.hessian_calls == 1
+        assert backend.hessian_calls == 2
 
 
 class TestMassWeightedEigenmatrixParity:
     """Mass-weighted normal-mode eigenmatrix parity across all three pipelines.
 
-    The reference-generation, numpy-evaluator, and JaxLoss projection
+    The reference-generation, numpy-evaluator, and JAX-executor projection
     formulas must agree in the mass-weighted metric (Farrugia et al. 2025 —
     project reference normal modes across both the reference and MM
     Hessians).
@@ -417,8 +406,8 @@ class TestMassWeightedEigenmatrixParity:
         off = eigmat - np.diag(np.diag(eigmat))
         assert np.allclose(off, 0.0, atol=1e-10)
 
-    def test_jaxloss_projection_matches_numpy_helper(self) -> None:
-        """JaxLoss's ``Qᵀ (H⊙scale) Q`` equals ``mass_weighted_eigenmatrix``."""
+    def test_jax_executor_projection_matches_numpy_helper(self) -> None:
+        """The JAX executor's ``Qᵀ (H⊙scale) Q`` equals ``mass_weighted_eigenmatrix``."""
         from q2mm.models.hessian import (
             mass_weight_scale_3n,
             mass_weighted_eigenmatrix,
@@ -431,12 +420,12 @@ class TestMassWeightedEigenmatrixParity:
 
         _, modes = mass_weighted_normal_modes(qm_hess, symbols)
 
-        # JaxLoss formula (numpy stand-in): mass-weight then project.
+        # JAX-executor formula (numpy stand-in): mass-weight then project.
         scale = mass_weight_scale_3n(symbols)
-        jaxloss_eigmat = modes.T @ (mm_hess * scale) @ modes
+        jax_eigmat = modes.T @ (mm_hess * scale) @ modes
 
         helper_eigmat = mass_weighted_eigenmatrix(mm_hess, modes, symbols)
-        np.testing.assert_allclose(jaxloss_eigmat, helper_eigmat, atol=1e-12)
+        np.testing.assert_allclose(jax_eigmat, helper_eigmat, atol=1e-12)
 
     def test_reference_generation_uses_mass_weighted_basis(self) -> None:
         """ObservationSet eig_diagonal values equal mass-weighted eigenvalues."""

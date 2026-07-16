@@ -67,7 +67,7 @@ the installed package.
 ## QM/MM backends
 
 Q2MM can interface with several quantum-mechanical and molecular-mechanics
-engines. Install the ones your workflow requires:
+backends. Install the ones your workflow requires:
 
 | Backend          | Type  | License              | Install                                          |
 | ---------------- | ----- | -------------------- | ------------------------------------------------ |
@@ -80,7 +80,7 @@ engines. Install the ones your workflow requires:
 
 !!! tip
     You only need the backends relevant to your project — Q2MM will skip
-    unavailable engines gracefully.
+    unavailable backends gracefully.
 
 ---
 
@@ -120,10 +120,10 @@ print(f"Bonds: {len(ff.bonds)}, Angles: {len(ff.angles)}")
 ```
 q2mm/
 ├── io/            # File format I/O (Gaussian, Jaguar, MM3, MOL2, AMBER, etc.)
-├── backends/      # QM/MM engine integrations (OpenMM, Tinker, JAX, Psi4)
+├── backends/      # QM/MM backend integrations (OpenMM, Tinker, JAX, Psi4)
 ├── diagnostics/   # Benchmarking and convergence analysis
 ├── models/        # Molecule/force-field models + QFUERZA estimation
-└── optimizers/    # Objective functions, scoring, and scipy-based optimization
+└── optimizers/    # Optimizers that consume objective executors
 ```
 
 ## Next steps

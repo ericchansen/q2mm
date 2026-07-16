@@ -20,7 +20,10 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, Functional
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
+from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 
@@ -62,10 +65,18 @@ def _build_objective(
     backend: OpenMMBackend,
     molecules: list,
     reference: ObservationSet,
-) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
+) -> tuple[PythonObjectiveExecutor, ParameterLayout, ActiveParameterSpace]:
     layout = ParameterLayout.from_force_field(ff)
-    objective = ObjectiveFunction(ff, backend, molecules, reference, layout=layout)
     space = ActiveParameterSpace.all_active(layout, ff)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(molecules))),
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=reference,
+        layout=layout,
+        active_space=space,
+    )
+    objective = PythonObjectiveExecutor(plan, backend, ff, gradient_mode=GradientMode.NONE)
     return objective, layout, space
 
 
@@ -98,10 +109,10 @@ class TestObservationSet:
         assert ref.values[1].case_id == "1"
 
 
-# ---- ObjectiveFunction ----
+# ---- Objective executor ----
 
 
-class TestObjectiveFunction:
+class TestObjectiveExecutor:
     def test_callable(self) -> None:
         """Objective is callable and returns a float."""
         mol = _diatomic(0.74)
@@ -113,7 +124,7 @@ class TestObjectiveFunction:
         ref = ref.with_energy(target_energy, weight=1.0)
 
         obj, layout, _space = _build_objective(ff, backend, [mol], ref)
-        score = obj(layout.vector(ff))
+        score = obj.value(layout.vector(ff))
         assert isinstance(score, float)
         assert score == pytest.approx(0.0, abs=1e-10)
 
@@ -129,11 +140,11 @@ class TestObjectiveFunction:
         )
 
         obj, layout, _space = _build_objective(ff, backend, [mol], ref)
-        base_score = obj(layout.vector(ff))
+        base_score = obj.value(layout.vector(ff))
 
         perturbed = layout.vector(ff).copy()
         perturbed[0] *= 1.5
-        perturbed_score = obj(perturbed)
+        perturbed_score = obj.value(perturbed)
         assert perturbed_score > base_score
 
     def test_residuals_vector(self) -> None:
@@ -163,10 +174,10 @@ class TestObjectiveFunction:
 
         obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         params = layout.vector(ff)
-        obj(params)
-        obj(params)
-        obj(params)
-        assert obj.n_eval == 3
+        obj.value(params)
+        obj.value(params)
+        obj.value(params)
+        assert obj.n_evaluations == 3
         assert len(obj.history) == 3
 
     def test_reset(self) -> None:
@@ -178,9 +189,9 @@ class TestObjectiveFunction:
         ref = ref.with_energy(0.0)
 
         obj, layout, _space = _build_objective(ff, backend, [mol], ref)
-        obj(layout.vector(ff))
+        obj.value(layout.vector(ff))
         obj.reset()
-        assert obj.n_eval == 0
+        assert obj.n_evaluations == 0
         assert len(obj.history) == 0
 
     def test_frequency_reference(self) -> None:
@@ -199,7 +210,7 @@ class TestObjectiveFunction:
         ref = ref.with_frequency(freqs[-1], data_idx=len(freqs) - 1, weight=0.01)
 
         obj, layout, _space = _build_objective(ff, backend, [mol], ref)
-        score = obj(layout.vector(ff))
+        score = obj.value(layout.vector(ff))
         assert score == pytest.approx(0.0, abs=1e-6)
 
     def test_out_of_range_data_idx_raises(self) -> None:
@@ -213,7 +224,7 @@ class TestObjectiveFunction:
 
         obj, layout, _space = _build_objective(ff, backend, [mol], ref)
         with pytest.raises(IndexError, match="data_idx=999 out of range"):
-            obj(layout.vector(ff))
+            obj.value(layout.vector(ff))
 
 
 # ---- ParameterLayout.bounds ----

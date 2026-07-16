@@ -21,12 +21,21 @@ then links to source code for API details.
 | ≤ 10 params, MM3 form | [Workflow B](#workflow-b-small-rugged) | Multi-start finds basins single-start misses (28.7 vs 579 RMSD) |
 | 10–50 params, any form | [Workflow C](#workflow-c-medium-and-large-systems) | Grad-simp cycling combines gradient speed with simplex robustness |
 | 50+ params | [Workflow C](#workflow-c-medium-and-large-systems) + [L2](#l2-regularization) | Regularization prevents parameter drift in under-determined systems |
-| JAX engine, multi-molecule TS systems | [Workflow D](#workflow-d-end-to-end-differentiable-jax) | Per-molecule JaxLoss analytical gradients via scipy L-BFGS-B |
+| JAX backend, multi-molecule TS systems | [Workflow D](#workflow-d-end-to-end-differentiable-jax) | Per-case JAX analytical gradients via scipy L-BFGS-B |
 
 Every workflow assumes **QFUERZA initialization** — run
 `qfuerza_fresh()` (single molecule) or `qfuerza_into()` (template-based,
 multi-molecule averaging) before optimization. QFUERZA puts you in the
 right neighbourhood; the optimizer refines from there.
+
+The snippets below assume you have compiled an `ObjectivePlan` and selected
+an executor explicitly:
+
+- `PythonObjectiveExecutor(plan, backend, problem.starting_force_field)` for
+  ordinary Python dispatch. Its default `GradientMode.NONE` lets SciPy use its
+  internal finite differences.
+- `JaxObjectiveExecutor(plan, backend, problem.starting_force_field)` for the
+  analytical JAX path. This is what the CLI key `scipy-lbfgsb-jax` selects.
 
 ---
 
@@ -38,10 +47,15 @@ available.
 **Recipe:** One call to L-BFGS-B with analytical gradients. Done.
 
 ```python
+from q2mm.objectives.jax import JaxObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=500, jac="auto")
-result = optimizer.optimize(objective, space)
+plan = ObjectivePlan.from_problem(problem)
+evaluator = JaxObjectiveExecutor(plan, backend, problem.starting_force_field)
+
+optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=500)
+result = optimizer.optimize(evaluator, plan.active_space)
 print(result.summary())
 ```
 
@@ -70,18 +84,23 @@ for.
 **Recipe:** Multi-start L-BFGS-B to find the best basin.
 
 ```python
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.multistart import MultiStartOptimizer
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
+plan = ObjectivePlan.from_problem(problem)
+evaluator = PythonObjectiveExecutor(plan, backend, problem.starting_force_field)
+
 # Multi-start global search
-inner = ScipyOptimizer(method="L-BFGS-B", maxiter=500, jac="auto")
+inner = ScipyOptimizer(method="L-BFGS-B", maxiter=500)
 multi = MultiStartOptimizer(
     optimizer=inner,
     n_starts=10,
     perturbation_pct=0.1,
     seed=42,
 )
-result = multi.optimize(objective, space)
+result = multi.optimize(evaluator, plan.active_space)
 ```
 
 **Why this works:** The MM3 landscape has many local minima. Single-start
@@ -136,8 +155,8 @@ with Nelder-Mead on the most sensitive parameters.
 from q2mm.optimizers.cycling import OptimizationLoop
 
 loop = OptimizationLoop(
-    objective,
-    space,                # ActiveParameterSpace over objective.layout
+    evaluator,
+    plan.active_space,    # ActiveParameterSpace over plan.layout
     max_params=3,         # simplex on top 3 params per cycle
     max_cycles=10,        # up to 10 grad-simp cycles
     convergence=0.01,     # stop when <1% improvement per cycle
@@ -145,7 +164,6 @@ loop = OptimizationLoop(
     simp_method="Nelder-Mead",
     full_maxiter=200,
     simp_maxiter=200,
-    full_jac="auto",      # analytical gradients where available
     verbose=True,
 )
 result = loop.run()
@@ -176,13 +194,12 @@ via the `full_method="multi:L-BFGS-B"` parameter:
 from q2mm.optimizers.cycling import OptimizationLoop
 
 loop = OptimizationLoop(
-    objective,
-    space,
+    evaluator,
+    plan.active_space,
     max_params=3,
     max_cycles=5,
     full_method="multi:L-BFGS-B",  # multi-start each gradient phase
     simp_method="Nelder-Mead",
-    full_jac="auto",
 )
 result = loop.run()
 ```
@@ -202,16 +219,16 @@ For under-determined systems (more parameters than independent
 observations), add L2 to the objective:
 
 ```python
-objective = ObjectiveFunction(
-    forcefield=ff,
-    engine=engine,
-    molecules=molecules,
-    reference=reference,
-    layout=layout,         # ParameterLayout.from_force_field(ff)
-    regularization=0.01,   # keeps params near QFUERZA values
-)
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 
-loop = OptimizationLoop(objective, space, max_params=3, max_cycles=10)
+plan = ObjectivePlan.from_problem(
+    problem,
+    regularization=0.01,  # keeps params near QFUERZA values
+)
+evaluator = PythonObjectiveExecutor(plan, backend, problem.starting_force_field)
+
+loop = OptimizationLoop(evaluator, plan.active_space, max_params=3, max_cycles=10)
 result = loop.run()
 ```
 
@@ -221,28 +238,33 @@ L2 regularization can stabilize under-determined cycling runs (see [L2 Regulariz
 
 ## Workflow D: End-to-End Differentiable (JAX)
 
-**When:** JAX engine with multi-molecule TS systems, eigenmatrix or
+**When:** JAX backend with multi-molecule TS systems, eigenmatrix or
 geometry references — you want analytical gradients without
 finite-difference overhead.
 
-**Recipe:** Use `ScipyOptimizer` with `jac="auto"` — it auto-detects
-JaxEngine and routes gradients through JaxLoss.
+**Recipe:** Build a `JaxObjectiveExecutor` and pass it to `ScipyOptimizer`.
+Gradient selection is explicit: the optimizer uses the evaluator's declared
+`GradientMode.ANALYTICAL`; there is no auto-detection or silent
+finite-difference fallback.
 
 ```python
+from q2mm.objectives.jax import JaxObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="auto")
-result = optimizer.optimize(objective, space)
+plan = ObjectivePlan.from_problem(problem)
+evaluator = JaxObjectiveExecutor(plan, backend, problem.starting_force_field)
+
+optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200)
+result = optimizer.optimize(evaluator, plan.active_space)
 print(result.summary())
 ```
 
-**How it works:** When the engine is a JaxEngine and `jac="auto"`,
-ScipyOptimizer builds a `JaxLoss` — a collection of per-molecule
-JIT-compiled loss+gradient functions. Each molecule's Hessian +
-eigenmatrix + energy computation is compiled into its own small XLA
-program. Scipy calls this from Python at each iteration (treating it
-as a black-box function returning `(loss, grad)`), so no single XLA
-program needs to contain all molecules.
+**How it works:** `JaxObjectiveExecutor` compiles one JIT loss+gradient
+fragment per training case. Each case's Hessian, eigenmatrix, geometry, and
+energy terms are compiled into a small XLA program. SciPy calls the executor
+from Python at each iteration (treating it as a black-box function returning
+`(loss, grad)`), so no single XLA program needs to contain all molecules.
 
 **Supported reference types:**
 
@@ -256,11 +278,11 @@ program needs to contain all molecules.
 
 **When to use this vs SciPy FD:**
 
-- JaxLoss provides analytical gradients for all reference types
+- `JaxObjectiveExecutor` provides analytical gradients for all reference types
   including geometry — no finite-difference overhead.
 - First evaluation is slow (~5 min) due to per-molecule JIT
   compilation. Subsequent evaluations are fast (~7 s for 9 molecules).
-- SciPy L-BFGS-B with FD gradients works with any engine but is
+- SciPy L-BFGS-B with FD gradients works with any backend but is
   O(n_params) evaluations per step.
 
 **Benchmark results (CH₃F, see [Small Molecules](../systems/small-molecules.md)):**
@@ -276,8 +298,8 @@ program needs to contain all molecules.
 !!! note "CH₃F is a single-molecule system"
     On single-molecule systems, `JaxOptOptimizer` with monolithic JIT
     compilation still works well (no OOM risk). For multi-molecule TS
-    systems, use `ScipyOptimizer(jac="auto")` which routes through the
-    per-molecule JaxLoss dispatch.
+    systems, use `ScipyOptimizer` with a `JaxObjectiveExecutor`, which
+    provides per-case JIT dispatch without one monolithic XLA graph.
 
 ---
 
@@ -293,12 +315,12 @@ The total loss becomes:
 $$\text{loss}_\text{total} = \text{loss}_\text{data} + \lambda \cdot \| \mathbf{p} - \mathbf{p}_\text{ref} \|^2$$
 
 ```python
-objective = ObjectiveFunction(
-    forcefield=ff, engine=engine,
-    molecules=molecules, reference=reference,
-    layout=layout,             # ParameterLayout.from_force_field(ff)
-    regularization=0.01,      # λ — penalty strength
-    # reference_params=...    # defaults to initial FF params
+from q2mm.objectives.plan import ObjectivePlan
+
+plan = ObjectivePlan.from_problem(
+    problem,
+    regularization=0.01,  # λ — penalty strength
+    # reference_params=...  # defaults to the active-space baseline
 )
 ```
 
@@ -319,7 +341,7 @@ the optimal basin.
 L2 works with **every** optimizer — [SciPy](https://docs.scipy.org/doc/scipy/reference/optimize.html),
 [optax](https://optax.readthedocs.io/), basin-hopping, multi-start, and
 grad-simp — because it modifies the
-[`ObjectiveFunction`](https://github.com/ericchansen/q2mm/blob/master/q2mm/optimizers/objective.py),
+[`ObjectivePlan`](https://github.com/ericchansen/q2mm/blob/master/q2mm/objectives/),
 not the optimizer.
 
 ### Sensitivity Analysis
@@ -332,8 +354,8 @@ these are parameters where simplex outperforms gradient methods.
 ```python
 from q2mm.optimizers.cycling import compute_sensitivity
 
-sens = compute_sensitivity(objective, metric="simp_var")
-labels = [kind.value for kind in objective.layout.kinds]
+sens = compute_sensitivity(evaluator, plan.active_space.baseline, metric="simp_var")
+labels = [kind.value for kind in plan.layout.kinds]
 for rank, idx in enumerate(sens.ranking):
     print(f"  {rank+1}. {labels[idx]:12s}  "
           f"d1={sens.d1[idx]:+.4f}  simp_var={sens.simp_var[idx]:.4f}")
@@ -355,16 +377,18 @@ For constructor parameters, return types, and full API details, see the
 
 ### Gradient modes
 
-All gradient-using optimizers support three modes via the `jac` parameter:
+Gradient behavior is declared by the evaluator, not probed by the optimizer:
 
-| Mode | What it does | When to use |
-|------|-------------|-------------|
-| `jac=None` | SciPy finite-difference | Default; works everywhere but noisy |
-| `jac="auto"` | Analytical where available, FD fallback | **Recommended** — best quality gradients |
-| `jac="analytical"` | Forces analytical only | Only if all evaluators support it |
+| Evaluator | Gradient mode | What it does | When to use |
+|-----------|---------------|-------------|-------------|
+| `PythonObjectiveExecutor(...)` | `GradientMode.NONE` | Scalar values only; SciPy supplies internal finite differences | Default Python path; works with every backend |
+| `PythonObjectiveExecutor(..., gradient_mode=GradientMode.FINITE_DIFFERENCE)` | `FINITE_DIFFERENCE` | Executor-owned central finite differences | When you need FD evaluations counted by the executor |
+| `PythonObjectiveExecutor(..., gradient_mode=GradientMode.ANALYTICAL)` | `ANALYTICAL` | Backend analytical derivatives for supported categories | Supported energy/Hessian-like categories; raises if unsupported |
+| `JaxObjectiveExecutor(...)` | `ANALYTICAL` | Per-case JIT + `jax.value_and_grad` | Recommended for JAX multi-case TS workflows |
 
-Analytical gradients produce the best results on harmonic problems. The
-top harmonic results on CH₃F all use analytical or auto mode.
+There is no automatic `jac` mode and no silent finite-difference fallback. If
+an analytical executor cannot support a requested category, it raises
+`ObjectiveGradientError` so you can choose a different executor deliberately.
 
 ---
 
@@ -412,15 +436,15 @@ For multi-molecule TS systems with the multi-target objective
 
 | Optimizer | Use case | Notes |
 |-----------|----------|-------|
-| **ScipyOptimizer L-BFGS-B** (`jac="auto"`) | Default for TS systems | Auto-routes through JaxLoss analytical gradients. ~8 s/eval on 9-molecule Rh-enamide (GPU). |
+| **ScipyOptimizer L-BFGS-B + `JaxObjectiveExecutor`** | Default for TS systems | Explicit per-case JAX analytical gradients. ~8 s/eval on 9-molecule Rh-enamide (GPU). |
 | JaxOptOptimizer L-BFGS | Single-molecule systems | Monolithic JIT is fast for small systems; pathologically slow on multi-molecule due to internal line search compilation. |
 | OptaxOptimizer Adam | Exploration | First-order; useful for rugged landscapes where L-BFGS-B gets stuck. |
 
 !!! tip "Start with ScipyOptimizer"
-    Use `ScipyOptimizer(method="L-BFGS-B", jac="auto")` as the
-    default for JAX-engine workflows. It auto-detects JaxEngine,
-    builds per-molecule JaxLoss functions, and provides analytical
-    gradients to scipy's battle-tested L-BFGS-B implementation.
+    Use `ScipyOptimizer(method="L-BFGS-B")` with a
+    `JaxObjectiveExecutor` as the default for JAX-backend workflows. The
+    executor builds per-case JIT fragments and provides analytical gradients
+    to SciPy's battle-tested L-BFGS-B implementation.
 
 See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
 detailed results and timing data.

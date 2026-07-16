@@ -703,19 +703,21 @@ def test_backend_info_and_provenance_validation() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Preparation reuse: Objective + JaxLoss prepare each case exactly once
+# Preparation reuse: JAX objective executor prepares each case exactly once
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.jax
-def test_objective_and_jaxloss_prepare_each_case_once() -> None:
+def test_jax_objective_executor_prepares_each_case_once() -> None:
     if "jax" not in available_backends():
         pytest.skip("jax not available")
 
     from q2mm.backends.mm.jax_engine import JaxBackend
     from q2mm.models.observations import ObservationSet
-    from q2mm.optimizers.jaxloss import JaxLoss
-    from q2mm.optimizers.objective import ObjectiveFunction
+    from q2mm.models.parameters import ActiveParameterSpace
+    from q2mm.models.problem import StationaryPointKind
+    from q2mm.objectives.jax import JaxObjectiveExecutor
+    from q2mm.objectives.plan import ObjectivePlan
 
     mol, ff, layout = _methane()
     mol2 = Molecule(symbols=mol.symbols, geometry=mol.geometry * 1.03, atom_types=mol.atom_types)
@@ -735,15 +737,21 @@ def test_objective_and_jaxloss_prepare_each_case_once() -> None:
     ref = ref.with_frequency(1000.0, data_idx=6, case_id="0")
     ref = ref.with_frequency(1000.0, data_idx=6, case_id="1")
 
-    obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=molecules, reference=ref, layout=layout)
-    spec = obj.to_jax_spec()
-    sessions = obj.jax_sessions(spec)
-    JaxLoss(spec, backend, molecules, ff, sessions=sessions)
+    space = ActiveParameterSpace.all_active(layout, ff)
+    plan = ObjectivePlan(
+        case_ids=("0", "1"),
+        molecules=tuple(molecules),
+        stationary_points=(StationaryPointKind.GROUND_STATE, StationaryPointKind.GROUND_STATE),
+        observations=ref,
+        layout=layout,
+        active_space=space,
+    )
+    executor = JaxObjectiveExecutor(plan, backend, ff)
 
-    # Exactly one prepared session per case — no double preparation across the
-    # Objective + JaxLoss path.
+    # Exactly one prepared session per case — no double preparation while
+    # building the per-case JIT objective.
     assert backend.prepare_calls == len(molecules)
-    assert set(sessions) == {0, 1}
+    assert set(executor._sessions) == {"0", "1"}
 
 
 # ---------------------------------------------------------------------------

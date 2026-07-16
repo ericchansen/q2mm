@@ -1,6 +1,6 @@
 # Pd 1,4-Conjugate
 
-Pd 1,4-conjugate addition is another composed-force-field transfer case: the published TSFF combines a base MM3 field with an OPT overlay, and that composition does not carry over faithfully under our engine. The paper reports internal R² > 0.99 under MacroModel MM3*; our reproduction yields R² = −4.94 under the JAX engine.
+Pd 1,4-conjugate addition is another composed-force-field transfer case: the published TSFF combines a base MM3 field with an OPT overlay, and that composition does not carry over faithfully under our backend. The paper reports internal R² > 0.99 under MacroModel MM3*; our reproduction yields R² = −4.94 under the JAX backend.
 
 ## Scope
 
@@ -58,33 +58,33 @@ complete failure of cross-engine transfer, not a small miss.
 
 ## Benchmark results
 
-!!! success "Ratio gate now passes — loader API refactor"
+!!! success "Executor-ratio gate now passes — loader API refactor"
     After the loader API refactor that stopped overwriting Wahlers OPT
-    values with raw QFUERZA projections, the JaxLoss/ObjectiveFunction
+    values with raw QFUERZA projections, the JAX/Python objective
     ratio for pd-conjugate is 0.985 — comfortably inside the
-    [0.85, 1.15] band.  JaxLoss-guided optimization improves the
-    real ObjectiveFunction by 16.1 % (see "End-to-end optimization"
+    [0.85, 1.15] band.  JAX-executor-guided optimization improves the
+    real Python objective by 16.1 % (see "End-to-end optimization"
     below).
 
 | Metric | Value |
 |--------|:-----:|
 | Ratio check | 0.985 (in_band) |
-| Initial ObjectiveFunction score | 8.61 × 10⁶ |
-| Final ObjectiveFunction score | 7.23 × 10⁶ |
+| Initial Python objective score | 8.61 × 10⁶ |
+| Final Python objective score | 7.23 × 10⁶ |
 | Improvement | **16.1 %** |
-| Optimizer | L-BFGS-B (scipy) over JaxLoss analytical gradients |
+| Optimizer | L-BFGS-B (scipy) over JAX analytical executor gradients |
 | Wall time | 700 s |
 | n_iterations / n_evaluations | 3 / 2 |
 
-`n_evaluations` counts real `ObjectiveFunction` calls (initial baseline +
-final validation = 2); the JaxLoss surrogate calls L-BFGS-B makes
+`n_evaluations` counts real Python objective calls (initial baseline +
+final validation = 2); the JAX surrogate calls L-BFGS-B makes
 internally are not tracked in this field.  Both values are reported
 verbatim from `validation_results.json`.
 
 Per-category fit before and after optimization, evaluated by the q2mm
-JAX engine against the QM training data (the "published" column uses
+JAX backend against the QM training data (the "published" column uses
 the literature OPT values directly — no QFUERZA — and the "optimized"
-column uses the FF produced by the L-BFGS-B + JaxLoss run above):
+column uses the FF produced by the L-BFGS-B + JAX executor run above):
 
 | Category | n_refs | R² (published) | R² (optimized) |
 |----------|-------:|---------------:|---------------:|
@@ -93,21 +93,21 @@ column uses the FF produced by the L-BFGS-B + JaxLoss run above):
 | eig_diagonal | 1286 | −10.056 | −9.642 |
 
 Geometry reproduction is now strong (bond_length R² ≈ 0.95); the
-eigenmatrix R² is still negative, reflecting the same MM3* ↔ JAX-engine
+eigenmatrix R² is still negative, reflecting the same MM3* ↔ JAX-backend
 cross-engine gap that affects all Wahlers / Rosales systems but not
 rh-enamide.
 
 ### End-to-end optimization (issue #276 follow-up)
 
 Issue [#276](https://github.com/ericchansen/q2mm/issues/276) asked
-whether bypassing the ratio gate (`--ratio-tol none`) would unlock
+whether bypassing the executor-ratio gate (`--executor-ratio-tol none`) would unlock
 useful optimization for pd-conjugate, which historically sat at
 ratio = 1.20 in the pre-refactor baseline.  The loader refactor
 itself resolved the surrogate mismatch: ratio is now 0.985 and the
 default gate passes without intervention.  Running the experiment
-with `--ratio-tol none` (a no-op in this regime) confirms a real
-16.1 % ObjectiveFunction improvement, well past the 5 % decision
-threshold set in the issue.  No change to the default `ratio_tol`
+with `--executor-ratio-tol none` (a no-op in this regime) confirms a real
+16.1 % Python objective improvement, well past the 5 % decision
+threshold set in the issue.  No change to the default `executor_ratio_tol`
 is recommended — the gate was diagnosing a real problem (the
 overwritten OPT values), and the fix lived in the loader.
 
@@ -116,7 +116,7 @@ cross-system comparison and methodology details.  Raw numbers (published-start
 baseline) are in the
 [`from-published/` baseline](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition/from-published)
 in `ericchansen/q2mm-data`, with full provenance (q2mm git SHA, JAX/OpenMM
-device, ratio_tol, timestamp).  Canonical QFUERZA-start results
+device, executor_ratio_tol, timestamp).  Canonical QFUERZA-start results
 (default since q2mm#290) live at
 [`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition/convergence)
 and are summarized in the [QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).

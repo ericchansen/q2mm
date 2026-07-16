@@ -155,48 +155,56 @@ class TestSensitivityResult:
         assert len(sr.ranking) == 2
 
 
-class TestLoopResult:
+class TestOptimizationLoopResult:
     def test_improvement(self) -> None:
-        from q2mm.optimizers.cycling import LoopResult
+        from q2mm.models.results import OptimizationResult
 
-        lr = LoopResult(
+        lr = OptimizationResult(
             success=True,
+            message="",
             initial_score=100.0,
             final_score=10.0,
-            n_cycles=3,
+            n_iterations=3,
+            n_params=0,
+            layout_fingerprint="sha256:test",
             initial_params=np.zeros(0),
             final_params=np.zeros(0),
-            n_eval=500,
+            n_evaluations=500,
         )
         assert lr.improvement == pytest.approx(0.9)
 
     def test_summary(self) -> None:
-        from q2mm.optimizers.cycling import LoopResult
+        from q2mm.models.results import OptimizationResult
 
-        lr = LoopResult(
+        lr = OptimizationResult(
             success=True,
             initial_score=100.0,
             final_score=10.0,
-            n_cycles=3,
+            n_iterations=3,
+            n_params=0,
+            layout_fingerprint="sha256:test",
             initial_params=np.zeros(0),
             final_params=np.zeros(0),
-            n_eval=500,
+            n_evaluations=500,
             message="converged",
         )
         s = lr.summary()
         assert "converged" in s
-        assert "90.00%" in s
+        assert "90.0%" in s
 
     def test_zero_initial_score(self) -> None:
-        from q2mm.optimizers.cycling import LoopResult
+        from q2mm.models.results import OptimizationResult
 
-        lr = LoopResult(
+        lr = OptimizationResult(
             success=True,
+            message="",
             initial_score=0.0,
             final_score=0.0,
-            n_cycles=0,
+            n_iterations=0,
+            n_params=0,
+            layout_fingerprint="sha256:test",
             initial_params=np.zeros(0),
             final_params=np.zeros(0),
-            n_eval=0,
+            n_evaluations=0,
         )
         assert lr.improvement == 0.0

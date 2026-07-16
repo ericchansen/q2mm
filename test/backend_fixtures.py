@@ -95,19 +95,21 @@ class MockLayout:
 
 
 def mock_molecule(symbols: Any) -> Any:
-    """Return a mock molecule exposing ``.symbols`` and ``.geometry``.
+    """Return a real :class:`Molecule` exposing ``.symbols`` and ``.geometry``.
 
-    Central result validation checks returned symbols/coordinate shapes against
-    the prepared molecule, so doubles must expose a concrete atom list.
+    ``ObjectivePlan`` validates that every case molecule is a real
+    ``Molecule`` instance, so the test double is a genuine (immutable)
+    ``Molecule``.  Atoms are spread 10 A apart along x so no spurious bonds
+    or overlap-angle warnings are perceived; the concrete element/geometry
+    values are irrelevant to the tests, which only read ``.symbols`` /
+    ``.geometry`` shapes.
     """
-    from unittest.mock import MagicMock
+    from q2mm.models.molecule import Molecule
 
-    syms = list(symbols)
-    mol = MagicMock()
-    mol.symbols = syms
-    mol.name = "mock_mol"
-    mol.geometry = np.zeros((len(syms), 3), dtype=float)
-    return mol
+    syms = tuple(symbols)
+    geometry = np.zeros((len(syms), 3), dtype=float)
+    geometry[:, 0] = np.arange(len(syms), dtype=float) * 10.0
+    return Molecule(symbols=syms, geometry=geometry, name="mock_mol")
 
 
 def mock_backend_info(

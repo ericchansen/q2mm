@@ -81,7 +81,7 @@ across all 9 transition states, without any iterative optimization.
 ### Multi-target objective
 
 Eigenmatrix-diagonal + geometry refs, 182 frozen-scoped active params,
-`invert_ts_curvature=True`, SciPy L-BFGS-B with JaxLoss analytical
+`invert_ts_curvature=True`, SciPy L-BFGS-B with JAX analytical executor
 gradients on RTX 5090 GPU:
 
 | Metric | Value |
@@ -89,10 +89,10 @@ gradients on RTX 5090 GPU:
 | Ratio check | 1.07 (pass) |
 | Initial score | 4.86 × 10⁵ |
 | Final score | 2.71 × 10⁵ |
-| Reduction | **44.66 %** (vs ~0.6 % per-call ObjectiveFunction noise floor — 77× above noise) |
+| Reduction | **44.66 %** (vs ~0.6 % per-call Python objective noise floor — 77× above noise) |
 | Iterations (L-BFGS-B `nit`) | 15 |
-| ObjectiveFunction evaluations | 2 |
-| Gradient source | `jac="auto"` resolved to `jac_mode="jax_loss"` (JaxLoss analytical) |
+| Python objective evaluations | 2 |
+| Gradient source | `JaxObjectiveExecutor` analytical gradients |
 | Wall time | 739 s (12 min) |
 
 Per-category fit of the optimized force field (post-L-BFGS-B):
@@ -112,18 +112,18 @@ live at [`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benc
 and are summarized in the
 [QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
 
-The ratio check confirms JaxLoss is a reliable surrogate for this
+The ratio check confirms the JAX executor is a reliable surrogate for this
 system — the published Donoghue OPT values reproduce QM geometry well
 so unconstrained geometry relaxation finds the correct local minima.
 A 44.66 % real-objective improvement against the published starting
-point — a 77× ratio over the per-call ObjectiveFunction noise floor
+point — a 77× ratio over the per-call Python objective noise floor
 of ~0.6 % (see "Noise floor caveat" below) — is the largest reduction
 of any published-FF system in the suite (the published values are good
-but leave meaningful headroom under the q2mm JAX engine's
+but leave meaningful headroom under the q2mm JAX backend's
 eigenmatrix-diagonal objective).
 
 !!! warning "Noise floor caveat"
-    Repeated GPU `ObjectiveFunction(x0)` calls on rh-enamide vary by
+    Repeated GPU Python objective calls on rh-enamide vary by
     ~0.6 % across calls (5-call IQR / median).  Root cause traced to a
     combination of scipy `L-BFGS-B` Fortran internal state and MM3
     non-smooth points; see
@@ -162,8 +162,8 @@ original Q2MM workflow required hours of gradient optimization in
 MacroModel to reach its final fit.[^qfuerza]
 
 The multi-target optimization pipeline runs end-to-end on this
-9-molecule system (per-molecule JIT compilation, scipy L-BFGS-B with
-JaxLoss analytical gradients) and lowers the real ObjectiveFunction
+9-molecule system (per-case JIT compilation, scipy L-BFGS-B with
+JAX analytical executor gradients) and lowers the real Python objective
 by 44.66 % against the published Donoghue OPT starting point
 (4.86 × 10⁵ → 2.71 × 10⁵ in 15 L-BFGS-B iterations).  An earlier
 baseline reported a 28.68 % reduction; that result depended on an FF

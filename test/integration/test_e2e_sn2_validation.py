@@ -55,8 +55,11 @@ from q2mm.models.hessian import HessianProvenance, HessianUnits
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
+from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 # ---- Paths (test-specific) ----
@@ -110,7 +113,7 @@ def _with_atomic_hessian(molecule: Molecule, path: Path, *, source: str) -> Mole
 
 def _build_frequency_objective(
     molecule: Molecule, forcefield: ForceField, backend: OpenMMBackend, qm_freqs: np.ndarray
-) -> tuple[ObjectiveFunction, ActiveParameterSpace]:
+) -> tuple[PythonObjectiveExecutor, ActiveParameterSpace]:
     """Build a frequency-only objective matching the legacy test behavior."""
     layout = ParameterLayout.from_force_field(forcefield)
 
@@ -128,10 +131,16 @@ def _build_frequency_objective(
     for k in range(n):
         ref = ref.with_frequency(float(qm_real[k]), data_idx=mm_real_indices[k], weight=0.001, case_id="0")
 
-    objective = ObjectiveFunction(
-        forcefield=forcefield, backend=backend, molecules=[molecule], reference=ref, layout=layout
-    )
     space = ActiveParameterSpace.all_active(layout, forcefield)
+    plan = ObjectivePlan(
+        case_ids=("0",),
+        molecules=(molecule,),
+        stationary_points=(StationaryPointKind.GROUND_STATE,),
+        observations=ref,
+        layout=layout,
+        active_space=space,
+    )
+    objective = PythonObjectiveExecutor(plan, backend, forcefield, gradient_mode=GradientMode.NONE)
     return objective, space
 
 
@@ -196,7 +205,7 @@ class TestCH3FGroundState:
         t0 = time.perf_counter()
         result = opt.optimize(objective, space)
         elapsed = time.perf_counter() - t0
-        optimized_ff = objective.layout.replace(seminario_ff, result.final_params)
+        optimized_ff = objective.plan.layout.replace(seminario_ff, result.final_params)
         return optimized_ff, elapsed, result.n_evaluations
 
     @pytest.fixture(scope="class")
@@ -656,7 +665,7 @@ class TestSN2TransitionState:
         t0 = time.perf_counter()
         result = opt.optimize(objective, space)
         elapsed = time.perf_counter() - t0
-        optimized_ff = objective.layout.replace(seminario_ff, result.final_params)
+        optimized_ff = objective.plan.layout.replace(seminario_ff, result.final_params)
         return optimized_ff, elapsed, result.n_evaluations
 
     @pytest.fixture(scope="class")

@@ -13,8 +13,8 @@ single, uniform pipeline:
  systems — see :mod:`q2mm.benchmarks.systems`);
 * frequencies come from :func:`q2mm.models.hessian.hessian_to_frequencies`
   (QM) and ``JaxBackend.frequencies`` (MM);
-* the objective score is the real :class:`~q2mm.optimizers.objective.
-  ObjectiveFunction` frequency penalty;
+* the objective score is the real
+  :class:`~q2mm.objectives.python.PythonObjectiveExecutor` frequency penalty;
 * R² is the coefficient of determination (``1 - SSres/SStot``).
 
 The per-system parameters (expected molecule count, citation metadata, golden
@@ -243,7 +243,7 @@ def _evaluate_ff_on_training_set(
 
     Returns a dict with per-molecule and overall statistics.  R² is the
     coefficient of determination; the objective score is the real
-    :class:`ObjectiveFunction` frequency penalty.
+    :class:`~q2mm.objectives.python.PythonObjectiveExecutor` frequency penalty.
     """
     freq_ref = None
     per_molecule: list[dict[str, Any]] = []
@@ -290,13 +290,24 @@ def _evaluate_ff_on_training_set(
             }
         )
 
-    from q2mm.optimizers.objective import ObjectiveFunction
-    from q2mm.models.parameters import ParameterLayout
+    from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+    from q2mm.models.problem import StationaryPointKind
+    from q2mm.objectives.plan import ObjectivePlan
+    from q2mm.objectives.python import PythonObjectiveExecutor
 
     layout = ParameterLayout.from_force_field(ff)
-    obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=molecules, reference=freq_ref, layout=layout)
+    space = ActiveParameterSpace.all_active(layout, ff)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(molecules))),
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=freq_ref,
+        layout=layout,
+        active_space=space,
+    )
+    obj = PythonObjectiveExecutor(plan, backend, ff)
     params = layout.vector(ff)
-    score = float(obj(params))
+    score = float(obj.value(params))
 
     return {
         "per_molecule": per_molecule,

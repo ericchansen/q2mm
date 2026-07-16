@@ -23,9 +23,9 @@ def test_available_optimizers_returns_list() -> None:
 def test_available_optimizers_contains_objective_independent_ones() -> None:
     """Optimizers that need no optional deps should always register.
 
-    ``ObjectiveFunction`` is unconditionally re-exported (not part of the
-    optional registry) so it is not in ``available_optimizers()``.  We test
-    instead that the consumer-visible API is non-empty when scipy is
+    The objective executors live in :mod:`q2mm.objectives`, not the
+    optimizer registry, so they are not in ``available_optimizers()``.  We
+    test instead that the consumer-visible API is non-empty when scipy is
     installed (which it is in any environment that runs the test suite).
     """
     pytest.importorskip("scipy")

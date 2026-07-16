@@ -6,15 +6,15 @@ For each requested system this script:
 1. Loads the system (Seminario-estimated starting FF + reference data).
 2. Computes per-category Seminario fit quality (bond_length, bond_angle,
    eig_diagonal): R², RMSD, MAE, n_refs.
-3. Computes the initial ObjectiveFunction score and the JaxLoss surrogate
-   score; reports their ratio.
+3. Computes the initial objective-executor score and the JAX-executor
+   surrogate score; reports their ratio.
 4. If the ratio is within the configured tolerance (or the tolerance has
-   been disabled with ``--ratio-tol none``) it runs the requested workflow
-   (default Method E2) using scipy L-BFGS-B with JaxLoss analytical
-   gradients and writes the optimized force field as a ``.fld`` (MM3
-   systems) or ``.frcmod`` (harmonic systems, e.g. CH3F) file, matching
+   been disabled with ``--executor-ratio-tol none``) it runs the requested
+   workflow (default Method E2) using scipy L-BFGS-B with the JAX executor's
+   analytical gradients and writes the optimized force field as a ``.fld``
+   (MM3 systems) or ``.frcmod`` (harmonic systems, e.g. CH3F) file, matching
    the force field's actual, always-explicit functional form.
-5. With ``--n-evals N``, repeats post-hoc ObjectiveFunction evaluations at
+5. With ``--n-evals N``, repeats post-hoc objective-executor evaluations at
    both the initial and optimized parameter vectors to report sample-mean
    scores, t-distribution 95% confidence-interval half-widths, mean
    improvement percentage, and whether the mean change exceeds the summed
@@ -64,7 +64,7 @@ logger = logging.getLogger("scripts.benchmark")
 # ---------------------------------------------------------------------------
 
 
-def _parse_ratio_tol(value: str) -> float | None:
+def _parse_executor_ratio_tol(value: str) -> float | None:
     """``"none"`` or a negative numeric value → ``None``; otherwise float."""
     if value.lower() in {"none", "off", "disabled", "-1"}:
         return None
@@ -137,12 +137,12 @@ def _build_parser() -> argparse.ArgumentParser:
 
     opt = parser.add_argument_group("optimizer")
     opt.add_argument(
-        "--ratio-tol",
-        type=_parse_ratio_tol,
+        "--executor-ratio-tol",
+        type=_parse_executor_ratio_tol,
         default=None,
-        help="JaxLoss/ObjFun ratio tolerance (e.g. 0.15). Use 'none' or a "
-        "negative value to disable the gate.  Default 'none' because all 5 "
-        "publication TS systems have ratio < 0.5.",
+        help="JAX-executor / objective-score ratio tolerance (e.g. 0.15). Use "
+        "'none' or a negative value to disable the gate.  Default 'none' because "
+        "all 5 publication TS systems have ratio < 0.5.",
     )
     opt.add_argument("--maxiter", type=int, default=500, help="Maximum L-BFGS-B iterations.")
     opt.add_argument(
@@ -170,7 +170,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--n-evals",
         type=_parse_positive_int,
         default=1,
-        help="Post-hoc ObjectiveFunction evaluations at x0/x_final for mean/CI reporting.",
+        help="Post-hoc objective-executor evaluations at x0/x_final for mean/CI reporting.",
     )
     sampling.add_argument(
         "--skip-optimization",
@@ -209,11 +209,11 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("Output directory: %s", output_dir)
     logger.info("Systems: %s", systems)
     logger.info(
-        "workflow=%s, starting_point=%s, ratio_tol=%s, maxiter=%d, ftol=%.2e, "
+        "workflow=%s, starting_point=%s, executor_ratio_tol=%s, maxiter=%d, ftol=%.2e, "
         "fc_fraction=%s, eq_fraction=%s, n_evals=%d",
         args.workflow,
         args.starting_point,
-        args.ratio_tol,
+        args.executor_ratio_tol,
         args.maxiter,
         args.ftol,
         args.fc_fraction,
@@ -228,7 +228,7 @@ def main(argv: list[str] | None = None) -> int:
         workflow=args.workflow,
         starting_point=args.starting_point,
         qfuerza_replace_with=args.qfuerza_replace_with,
-        ratio_tol=args.ratio_tol,
+        executor_ratio_tol=args.executor_ratio_tol,
         maxiter=args.maxiter,
         ftol=args.ftol,
         fc_fraction=args.fc_fraction,

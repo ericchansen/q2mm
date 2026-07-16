@@ -80,23 +80,23 @@ complete failure of cross-engine transfer, not a small miss.
     `opt_substructure_membership(...)` / `ActiveParameterSpace.from_membership(...)`,
     with no QFUERZA re-estimation of the published rows.
 
-Run with `--n-evals 10 --ratio-tol none` so the verdict is
+Run with `--n-evals 10 --executor-ratio-tol none` so the verdict is
 statistically defensible against the per-call engine noise documented
 in [#284](https://github.com/ericchansen/q2mm/issues/284).  Numbers
 below are from the post-fix (q2mm MM3 angle gradient-correctness
 patch) run.  Note: the fix dropped the ratio from 1.378 → 1.085,
-which would pass the default gate.  The `--ratio-tol none` flag is
+which would pass the default gate.  The `--executor-ratio-tol none` flag is
 retained here only for direct comparison against the pre-fix
 baseline.
 
 | Metric | Value |
 |--------|:-----:|
 | Ratio check | 1.085 (within default band — gate would pass) |
-| Initial ObjectiveFunction (n=10 mean) | 3.098 × 10⁶ ± 0.99 % CI₉₅ |
-| Final ObjectiveFunction (n=10 mean) | 1.461 × 10⁶ ± 1.16 % CI₉₅ |
+| Initial Python objective (n=10 mean) | 3.098 × 10⁶ ± 0.99 % CI₉₅ |
+| Final Python objective (n=10 mean) | 1.461 × 10⁶ ± 1.16 % CI₉₅ |
 | Improvement (mean Δ%) | **52.82 % (SIGNIFICANT — CI₉₅ ± 1.54 %)** |
 | L-BFGS-B iterations / OF evaluations | 2 / 2 |
-| Optimizer | L-BFGS-B (scipy) over JaxLoss analytical gradients |
+| Optimizer | L-BFGS-B (scipy) over JAX analytical executor gradients |
 | Wall time | 1,825 s opt + ~38 min for 20 post-eval samples |
 
 Per-category fit of the optimized force field:
@@ -110,14 +110,14 @@ Per-category fit of the optimized force field:
 Geometry is very well-reproduced (bond_length R² ≈ 0.98, bond_angle
 R² ≈ 0.91); the eigenmatrix remains the open problem (the published
 Rosales FF was MM3*-fit and the residual eigenmatrix gap reflects a
-real cross-engine MM3* ↔ JAX-engine divergence for this chemistry,
+real cross-engine MM3* ↔ JAX-backend divergence for this chemistry,
 not a loader bug).
 
-### End-to-end optimization with `--ratio-tol none`
+### End-to-end optimization with `--executor-ratio-tol none`
 
 Following the [pd-conjugate experiment in #276](https://github.com/ericchansen/q2mm/issues/276),
-heck-relay was run with `--ratio-tol none` to bypass the gate and
-see whether JaxLoss-guided optimization can produce useful real-OF
+heck-relay was run with `--executor-ratio-tol none` to bypass the gate and
+see whether JAX-executor-guided optimization can produce useful real-OF
 descent.  In the pre-fix baseline (q2mm-data#9) the surrogate had
 formally broken down (ratio 1.378, well outside [0.85, 1.15]) and
 no real-OF improvement materialized.
@@ -128,22 +128,22 @@ situation transforms:
 
 - Ratio drops from 1.378 → 1.085, well within the default gate
 - Surrogate score reduces by 53 % (3.13 × 10⁶ → 1.46 × 10⁶)
-- Real ObjectiveFunction reduces by **52.82 % ± 1.54 % CI₉₅**
+- Real Python objective reduces by **52.82 % ± 1.54 % CI₉₅**
   (SIGNIFICANT) — the surrogate's descent direction is correct and
   transfers to the real objective
 
 !!! success "Newly unlocked: 53 % real-OF reduction after MM3 angle gradient fix"
     A previous baseline (q2mm-data#9) reported −0.59 % ± 3.26 % CI₉₅
-    for this system — "NOT SIGNIFICANT, --ratio-tol none does not
+    for this system — "NOT SIGNIFICANT, --executor-ratio-tol none does not
     unlock optimization".  After the JAX angle gradient fix the
     verdict flips completely.  The previously-observed surrogate
     breakdown (non-finite line-search values) was a symptom of the
     same gradient correctness bug that produced the spurious
     "near-collinear stationary points" — once the angle gradient
-    is well-conditioned, JaxLoss is a usable surrogate for heck-relay.
+    is well-conditioned, the JAX executor is a usable surrogate for heck-relay.
 
 **Recommendation:** post-fix, heck-relay no longer needs
-`--ratio-tol none`.  Default `ratio_tol=0.15` would now admit this
+`--executor-ratio-tol none`.  Default `executor_ratio_tol=0.15` would now admit this
 system into the standard optimization pipeline.
 
 The numbers above are from the published-start baseline. Reproduce with
@@ -164,7 +164,7 @@ cross-system comparison and methodology details.
 
 ### Comparison
 
-The paper reports R² > 0.998 with slopes 1.000 ± 0.004 under MacroModel MM3*.[^jacs] Our reproduction yields R² = −8.89 under the JAX engine — a complete failure of cross-engine transfer.
+The paper reports R² > 0.998 with slopes 1.000 ± 0.004 under MacroModel MM3*.[^jacs] Our reproduction yields R² = −8.89 under the JAX backend — a complete failure of cross-engine transfer.
 
 This is **not** a composed-force-field problem. The Heck relay FF is already a complete Rosales force field. That makes this case especially important: it points to a more fundamental **cross-engine gap** for this system's chemistry rather than a simple overlay/composition artifact.
 

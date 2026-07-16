@@ -1,4 +1,4 @@
-"""Integration tests for parameter cycling (SubspaceObjective, sensitivity, OptimizationLoop).
+"""Integration tests for parameter cycling and sensitivity selection.
 
 Requires OpenMM.
 """
@@ -23,13 +23,16 @@ from q2mm.backends.mm.openmm import OpenMMBackend
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.models.results import OptimizationResult
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
+from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.cycling import (
-    LoopResult,
     OptimizationLoop,
-    SubspaceObjective,
+    SensitivityResult,
     compute_sensitivity,
 )
-from q2mm.optimizers.objective import ObjectiveFunction
 
 
 # ---- Helpers ----
@@ -62,17 +65,25 @@ def _build_objective(
     backend: OpenMMBackend,
     molecules: list,
     reference: ObservationSet,
-) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
+) -> tuple[PythonObjectiveExecutor, ParameterLayout, ActiveParameterSpace]:
     layout = ParameterLayout.from_force_field(ff)
-    objective = ObjectiveFunction(ff, backend, molecules, reference, layout=layout)
     space = ActiveParameterSpace.all_active(layout, ff)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(molecules))),
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=reference,
+        layout=layout,
+        active_space=space,
+    )
+    objective = PythonObjectiveExecutor(plan, backend, ff, gradient_mode=GradientMode.NONE)
     return objective, layout, space
 
 
 def _make_water_objective(
     true_ff: ForceField,
     guess_ff: ForceField,
-) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
+) -> tuple[PythonObjectiveExecutor, ParameterLayout, ActiveParameterSpace]:
     """Build an objective that fits guess_ff toward true_ff using energy + frequencies."""
     mol = make_water()
     backend = load_backend("openmm")
@@ -92,98 +103,6 @@ def _make_water_objective(
     return _build_objective(guess_ff, backend, [mol], ref)
 
 
-# ---- SubspaceObjective ----
-
-
-class TestSubspaceObjective:
-    def test_full_subspace_matches_full_objective(self) -> None:
-        """When all indices are active, SubspaceObjective == ObjectiveFunction."""
-        mol = make_diatomic(0.80)
-        true_ff = _h2_ff(k=359.7, r0=0.74)
-        backend = load_backend("openmm")
-        target_energy = (
-            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
-        )
-
-        guess_ff = _h2_ff(k=503.6, r0=0.78)
-        ref = ObservationSet()
-        ref = ref.with_energy(target_energy, weight=1.0)
-
-        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
-        full_vec = layout.vector(guess_ff)
-
-        sub_obj = SubspaceObjective(obj, [0, 1], full_vec)
-        assert sub_obj(full_vec) == pytest.approx(obj(full_vec), rel=1e-10)
-
-    def test_single_param_subspace(self) -> None:
-        """Optimising one param while holding the other fixed."""
-        mol = make_diatomic(0.80)
-        true_ff = _h2_ff(k=359.7, r0=0.74)
-        backend = load_backend("openmm")
-        target_energy = (
-            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
-        )
-
-        guess_ff = _h2_ff(k=503.6, r0=0.74)
-        ref = ObservationSet()
-        ref = ref.with_energy(target_energy, weight=1.0)
-
-        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
-        full_vec = layout.vector(guess_ff)
-
-        sub_obj = SubspaceObjective(obj, [0], full_vec)
-        score_at_7 = sub_obj(np.array([503.6]))
-        score_at_5 = sub_obj(np.array([359.7]))
-        assert score_at_5 < score_at_7
-
-    def test_residuals(self) -> None:
-        """residuals() returns array of correct length."""
-        mol = make_diatomic(0.80)
-        true_ff = _h2_ff(k=359.7, r0=0.74)
-        backend = load_backend("openmm")
-        target_energy = (
-            prepare_case(backend, mol, true_ff).energy(EnergyRequest(parameters=param_vector(true_ff))).energy
-        )
-
-        guess_ff = _h2_ff(k=503.6, r0=0.74)
-        ref = ObservationSet()
-        ref = ref.with_energy(target_energy, weight=1.0)
-
-        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
-        full_vec = layout.vector(guess_ff)
-        sub_obj = SubspaceObjective(obj, [0], full_vec)
-
-        residuals = sub_obj.residuals(np.array([503.6]))
-        assert isinstance(residuals, np.ndarray)
-        assert len(residuals) == 1
-
-    def test_get_bounds(self) -> None:
-        """Bounds are correctly subset."""
-        guess_ff = _h2_ff(k=503.6, r0=0.74)
-        mol = make_diatomic(0.74)
-        backend = load_backend("openmm")
-        ref = ObservationSet()
-        ref = ref.with_energy(0.0)
-        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
-
-        full_vec = layout.vector(guess_ff)
-        sub_obj = SubspaceObjective(obj, [1], full_vec)
-        bounds = sub_obj.get_bounds()
-        all_bounds = [tuple(row) for row in layout.bounds.tolist()]
-        assert bounds == [all_bounds[1]]
-
-    def test_empty_indices_raises(self) -> None:
-        guess_ff = _h2_ff()
-        mol = make_diatomic(0.74)
-        backend = load_backend("openmm")
-        ref = ObservationSet()
-        ref = ref.with_energy(0.0)
-        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
-
-        with pytest.raises(ValueError, match="empty"):
-            SubspaceObjective(obj, [], layout.vector(guess_ff))
-
-
 # ---- Sensitivity Analysis ----
 
 
@@ -201,8 +120,8 @@ class TestSensitivity:
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, _layout, _space = _build_objective(guess_ff, backend, [mol], ref)
-        sens = compute_sensitivity(obj, metric="simp_var")
+        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
+        sens = compute_sensitivity(obj, layout.vector(guess_ff), metric="simp_var")
 
         assert len(sens.d1) == 2
         assert len(sens.d2) == 2
@@ -224,7 +143,7 @@ class TestSensitivity:
         ref = ref.with_energy(target_energy, weight=1.0)
 
         obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
-        sens = compute_sensitivity(obj, metric="abs_d1")
+        sens = compute_sensitivity(obj, layout.vector(guess_ff), metric="abs_d1")
 
         step_sizes = layout.steps
         normalised = np.where(step_sizes != 0, sens.d1 / step_sizes, 0.0)
@@ -243,8 +162,8 @@ class TestSensitivity:
         ref = ObservationSet()
         ref = ref.with_energy(target_energy, weight=1.0)
 
-        obj, _layout, _space = _build_objective(guess_ff, backend, [mol], ref)
-        sens = compute_sensitivity(obj)
+        obj, layout, _space = _build_objective(guess_ff, backend, [mol], ref)
+        sens = compute_sensitivity(obj, layout.vector(guess_ff))
 
         assert np.all(np.abs(sens.d1) < 0.01)
 
@@ -254,16 +173,86 @@ class TestSensitivity:
         backend = load_backend("openmm")
         ref = ObservationSet()
         ref = ref.with_energy(0.0)
-        obj, _layout, _space = _build_objective(ff, backend, [mol], ref)
+        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
 
         with pytest.raises(ValueError, match="Unknown metric"):
-            compute_sensitivity(obj, metric="bad")
+            compute_sensitivity(obj, layout.vector(ff), metric="bad")
 
 
 # ---- OptimizationLoop ----
 
 
 class TestOptimizationLoop:
+    def test_selected_parameter_ids_preserve_other_slots(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """The simplex pass changes only its selected semantic parameter slot."""
+        true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
+        guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
+        obj, layout, all_active = _make_water_objective(true_ff, guess_ff)
+        baseline = layout.vector(guess_ff)
+        space = all_active.with_active_indices((0, 1, 3))
+
+        class _NoOpOptimizer:
+            def optimize(
+                self,
+                evaluator: PythonObjectiveExecutor,
+                active_space: ActiveParameterSpace,
+            ) -> OptimizationResult:
+                score = evaluator.value(active_space.baseline)
+                return OptimizationResult(
+                    success=True,
+                    message="no-op",
+                    initial_score=score,
+                    final_score=score,
+                    n_iterations=0,
+                    n_evaluations=1,
+                    n_params=active_space.n_full,
+                    layout_fingerprint=active_space.layout.fingerprint,
+                    initial_params=active_space.baseline,
+                    final_params=active_space.baseline,
+                )
+
+        monkeypatch.setattr(
+            OptimizationLoop,
+            "_build_full_optimizer",
+            lambda *_args, **_kwargs: _NoOpOptimizer(),
+        )
+        monkeypatch.setattr(
+            "q2mm.optimizers.cycling.compute_sensitivity",
+            lambda *_args, **_kwargs: SensitivityResult(
+                d1=np.ones(len(layout)),
+                d2=np.ones(len(layout)),
+                simp_var=np.arange(len(layout), dtype=float),
+                ranking=np.array([0, 1, 3, 2]),
+                metric="simp_var",
+                n_evals=0,
+            ),
+        )
+
+        result = OptimizationLoop(
+            obj,
+            space,
+            max_params=1,
+            max_cycles=1,
+            convergence=0.0,
+            full_method="L-BFGS-B",
+            simp_method="Nelder-Mead",
+            simp_maxiter=50,
+            verbose=False,
+        ).run()
+
+        changed_indices = np.flatnonzero(~np.isclose(result.final_params, baseline, rtol=0.0, atol=1e-12))
+        changed_ids = tuple(layout.ids[i] for i in changed_indices)
+        assert changed_ids == (layout.ids[0],)
+        np.testing.assert_array_equal(result.final_params[[1, 2, 3]], baseline[[1, 2, 3]])
+        assert result.n_params == len(layout)
+        assert result.layout_fingerprint == layout.fingerprint
+        assert len(result.stages) == 1
+        stage = result.stages[0]
+        assert stage.n_params == len(layout)
+        assert stage.layout_fingerprint == layout.fingerprint
+        assert stage.notes["selected_indices"] == (0,)
+        assert result.final_score < result.initial_score
+
     @pytest.mark.integration
     def test_loop_improves_score(self) -> None:
         """OptimizationLoop should improve over a single-shot Nelder-Mead."""
@@ -285,11 +274,11 @@ class TestOptimizationLoop:
         )
         result = loop.run()
 
-        assert isinstance(result, LoopResult)
+        assert isinstance(result, OptimizationResult)
         assert result.final_score < result.initial_score
-        assert result.n_cycles >= 1
-        assert len(result.cycle_scores) == result.n_cycles + 1
-        assert len(result.selected_indices) == result.n_cycles
+        assert result.n_iterations >= 1
+        assert len(result.history) == result.n_iterations + 1
+        assert len([stage.notes["selected_indices"] for stage in result.stages]) == result.n_iterations
         assert result.improvement > 0
 
     @pytest.mark.integration
@@ -311,10 +300,9 @@ class TestOptimizationLoop:
         )
         result = loop.run()
 
-        assert len(result.sensitivity_results) == result.n_cycles
-        for sens in result.sensitivity_results:
-            assert len(sens.d1) == 4
-            assert len(sens.ranking) == 4
+        assert len(result.stages) == result.n_iterations
+        for stage in result.stages:
+            assert len(stage.notes["sensitivity_ranking"]) == 4
 
 
 class TestConvergence:
@@ -344,7 +332,7 @@ class TestConvergence:
         result = loop.run()
 
         assert result.success
-        assert result.n_cycles <= 2
+        assert result.n_iterations <= 2
 
     def test_max_cycles_limit(self) -> None:
         """Loop should respect max_cycles."""
@@ -365,12 +353,12 @@ class TestConvergence:
         result = loop.run()
 
         assert not result.success
-        assert result.n_cycles == 2
+        assert result.n_iterations == 2
         assert "max cycles" in result.message
 
     @pytest.mark.integration
     def test_summary_output(self) -> None:
-        """LoopResult.summary() produces readable output."""
+        """OptimizationResult.summary() produces readable output."""
         true_ff = _h2_ff(k=359.7, r0=0.74)
         guess_ff = _h2_ff(k=503.6, r0=0.78)
         mol = make_diatomic(0.80)
@@ -395,6 +383,6 @@ class TestConvergence:
         result = loop.run()
 
         summary = result.summary()
-        assert "Cycles" in summary
+        assert "Iterations" in summary
         assert "Score" in summary
-        assert "Improvement" in summary
+        assert "improvement" in summary

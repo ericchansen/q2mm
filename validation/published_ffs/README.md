@@ -2,7 +2,7 @@
 
 This directory documents published force fields available in this repository and
 their provenance. These FFs are used for **Check 1** validation: proving that
-the new q2mm engines can load published FFs and evaluate them against the
+the new q2mm backends can load published FFs and evaluate them against the
 corresponding QM reference data.
 
 ## MM3 Base File

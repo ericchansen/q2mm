@@ -30,7 +30,10 @@ from test._shared import make_diatomic, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.jax import JaxObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 
 # Module-level globals populated by autouse fixture
 JaxBackend = None
@@ -48,21 +51,33 @@ def _materialize(forcefield: ForceField, vector: np.ndarray) -> ForceField:
     return _layout(forcefield).replace(forcefield, vector)
 
 
+def _make_plan(forcefield: ForceField, molecules: list, reference: object, **kwargs: object) -> ObjectivePlan:
+    layout = _layout(forcefield)
+    mols = tuple(molecules)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(mols))),
+        molecules=mols,
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in mols),
+        observations=reference,
+        layout=layout,
+        active_space=ActiveParameterSpace.all_active(layout, forcefield),
+        regularization=float(kwargs.pop("regularization", 0.0)),
+        reference_params=kwargs.pop("reference_params", None),
+    )
+    if kwargs:
+        raise TypeError(f"Unsupported objective kwargs: {sorted(kwargs)}")
+    return plan
+
+
 def _make_objective(
     forcefield: ForceField, backend: object, molecules: list, reference: object, **kwargs: object
-) -> ObjectiveFunction:
-    return ObjectiveFunction(
-        forcefield=forcefield,
-        backend=backend,
-        molecules=molecules,
-        reference=reference,
-        layout=_layout(forcefield),
-        **kwargs,
-    )
+) -> JaxObjectiveExecutor:
+    plan = _make_plan(forcefield, molecules, reference, **kwargs)
+    return JaxObjectiveExecutor(plan, backend, forcefield)
 
 
-def _all_active_space(objective: ObjectiveFunction) -> ActiveParameterSpace:
-    return ActiveParameterSpace.all_active(objective.layout, objective.forcefield)
+def _all_active_space(objective: JaxObjectiveExecutor) -> ActiveParameterSpace:
+    return objective.plan.active_space
 
 
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
@@ -127,10 +142,11 @@ class TestJaxOptOptimizerValidation:
 
         fake_backend = MagicMock()
         fake_backend.__class__.__name__ = "FakeBackend"
-        obj = _make_objective(forcefield=ff, backend=fake_backend, molecules=[mol], reference=ref)
+        plan = _make_plan(ff, [mol], ref)
+        obj = PythonObjectiveExecutor(plan, fake_backend, ff)
 
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=10, verbose=False)
-        with pytest.raises(TypeError, match="JaxOptOptimizer requires a JaxBackend"):
+        with pytest.raises(TypeError, match="JaxObjectiveExecutor"):
             optimizer.optimize(obj, _all_active_space(obj))
 
 
@@ -157,8 +173,8 @@ class TestJaxOptOptimizerConvergence:
 
         assert result.final_score <= result.initial_score
         assert result.method == "jaxopt:lbfgs"
-        assert result.jac_mode == "analytical"
-        assert result.eps is None
+        assert result.gradient_mode == "analytical"
+        assert result.fd_step is None
 
     def test_lbfgsb_h2_energy(self) -> None:
         """L-BFGS-B converges with box constraints."""
@@ -182,10 +198,10 @@ class TestJaxOptOptimizerConvergence:
 
     @pytest.mark.nightly
     def test_reported_scores_in_objective_units(self) -> None:
-        """F6: reported initial/final scores are in ObjectiveFunction units.
+        """F6: reported initial/final scores are in PythonObjectiveExecutor units.
 
-        The internal revert guard uses JaxLoss-unit surrogate scores, but the
-        returned ``OptimizationResult`` must report true ObjectiveFunction
+        The internal revert guard uses JaxObjectiveExecutor-unit surrogate scores, but the
+        returned ``OptimizationResult`` must report true PythonObjectiveExecutor
         units so cross-stage comparisons in cycling.py compare like-for-like.
         Regression: ``final_score``/``initial_score`` used to leak the
         surrogate scale.
@@ -205,8 +221,8 @@ class TestJaxOptOptimizerConvergence:
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
 
-        true_initial = float(obj(np.asarray(result.initial_params)))
-        true_final = float(obj(np.asarray(result.final_params)))
+        true_initial = float(obj.value(np.asarray(result.initial_params)))
+        true_final = float(obj.value(np.asarray(result.final_params)))
         assert result.initial_score == pytest.approx(true_initial, rel=1e-6, abs=1e-9)
         assert result.final_score == pytest.approx(true_final, rel=1e-6, abs=1e-9)
 
@@ -214,7 +230,7 @@ class TestJaxOptOptimizerConvergence:
         """OptimizationResult has all expected fields."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
         from q2mm.models.observations import ObservationSet
-        from q2mm.optimizers.scipy_opt import OptimizationResult
+        from q2mm.models.results import OptimizationResult
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
         ff = _h2_ff(bond_k=215.8, bond_r0=0.80)
@@ -236,7 +252,7 @@ class TestJaxOptOptimizerConvergence:
         assert isinstance(result.n_iterations, int)
         assert isinstance(result.initial_params, np.ndarray)
         assert isinstance(result.final_params, np.ndarray)
-        assert isinstance(result.history, list)
+        assert isinstance(result.history, tuple)
 
     def test_water_energy_convergence(self) -> None:
         """Water (bond + angle) energy converges with L-BFGS."""
@@ -299,11 +315,11 @@ class TestJaxOptOptimizerConvergence:
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
         optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
         full_space = _all_active_space(obj)
-        active_indices = [slot.index for slot in obj.layout if slot.owner != "bonds"]
+        active_indices = [slot.index for slot in obj.plan.layout if slot.owner != "bonds"]
         constrained_space = full_space.with_active_indices(active_indices)
         result = optimizer.optimize(obj, constrained_space)
 
-        bond_indices = [slot.index for slot in obj.layout if slot.owner == "bonds"]
+        bond_indices = [slot.index for slot in obj.plan.layout if slot.owner == "bonds"]
         np.testing.assert_allclose(result.final_params[bond_indices], initial_params[bond_indices])
         np.testing.assert_allclose(_params(ff), initial_params)
         assert result.final_score <= result.initial_score
@@ -399,33 +415,25 @@ class TestJaxOptBoundsActive:
         ref = ObservationSet()
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
-        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
+        layout = _layout(ff)
+        slots = list(layout.slots)
+        slots[1] = replace(slots[1], bounds=(0.85, 0.90))
+        layout = replace(layout, slots=tuple(slots))
+        space = ActiveParameterSpace.all_active(layout, ff)
+        plan = ObjectivePlan(
+            case_ids=("0",),
+            molecules=(mol,),
+            stationary_points=(StationaryPointKind.GROUND_STATE,),
+            observations=ref,
+            layout=layout,
+            active_space=space,
+        )
+        obj = JaxObjectiveExecutor(plan, backend, ff)
 
-        # Override bounds: constrain bond_r0 (index 1) to [0.85, 0.90]
-        lower = spec.lower_bounds.copy()
-        upper = spec.upper_bounds.copy()
-        lower[1] = 0.85
-        upper[1] = 0.90
-        spec = replace(spec, lower_bounds=lower, upper_bounds=upper)
+        from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
-        # Build JaxLoss + optimizer manually with custom spec
-        from q2mm.optimizers.jaxloss import JaxLoss
-
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
-
-        from q2mm.backends.mm._jax_common import ensure_jaxopt, jnp
-
-        ensure_jaxopt()
-        import jaxopt
-
-        solver = jaxopt.LBFGSB(fun=jax_loss._loss_fn, maxiter=200, tol=1e-6)
-        params = jnp.array(_params(ff), dtype=jnp.float64)
-        lower_jnp = jnp.array(lower, dtype=jnp.float64)
-        upper_jnp = jnp.array(upper, dtype=jnp.float64)
-        result_params, _state = solver.run(params, bounds=(lower_jnp, upper_jnp))
-
-        final_params = np.asarray(result_params, dtype=float)
+        result = JaxOptOptimizer(method="lbfgsb", maxiter=200, verbose=False).optimize(obj, space)
+        final_params = result.final_params
         bond_r0_final = final_params[1]
 
         # The unconstrained optimum (0.96) is above the upper bound (0.90),
@@ -436,17 +444,17 @@ class TestJaxOptBoundsActive:
 
 
 @pytest.mark.nightly
-class TestScipyJaxLossTelemetry:
-    """F5: JaxLoss-path scipy runs must report real evaluation counts.
+class TestScipyJaxObjectiveExecutorTelemetry:
+    """F5: JaxObjectiveExecutor-path scipy runs must report real evaluation counts.
 
-    On the ``jac="auto"`` JaxLoss surrogate path scipy is driven by an
-    internal loss/grad function and never calls ``objective.__call__``, so
-    ``objective.n_eval`` stays frozen.  The optimizer now tracks the surrogate
+    On the JaxObjectiveExecutor analytical path scipy is driven by an
+    internal loss/grad function and never calls ``evaluator.value``, so
+    ``evaluator.n_evaluations`` stays frozen.  The optimizer now tracks the surrogate
     call count via telemetry and reports it as ``n_evaluations``.  Regression:
     ``n_evaluations`` used to be stuck near zero on this path.
     """
 
-    def test_n_evaluations_reflects_jaxloss_calls(self) -> None:
+    def test_n_evaluations_reflects_executor_calls(self) -> None:
         from q2mm.models.observations import ObservationSet
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -459,9 +467,9 @@ class TestScipyJaxLossTelemetry:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=50, jac="auto", ratio_tol=None, verbose=False)
+        optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False)
         result = optimizer.optimize(obj, _all_active_space(obj))
 
-        assert result.jac_mode == "jax_loss"
-        # Telemetry counts the initial ratio probe plus every optimizer eval.
+        assert result.gradient_mode == "analytical"
+        # Telemetry counts JAX executor value/gradient calls.
         assert result.n_evaluations > 2

@@ -38,6 +38,10 @@ _DELETED_PHASE1_PATHS = (
     PACKAGE_ROOT / "models" / "datum.py",
     PACKAGE_ROOT / "optimizers" / "reference.py",
     PACKAGE_ROOT / "optimizers" / "defaults.py",
+    PACKAGE_ROOT / "optimizers" / "objective.py",
+    PACKAGE_ROOT / "optimizers" / "spec.py",
+    PACKAGE_ROOT / "optimizers" / "jaxloss.py",
+    PACKAGE_ROOT / "optimizers" / "evaluators",
 )
 _REQUIRED_PHASE2_PATHS = (
     PACKAGE_ROOT / "benchmarks" / "cases.py",
@@ -51,13 +55,27 @@ _REQUIRED_PHASE2_PATHS = (
     PACKAGE_ROOT / "models" / "observations.py",
     PACKAGE_ROOT / "models" / "parameters.py",
     PACKAGE_ROOT / "models" / "problem.py",
+    PACKAGE_ROOT / "models" / "results.py",
+    PACKAGE_ROOT / "objectives" / "plan.py",
+    PACKAGE_ROOT / "objectives" / "protocols.py",
+    PACKAGE_ROOT / "objectives" / "python.py",
+    PACKAGE_ROOT / "objectives" / "jax.py",
+    PACKAGE_ROOT / "objectives" / "metrics.py",
 )
 _DELETED_PHASE1_MODULES = frozenset(
     {
         "datum.py",
         "defaults.py",
+        "eigenmatrix.py",
+        "energy.py",
+        "frequency.py",
+        "geometry.py",
+        "hessian_element.py",
+        "jaxloss.py",
         "loaders.py",
+        "objective.py",
         "reference.py",
+        "spec.py",
         "systems.py",
     }
 )

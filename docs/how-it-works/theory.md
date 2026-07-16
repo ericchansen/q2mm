@@ -190,7 +190,7 @@ every boundary:
 - **Loaders** set `forcefield.functional_form` based on the source format.
 - **Savers** reject incompatible forms — e.g., an AMBER frcmod saver
   rejects an MM3-form force field.
-- **Engines** validate compatibility before creating a simulation context.
+- **Backends** validate compatibility before creating a prepared session.
 
 This prevents silent mismatches where MM3 cubic/sextic constants would be
 interpreted as harmonic spring constants. The functional form is carried
@@ -210,7 +210,7 @@ $$
 where $x_{\text{ref},i}$ is a QM reference value, $x_{\text{calc},i}$ is
 the corresponding MM-computed value, and $w_i$ is a weight.
 
-Each evaluation runs the MM engine (OpenMM, Tinker, JAX, or JAX-MD) with
+Each evaluation runs the MM backend (OpenMM, Tinker, JAX, or JAX-MD) with
 the current parameters, computes the requested observables, and compares
 them to the QM reference. The types of observables that can be included
 are:
@@ -228,7 +228,7 @@ right is important — for example, giving too much weight to energies can
 produce a force field with good relative energies but poor geometries.
 
 The implementation lives in
-[`q2mm.optimizers.objective`](../reference/q2mm/optimizers/objective.md).
+[`q2mm.objectives`](../reference/q2mm/objectives/index.md).
 
 ---
 
@@ -351,7 +351,7 @@ no-op for already-symmetric matrices.
 **Non-finite entries.** During optimization the optimizer may trial extreme
 parameter values — very large force constants, near-zero equilibrium
 lengths, or values at the edge of physical plausibility. When these are
-fed into an MM engine, the resulting Hessian can contain `NaN` (e.g.,
+fed into an MM backend, the resulting Hessian can contain `NaN` (e.g.,
 division by zero in a force term) or `Inf` (e.g., numeric overflow in an
 exponential potential). Passing such a matrix to `numpy.linalg.eigvalsh`
 would raise an unrecoverable `LinAlgError`. Q2MM checks

@@ -27,7 +27,10 @@ from test._shared import make_diatomic, make_water
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.jax import JaxObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import ObjectiveEvaluator
 
 # Module-level globals populated by autouse fixture
 JaxBackend = None
@@ -43,19 +46,22 @@ def _params(forcefield: ForceField) -> np.ndarray:
 
 def _make_objective(
     forcefield: ForceField, backend: object, molecules: list, reference: ObservationSet, **kwargs: object
-) -> ObjectiveFunction:
-    return ObjectiveFunction(
-        forcefield=forcefield,
-        backend=backend,
-        molecules=molecules,
-        reference=reference,
-        layout=_layout(forcefield),
-        **kwargs,
+) -> ObjectiveEvaluator:
+    layout = _layout(forcefield)
+    space = ActiveParameterSpace.all_active(layout, forcefield)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(molecules))),
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=reference,
+        layout=layout,
+        active_space=space,
     )
+    return JaxObjectiveExecutor(plan, backend, forcefield)
 
 
-def _all_active_space(objective: ObjectiveFunction) -> ActiveParameterSpace:
-    return ActiveParameterSpace.all_active(objective.layout, objective.forcefield)
+def _all_active_space(objective: ObjectiveEvaluator) -> ActiveParameterSpace:
+    return objective.plan.active_space
 
 
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
@@ -209,7 +215,7 @@ class TestOptaxVsScipyBaseline:
         ref = ref.with_energy(value=target_energy, case_id="0", weight=1.0)
 
         obj_scipy = _make_objective(forcefield=ff_scipy, backend=self.backend, molecules=[mol], reference=ref)
-        opt_scipy = ScipyOptimizer(method="L-BFGS-B", maxiter=200, jac="analytical", verbose=False)
+        opt_scipy = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
         res_scipy = opt_scipy.optimize(obj_scipy, _all_active_space(obj_scipy))
 
         # Run Adam
@@ -245,5 +251,5 @@ class TestOptaxVsScipyBaseline:
         )
         result = optimizer.optimize(objective, _all_active_space(objective))
 
-        # JAX backend → uses JaxLoss gradient path (memory-efficient)
-        assert result.jac_mode == "jax_loss"
+        # JAX executor provides analytical gradients via the per-case JIT path.
+        assert result.gradient_mode == "analytical"

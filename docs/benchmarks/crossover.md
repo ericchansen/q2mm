@@ -25,8 +25,8 @@ decision aid, not a new benchmark.
 ## What "analytical" means here
 
 The analytical path = JAX-traced loss with `jax.value_and_grad`, JIT
-compiled per-molecule, dispatched from Python via
-`JaxLoss.value_and_grad_jax()`. No finite-difference gradients. See
+compiled per case, and aggregated from Python by `JaxObjectiveExecutor`.
+No finite-difference gradients. See
 [Architecture](../how-it-works/architecture.md) for the residual-kind ×
 analytical-gradient × in-JIT matrix.
 

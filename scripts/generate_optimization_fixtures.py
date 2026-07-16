@@ -26,7 +26,9 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, Functional
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 OUTPUT_PATH = REPO_ROOT / "test" / "fixtures" / "optimization_golden.json"
@@ -123,9 +125,17 @@ def main() -> int:
     true_ff, guess_ff, mols, ref, backend = _make_water_problem()
     layout = ParameterLayout.from_force_field(guess_ff)
     space = ActiveParameterSpace.all_active(layout, guess_ff)
-    obj = ObjectiveFunction(guess_ff, backend, mols, ref, layout=layout)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(mols))),
+        molecules=tuple(mols),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in mols),
+        observations=ref,
+        layout=layout,
+        active_space=space,
+    )
+    evaluator = PythonObjectiveExecutor(plan, backend, guess_ff)
     opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-    result = opt.optimize(obj, space)
+    result = opt.optimize(evaluator, space)
 
     fixture = {
         "metadata": {

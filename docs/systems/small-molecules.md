@@ -173,7 +173,7 @@ See [Composed workflows analysis](#composed-workflows-analysis) below.
   guide L-BFGS-B from the QFUERZA basin.
 - **[JaxOpt](https://jaxopt.github.io/) L-BFGS matches the top harmonic
   cluster** (528–532 cm⁻¹) using JIT-compiled analytical gradients. This
-  confirms that end-to-end differentiation through the JAX engine produces
+  confirms that end-to-end differentiation through the JAX backend produces
   gradients of the same quality as the optax analytical path, and that
   jaxopt's second-order L-BFGS method exploits them effectively. L-BFGS-B
   (bounded) runs on CPU only due to a jaxopt XLA compilation bug on GPU
@@ -264,7 +264,7 @@ where multi-start and global search methods show material differences:
   free by comparison and serves mainly as a starting point, not as the
   expensive step.
 
-## Convergence baseline (ratio-gated end-to-end)
+## Convergence baseline (executor-ratio-gated end-to-end)
 
 In addition to the optimizer matrix above, CH₃F is run through the
 **convergence-baseline** pipeline at
@@ -278,11 +278,11 @@ and the objective is the frequency-only reference.
 | Metric | Value |
 |--------|:-----:|
 | Ratio check | 1.00 (pass) |
-| Initial ObjectiveFunction score | 0.330 |
-| Final ObjectiveFunction score | 5.48 × 10⁻⁴ |
-| Improvement | **99.83 %** (per-call ObjectiveFunction is fully deterministic for ch3f — single-molecule, no metal — so this number is exact) |
+| Initial Python objective score | 0.330 |
+| Final Python objective score | 5.48 × 10⁻⁴ |
+| Improvement | **99.83 %** (per-call Python objective is fully deterministic for ch3f — single-molecule, no metal — so this number is exact) |
 | Iterations / Evaluations | 92 / 2 |
-| Optimizer | L-BFGS-B (scipy) over JaxLoss analytical gradients |
+| Optimizer | L-BFGS-B (scipy) over JAX analytical executor gradients |
 | Wall time | 3.3 s |
 | Optimized frequency R² | 0.99992 (RMSD 7.81 cm⁻¹) |
 

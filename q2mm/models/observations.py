@@ -6,7 +6,7 @@ pure builder methods that populate it from a
 :class:`~q2mm.models.molecule.Molecule`). This is the *one* observation
 model in Q2MM: :mod:`q2mm.io.reference` (YAML), :mod:`q2mm.io.fchk`, and
 :mod:`q2mm.io.gaussian` construct :class:`ObservationSet` from parsed
-files, and :mod:`q2mm.optimizers.objective` consumes it — but this module
+files, and :mod:`q2mm.objectives` consumes it — but this module
 itself never imports I/O, backends, objectives, optimizers, or workflows.
 
 Both :class:`Observation` and :class:`ObservationSet` are deeply

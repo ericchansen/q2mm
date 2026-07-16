@@ -1,6 +1,6 @@
 # Psi4 Backend
 
-The `Psi4Engine` wraps the [Psi4](https://psicode.org/) Python API for
+The `Psi4Backend` wraps the [Psi4](https://psicode.org/) Python API for
 quantum mechanical calculations: single-point energy, Hessian, geometry
 optimization, and vibrational frequencies. It is the only QM backend and
 is used to generate the reference data that drives force field
@@ -34,16 +34,16 @@ conda install psi4 -c conda-forge
 Psi4 supports any method string accepted by `psi4.energy()` — including
 HF, DFT functionals (B3LYP, M06, ωB97X-D, etc.), and post-HF methods
 (MP2, CCSD). The method is configured via the `method` parameter when
-creating the engine. Basis sets are set via `basis`.
+creating the backend. Basis sets are set via `basis`.
 
 ---
 
 ## Configuration
 
 ```python
-from q2mm.backends.qm import Psi4Engine
+from q2mm.backends.qm.psi4 import Psi4Backend
 
-engine = Psi4Engine(
+backend = Psi4Backend(
     method="b3lyp",          # DFT functional or QM method
     basis="6-31+G(d)",       # basis set
     memory="2 GB",           # memory allocation
@@ -66,38 +66,35 @@ engine = Psi4Engine(
 
 ## Capabilities
 
-| Method | Supported | Notes |
+| Prepared-session operation | Supported | Notes |
 |--------|:---------:|-------|
-| `energy()` | ✅ | Returns Hartrees |
-| `optimize()` | ✅ | Minimization or TS search (`opt_type="ts"`) |
-| `hessian()` | ✅ | Returns Hartree/Bohr², shape (3N, 3N) |
-| `frequencies()` | ✅ | Returns cm⁻¹ |
+| `energy(QMEnergyRequest)` | ✅ | Returns Hartrees |
+| `optimize_geometry(QMGeometryOptimizationRequest)` | ✅ | Minimization or TS search (`opt_type="ts"`) |
+| `hessian(QMHessianRequest)` | ✅ | Returns Hartree/Bohr², shape (3N, 3N) |
+| `frequencies(QMFrequencyRequest)` | ✅ | Returns cm⁻¹ |
 | Context manager | ✅ | Auto-cleans temp files on exit |
 
-### Input formats
+### Input model
 
-Structures can be passed as:
+Prepare a Psi4 session with a `q2mm.models.molecule.Molecule`. For file-based
+workflows, load the structure first (for example with `q2mm.io.xyz.load_xyz`)
+and pass that molecule in `PreparationRequest`.
 
-- **XYZ file path** — reads standard `.xyz` format
-- **Tuple** — `(atoms, coords)` where `atoms` is a list of element
-  symbols and `coords` is a NumPy array of shape `(N, 3)` in Å
-
-All methods accept optional `method` and `basis` overrides to run a
-single calculation with different settings without reconfiguring the
-engine.
+Method and basis are fixed on the backend instance. To run with different
+settings, construct a second `Psi4Backend`.
 
 ---
 
 ## Limitations
 
 - **CPU only** — Psi4 does not use GPU acceleration.
-- **No minimize() method** — uses `optimize()` instead (Psi4's own
+- **No MM minimization method** — uses `optimize_geometry()` instead (Psi4's own
   geometry optimizer with geom_maxiter=100).
-- **No analytical MM gradients** — this is a QM engine, not an MM
-  engine. It generates reference data, not force field evaluations.
+- **No analytical MM gradients** — this is a QM backend, not an MM
+  backend. It generates reference data, not force field evaluations.
 - **Conda required** — `pip install psi4` does not work; must use
   conda-forge.
-- **Temporary files** — each engine instance creates a temp directory
+- **Temporary files** — each backend instance creates a temp directory
   for Psi4 output. Use the context manager or call `close()` to clean up.
 
 ---
@@ -105,24 +102,35 @@ engine.
 ## Example
 
 ```python
-from q2mm.backends.qm import Psi4Engine
-import numpy as np
+from q2mm.backends.contracts import (
+    PreparationRequest,
+    QMEnergyRequest,
+    QMFrequencyRequest,
+    QMGeometryOptimizationRequest,
+    QMHessianRequest,
+)
+from q2mm.backends.qm.psi4 import Psi4Backend
+from q2mm.io.xyz import load_xyz
 
-with Psi4Engine(method="b3lyp", basis="6-31+G(d)") as engine:
+mol = load_xyz("molecule.xyz")
+
+with Psi4Backend(method="b3lyp", basis="6-31+G(d)") as backend:
+    session = backend.prepare(PreparationRequest(case_id="example", molecule=mol))
+
     # Single-point energy
-    e = engine.energy("molecule.xyz")
+    e = session.energy(QMEnergyRequest()).energy
     print(f"Energy: {e:.6f} Hartree")
 
     # Geometry optimization (transition state)
-    energy, atoms, coords = engine.optimize("ts-guess.xyz", opt_type="ts")
-    print(f"TS energy: {energy:.6f} Hartree")
+    ts = session.optimize_geometry(QMGeometryOptimizationRequest(opt_type="ts"))
+    print(f"TS energy: {ts.energy:.6f} Hartree")
 
     # Hessian for QFUERZA estimation
-    hess = engine.hessian("ts-optimized.xyz")
+    hess = session.hessian(QMHessianRequest()).hessian
     print(f"Hessian shape: {hess.shape}")
 
     # Vibrational frequencies
-    freqs = engine.frequencies("ts-optimized.xyz")
+    freqs = session.frequencies(QMFrequencyRequest()).frequencies
     print(f"Frequencies: {freqs[:5]} cm⁻¹")
 ```
 
@@ -139,13 +147,13 @@ QM reference data before any force field optimization begins:
 4. Feed the Hessian into [QFUERZA estimation](../how-it-works/theory.md)
    for initial force constant estimation
 
-The MM engines (OpenMM, JAX, Tinker, JAX-MD) then handle the iterative
+The MM backends (OpenMM, JAX, Tinker, JAX-MD) then handle the iterative
 force field optimization against this QM reference data.
 
 ---
 
 ## See also
 
-- [Engine comparison table](index.md#engine-overview)
+- [Backend comparison table](index.md#backend-overview)
 - [Tutorial: Generating QM Reference Data](../tutorial.md)
-- [API Reference: Psi4Engine](../reference/q2mm/backends/qm/psi4.md)
+- [API Reference: Psi4Backend](../reference/q2mm/backends/qm/psi4.md)

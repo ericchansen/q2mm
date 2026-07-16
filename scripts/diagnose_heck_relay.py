@@ -31,8 +31,8 @@ C. Seminario-only — ``load_mm3_fld(include_standard=False)`` (Rosales
 For each baseline this script reports:
 
 - Per-category R² / RMSD / MAE (bond_length, bond_angle, eig_diagonal)
-- ObjectiveFunction score
-- Whether JaxLoss returns a finite value
+- Objective-executor score
+- Whether the JAX executor returns a finite value
 - Worst-10 bond-length residuals (with atom-pair labels)
 
 Output: strict JSON at
@@ -154,17 +154,13 @@ def _category_stats(ref_values: np.ndarray, calc_values: np.ndarray) -> dict[str
     return {"n_refs": n, "r2": r2, "rmsd": rmsd, "mae": mae}
 
 
-def _per_category_metrics(obj: Any, ff: Any) -> tuple[dict[str, dict[str, float]], list[dict[str, Any]]]:
-    """Compute per-category fit metrics and per-bond residuals.
-
-    Returns ``(category_stats, bond_residuals)`` where *bond_residuals*
-    contains one dict per bond_length reference: molecule_idx,
-    atom_indices, ref_value, calc_value, abs_residual.
-    """
-    residuals = obj._compute_residuals(ff)  # noqa: SLF001
+def _per_category_metrics(evaluator: Any, x: Any) -> tuple[dict[str, dict[str, float]], list[dict[str, Any]]]:
+    """Compute per-category fit metrics and per-bond residuals."""
+    evaluation = evaluator.evaluate(x)
+    residuals = evaluation.weighted_residuals
     buckets: dict[str, list[tuple[float, float]]] = defaultdict(list)
     bond_records: list[dict[str, Any]] = []
-    for ref, weighted in zip(obj.reference.values, residuals, strict=True):
+    for ref, weighted in zip(evaluator.plan.observations.values, residuals, strict=True):
         if ref.weight == 0.0:
             continue
         raw_residual = float(weighted) / float(ref.weight)
@@ -191,11 +187,11 @@ def _per_category_metrics(obj: Any, ff: Any) -> tuple[dict[str, dict[str, float]
     return category_stats, bond_records
 
 
-def _per_molecule_r2(obj: Any, ff: Any) -> list[dict[str, float]]:
+def _per_molecule_r2(evaluator: Any, x: Any) -> list[dict[str, float]]:
     """Compute per-molecule eig_diagonal R² (the system-level loss target)."""
-    residuals = obj._compute_residuals(ff)  # noqa: SLF001
+    residuals = evaluator.evaluate(x).weighted_residuals
     per_mol: dict[int, list[tuple[float, float]]] = defaultdict(list)
-    for ref, weighted in zip(obj.reference.values, residuals, strict=True):
+    for ref, weighted in zip(evaluator.plan.observations.values, residuals, strict=True):
         if ref.kind != "eig_diagonal" or ref.weight == 0.0:
             continue
         raw_residual = float(weighted) / float(ref.weight)
@@ -311,36 +307,45 @@ def evaluate_baseline(
     backend: Any,
 ) -> dict[str, Any]:
     """Compute the full diagnostic block for one baseline."""
-    from q2mm.models.parameters import ParameterLayout
-    from q2mm.optimizers.objective import ObjectiveFunction
+    from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+    from q2mm.models.problem import StationaryPointKind
+    from q2mm.objectives.plan import ObjectivePlan
+    from q2mm.objectives.python import PythonObjectiveExecutor
 
     layout = ParameterLayout.from_force_field(ff)
-    obj = ObjectiveFunction(ff, backend, molecules, reference, layout=layout)
+    space = ActiveParameterSpace.all_active(layout, ff)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(molecules))),
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=reference,
+        layout=layout,
+        active_space=space,
+    )
+    evaluator = PythonObjectiveExecutor(plan, backend, ff)
     x = layout.vector(ff)
-    obj_score = float(obj(x))
+    obj_score = float(evaluator.value(x))
 
-    categories, bond_records = _per_category_metrics(obj, ff)
-    per_molecule = _per_molecule_r2(obj, ff)
+    categories, bond_records = _per_category_metrics(evaluator, x)
+    per_molecule = _per_molecule_r2(evaluator, x)
 
     bond_records.sort(key=lambda r: -r["abs_residual"])
     worst_10 = bond_records[:10]
 
-    jaxloss_val: float | None = None
-    jaxloss_finite: bool | None = None
+    jax_score_val: float | None = None
+    jax_score_finite: bool | None = None
     try:
         from q2mm.backends.mm.jax_engine import JaxBackend
-        from q2mm.optimizers.jaxloss import JaxLoss
+        from q2mm.objectives.jax import JaxObjectiveExecutor
 
         if isinstance(backend, JaxBackend):
-            spec = obj.to_jax_spec()
-            jl = JaxLoss(spec, backend, molecules, ff, sessions=obj.jax_sessions(spec))
-            val_jax, _ = jl.value_and_grad_jax(x)
-            raw = float(val_jax)
-            jaxloss_finite = math.isfinite(raw)
-            jaxloss_val = raw if jaxloss_finite else None
+            jax_eval = JaxObjectiveExecutor(plan, backend, ff)
+            raw = float(jax_eval.value(x))
+            jax_score_finite = math.isfinite(raw)
+            jax_score_val = raw if jax_score_finite else None
     except Exception as exc:
-        logger.warning("[%s] JaxLoss evaluation failed: %s", label, exc)
-        jaxloss_finite = False
+        logger.warning("[%s] JAX-executor evaluation failed: %s", label, exc)
+        jax_score_finite = False
 
     n_total = len(layout)
 
@@ -349,9 +354,9 @@ def evaluate_baseline(
         "n_total_params": n_total,
         "n_active_params": n_active,
         "objective_score": obj_score,
-        "jaxloss": jaxloss_val,
-        "jaxloss_finite": jaxloss_finite,
-        "ratio": (jaxloss_val / obj_score) if (jaxloss_val is not None and obj_score > 0) else None,
+        "jax_score": jax_score_val,
+        "jax_score_finite": jax_score_finite,
+        "executor_ratio": (jax_score_val / obj_score) if (jax_score_val is not None and obj_score > 0) else None,
         "categories": categories,
         "per_molecule_eig_diagonal_r2": per_molecule,
         "worst_10_bond_length_residuals": worst_10,
@@ -423,7 +428,7 @@ def main() -> int:
             "[%s] obj=%.3e ratio=%s bond_len R²=%.3f bond_ang R²=%.3f eig_diag R²=%.3f",
             label,
             r["objective_score"],
-            f"{r['ratio']:.3e}" if r["ratio"] is not None else "n/a",
+            f"{r['executor_ratio']:.3e}" if r["executor_ratio"] is not None else "n/a",
             cats.get("bond_length", {}).get("r2", float("nan")),
             cats.get("bond_angle", {}).get("r2", float("nan")),
             cats.get("eig_diagonal", {}).get("r2", float("nan")),
@@ -455,7 +460,7 @@ def main() -> int:
     print(f"{'Baseline':<22} {'n_active':>9} {'obj':>12} {'ratio':>12} {'R²(bond_len)':>14}")
     for label, _, _ in baselines:
         r = results[label]
-        ratio_s = f"{r['ratio']:.2e}" if r["ratio"] is not None else "n/a"
+        ratio_s = f"{r['executor_ratio']:.2e}" if r["executor_ratio"] is not None else "n/a"
         r2_bond = r["categories"].get("bond_length", {}).get("r2", float("nan"))
         print(f"  {label:<20} {r['n_active_params']:>9d} {r['objective_score']:>12.3e} {ratio_s:>12} {r2_bond:>14.3f}")
 

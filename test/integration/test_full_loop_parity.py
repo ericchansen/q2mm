@@ -39,6 +39,27 @@ if TYPE_CHECKING:
 
 from test._shared import GS_FCHK, REPO_ROOT, TS_FCHK
 
+
+def _make_freq_evaluator(ff, backend, molecules, reference, layout):  # noqa: ANN001, ANN202
+    """Build a Python objective executor for a frequency objective."""
+    from q2mm.models.parameters import ActiveParameterSpace
+    from q2mm.models.problem import StationaryPointKind
+    from q2mm.objectives.plan import ObjectivePlan
+    from q2mm.objectives.python import PythonObjectiveExecutor
+
+    mols = list(molecules)
+    space = ActiveParameterSpace.all_active(layout, ff)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(mols))),
+        molecules=tuple(mols),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in mols),
+        observations=reference,
+        layout=layout,
+        active_space=space,
+    )
+    return PythonObjectiveExecutor(plan, backend, ff)
+
+
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
@@ -232,7 +253,6 @@ class TestRhEnamideFullLoop:
         from q2mm.benchmarks.systems._forcefield import load_published_opt
         from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
         from q2mm.models.seminario import qfuerza_into
-        from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         if not MMO_PATH.exists():
@@ -273,8 +293,8 @@ class TestRhEnamideFullLoop:
             n_freqs_per_mol.append(len(qm_real))
 
         # Initial score
-        obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=molecules, reference=freq_ref, layout=layout)
-        initial_score = obj(seminario_params)
+        obj = _make_freq_evaluator(ff, backend, molecules, freq_ref, layout)
+        initial_score = obj.value(seminario_params)
 
         # Optimize — just enough iterations to verify our optimizer wrapper
         # and objective function work end-to-end. Full convergence benchmarks
@@ -384,7 +404,6 @@ class TestEthaneFullLoop:
         from q2mm.models.forcefield import FunctionalForm
         from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
         from q2mm.models.seminario import qfuerza_fresh
-        from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         if not GS_FCHK.exists():
@@ -413,8 +432,8 @@ class TestEthaneFullLoop:
         freq_ref, qm_real = _build_frequency_reference(qm_freqs, mm_all)
 
         # Penalty score
-        obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=[mol], reference=freq_ref, layout=layout)
-        seminario_score = obj(seminario_params)
+        obj = _make_freq_evaluator(ff, backend, [mol], freq_ref, layout)
+        seminario_score = obj.value(seminario_params)
 
         # Optimize
         t_opt_start = time.perf_counter()
@@ -634,7 +653,6 @@ class TestPipelineDeterminism:
         from q2mm.models.forcefield import FunctionalForm
         from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
         from q2mm.models.seminario import qfuerza_fresh
-        from q2mm.optimizers.objective import ObjectiveFunction
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         if not GS_FCHK.exists():
@@ -656,7 +674,7 @@ class TestPipelineDeterminism:
             ]
             freq_ref, _ = _build_frequency_reference(qm_freqs, mm_all)
 
-            obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=[mol], reference=freq_ref, layout=layout)
+            obj = _make_freq_evaluator(ff, backend, [mol], freq_ref, layout)
             opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
             result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
             results.append((result.final_score, result.final_params.copy()))
@@ -691,7 +709,6 @@ def _rh_enamide_harmonic_pipeline(
     from q2mm.models.forcefield import FunctionalForm
     from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
     from q2mm.models.seminario import qfuerza_into
-    from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
     mm3_fld_path = RH_DIR / "mm3.fld"
@@ -730,8 +747,8 @@ def _rh_enamide_harmonic_pipeline(
         n_freqs_per_mol.append(len(qm_real))
 
     # Initial score
-    obj = ObjectiveFunction(forcefield=ff, backend=backend, molecules=molecules, reference=freq_ref, layout=layout)
-    initial_score = obj(seminario_params)
+    obj = _make_freq_evaluator(ff, backend, molecules, freq_ref, layout)
+    initial_score = obj.value(seminario_params)
 
     # Optimize (3 iterations, just enough to validate the pipeline)
     t0 = time.perf_counter()

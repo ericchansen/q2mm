@@ -1,45 +1,24 @@
-"""Multi-start optimizer that fuses N replicas into one XLA kernel.
+"""Multi-start optimizer backed by jaxopt, one replica at a time.
 
-Rather than running an inner optimizer N times in a Python loop (see
-:class:`~q2mm.optimizers.multistart.MultiStartOptimizer`), this
-optimizer ``jax.vmap``-s a single jaxopt solver ``run`` call over a
-batch of initial parameter vectors.  The entire search — loss,
-gradients, L-BFGS line search, and the best-of-N selection — happens
-inside one JIT-compiled graph.
-
-Expected wins on GPU scale with ``n_starts``: each replica shares the
-same compiled ``JaxLoss._loss_fn``, and XLA can overlap the independent
-replicas on the device.
-
-Only applies to :class:`~q2mm.optimizers.jaxopt_opt.JaxOptOptimizer`'s
-supported methods.  ``lbfgsb`` inherits the CPU-only limitation
-(upstream jaxopt argsort/scatter dtype issue on GPU).
-
-Usage::
-
-    from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
-
-    opt = JaxMultiStartOptimizer(
-        method="lbfgs",
-        n_starts=100,
-        maxiter=500,
-        perturbation_pct=0.1,
-        seed=0,
-    )
-    result = opt.optimize(objective_function, space)
-
+Unlike the previous implementation, replicas are **not** fused into a
+single ``jax.vmap`` over an all-molecule loss kernel.  Each deterministic
+candidate is dispatched independently through the
+:class:`~q2mm.objectives.jax.JaxObjectiveExecutor` (per-case JIT + Python
+aggregation), preserving the per-case split and recording every candidate
+(success or failure) as a :class:`~q2mm.models.results.CandidateRecord`.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from dataclasses import replace
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from q2mm.optimizers.jaxopt_opt import _METHOD_REGISTRY, _ensure_jaxopt
-from q2mm.optimizers.objective import ObjectiveFunction
-from q2mm.optimizers.scipy_opt import OptimizationResult
+from q2mm.models.results import CandidateRecord, OptimizationResult
+from q2mm.objectives.protocols import ObjectiveEvaluator
+from q2mm.optimizers.jaxopt_opt import _METHOD_REGISTRY, JaxOptOptimizer, _require_jax_executor
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
@@ -48,32 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class JaxMultiStartOptimizer:
-    """Vmap-fused multi-start optimizer backed by jaxopt.
-
-    Runs ``n_starts`` replicas of a jaxopt solver in parallel via
-    ``jax.vmap``, all inside one XLA kernel.  The first replica uses
-    the unperturbed initial parameters; the remaining ``n_starts - 1``
-    are uniformly perturbed by ``±perturbation_pct`` of each parameter
-    value.
-
-    Args:
-        method: jaxopt method name.  One of ``'lbfgs'`` (default),
-            ``'lbfgsb'`` (CPU-only), or ``'gradient_descent'``.
-        n_starts: Number of parallel replicas.  Must be ``>= 1``.
-        maxiter: Maximum optimizer iterations per replica.
-        tol: Convergence tolerance passed to each replica's solver;
-            individual replicas may stop early when this tolerance is
-            met.
-        perturbation_pct: Max perturbation as a fraction of each
-            parameter's value.  ``0.1`` means ±10%.  Perturbations are
-            clipped to the force field's parameter bounds.
-        seed: RNG seed for reproducible perturbations.
-        verbose: Log progress.
-
-    Raises:
-        ValueError: On invalid method, n_starts, or perturbation_pct.
-
-    """
+    """Multi-start optimizer that dispatches jaxopt replicas independently."""
 
     def __init__(
         self,
@@ -100,75 +54,25 @@ class JaxMultiStartOptimizer:
         self.seed = seed
         self.verbose = verbose
 
-    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
-        """Run ``n_starts`` replicas in parallel, return the best.
+    def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
+        """Run ``n_starts`` jaxopt replicas independently; keep the best."""
+        _require_jax_executor(evaluator)
 
-        Args:
-            objective: Configured objective with a JaxBackend backend.
-            space: The active/frozen projection over ``objective.layout``.
-                Only active parameters are perturbed/optimized;
-                ``objective.forcefield`` is never mutated — materialize
-                the optimized force field explicitly via
-                ``objective.layout.replace(objective.forcefield, result.final_params)``.
-
-        Returns:
-            OptimizationResult for the replica with the lowest final
-            loss, with full-vector (length ``space.n_full``) parameters.
-            ``n_iterations`` and ``success`` are taken from the winning
-            replica's jaxopt state.
-
-        Raises:
-            TypeError: If the engine is not a JaxBackend.
-            ImportError: If jaxopt is not installed.
-            RuntimeError: If ``method='lbfgsb'`` on a non-CPU backend.
-
-        """
-        _ensure_jaxopt()
-
-        from q2mm.backends.mm._jax_common import jax, jnp
-        from q2mm.backends.mm.jax_engine import JaxBackend
-        from q2mm.optimizers.jaxloss import JaxLoss
-
-        if not isinstance(objective.backend, JaxBackend):
-            raise TypeError(f"JaxMultiStartOptimizer requires a JaxBackend, got {type(objective.backend).__name__}.")
-
-        if self.method == "lbfgsb":
-            jax_device = jax.default_backend()
-            if jax_device != "cpu":
-                raise RuntimeError(
-                    f"jaxopt LBFGSB is not supported on the {jax_device!r} backend — use method='lbfgs' on GPU."
-                )
-
-        import jaxopt
-
-        spec = objective.to_jax_spec()
-        jax_loss = JaxLoss(
-            spec, objective.backend, objective.molecules, objective.forcefield, sessions=objective.jax_sessions(spec)
-        )
-
-        layout = objective.layout
-        initial_full = layout.vector(objective.forcefield)
+        n_params = space.n_full
+        fingerprint = space.layout.fingerprint
+        initial_full = np.array(space.baseline, dtype=float)
         x0 = space.pack(initial_full)
-        active_bounds = space.bounds
+        starts = self._generate_starts(x0, space.bounds)
 
-        baseline_jax = jnp.array(space.baseline, dtype=jnp.float64)
-        active_indices_jax = jnp.array(space.active_indices, dtype=jnp.int32)
+        inner = JaxOptOptimizer(method=self.method, maxiter=self.maxiter, tol=self.tol, verbose=False)
+        n_eval_before = evaluator.n_evaluations
+        true_initial_score = float(evaluator.value(initial_full))
 
-        def expand_jax(x_active: Any):  # noqa: ANN202
-            return baseline_jax.at[active_indices_jax].set(x_active)
-
-        _raw_loss_fn = jax_loss._loss_fn
-
-        def loss_fn(x_active: Any):  # noqa: ANN202
-            return _raw_loss_fn(expand_jax(x_active))
-
-        # Evaluate the unperturbed initial score for reporting.
-        initial_score = float(loss_fn(jnp.array(x0, dtype=jnp.float64)))
-
-        # Generate n_starts initial parameter vectors (active-only).
-        starts_np = self._generate_starts(x0, active_bounds)
-        starts = jnp.asarray(starts_np, dtype=jnp.float64)
-
+        best_converged: OptimizationResult | None = None
+        best_any: OptimizationResult | None = None
+        candidates: list[CandidateRecord] = []
+        n_converged = 0
+        n_failed = 0
         method_str = f"jaxopt-multi:{self.method}"
 
         if self.verbose:
@@ -177,108 +81,105 @@ class JaxMultiStartOptimizer:
                 method_str,
                 self.n_starts,
                 self.maxiter,
-                initial_score,
+                true_initial_score,
             )
 
-        # Build the solver once and vmap .run over the batch of inits.
-        if self.method == "lbfgs":
-            solver = jaxopt.LBFGS(fun=loss_fn, maxiter=self.maxiter, tol=self.tol)
-            run_one = lambda p: solver.run(p)  # noqa: E731
-            final_params_batch, state_batch = jax.vmap(run_one)(starts)
-        elif self.method == "lbfgsb":
-            solver = jaxopt.LBFGSB(fun=loss_fn, maxiter=self.maxiter, tol=self.tol)
-            lower = jnp.array(active_bounds[:, 0], dtype=jnp.float64)
-            upper = jnp.array(active_bounds[:, 1], dtype=jnp.float64)
-            run_one = lambda p: solver.run(p, bounds=(lower, upper))  # noqa: E731
-            final_params_batch, state_batch = jax.vmap(run_one)(starts)
-        elif self.method == "gradient_descent":
-            solver = jaxopt.GradientDescent(fun=loss_fn, maxiter=self.maxiter, tol=self.tol)
-            run_one = lambda p: solver.run(p)  # noqa: E731
-            final_params_batch, state_batch = jax.vmap(run_one)(starts)
-        else:  # pragma: no cover - guarded by __init__ validation
-            raise ValueError(f"Unhandled method: {self.method}")
+        for i, x_active in enumerate(starts):
+            full_start = space.expand(x_active, base=initial_full)
+            start_space = space.with_baseline(full_start)
+            try:
+                result = inner.optimize(evaluator, start_space)
+            except Exception as exc:  # noqa: BLE001
+                n_failed += 1
+                logger.warning("  Replica %d/%d failed: %s", i + 1, self.n_starts, exc)
+                candidates.append(
+                    CandidateRecord(
+                        index=i,
+                        status="failure",
+                        n_params=n_params,
+                        layout_fingerprint=fingerprint,
+                        initial_params=full_start,
+                        final_params=full_start,
+                        final_score=float("inf"),
+                        message=f"{type(exc).__name__}: {exc}",
+                        seed=self.seed,
+                    )
+                )
+                continue
+            converged = bool(result.success)
+            if converged:
+                n_converged += 1
+            else:
+                n_failed += 1
+            candidates.append(
+                CandidateRecord(
+                    index=i,
+                    status="success" if converged else "failure",
+                    n_params=n_params,
+                    layout_fingerprint=fingerprint,
+                    initial_params=full_start,
+                    final_params=result.final_params,
+                    initial_score=result.initial_score,
+                    final_score=result.final_score,
+                    message=result.message,
+                    seed=self.seed,
+                )
+            )
+            if best_any is None or result.final_score < best_any.final_score:
+                best_any = result
+            if converged and (best_converged is None or result.final_score < best_converged.final_score):
+                best_converged = result
 
-        # Score each replica's final params on-device and pick argmin.
-        # Only the best replica's params/state are transferred to host;
-        # the full (n_starts, n_active) batch stays on-device.
-        final_scores = jax.vmap(loss_fn)(final_params_batch)
-        best_idx = int(jax.device_get(jnp.argmin(final_scores)))
-        best_active = np.asarray(jax.device_get(final_params_batch[best_idx]), dtype=float)
-        best_score = float(jax.device_get(final_scores[best_idx]))
-        best_params = space.expand(best_active, base=initial_full)
-
-        # Pull best replica's solver state (per-replica metadata lives
-        # on-device until we index into it here).
-        best_error = (
-            float(jax.device_get(state_batch.error[best_idx])) if hasattr(state_batch, "error") else float("inf")
-        )
-        best_iter = (
-            int(jax.device_get(state_batch.iter_num[best_idx])) if hasattr(state_batch, "iter_num") else self.maxiter
-        )
-        converged = best_error < self.tol
-
-        if self.verbose:
-            min_score = float(jax.device_get(jnp.min(final_scores)))
-            median_score = float(jax.device_get(jnp.median(final_scores)))
-            max_score = float(jax.device_get(jnp.max(final_scores)))
-            logger.info(
-                "%s best: %.6f (replica %d/%d; scores min=%.6f, median=%.6f, max=%.6f)",
-                method_str,
-                best_score,
-                best_idx,
-                self.n_starts,
-                min_score,
-                median_score,
-                max_score,
+        candidates_t = tuple(candidates)
+        selected = best_converged if best_converged is not None else best_any
+        if selected is None:
+            return OptimizationResult(
+                success=False,
+                message=f"jaxopt-multi: all {self.n_starts} replicas failed",
+                initial_score=true_initial_score,
+                final_score=float("inf"),
+                n_iterations=0,
+                n_evaluations=evaluator.n_evaluations - n_eval_before,
+                n_params=n_params,
+                layout_fingerprint=fingerprint,
+                initial_params=initial_full,
+                final_params=initial_full,
+                history=(true_initial_score,),
+                method=method_str,
+                gradient_mode="analytical",
+                candidates=candidates_t,
             )
 
-        if converged:
-            message = (
-                f"jaxopt-multi best of {self.n_starts}: replica {best_idx}, final {best_score:.6g} "
-                f"(converged: error {best_error:.2e} < {self.tol:.2e})"
-            )
+        overall_success = best_converged is not None
+        if overall_success:
+            message = f"jaxopt-multi best of {n_converged}/{self.n_starts} converged: {selected.message}"
         else:
             message = (
-                f"jaxopt-multi best of {self.n_starts}: replica {best_idx}, final {best_score:.6g} "
-                f"(maxiter reached, error={best_error:.2e})"
+                f"jaxopt-multi: no converged replica ({n_failed}/{self.n_starts} failed); "
+                f"best nonconverged score {selected.final_score:.6g}"
             )
+        if self.verbose:
+            logger.info("%s best: %.6f (%d converged)", method_str, selected.final_score, n_converged)
 
-        return OptimizationResult(
-            success=converged,
+        return replace(
+            selected,
+            success=overall_success,
             message=message,
-            initial_score=initial_score,
-            final_score=best_score,
-            n_iterations=best_iter,
-            n_evaluations=best_iter * self.n_starts,
+            initial_score=true_initial_score,
             initial_params=initial_full,
-            final_params=best_params,
-            history=[initial_score, best_score],
+            n_evaluations=evaluator.n_evaluations - n_eval_before,
             method=method_str,
-            jac_mode="analytical",
-            eps=None,
+            candidates=candidates_t,
         )
 
-    def _generate_starts(
-        self,
-        x0: np.ndarray,
-        bounds: np.ndarray | list[tuple[float, float]] | None,
-    ) -> np.ndarray:
-        """Generate ``(n_starts, n_active)`` initial parameter batch.
-
-        The first row is ``x0`` unchanged; subsequent rows are
-        ``x0 + U(-scale, +scale)`` where
-        ``scale = max(|x0| * perturbation_pct, 1e-6)``.
-        """
+    def _generate_starts(self, x0: np.ndarray, bounds: np.ndarray | None) -> list[np.ndarray]:
         rng = np.random.default_rng(self.seed)
-        n = self.n_starts
-        starts = np.tile(x0, (n, 1))
-        if n > 1 and self.perturbation_pct > 0:
+        starts = [x0.copy()]
+        bounds_arr = None if bounds is None else np.asarray(bounds, dtype=float)
+        for _ in range(self.n_starts - 1):
             scale = np.maximum(np.abs(x0) * self.perturbation_pct, 1e-6)
-            perturbations = rng.uniform(-scale, scale, size=(n - 1, len(x0)))
-            starts[1:] = x0 + perturbations
-            bounds_arr = None if bounds is None else np.asarray(bounds, dtype=float)
+            x_new = x0 + rng.uniform(-scale, scale)
             if bounds_arr is not None and bounds_arr.size > 0:
-                lower = bounds_arr[:, 0]
-                upper = bounds_arr[:, 1]
-                starts[1:] = np.clip(starts[1:], lower, upper)
+                x_new = np.clip(x_new, bounds_arr[:, 0], bounds_arr[:, 1])
+            starts.append(x_new)
         return starts

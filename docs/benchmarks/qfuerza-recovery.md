@@ -6,13 +6,13 @@
 - **rh-enamide ✅** — QFUERZA-start reaches the same basin as published-start (q2mm objective within 9%; bond/angle R² close to the paper's reported RMSD ≤ 0.03 Å / RMSD < 2°).
 - **pd-allyl, pd-conjugate 🌟** — q2mm objective at QFUERZA-optimized is actually **lower** than at published-optimized (0.77×, 0.86×). But this is **not** a chemical "win" — the per-parameter comparison and R²/RMSD tables show this is a q2mm-engine-vs-MacroModel-backend mismatch favoring the QFUERZA params, not the published ones (§3.2, §4.2).
 - **rh-conjugate ⚠** — nearby basin (1.50× q2mm objective), but the optimized FF contains **negative angle force constants** (§3.4) — unphysical.
-- **heck-relay ❌** — JaxLoss surrogate explodes from the QFUERZA start; L-BFGS-B exits in 0 iterations with a worse final FF, also containing negative force constants.
+- **heck-relay ❌** — the JAX surrogate explodes from the QFUERZA start; L-BFGS-B exits in 0 iterations with a worse final FF, also containing negative force constants.
 
 This page documents the experiment honestly. It is the strongest
 end-to-end validation of the q2mm pipeline to date (reference data +
 weighting + gradients + engine), but the headline result is **mixed**,
 and it surfaced two real issues to fix in the optimizer (positive-`fc`
-sign constraint; JaxLoss surrogate behavior at FFs with very poor
+sign constraint; JAX surrogate behavior at FFs with very poor
 Seminario starts).
 
 ---
@@ -46,7 +46,7 @@ of the bond/angle scalars it is defined to estimate.
 | Torsion `V₁/V₂/V₃` | Zero | Per Farrugia 2025, torsions are intentionally zeroed at QFUERZA-init time |
 | van der Waals `r₀`, `ε`, stretch-bend coefficients | Literature `.fld` | Outside QFUERZA's defined scope; supplied by skeleton |
 | Reference data (geometries, eigenmatrix, charges) | Identical to publication-baseline runs | — |
-| Optimizer | SciPy L-BFGS-B + JaxLoss analytical gradient, `--ratio-tol -1` | — |
+| Optimizer | SciPy L-BFGS-B + JAX analytical executor, `--executor-ratio-tol -1` | — |
 
 The **per-system overwrite count** in §3.5 reports how many active OPT
 scalars QFUERZA touches: this is the count of bond/angle parameters in
@@ -65,15 +65,15 @@ QM data?"
 
 The QFUERZA-recovery protocol tests the latter: starting from
 Hessian-derived bond/angle values, can the existing q2mm pipeline
-(reference data, JaxLoss surrogate, L-BFGS-B) close the gap to the
+(reference data, JAX analytical surrogate, L-BFGS-B) close the gap to the
 published TSFF?
 
 ---
 
 ## 3. Results
 
-All runs: WSL2 + RTX 5090, SciPy L-BFGS-B + JaxLoss `jac='auto'`,
-`--ratio-tol -1`, TS Hessian inversion on, **fractional bounds**
+All runs: WSL2 + RTX 5090, SciPy L-BFGS-B + JAX analytical executor,
+`--executor-ratio-tol -1`, TS Hessian inversion on, **fractional bounds**
 (`fc_fraction=0.20`, `eq_fraction=0.05`; heck-relay overridden to
 `fc_fraction=0.05` per the fragile-TS guidance in
 [AGENTS.md §9](https://github.com/ericchansen/q2mm/blob/main/AGENTS.md)),
@@ -90,14 +90,14 @@ Data: [`q2mm-data/benchmarks/<system>/convergence/`](https://github.com/ericchan
 | pd-allyl     | 7.99 × 10⁶ | 6.14 × 10⁶ | **0.77×** | 3  | 🌟 q2mm-objective lower than published |
 | pd-conjugate | 7.24 × 10⁶ | 6.22 × 10⁶ | **0.86×** | 5  | 🌟 q2mm-objective lower than published |
 | rh-conjugate | 5.10 × 10⁶ | 7.67 × 10⁶ | 1.50× | 2  | ⚠ nearby basin, marginal |
-| heck-relay   | 1.45 × 10⁶ | 1.32 × 10⁸ | **91×** | 0  | ❌ JaxLoss surrogate diverged |
+| heck-relay   | 1.45 × 10⁶ | 1.32 × 10⁸ | **91×** | 0  | ❌ JAX surrogate diverged |
 
 A QFUERZA/Pub. ratio of `1×` means the QFUERZA-start optimizer reaches
 the same objective as starting from published OPT values. **Ratio < 1
 does not necessarily mean a better physical FF** — it means the q2mm
 objective function (geometry RMSD + Hessian eigenmatrix mismatch +
 charge RMSD) is lower at the QFUERZA-optimized point than at the
-published-optimized point *when evaluated through the q2mm/JaxEngine
+published-optimized point *when evaluated through the q2mm/JaxBackend
 backend*. The published authors evaluated through MacroModel/MM3*.
 Backend-attributable differences are dissected in §3.2.
 
@@ -106,7 +106,7 @@ Backend-attributable differences are dissected in §3.2.
 This table separates two sources of error:
 
 - **Backend gap** (paper R² vs q2mm@published-start R²) — caused by
-  q2mm/JaxEngine's MM3 implementation diverging from MacroModel's MM3*
+  q2mm/JaxBackend's MM3 implementation diverging from MacroModel's MM3*
   (e.g., q2mm omits MM3 stretch-bend cross terms, π-system corrections,
   dipole-dipole electrostatics)
 - **Starting-point gap** (q2mm@published vs q2mm@QFUERZA) — caused by
@@ -255,7 +255,7 @@ character that QFUERZA cannot capture.
 So why does q2mm's objective *prefer* the QFUERZA values? **Backend
 parity gap**. In MacroModel's MM3*, the higher `fc` works because
 stretch-bend and π-system cross terms partially compensate. In q2mm's
-JaxEngine MM3 (which lacks those cross terms), the high `fc` produces
+JaxBackend MM3 (which lacks those cross terms), the high `fc` produces
 overshooting predictions; lowering it to QFUERZA's value reduces the
 residual. This is a q2mm engine issue masquerading as a "win" in the
 optimization.
@@ -288,21 +288,21 @@ suggests this unphysical FF coincidentally fits the diagonal
 eigenmatrix elements better than the published one in q2mm's engine —
 another symptom of the backend parity gap (§4.2).
 
-### 4.5 heck-relay — JaxLoss broken, optimizer found garbage
+### 4.5 heck-relay — JAX surrogate broken, optimizer found garbage
 
 The starting Seminario projection produces bond R² = −6228 (mean
 predicted bond length is **25.8 Å off** from QM reference). That FF is
 non-physical from the start, but the optimizer was supposed to repair
-it. Instead, JaxLoss surrogate diverges (no finite ratio reported), the
+it. Instead, the JAX surrogate diverges (no finite ratio reported), the
 gradient at the starting point is essentially zero (because L1-norm of
 the loss is so large that finite differences are dominated by floating
 point noise), and L-BFGS-B exits in 0 iterations declaring convergence.
 
 The final FF has **multiple force constants at −7.56** (the optimizer's
-output mapped to a degenerate value). This is the JaxLoss + L-BFGS-B
+output mapped to a degenerate value). This is the JAX surrogate + L-BFGS-B
 breakdown pattern documented in
 [AGENTS.md §9](https://github.com/ericchansen/q2mm/blob/main/AGENTS.md)
-("jaxopt zoom" / "TS ratio check"). A `fc_fraction=0.05` bound was
+("jaxopt zoom" / "TS executor-ratio gate"). A `fc_fraction=0.05` bound was
 not tight enough to prevent the breakdown — the starting FF is too far
 from any physical basin for fractional bounds around it to make sense.
 
@@ -312,7 +312,7 @@ from any physical basin for fractional bounds around it to make sense.
 
 ### What this experiment validates ✅
 
-- **The q2mm reference-data + JaxLoss + L-BFGS-B pipeline works for
+- **The q2mm reference-data + JAX analytical executor + L-BFGS-B pipeline works for
   rh-enamide** — starting from QFUERZA gives a final FF within 9% of
   the published-start objective, with bond/angle R² and RMSD close to
   the paper's RMSD ≤ 0.03 Å / RMSD < 2° quality.
@@ -336,7 +336,7 @@ from any physical basin for fractional bounds around it to make sense.
   force constants in rh-conjugate and heck-relay outputs are
   unphysical and should be unreachable from any starting point.
 
-- **JaxLoss surrogate fails for FFs with QFUERZA bond R² ≪ 0**. Until
+- **The JAX surrogate fails for FFs with QFUERZA bond R² ≪ 0**. Until
   we have a pre-conditioning step (or use a different surrogate for
   the first few L-BFGS-B steps), heck-relay-class systems cannot be
   optimized from scratch.
@@ -344,7 +344,7 @@ from any physical basin for fractional bounds around it to make sense.
 ### What to do next
 
 1. **Add a positive-`fc` constraint** to q2mm's optimizer bounds.
-2. **Backend parity audit** — compare q2mm/JaxEngine MM3 vs
+2. **Backend parity audit** — compare q2mm/JaxBackend MM3 vs
    MacroModel MM3* on a single fixed FF and identify which physics
    terms are missing. (Open a tracking issue.)
 3. **Pre-conditioning for heck-relay-class systems** — replace
@@ -363,7 +363,7 @@ QFUERZA is now the canonical default (`starting_point="qfuerza"` on
 |---|---|---|
 | rh-conjugate | Ratio 3.49× vs publication baseline; negative `fc` (§3.4) | `--fc-fraction 0.05 --eq-fraction 0.05` (tighter bounds) or `--starting-point published` |
 | pd-conjugate | Ratio 1.14× vs publication baseline | `--fc-fraction 0.05 --eq-fraction 0.05` or `--starting-point published` |
-| heck-relay | JaxLoss surrogate diverges to ~10⁸; L-BFGS-B exits in 0 iters (§4.5) | `--starting-point published` (pre-conditioning fix tracked as future work; see "What to do next") |
+| heck-relay | JAX surrogate diverges to ~10⁸; L-BFGS-B exits in 0 iters (§4.5) | `--starting-point published` (pre-conditioning fix tracked as future work; see "What to do next") |
 
 The `--starting-point published` opt-out path retains the literature
 OPT values verbatim and reproduces the historical
@@ -384,7 +384,7 @@ python -c "import jax; print(jax.devices())"   # must show CudaDevice
 #    default and can be omitted.
 python scripts/benchmark.py \
     --system rh-enamide \
-    --ratio-tol none \
+    --executor-ratio-tol none \
     --ftol 1e-12 \
     --fc-fraction 0.20 \
     --eq-fraction 0.05 \
@@ -395,7 +395,7 @@ python scripts/benchmark.py \
 python scripts/benchmark.py \
     --system heck-relay \
     --starting-point published \
-    --ratio-tol none \
+    --executor-ratio-tol none \
     --output-dir /path/to/q2mm-data/benchmarks
 
 # 4. Generate the cross-system R²/RMSD table
@@ -417,7 +417,7 @@ The QFUERZA-start artifacts live in
 [`q2mm-data/benchmarks/<system>/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks)
 (opt-in `--starting-point published` path).
 
-The `--ratio-tol -1` flag bypasses the JaxLoss/ObjectiveFunction ratio
+The `--executor-ratio-tol -1` flag bypasses the JAX/Python executor ratio
 gate (which would otherwise reject all 5 TS systems at the QFUERZA
 start because the surrogate is poorly aligned).
 
@@ -442,7 +442,7 @@ from the literature `.fld`.
 
 - Code: [`q2mm/benchmarks/systems/__init__.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/systems/__init__.py) (`load_system` registry); `starting_point` is accepted by each publication-system loader, e.g. [`q2mm/benchmarks/systems/rh_enamide.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/systems/rh_enamide.py)
 - Bounds: [`q2mm/models/parameters.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/models/parameters.py) (`fractional_bounds`)
-- CLI: [`scripts/benchmark.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/benchmark.py) (`--starting-point`, `--ratio-tol`, `--ftol`, `--fc-fraction`, `--eq-fraction`)
+- CLI: [`scripts/benchmark.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/benchmark.py) (`--starting-point`, `--executor-ratio-tol`, `--ftol`, `--fc-fraction`, `--eq-fraction`)
 - Analysis scripts:
   - [`scripts/compare_opt_rows.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/compare_opt_rows.py) — per-param row-by-row comparison
   - [`scripts/build_qfuerza_recovery_tables.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/build_qfuerza_recovery_tables.py) — R²/RMSD cross-system rollup

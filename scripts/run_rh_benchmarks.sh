@@ -126,8 +126,8 @@ sys.path.insert(0, '.')
 from q2mm.backends.mm.jax_engine import JaxBackend
 from q2mm.benchmarks.systems import load_system
 from q2mm.io.mm3 import load_mm3_fld
-from q2mm.models.parameters import ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 
 backend = JaxBackend()
 case = load_system('rh-enamide', backend=backend)
@@ -137,18 +137,11 @@ qfuerza_dir = Path(os.environ['Q2MM_DATA_REPO']) / 'qfuerza-zenodo'
 zenodo_ff = load_mm3_fld(str(qfuerza_dir / 'rh-enamide/qfuerza/mm3_010.fld'))
 print(f'Zenodo FF: {len(zenodo_ff.bonds)} bonds, {len(zenodo_ff.angles)} angles')
 
-# Evaluate with our objective
-layout = ParameterLayout.from_force_field(zenodo_ff)
-obj = ObjectiveFunction(
-    forcefield=zenodo_ff,
-    backend=backend,
-    molecules=list(case.problem.molecules),
-    reference=case.problem.observations,
-    case_ids=list(case.problem.case_ids),
-    layout=layout,
-)
-params = layout.vector(zenodo_ff)
-score = obj(params)
+# Evaluate with our objective (original problem observations)
+plan = ObjectivePlan.from_problem(case.problem)
+evaluator = PythonObjectiveExecutor(plan, backend, zenodo_ff)
+params = plan.layout.vector(zenodo_ff)
+score = evaluator.value(params)
 print(f'Zenodo FF score on our objective: {score:.4f}')
 
 result = {

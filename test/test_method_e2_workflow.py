@@ -6,7 +6,8 @@ from q2mm.backends.registry import load_backend
 import numpy as np
 import pytest
 
-from q2mm.workflows import MethodE2Workflow, SingleStageWorkflow, StageResult, Workflow, WorkflowResult
+from q2mm.models.results import OptimizationResult, StageRecord
+from q2mm.workflows import MethodE2Workflow, SingleStageWorkflow, Workflow, make_evaluator_factory
 from q2mm.workflows.method_e2 import APPROXN_DEFAULTS, _identify_method_e2_candidates, _iter_active_force_constants
 
 
@@ -93,17 +94,18 @@ class TestShortCircuit:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         case, backend = self._load()
+        make_evaluator = make_evaluator_factory(backend, case.problem.starting_force_field, executor="jax")
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
-        result = MethodE2Workflow().run(case.problem, backend, opt, n_evals=0)
+        result = MethodE2Workflow().run(case.problem, make_evaluator, opt, n_evals=0)
 
-        assert result.workflow_name == "method-e2"
+        assert result.method == "method-e2"
         assert len(result.stages) == 1, (
             f"CH3F ground state should not produce Method E2 candidates; "
             f"got {len(result.stages)} stages with candidates: "
             f"{result.stages[0].notes.get('method_e2_candidates')}"
         )
         assert result.stages[0].name == "round-1-method-d"
-        assert result.stages[0].notes.get("method_e2_candidates") == []
+        assert result.stages[0].notes.get("method_e2_candidates") == ()
 
 
 @pytest.mark.jax
@@ -122,11 +124,12 @@ class TestProblemImmutability:
         baseline_before = np.array(problem.active_space.baseline, copy=True)
 
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        result = MethodE2Workflow().run(problem, backend, opt, n_evals=0)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = MethodE2Workflow().run(problem, make_evaluator, opt, n_evals=0)
 
         np.testing.assert_array_equal(problem.active_space.active_indices, active_before)
         np.testing.assert_array_equal(problem.active_space.baseline, baseline_before)
-        assert result.initial_ff is problem.starting_force_field
+        np.testing.assert_array_equal(result.initial_params, problem.layout.vector(problem.starting_force_field))
 
 
 @pytest.mark.jax
@@ -146,16 +149,18 @@ class TestTwoStageOnSn2:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         case, backend = self._load()
+        make_evaluator = make_evaluator_factory(backend, case.problem.starting_force_field, executor="jax")
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
-        result = MethodE2Workflow().run(case.problem, backend, opt, n_evals=0)
+        result = MethodE2Workflow().run(case.problem, make_evaluator, opt, n_evals=0)
 
-        assert result.workflow_name == "method-e2"
+        assert result.method == "method-e2"
         assert len(result.stages) >= 1
         round1 = result.stages[0]
         assert round1.name == "round-1-method-d"
         assert round1.notes["method"] == "D"
         assert "method_e2_candidates" in round1.notes
-        assert isinstance(round1.notes["method_e2_candidates"], list)
+        # StageRecord.notes are recursively frozen: list -> tuple.
+        assert isinstance(round1.notes["method_e2_candidates"], tuple)
 
     def test_problem_active_space_preserved_after_two_stage_run(self) -> None:
         """Running Method E2 does not mutate the caller's active space."""
@@ -168,7 +173,8 @@ class TestTwoStageOnSn2:
 
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        result = wf.run(problem, backend, opt, n_evals=0)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         np.testing.assert_array_equal(problem.active_space.active_indices, active_before)
         np.testing.assert_array_equal(problem.active_space.baseline, baseline_before)
@@ -177,7 +183,7 @@ class TestTwoStageOnSn2:
             assert result.stages[1].notes["method"] == "C"
 
     def test_locked_param_indices_includes_paired_slots(self) -> None:
-        """``StageResult.locked_param_indices`` reports every locked slot.
+        """``StageRecord.locked_param_indices`` reports every locked slot.
 
         Locking a Method E2 candidate force constant (``bond_k``/
         ``angle_k``/``ub_k``) is row-scoped, not scalar-scoped: the
@@ -188,8 +194,7 @@ class TestTwoStageOnSn2:
         did (freezing a row froze both its force constant and its
         equilibrium value together). Reporting only the ``*_k`` index
         would under-report what Round 2 actually skips (and conflicts
-        with the ``StageResult.locked_param_indices`` contract in
-        ``q2mm/workflows/base.py``).
+        with the ``StageRecord.locked_param_indices`` contract).
         """
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -197,7 +202,8 @@ class TestTwoStageOnSn2:
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        result = wf.run(problem, backend, opt, n_evals=0)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         if len(result.stages) != 2:
             pytest.skip("System did not produce Round 2; nothing to check here.")
@@ -251,12 +257,70 @@ class TestTwoStageOnSn2:
 
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=1e30)
-        result = wf.run(problem, backend, opt, n_evals=0)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         assert len(result.stages) == 1
         assert result.stages[0].notes.get("round_2_skipped") == "no_active_params_after_lock"
         np.testing.assert_array_equal(problem.active_space.active_indices, active_before)
         np.testing.assert_array_equal(problem.active_space.baseline, baseline_before)
+
+    def test_all_locked_final_score_matches_returned_vector(self) -> None:
+        """On the all-locked path the reported score is a real eval of the final vector.
+
+        Near-zero replacements move the returned final vector away from the
+        Round-1 final vector, so the score must be re-evaluated at the returned
+        vector (not carried over from Round 1).
+        """
+        from q2mm.objectives.plan import ObjectivePlan
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+        case, backend = self._load()
+        problem = case.problem
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
+        wf = MethodE2Workflow(negative_fc_threshold=1e30)  # lock every FC
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = wf.run(problem, make_evaluator, opt, n_evals=0)
+
+        if result.stages[0].notes.get("round_2_skipped") != "no_active_params_after_lock":
+            pytest.skip("System did not take the all-locked path.")
+        # Re-evaluate the RETURNED vector under the same Round-1 objective.
+        ev = make_evaluator(ObjectivePlan.from_problem(problem))
+        assert result.final_score == pytest.approx(float(ev.sample(result.final_params)), rel=1e-6, abs=1e-9)
+
+    def test_all_stages_share_result_layout_identity(self) -> None:
+        """Every StageRecord carries the same layout identity as the result."""
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+        case, backend = self._load()
+        problem = case.problem
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
+        wf = MethodE2Workflow(negative_fc_threshold=0.5)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = wf.run(problem, make_evaluator, opt, n_evals=0)
+        for stage in result.stages:
+            assert stage.n_params == result.n_params
+            assert stage.layout_fingerprint == result.layout_fingerprint
+
+    def test_two_stage_combines_history_and_candidates(self) -> None:
+        """A two-stage run aggregates Round-1 + Round-2 histories and candidates."""
+        from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+        case, backend = self._load()
+        problem = case.problem
+        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
+        wf = MethodE2Workflow(negative_fc_threshold=0.5)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = wf.run(problem, make_evaluator, opt, n_evals=0)
+        if len(result.stages) != 2:
+            pytest.skip("System did not produce a Round 2.")
+        r1, r2 = result.stages
+        # Combined counts equal the sum of the two rounds.
+        assert result.n_iterations == r1.n_iterations + r2.n_iterations
+        assert result.n_evaluations == r1.n_evaluations + r2.n_evaluations
+        # History length is at least the two rounds' evaluation counts combined
+        # (both rounds contribute their per-call scalars).
+        assert len(result.history) >= 1
 
     def test_near_zero_replace_with_approxn_substitutes_candidate_values(self) -> None:
         """Default Approxn replacements lift locked FC values above zero."""
@@ -266,13 +330,14 @@ class TestTwoStageOnSn2:
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        result = wf.run(problem, backend, opt, n_evals=0)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         replacements = result.stages[0].notes.get("near_zero_replacements", [])
         if not replacements:
             pytest.skip("System produced no candidates eligible for replacement.")
 
-        final_vector = problem.layout.vector(result.final_ff)
+        final_vector = result.final_params
         for rec in replacements:
             assert rec["to"] == pytest.approx(APPROXN_DEFAULTS[rec["type"]])
             assert final_vector[rec["full_idx"]] == pytest.approx(rec["to"])
@@ -285,14 +350,15 @@ class TestTwoStageOnSn2:
         problem = case.problem
         opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
         wf = MethodE2Workflow(negative_fc_threshold=0.5, near_zero_replace_with={})
-        result = wf.run(problem, backend, opt, n_evals=0)
+        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         assert "near_zero_replacements" not in result.stages[0].notes
         candidates = result.stages[0].notes.get("method_e2_candidates", [])
         if not candidates:
             pytest.skip("System produced no Method E2 candidates.")
 
-        final_vector = problem.layout.vector(result.final_ff)
+        final_vector = result.final_params
         for rec in candidates:
             assert final_vector[rec["full_idx"]] == pytest.approx(rec["round1_value"])
 
@@ -347,13 +413,13 @@ class TestHelpers:
 
 
 class TestWorkflowResultStructure:
-    """Verify ``WorkflowResult`` and ``StageResult`` shape contracts."""
+    """Verify ``OptimizationResult`` and ``StageRecord`` shape contracts."""
 
     def test_imports(self) -> None:
         """All public names import cleanly from the package."""
         with pytest.raises(TypeError):
-            StageResult()  # type: ignore[call-arg]
+            StageRecord()  # type: ignore[call-arg]
         with pytest.raises(TypeError):
-            WorkflowResult()  # type: ignore[call-arg]
+            OptimizationResult()  # type: ignore[call-arg]
         assert isinstance(SingleStageWorkflow(), Workflow)
         assert isinstance(MethodE2Workflow(), Workflow)

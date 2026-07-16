@@ -35,8 +35,10 @@ from q2mm.io.fchk import load_fchk_reference
 from q2mm.models.forcefield import FunctionalForm
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 OUT_DIR = REPO_ROOT / "test" / "fixtures" / "full_loop"
@@ -94,13 +96,21 @@ def main() -> None:
         freq_ref = freq_ref.with_frequency(float(qm_real[k]), data_idx=mm_real_idx[k], weight=0.001, case_id="0")
 
     # Score + optimize
-    obj = ObjectiveFunction(ff, backend, [mol], freq_ref, layout=layout)
-    sem_score = obj(sem_vec)
+    space = ActiveParameterSpace.all_active(layout, ff)
+    plan = ObjectivePlan(
+        case_ids=("0",),
+        molecules=(mol,),
+        stationary_points=(StationaryPointKind.GROUND_STATE,),
+        observations=freq_ref,
+        layout=layout,
+        active_space=space,
+    )
+    evaluator = PythonObjectiveExecutor(plan, backend, ff)
+    sem_score = evaluator.value(sem_vec)
 
     t0 = time.perf_counter()
     opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
-    space = ActiveParameterSpace.all_active(layout, ff)
-    result = opt.optimize(obj, space)
+    result = opt.optimize(evaluator, space)
     t_opt = time.perf_counter() - t0
     final_vec = result.final_params
     final_ff = layout.replace(ff, final_vec)

@@ -8,8 +8,15 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
 from q2mm.models.hessian import PENALTY_FREQUENCY, hessian_to_frequencies
-from q2mm.models.parameters import ParameterLayout
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives._base import BaseObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import GradientMode
+from test._shared import make_diatomic
 
 
 # ---------------------------------------------------------------------------
@@ -144,11 +151,7 @@ class TestBoundAwareSensitivity:
 
     @pytest.fixture()
     def mock_objective(self) -> Any:
-        """Create a mock objective with a quadratic landscape."""
-        from unittest.mock import MagicMock
-
-        from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
-
+        """Create a protocol-compliant evaluator with a quadratic landscape."""
         ff = ForceField(
             name="test",
             bonds=[
@@ -157,25 +160,44 @@ class TestBoundAwareSensitivity:
             functional_form=FunctionalForm.HARMONIC,
         )
         layout = ParameterLayout.from_force_field(ff)
-        obj = MagicMock()
-        obj.forcefield = ff
-        obj.layout = layout
-
-        # Quadratic objective: f(x) = sum((x - x0)^2)
         x0 = layout.vector(ff)
+        space = ActiveParameterSpace.all_active(layout, ff)
+        plan = ObjectivePlan(
+            case_ids=("0",),
+            molecules=(make_diatomic(),),
+            stationary_points=(StationaryPointKind.GROUND_STATE,),
+            observations=ObservationSet(),
+            layout=layout,
+            active_space=space,
+        )
 
-        def mock_call(pvec: np.ndarray) -> float:
-            return float(np.sum((np.asarray(pvec) - x0) ** 2))
+        class QuadraticEvaluator(BaseObjectiveExecutor):
+            def __init__(self, plan: ObjectivePlan) -> None:
+                super().__init__(plan)
+                self.forcefield = ff
+                self.layout = layout
 
-        obj.side_effect = mock_call
-        obj.batched_scores = MagicMock(side_effect=lambda pm: np.array([mock_call(row) for row in pm]))
-        return obj
+            @property
+            def gradient_mode(self) -> GradientMode:
+                return GradientMode.ANALYTICAL
+
+            def _total(self, full_vector: np.ndarray) -> float:
+                return float(np.sum((np.asarray(full_vector, dtype=np.float64) - x0) ** 2))
+
+            def _calculated(self, full_vector: np.ndarray) -> np.ndarray:
+                return np.zeros(0, dtype=np.float64)
+
+            def _data_gradient(self, full_vector: np.ndarray) -> np.ndarray:
+                return 2.0 * (np.asarray(full_vector, dtype=np.float64) - x0)
+
+        return QuadraticEvaluator(plan)
 
     def test_no_bounds_matches_original(self, mock_objective: Any) -> None:
         """Without bounds, behavior is unchanged."""
         from q2mm.optimizers.cycling import compute_sensitivity
 
-        result = compute_sensitivity(mock_objective, bounds=None)
+        x0 = mock_objective.layout.vector(mock_objective.forcefield)
+        result = compute_sensitivity(mock_objective, x0, bounds=None)
         assert result.n_evals == 2 * len(mock_objective.layout) + 1
 
     def test_bounds_shrink_steps(self, mock_objective: Any) -> None:
@@ -190,7 +212,7 @@ class TestBoundAwareSensitivity:
         bounds = [(x0[i] - 100, x0[i] + 100) for i in range(len(x0))]
         bounds[0] = (x0[0] - 0.01, x0[0] + 0.01)
 
-        result = compute_sensitivity(mock_objective, step_sizes=steps, bounds=bounds)
+        result = compute_sensitivity(mock_objective, x0, step_sizes=steps, bounds=bounds)
         # Should still evaluate all params (just with smaller step)
         assert result.n_evals == 2 * len(x0) + 1
 
@@ -206,7 +228,7 @@ class TestBoundAwareSensitivity:
         bounds = [(x0[i] - 100, x0[i] + 100) for i in range(len(x0))]
         bounds[0] = (x0[0], x0[0])  # zero room
 
-        result = compute_sensitivity(mock_objective, step_sizes=steps, bounds=bounds)
+        result = compute_sensitivity(mock_objective, x0, step_sizes=steps, bounds=bounds)
         # One fewer param evaluated (param 0 skipped)
         assert result.n_evals == 2 * (len(x0) - 1) + 1
         # Skipped param should have d1=0, simp_var=inf
@@ -225,7 +247,7 @@ class TestBoundAwareSensitivity:
         bounds = [(x0[i] - 100, x0[i] + 100) for i in range(len(x0))]
         bounds[0] = (x0[0], x0[0])
 
-        result = compute_sensitivity(mock_objective, step_sizes=steps, bounds=bounds)
+        result = compute_sensitivity(mock_objective, x0, step_sizes=steps, bounds=bounds)
         # Skipped param 0 should have inf simp_var and zero d1
         assert result.simp_var[0] == np.inf
         assert result.d1[0] == 0.0

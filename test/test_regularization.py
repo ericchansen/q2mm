@@ -1,7 +1,8 @@
-"""Tests for L2 regularization in ObjectiveFunction."""
+"""Tests for L2 regularization in objective executors."""
 
 from __future__ import annotations
 from test.backend_fixtures import mock_backend_info
+from test._shared import make_diatomic
 
 from dataclasses import dataclass
 from unittest.mock import MagicMock
@@ -9,13 +10,17 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
+from q2mm.models.parameters import ActiveParameterSpace
 from q2mm.models.observations import ObservationSet
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import GradientMode
+from q2mm.objectives.python import PythonObjectiveExecutor
 
 
 @dataclass(frozen=True)
 class MockForceField:
-    """Minimal immutable force field for ObjectiveFunction tests."""
+    """Minimal immutable force field for objective-executor tests."""
 
     params: tuple[float, ...]
 
@@ -42,24 +47,27 @@ def _make_objective(
     regularization: float = 0.0,
     reference_params: np.ndarray | None = None,
     n_params: int = 3,
-) -> ObjectiveFunction:
-    """Build a minimal ObjectiveFunction with mock backend and no data."""
+) -> PythonObjectiveExecutor:
+    """Build a minimal PythonObjectiveExecutor with mock backend and no data."""
     ff = MockForceField(tuple(np.ones(n_params, dtype=np.float64).tolist()))
     layout = MockLayout(n_params)
+    space = ActiveParameterSpace.all_active(layout, ff)  # type: ignore[arg-type]
 
     backend = MagicMock()
     backend.info = mock_backend_info(batched=False)
 
     ref = ObservationSet()
-    return ObjectiveFunction(
-        ff,
-        backend,
-        [],
-        ref,
+    plan = ObjectivePlan(
+        case_ids=("0",),
+        molecules=(make_diatomic(),),
+        stationary_points=(StationaryPointKind.GROUND_STATE,),
+        observations=ref,
         layout=layout,
+        active_space=space,
         regularization=regularization,
         reference_params=reference_params,
     )
+    return PythonObjectiveExecutor(plan, backend, ff, gradient_mode=GradientMode.ANALYTICAL)  # type: ignore[arg-type]
 
 
 class TestL2Regularization:
@@ -68,36 +76,36 @@ class TestL2Regularization:
     def test_zero_lambda_no_penalty(self) -> None:
         obj = _make_objective(regularization=0.0)
         params = np.array([5.0, 6.0, 7.0])
-        assert obj(params) == 0.0
+        assert obj.value(params) == 0.0
 
     def test_positive_lambda_adds_penalty(self) -> None:
         ref = np.zeros(3)
         obj = _make_objective(regularization=1.0, reference_params=ref)
         params = np.array([1.0, 2.0, 3.0])
-        assert obj(params) == pytest.approx(14.0)
+        assert obj.value(params) == pytest.approx(14.0)
 
     def test_lambda_scaling(self) -> None:
         ref = np.zeros(2)
         params = np.array([3.0, 4.0])
         obj1 = _make_objective(regularization=0.5, reference_params=ref, n_params=2)
         obj2 = _make_objective(regularization=2.0, reference_params=ref, n_params=2)
-        assert obj1(params) == pytest.approx(12.5)
-        assert obj2(params) == pytest.approx(50.0)
+        assert obj1.value(params) == pytest.approx(12.5)
+        assert obj2.value(params) == pytest.approx(50.0)
 
     def test_at_reference_no_penalty(self) -> None:
         ref = np.array([1.0, 2.0, 3.0])
         obj = _make_objective(regularization=100.0, reference_params=ref)
-        assert obj(ref) == pytest.approx(0.0)
+        assert obj.value(ref) == pytest.approx(0.0)
 
     def test_reference_defaults_to_initial(self) -> None:
         obj = _make_objective(regularization=1.0)
-        np.testing.assert_array_equal(obj._reference_params, np.ones(3))
-        assert obj(np.ones(3)) == pytest.approx(0.0)
+        np.testing.assert_array_equal(obj.plan.reference_params, np.ones(3))
+        assert obj.value(np.ones(3)) == pytest.approx(0.0)
 
     def test_custom_reference_params(self) -> None:
         custom = np.array([10.0, 20.0, 30.0])
         obj = _make_objective(regularization=1.0, reference_params=custom)
-        np.testing.assert_array_equal(obj._reference_params, custom)
+        np.testing.assert_array_equal(obj.plan.reference_params, custom)
 
 
 class TestL2Residuals:
@@ -105,14 +113,14 @@ class TestL2Residuals:
 
     def test_zero_lambda_unchanged(self) -> None:
         obj = _make_objective(regularization=0.0, n_params=3)
-        r = obj.residuals(np.array([1.0, 2.0, 3.0]))
+        r = obj.least_squares_residuals(np.array([1.0, 2.0, 3.0]))
         assert len(r) == 0
 
     def test_positive_lambda_appends_terms(self) -> None:
         ref = np.zeros(2)
         obj = _make_objective(regularization=4.0, reference_params=ref, n_params=2)
         params = np.array([3.0, 4.0])
-        r = obj.residuals(params)
+        r = obj.least_squares_residuals(params)
         np.testing.assert_array_almost_equal(r, [6.0, 8.0])
         assert float(np.sum(r**2)) == pytest.approx(100.0)
 
@@ -121,8 +129,8 @@ class TestL2Residuals:
         obj1 = _make_objective(regularization=2.5, reference_params=ref, n_params=3)
         obj2 = _make_objective(regularization=2.5, reference_params=ref, n_params=3)
         params = np.array([1.0, 2.0, 3.0])
-        score = obj1(params)
-        r = obj2.residuals(params)
+        score = obj1.value(params)
+        r = obj2.least_squares_residuals(params)
         assert float(np.sum(r**2)) == pytest.approx(score)
 
 
@@ -155,15 +163,25 @@ class TestL2Validation:
         with pytest.raises(ValueError, match="non-negative"):
             _make_objective(regularization=-0.1)
 
-    def test_regularization_without_forcefield_raises(self) -> None:
-        ref = ObservationSet()
-        with pytest.raises(ValueError, match="requires a forcefield"):
-            ObjectiveFunction(None, MagicMock(), [], ref, regularization=0.5)
+    def test_plan_requires_case_context(self) -> None:
+        ff = MockForceField((1.0,))
+        layout = MockLayout(1)
+        space = ActiveParameterSpace.all_active(layout, ff)  # type: ignore[arg-type]
+        with pytest.raises(ValueError, match="at least one case"):
+            ObjectivePlan(
+                case_ids=(),
+                molecules=(),
+                stationary_points=(),
+                observations=ObservationSet(),
+                layout=layout,
+                active_space=space,
+                regularization=0.5,
+            )
 
     def test_reference_params_wrong_ndim_raises(self) -> None:
-        with pytest.raises(ValueError, match="1-D"):
+        with pytest.raises(ValueError, match=r"shape \(3,\)"):
             _make_objective(reference_params=np.ones((3, 2)))
 
     def test_reference_params_length_mismatch_raises(self) -> None:
-        with pytest.raises(ValueError, match="does not match"):
+        with pytest.raises(ValueError, match=r"shape \(3,\)"):
             _make_objective(n_params=3, reference_params=np.ones(5))

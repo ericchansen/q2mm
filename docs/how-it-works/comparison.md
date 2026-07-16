@@ -53,7 +53,7 @@ area are linked in the table below.
 | Cycling loop | Text command file | Dataclass-configured [`OptimizationLoop`](optimization-guide.md) |
 | Sensitivity | Exception-based, one-sided FD fallback | [Symmetric step shrinking, bound-aware](#sensitivity-bounds) |
 | Eigendecomposition | `np.linalg.eigh` | [Symmetrize + NaN/Inf check + penalty fallback](#eigendecomposition) |
-| Backends | Subprocess (MacroModel, Tinker, Amber, Gaussian, Jaguar) | [API + differentiable](#backend-engines) (OpenMM, Tinker, JAX, JAX-MD, Psi4) |
+| Backends | Subprocess (MacroModel, Tinker, Amber, Gaussian, Jaguar) | [API + differentiable](#backend-implementations) (OpenMM, Tinker, JAX, JAX-MD, Psi4) |
 | Analytical ∂E/∂θ | Not evident | Yes ([`jax.grad`](../backends/jax-engine.md), OpenMM) |
 | Batched evaluation | Not evident | Yes ([`jax.vmap`](../backends/jax-engine.md)) |
 | GPU | Subprocess; depends on backend | [In-process CUDA](../benchmarks/gpu.md) (OpenMM, JAX, JAX-MD) |
@@ -95,8 +95,8 @@ for details.
 For global optimization, `BasinHoppingOptimizer` wraps
 [`scipy.optimize.basinhopping`](https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.basinhopping.html)
 with bounded perturbation steps, and `MultiStartOptimizer` runs any inner
-optimizer from N perturbed starting points.  `ObjectiveFunction` also supports
-L2 regularization (`regularization` kwarg) to penalize parameter drift from
+optimizer from N perturbed starting points.  `ObjectivePlan` also carries L2
+regularization (`regularization` kwarg) to penalize parameter drift from
 QFUERZA starting values — see
 [Optimization Guide](optimization-guide.md#l2-regularization).
 
@@ -127,7 +127,7 @@ For details on Limé & Norrby's eigenvalue methods (A–E), see
 
 ---
 
-## Backend engines
+## Backend implementations
 
 q2mm/q2mm routes all computation through subprocess calls — write input files,
 run shell commands, parse text output. Supported backends: MacroModel, Tinker,
@@ -135,7 +135,7 @@ Amber, Gaussian, Jaguar.
 
 q2mm (this repo) uses in-process Python APIs with a registry pattern:
 
-| Engine | Interface | Differentiable | GPU |
+| Backend | Interface | Differentiable | GPU |
 |--------|-----------|----------------|-----|
 | OpenMM | Python API | FD Hessian; analytical energy grad | CUDA, OpenCL |
 | Tinker | Subprocess | No | No |
@@ -167,7 +167,7 @@ and CHARMM.
 ## Published Force Field Comparison
 
 q2mm v5 achieves lower frequency RMSD than the published FFs when both are
-evaluated under our JaxEngine. However, this comparison has important caveats:
+evaluated under our `JaxBackend`. However, this comparison has important caveats:
 the published FFs were optimized for a different engine (MacroModel MM3*) and
 a broader objective (geometries + full Hessian + charges + energies), while
 our benchmark optimizes frequency RMSD only. On the papers' own metrics

@@ -53,10 +53,12 @@ pip install -e ".[dev]"
 from q2mm.io.fchk import load_fchk_reference
 from q2mm.models.forcefield import FunctionalForm
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
-from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.models.problem import StationaryPointKind
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.backends.mm import OpenMMEngine
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.backends.mm.openmm import OpenMMBackend
 
 # 1. Load QM reference data and molecule from a Gaussian checkpoint
 ref, mol = load_fchk_reference("ts-optimized.fchk", bond_tolerance=1.4)
@@ -64,11 +66,19 @@ ref, mol = load_fchk_reference("ts-optimized.fchk", bond_tolerance=1.4)
 # 2. Build the initial force field from the QM Hessian (QFUERZA)
 ff = qfuerza_fresh(mol, functional_form=FunctionalForm.MM3, au_hessian=True)
 
-# 3. Set up the objective function and optimize
-engine = OpenMMEngine()
+# 3. Compile the objective plan, attach a backend, and optimize
+backend = OpenMMBackend()
 layout = ParameterLayout.from_force_field(ff)
 space = ActiveParameterSpace.all_active(layout, ff)
-obj = ObjectiveFunction(ff, engine, [mol], ref, layout=layout)
+plan = ObjectivePlan(
+    case_ids=("0",),
+    molecules=(mol,),
+    stationary_points=(StationaryPointKind.TRANSITION_STATE,),
+    observations=ref,
+    layout=layout,
+    active_space=space,
+)
+obj = PythonObjectiveExecutor(plan, backend, ff)
 result = ScipyOptimizer(method="L-BFGS-B").optimize(obj, space)
 
 print(result.summary())
