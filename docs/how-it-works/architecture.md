@@ -183,6 +183,18 @@ Each backend declares its capabilities up front and handles its own unit
 conversions between canonical units and whatever the underlying library
 expects (e.g., OpenMM uses kJ/mol internally, Tinker uses kcal/mol).
 
+Both built-in backends and out-of-tree plugins are declared as JSON-safe
+*manifest* mappings and validated by a single path
+(`q2mm.backends.discovery.validate_manifest`). `q2mm.backends.registry`
+discovers them **lazily**: importing it enumerates nothing, cataloging runs only
+cheap dependency probes, and a backend implementation is imported solely on an
+explicit `load_backend`. Out-of-tree plugins advertise one entry point in the
+`q2mm.backends` group targeting a lightweight descriptor module; a missing
+dependency, import error, incompatible API version, duplicate name, invalid
+claim, or broken factory is isolated into a typed discovery record and never
+hides a healthy backend. This discovery layer is **internal and unstable**
+(documented as such until Milestone PR 3) with no compatibility promise.
+
 ---
 
 ## Module organization
@@ -217,7 +229,8 @@ q2mm/
 │
 ├── backends/             # MM and QM backend integrations
 │   ├── contracts.py      # Capability contracts, prepared-session protocols, typed requests/results, descriptors
-│   ├── registry.py       # Descriptor-based backend registry (cheap dependency probes)
+│   ├── registry.py       # Lazy, cached descriptor registry (built-in + entry-point manifests; cheap probes)
+│   ├── discovery.py      # Internal, unstable manifest validator + lazy entry-point discovery/isolation records
 │   ├── mm/
 │   │   ├── openmm.py        # OpenMM backend (harmonic + MM3 dual-mode)
 │   │   ├── _openmm_terms.py # OpenMM internal term records

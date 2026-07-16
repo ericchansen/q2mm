@@ -1348,9 +1348,24 @@ class DependencyProbe:
     modules: tuple[str, ...] = ()
     executables: tuple[str, ...] = ()
 
+    @staticmethod
+    def _module_missing(name: str) -> bool:
+        """Return ``True`` if *name* cannot be resolved, never raising.
+
+        ``importlib.util.find_spec`` imports the parent packages of a dotted
+        name to resolve it, so a missing or broken parent (e.g. ``find_spec(
+        "missing_parent.child")``) raises ``ModuleNotFoundError`` /
+        ``ValueError`` rather than returning ``None``.  Those are caught and
+        reported as *missing* so a bad probe never crashes cataloging.
+        """
+        try:
+            return importlib.util.find_spec(name) is None
+        except (ImportError, ValueError):
+            return True
+
     def check(self) -> tuple[bool, str]:
         """Return ``(healthy, reason)`` without importing or constructing."""
-        missing_modules = [m for m in self.modules if importlib.util.find_spec(m) is None]
+        missing_modules = [m for m in self.modules if self._module_missing(m)]
         if missing_modules:
             return False, f"missing Python module(s): {', '.join(missing_modules)}"
         missing_exes = [e for e in self.executables if shutil.which(e) is None]

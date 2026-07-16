@@ -199,3 +199,51 @@ All backends accept parameters in **canonical units** (defined in
     AMBER and MM3 conventions.  OpenMM's `HarmonicBondForce` uses
     `E = ½·k·(r − r₀)²`, so the backend doubles the force constant during
     conversion.
+
+---
+
+## Backend discovery (internal, unstable)
+
+!!! warning "Internal, unstable — no compatibility promise"
+    The backend plugin mechanism described here is **internal and unstable**
+    until Milestone PR 3.  The manifest shape, the `q2mm.backends` entry-point
+    group, and the discovery-record vocabulary are not covered by semantic
+    versioning and may change without notice.  This is **not** a public plugin
+    API v1.
+
+Both the built-in backends above and any out-of-tree backends are declared as
+JSON-safe **manifest mappings** and validated by a single path
+(`q2mm.backends.discovery.validate_manifest`), which produces a
+`BackendDescriptor`:
+
+| Manifest key | Meaning |
+|--------------|---------|
+| `api_version` | Descriptor-API version (must match the runtime exactly) |
+| `name` | Registry key (must match the entry-point name for plugins) |
+| `role` | `mm` or `qm` |
+| `capabilities` | Declared `Capability` values (default: none) |
+| `forms` | Supported `FunctionalForm` values; empty for QM (default: none) |
+| `factory` | `module:attr` import string for the backend class |
+| `probe` | Optional cheap dependency probe (`modules`/`executables`) |
+
+`q2mm.backends.registry` discovers backends **lazily**: importing it enumerates
+nothing, and listing the catalog runs only the cheap probes (no device/XLA/CUDA
+init).  A backend implementation is imported solely when its `factory` string is
+resolved by an explicit `load_backend`.
+
+Out-of-tree backends advertise **one entry point** in the `q2mm.backends` group
+whose value targets a lightweight descriptor module (a manifest mapping, or a
+zero-arg provider returning one):
+
+```toml
+[project.entry-points."q2mm.backends"]
+my-backend = "my_pkg.descriptor:MANIFEST"
+```
+
+Every discovery problem — missing dependency, descriptor import error,
+incompatible API version, duplicate name, invalid descriptor/capability/form,
+or broken factory — is isolated into a typed discovery record and never hides a
+healthy backend.  Built-in names win conflicts, and two external plugins
+claiming the same name are both rejected.  Inspect the outcomes with
+`q2mm.backends.registry.discovery_report()`, or via the isolated-issues section
+of `q2mm-benchmark list`.
