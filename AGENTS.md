@@ -553,3 +553,42 @@ These exist to back up the checklist; do not rely on them alone:
 - `q2mm/benchmarks/runner.py::run_profiles` — logs BATCH FAILURE and reports `outcome.ok is False` when optimizations ran but none was accepted
 - `.copilot/skills/q2mm-benchmark/SKILL.md` — agent skill that walks through this checklist automatically before launching any batch
 - `.copilot/skills/q2mm-analysis-design/SKILL.md` — agent skill that forces design-first analysis methodology before writing comparison docs
+
+## 12. Backend Plugin Discovery (internal, unstable)
+
+> ⚠️ **This is an internal, unstable API — not a public plugin API.** It is
+> documented as internal until Milestone PR 3 and carries **no compatibility
+> promise**. Do not describe it as a stable/public plugin API v1, and do not
+> write a migration guide for it.
+
+`q2mm.backends.registry` discovers backends lazily through one validator. Both
+in-tree built-ins and out-of-tree plugins are declared as **JSON-safe manifest
+mappings** (`api_version`/`name`/`role`/`capabilities`/`forms`/`factory`/`probe`)
+and validated by `q2mm.backends.discovery.validate_manifest`, which produces a
+`BackendDescriptor`. There is exactly one construction path — built-ins are not
+privileged.
+
+- **Entry-point group:** out-of-tree plugins advertise one entry point in the
+  `q2mm.backends` group whose value targets a *lightweight descriptor module*
+  (the manifest mapping or a zero-arg provider returning it). Enumeration and
+  provider loading import **only** that descriptor module; the backend
+  implementation is imported solely when the manifest's `factory` string is
+  resolved by an explicit `load_backend`/`BackendDescriptor.load`.
+- **Lazy + cached:** importing `q2mm.backends.registry` does not enumerate entry
+  points or import descriptor/implementation modules. The first
+  `descriptors`/`catalog`/`registered_backends`/`available_*`/`get_descriptor`/
+  `load_backend` call builds one deterministic snapshot; `registry.refresh()`
+  rebuilds it (tests, newly-installed plugins).
+- **Failure isolation:** missing dependency, descriptor import error,
+  incompatible API version, duplicate name, invalid descriptor/capability/form,
+  and broken factory become typed `DiscoveryRecord`s (see
+  `DiscoveryIssueKind`) and never hide a healthy built-in or external plugin.
+  Built-in names win conflicts; two externals claiming one name are **all**
+  rejected. A broken factory is discovered only on explicit load.
+- **Fixture + tests:** the out-of-tree fixture lives at
+  `test/fixtures/backend_plugin/` (repository test code — it must **never** ship
+  in the `q2mm` wheel/sdist). `test/test_backend_discovery.py` covers the
+  discovery/isolation/conformance matrix without `pip install`ing anything;
+  `test/_conformance.py` executes only a backend's declared capabilities.
+  `scripts/check_release_artifacts.py` performs the only real install and prints
+  `external-plugin=ok`.

@@ -41,7 +41,7 @@ logger = logging.getLogger("q2mm.benchmarks.cli")
 
 def _cmd_list(_args: argparse.Namespace) -> int:
     from q2mm.backends.contracts import BackendRole
-    from q2mm.backends.registry import catalog
+    from q2mm.backends.registry import catalog, discovery_report
     from q2mm.benchmarks.systems import SYSTEM_KEYS, system_metadata
 
     print("\nSystems:")
@@ -54,7 +54,17 @@ def _cmd_list(_args: argparse.Namespace) -> int:
         desc = status.descriptor
         forms = ", ".join(sorted(desc.info.functional_forms)) or "n/a"
         health = "available" if status.healthy else f"unavailable ({status.reason})"
-        print(f"  {desc.name:<10} {health}  [forms: {forms}]")
+        print(f"  {desc.name:<14} {health}  [forms: {forms}]")
+
+    # Surface isolated plugin-discovery issues (rejected/unavailable plugins)
+    # without letting them break the listing above.  Cheap: probes only.
+    issues = [record for record in discovery_report().issues if not record.registered]
+    if issues:
+        print("\nDiscovery issues (isolated; healthy backends unaffected):")
+        for record in issues:
+            source = record.entry_point or record.distribution or record.source.value
+            label = record.name or source
+            print(f"  {label:<14} {record.issue.value if record.issue else 'unknown'}: {record.message}")
 
     print("\nFunctional forms:")
     for form in FUNCTIONAL_FORMS:

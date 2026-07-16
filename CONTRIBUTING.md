@@ -196,6 +196,36 @@ Optimizers consume objective executors, so a backend that satisfies the typed
 contract works with `ObjectivePlan`, `PythonObjectiveExecutor`, and any
 optimizer using `optimize(evaluator, space)`.
 
+### Backend plugin discovery (internal, unstable)
+
+> This is an **internal, unstable** mechanism — not a public plugin API. It is
+> documented as internal until Milestone PR 3 and carries no compatibility
+> promise; the manifest shape, the `q2mm.backends` entry-point group, and the
+> discovery-record vocabulary may change without notice.
+
+Built-in and out-of-tree backends are both declared as JSON-safe **manifest
+mappings** (`api_version`, `name`, `role`, `capabilities`, `forms`, `factory`,
+optional `probe`) and validated by one path
+(`q2mm.backends.discovery.validate_manifest` → `BackendDescriptor`). An
+out-of-tree backend is discovered by advertising a single entry point in the
+`q2mm.backends` group whose value targets a *lightweight descriptor module*
+(the manifest mapping, or a zero-arg provider returning it):
+
+```toml
+[project.entry-points."q2mm.backends"]
+my-backend = "my_pkg.descriptor:MANIFEST"
+```
+
+Discovery is lazy: importing `q2mm.backends.registry` enumerates nothing, and
+cataloging imports only the descriptor module. The backend implementation named
+by the manifest's `factory` import string is imported only on an explicit
+`load_backend("my-backend")`. Missing dependencies, import errors, incompatible
+API versions, duplicate names, invalid claims, and broken factories are isolated
+into typed discovery records (`q2mm.backends.registry.discovery_report()`) and
+never hide a healthy backend. See `test/fixtures/backend_plugin/` for a complete
+worked example and `test/test_backend_discovery.py` for the discovery/isolation
+tests.
+
 ### Adding a New Force Field Format
 
 To support a new file format:
