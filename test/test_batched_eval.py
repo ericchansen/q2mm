@@ -4,7 +4,7 @@ Covers:
 - Topology signature and grouping logic
 - Batched Hessian parity with sequential evaluation
 - Batched frequency parity
-- ObjectiveFunction integration (batched vs sequential)
+- Objective executor integration (multi-case vs sequential)
 - Graceful fallback for non-JAX backends
 """
 
@@ -29,8 +29,10 @@ pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pyte
 from test._shared import make_diatomic, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
-from q2mm.models.parameters import ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 
 
 # ---------------------------------------------------------------------------
@@ -48,15 +50,19 @@ def _params(forcefield: ForceField) -> np.ndarray:
 
 def _make_objective(
     forcefield: ForceField, backend: object, molecules: list, reference: object, **kwargs: object
-) -> ObjectiveFunction:
-    return ObjectiveFunction(
-        forcefield=forcefield,
-        backend=backend,
-        molecules=molecules,
-        reference=reference,
-        layout=_layout(forcefield),
+) -> PythonObjectiveExecutor:
+    layout = _layout(forcefield)
+    case_ids = tuple(str(i) for i in range(len(molecules)))
+    plan = ObjectivePlan(
+        case_ids=case_ids,
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=reference,
+        layout=layout,
+        active_space=ActiveParameterSpace.all_active(layout, forcefield),
         **kwargs,
     )
+    return PythonObjectiveExecutor(plan, backend, forcefield)
 
 
 def _h2_ff() -> ForceField:
@@ -328,15 +334,15 @@ class TestBatchedFrequencies:
 
 
 # ---------------------------------------------------------------------------
-# ObjectiveFunction integration tests
+# Objective executor integration tests
 # ---------------------------------------------------------------------------
 
 
-class TestObjectiveFunctionIntegration:
-    """Test batched path through ObjectiveFunction."""
+class TestObjectiveExecutorIntegration:
+    """Test multi-case objective evaluation parity."""
 
-    def test_can_batch_hessians_true(self) -> None:
-        """_can_batch_hessians returns True for JaxBackend with freq refs."""
+    def test_multi_case_frequency_objective_evaluates(self) -> None:
+        """Multi-case frequency references evaluate through the executor."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -348,10 +354,12 @@ class TestObjectiveFunctionIntegration:
         ref = ref.with_frequency(1000.0, data_idx=0, case_id="1")
 
         obj = _make_objective(ff, backend, mols, ref)
-        assert obj._can_batch_hessians() is True
+        score = obj.value(_params(ff))
+        assert np.isfinite(score)
+        assert obj.plan.case_ids == ("0", "1")
 
-    def test_can_batch_hessians_false_single_mol(self) -> None:
-        """_can_batch_hessians returns False with only one molecule."""
+    def test_single_case_frequency_objective_evaluates(self) -> None:
+        """Single-case frequency references evaluate through the same executor."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -362,10 +370,12 @@ class TestObjectiveFunctionIntegration:
         ref = ref.with_frequency(1000.0, data_idx=0, case_id="0")
 
         obj = _make_objective(ff, backend, mols, ref)
-        assert obj._can_batch_hessians() is False
+        score = obj.value(_params(ff))
+        assert np.isfinite(score)
+        assert obj.plan.case_ids == ("0",)
 
-    def test_can_batch_hessians_false_energy_only(self) -> None:
-        """_can_batch_hessians returns False for energy-only refs."""
+    def test_energy_only_multi_case_objective_evaluates(self) -> None:
+        """Energy-only multi-case references evaluate without Hessian work."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -377,7 +387,8 @@ class TestObjectiveFunctionIntegration:
         ref = ref.with_energy(2.0, case_id="1")
 
         obj = _make_objective(ff, backend, mols, ref)
-        assert obj._can_batch_hessians() is False
+        score = obj.value(_params(ff))
+        assert np.isfinite(score)
 
     def test_batched_vs_sequential_parity(self) -> None:
         """Objective score is identical whether batched or sequential."""
@@ -407,7 +418,7 @@ class TestObjectiveFunctionIntegration:
         # Compute score with batching enabled (the default for 2+ mols)
         obj_batched = _make_objective(ff, backend, mols, ref)
         params = _params(ff)
-        score_batched = obj_batched(params)
+        score_batched = obj_batched.value(params)
 
         # Compute score with batching forcibly disabled by using single-mol
         # calls (force sequential by evaluating each molecule separately)
@@ -417,7 +428,7 @@ class TestObjectiveFunctionIntegration:
             for i, f in enumerate(ref_freqs[mol_idx]):
                 ref_single = ref_single.with_frequency(f * 1.05, data_idx=i, case_id="0")
             obj_single = _make_objective(ff, backend, [mol], ref_single)
-            score_sequential += obj_single(params)
+            score_sequential += obj_single.value(params)
 
         assert score_batched == pytest.approx(score_sequential, rel=1e-10)
 
@@ -459,7 +470,7 @@ class TestObjectiveFunctionIntegration:
                 case_id=str(mol_idx),
             )
         obj_batched = _make_objective(ff, backend, mols, ref)
-        score_batched = obj_batched(params)
+        score_batched = obj_batched.value(params)
 
         score_sequential = 0.0
         for mol in mols:
@@ -468,7 +479,7 @@ class TestObjectiveFunctionIntegration:
                 mol.hessian, symbols=list(mol.symbols), diagonal_only=False, case_id="0"
             )
             obj_single = _make_objective(ff, backend, [mol], ref_single)
-            score_sequential += obj_single(params)
+            score_sequential += obj_single.value(params)
 
         assert score_batched > 0.0
         assert score_batched == pytest.approx(score_sequential, rel=1e-8)
@@ -477,8 +488,8 @@ class TestObjectiveFunctionIntegration:
 class TestFallback:
     """Test graceful fallback for non-JAX backends."""
 
-    def test_can_batch_false_for_non_jax(self) -> None:
-        """_can_batch_hessians returns False for a non-JAX backend."""
+    def test_empty_reference_non_jax_does_not_prepare_backend(self) -> None:
+        """No-reference objectives do not require JAX-specific batch support."""
         from unittest.mock import MagicMock
 
         from q2mm.models.observations import ObservationSet
@@ -489,8 +500,7 @@ class TestFallback:
         mols = [make_water(angle_deg=100.0), make_water(angle_deg=110.0)]
 
         ref = ObservationSet()
-        ref = ref.with_frequency(1000.0, data_idx=0, case_id="0")
-        ref = ref.with_frequency(1000.0, data_idx=0, case_id="1")
 
         obj = _make_objective(ff, mock_engine, mols, ref)
-        assert obj._can_batch_hessians() is False
+        assert obj.value(_params(ff)) == pytest.approx(0.0)
+        mock_engine.prepare.assert_not_called()

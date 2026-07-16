@@ -1,27 +1,26 @@
 """Optax-based optimizer for Q2MM force field parameterization.
 
-Provides iterative gradient-based optimizers (Adam, AdaGrad, SGD) from the
-`optax <https://optax.readthedocs.io/>`_ library with learning rate schedules,
-bounds enforcement, and convergence detection.
-
-Unlike :class:`~q2mm.optimizers.scipy_opt.ScipyOptimizer` which wraps
-``scipy.optimize.minimize``, this module implements an explicit training loop:
-each step calls :meth:`ObjectiveFunction.gradient` for the gradient and
-:func:`optax.apply_updates` for the parameter update.  This works with any
-engine — JAX engines use analytical gradients while others fall back to
-finite differences transparently.
+Iterative gradient-based optimizers (Adam, AdaGrad, SGD) from optax.  The
+explicit training loop drives the
+:class:`~q2mm.objectives.protocols.ObjectiveEvaluator` via its
+``value_and_gradient`` (full-vector value + gradient, packed to the active
+subset) — analytical for a
+:class:`~q2mm.objectives.jax.JaxObjectiveExecutor` or an analytical
+:class:`~q2mm.objectives.python.PythonObjectiveExecutor`, or explicit
+finite differences for a finite-difference executor.  The evaluator must
+declare a non-``NONE`` gradient mode.
 """
 
 from __future__ import annotations
 
 import logging
 from importlib.util import find_spec
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from q2mm.optimizers.objective import ObjectiveFunction
-from q2mm.optimizers.scipy_opt import OptimizationResult
+from q2mm.models.results import OptimizationResult
+from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator, ObjectiveGradientError
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
@@ -30,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 _HAS_OPTAX = find_spec("optax") is not None
 
-# Populated by ensure_optax()
 optax = None
 jnp = None
 
@@ -42,11 +40,9 @@ def ensure_optax() -> None:
         return
     if not _HAS_OPTAX:
         raise ImportError("optax is required for OptaxOptimizer. Install it with: pip install q2mm[jax]")
-    # Route through ensure_jax to get float64 configured before any jnp use
     from q2mm.backends.mm._jax_common import ensure_jax
 
     ensure_jax(engine_name="OptaxOptimizer")
-
     import optax as _optax
     from q2mm.backends.mm._jax_common import jnp as _jnp
 
@@ -54,55 +50,11 @@ def ensure_optax() -> None:
     jnp = _jnp
 
 
-# Supported optimizer names → optax constructor
-_OPTIMIZER_REGISTRY: dict[str, str] = {
-    "adam": "adam",
-    "adamw": "adamw",
-    "adagrad": "adagrad",
-    "sgd": "sgd",
-}
+_OPTIMIZER_REGISTRY: dict[str, str] = {"adam": "adam", "adamw": "adamw", "adagrad": "adagrad", "sgd": "sgd"}
 
 
 class OptaxOptimizer:
-    """Force field optimizer using optax gradient transformations.
-
-    Note:
-        Bounds are enforced via clamping after each update step.
-        Momentum-based optimizers (Adam, SGD) may accumulate state that
-        pushes into bound walls, which can slow convergence near bounds.
-        For tight bound constraints, consider
-        :class:`~q2mm.optimizers.scipy_opt.ScipyOptimizer` with
-        ``method='L-BFGS-B'`` which handles bounds natively.
-
-    Args:
-        optimizer: Optimizer name.  One of ``'adam'``, ``'adamw'``,
-            ``'adagrad'``, ``'sgd'``.
-        learning_rate: Base learning rate.  Overridden by *schedule* if
-            provided.
-        max_steps: Maximum number of gradient steps.
-        ftol: Convergence tolerance on relative score change.  The
-            optimizer stops when the score changes by less than
-            ``ftol * score`` over *patience* consecutive steps.
-        grad_norm_tol: Stop when the L2 gradient norm falls below this.
-        patience: Number of consecutive steps below *ftol* before
-            declaring convergence.
-        momentum: Momentum coefficient for SGD (ignored for Adam/AdaGrad).
-        b1: Exponential decay rate for the first moment (Adam/AdamW).
-        b2: Exponential decay rate for the second moment (Adam/AdamW).
-        schedule: Learning rate schedule.  ``'cosine'`` uses cosine
-            annealing over *max_steps*; ``'exponential'`` uses exponential
-            decay with ``decay_rate``.  ``None`` uses a constant LR.
-        decay_rate: Decay rate for exponential schedule.
-        use_bounds: Whether to clamp parameters to force field bounds
-            after each step.
-        divergence_factor: Early stopping threshold.  If the score
-            exceeds ``divergence_factor * initial_score`` for
-            *divergence_patience* consecutive steps, the optimizer halts.
-        divergence_patience: Consecutive divergent steps before stopping.
-        verbose: Log progress during optimization.
-        log_interval: Log every N steps (when *verbose* is ``True``).
-
-    """
+    """Force field optimizer using optax gradient transformations."""
 
     def __init__(
         self,
@@ -143,16 +95,8 @@ class OptaxOptimizer:
         self.log_interval = log_interval
 
     def _build_optimizer(self) -> object:
-        """Construct the optax optimizer with optional LR schedule.
-
-        Returns:
-            An optax ``GradientTransformation``.
-
-        """
         ensure_optax()
-
         lr = self._build_schedule()
-
         name = _OPTIMIZER_REGISTRY[self.optimizer_name]
         if name == "adam":
             return optax.adam(learning_rate=lr, b1=self.b1, b2=self.b2)
@@ -165,139 +109,62 @@ class OptaxOptimizer:
         raise ValueError(f"Unhandled optimizer: {name}")  # pragma: no cover
 
     def _build_schedule(self) -> float | object:
-        """Build a learning rate schedule or return constant LR.
-
-        Returns:
-            A float (constant LR) or an optax schedule callable.
-
-        """
         ensure_optax()
-
         if self.schedule is None:
             return self.learning_rate
         if self.schedule == "cosine":
-            return optax.cosine_decay_schedule(
-                init_value=self.learning_rate,
-                decay_steps=self.max_steps,
-            )
+            return optax.cosine_decay_schedule(init_value=self.learning_rate, decay_steps=self.max_steps)
         if self.schedule == "exponential":
             return optax.exponential_decay(
-                init_value=self.learning_rate,
-                transition_steps=self.max_steps,
-                decay_rate=self.decay_rate,
+                init_value=self.learning_rate, transition_steps=self.max_steps, decay_rate=self.decay_rate
             )
         raise ValueError(f"Unknown schedule '{self.schedule}'. Choose from: 'cosine', 'exponential', or None.")
 
-    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
-        """Run the optimization.
-
-        Args:
-            objective: Configured objective with forcefield, backend,
-                molecules, and reference data.
-            space: The active/frozen projection over ``objective.layout``.
-                ``objective.forcefield`` is never mutated — materialize
-                the optimized force field explicitly via
-                ``objective.layout.replace(objective.forcefield, result.final_params)``.
-
-        Returns:
-            Optimization outcome with final full-vector parameters
-            (length ``space.n_full``) and convergence history.
-
-        """
+    def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
+        """Run the optimization and return the canonical result."""
         ensure_optax()
+        if evaluator.gradient_mode is GradientMode.NONE:
+            raise ObjectiveGradientError(
+                f"OptaxOptimizer requires an evaluator with gradients, but {type(evaluator).__name__} "
+                "declares gradient_mode=none. Select an analytical/FD executor."
+            )
+        gradient_mode_str = evaluator.gradient_mode.value
+        # Explicit FD provenance: the evaluator's own FD step in FD mode, else None.
+        fd_step = evaluator.finite_difference_step
 
-        objective.history.clear()
-        n_eval_before = objective.n_eval
+        n_params = space.n_full
+        fingerprint = space.layout.fingerprint
+        baseline = np.array(space.baseline, dtype=float)
+        n_eval_before = evaluator.n_evaluations
+        hist_before = len(evaluator.history)
+        x0 = space.pack(baseline)
 
-        layout = objective.layout
-        initial_full = layout.vector(objective.forcefield)
-        x0 = space.pack(initial_full)
+        def value_only(x_active: np.ndarray) -> float:
+            return evaluator.value(space.expand(x_active, base=baseline))
+
+        def value_and_grad(x_active: np.ndarray) -> tuple[float, np.ndarray]:
+            val, full_grad = evaluator.value_and_gradient(space.expand(x_active, base=baseline))
+            return val, space.pack(full_grad)
+
+        initial_score = value_only(x0)
 
         bounds_arr = space.bounds if self.use_bounds else None
+        lower = upper = None
         if bounds_arr is not None and bounds_arr.size > 0:
             lower = bounds_arr[:, 0]
             upper = bounds_arr[:, 1]
 
-        def expand_np(x: np.ndarray) -> np.ndarray:
-            return space.expand(np.asarray(x, dtype=np.float64))
-
-        initial_score = objective(expand_np(x0))
-
-        # Check gradient support — warn if FD fallback will be used
-        jac_mode = "analytical"
-        try:
-            grad_support = objective.per_evaluator_gradient_support()
-            has_fd = any(not v for v in grad_support.values())
-            if has_fd:
-                jac_mode = "auto"
-                fd_cats = [k for k, v in grad_support.items() if not v]
-                logger.warning(
-                    "OptaxOptimizer: FD fallback for categories %s — "
-                    "each step will be slow. Consider using ScipyOptimizer "
-                    "for non-JAX engines.",
-                    fd_cats,
-                )
-        except Exception:
-            jac_mode = "auto"
-
         opt = self._build_optimizer()
-
-        # When using the JAX backend, route gradients through JaxLoss to avoid
-        # materializing the (3N, 3N, n_params) Hessian-parameter Jacobian
-        # that causes GPU OOM.  See issue analysis in AGENTS.md §9.
-        use_jax_loss = False
-        jax_loss = None
-        try:
-            from q2mm.backends.mm.jax_engine import JaxBackend
-
-            if hasattr(objective, "backend") and isinstance(objective.backend, JaxBackend):
-                from q2mm.optimizers.jaxloss import JaxLoss
-
-                spec = objective.to_jax_spec()
-                jax_loss = JaxLoss(
-                    spec,
-                    objective.backend,
-                    objective.molecules,
-                    objective.forcefield,
-                    sessions=objective.jax_sessions(spec),
-                )
-                use_jax_loss = True
-                jac_mode = "jax_loss"
-                logger.info("OptaxOptimizer: using JaxLoss gradient path (memory-efficient)")
-        except ImportError:
-            pass  # JAX backend not available
-
         params = jnp.array(x0, dtype=jnp.float64)
         opt_state = opt.init(params)
-
-        baseline_jax = jnp.array(space.baseline, dtype=jnp.float64)
-        active_indices_jax = jnp.array(space.active_indices, dtype=jnp.int32)
-
-        def expand_jax(x_active: Any):  # noqa: ANN202
-            return baseline_jax.at[active_indices_jax].set(x_active)
 
         method_str = f"optax:{self.optimizer_name}"
         if self.schedule:
             method_str += f"+{self.schedule}"
 
-        if use_jax_loss:
-            # Use Python-dispatch value_and_grad to avoid compiling
-            # all molecules into one XLA program.  Each per-molecule
-            # function is compiled independently.
-            def jax_loss_vag(x_active: Any):  # noqa: ANN202
-                loss, full_grad = jax_loss.value_and_grad_jax(expand_jax(x_active))
-                return loss, full_grad[active_indices_jax]
-
-            def jax_loss_eval(x_active: Any):  # noqa: ANN202
-                return float(jax_loss.value_and_grad_jax(expand_jax(x_active))[0])
-
-        else:
-            jax_loss_vag = None
-            jax_loss_eval = None
-
         if self.verbose:
             logger.info(
-                "Starting %s optimization: %d active params (%d total), initial score %.6f, lr=%.1e, max_steps=%d",
+                "Starting %s: %d active params (%d total), initial score %.6f, lr=%.1e, max_steps=%d",
                 method_str,
                 space.n_active,
                 space.n_full,
@@ -307,92 +174,60 @@ class OptaxOptimizer:
             )
 
         if x0.size == 0:
-            final_params = initial_full.copy()
             return OptimizationResult(
                 success=True,
                 message="No active parameters to optimize",
                 initial_score=initial_score,
                 final_score=initial_score,
                 n_iterations=0,
-                n_evaluations=objective.n_eval - n_eval_before,
-                initial_params=initial_full,
-                final_params=final_params,
-                history=list(objective.history),
+                n_evaluations=evaluator.n_evaluations - n_eval_before,
+                n_params=n_params,
+                layout_fingerprint=fingerprint,
+                initial_params=baseline,
+                final_params=baseline.copy(),
+                history=evaluator.history[hist_before:] or (initial_score,),
                 method=method_str,
-                jac_mode=jac_mode,
-                eps=None,
+                gradient_mode=gradient_mode_str,
+                fd_step=fd_step,
             )
 
-        # On the JaxLoss path the in-loop score is a surrogate value in
-        # JaxLoss units, whereas ``initial_score`` is in ObjectiveFunction
-        # units.  Use a JaxLoss-unit baseline for the loop's best/plateau/
-        # divergence comparisons so they are self-consistent; the returned
-        # score is re-evaluated with the true objective below.
-        loop_initial = float(jax_loss_eval(params)) if use_jax_loss else initial_score
-
-        best_score = loop_initial
+        best_score = initial_score
         best_params = x0.copy()
         converged = False
         message = f"Max steps ({self.max_steps}) reached"
         stall_count = 0
         diverge_count = 0
-        prev_score = loop_initial
+        prev_score = initial_score
+        step = 0
 
         for step in range(self.max_steps):
             params_np = np.asarray(params, dtype=np.float64)
-
-            # Compute gradient
-            if use_jax_loss:
-                # Per-molecule Python-dispatch path — each compiled
-                # value_and_grad is dispatched independently.
-                _pre_loss, grad_jax = jax_loss_vag(params)
-                grad_np = np.asarray(grad_jax, dtype=np.float64)
-            else:
-                grad_np = space.pack(objective.gradient(expand_np(params_np)))
+            score, grad_active = value_and_grad(params_np)
+            grad_np = np.asarray(grad_active, dtype=np.float64)
             grad = jnp.array(grad_np, dtype=jnp.float64)
 
-            # Optax update
             updates, opt_state = opt.update(grad, opt_state, params)
             params = optax.apply_updates(params, updates)
-
-            # Enforce bounds via clamping
-            if bounds_arr is not None and bounds_arr.size > 0:
+            if lower is not None:
                 params = jnp.clip(params, lower, upper)
 
-            # Evaluate post-update score
-            params_np = np.asarray(params, dtype=np.float64)
-            if use_jax_loss:
-                score = jax_loss_eval(params)
-                # Manually track evaluation for JaxLoss path
-                objective.n_eval += 1
-                objective.history.append(score)
-            else:
-                score = objective(expand_np(params_np))
-
-            # Track best
             if score < best_score:
                 best_score = score
+                # ``score``/``grad`` were evaluated at the PRE-update iterate
+                # (``params_np``); store that same vector so best_score and
+                # best_params identify the identical evaluated point (not the
+                # post-update, possibly-overshot iterate).
                 best_params = params_np.copy()
 
-            # Logging
-            if self.verbose and (step + 1) % self.log_interval == 0:
-                grad_norm = float(np.linalg.norm(grad_np))
-                logger.info(
-                    "  step %4d  score %.6f  grad_norm %.2e  best %.6f",
-                    step + 1,
-                    score,
-                    grad_norm,
-                    best_score,
-                )
-
-            # Convergence: gradient norm
             grad_norm = float(np.linalg.norm(grad_np))
+            if self.verbose and (step + 1) % self.log_interval == 0:
+                logger.info("  step %4d  score %.6f  grad_norm %.2e  best %.6f", step + 1, score, grad_norm, best_score)
+
             if grad_norm < self.grad_norm_tol:
                 converged = True
                 message = f"Converged: gradient norm {grad_norm:.2e} < {self.grad_norm_tol:.2e}"
                 break
 
-            # Convergence: score plateau
             if prev_score > 0:
                 rel_change = abs(prev_score - score) / prev_score
                 if rel_change < self.ftol:
@@ -404,16 +239,14 @@ class OptaxOptimizer:
                 else:
                     stall_count = 0
 
-            # Divergence detection
-            if self.divergence_factor is not None and loop_initial > 0:
-                threshold = loop_initial * self.divergence_factor
+            if self.divergence_factor is not None and initial_score > 0:
+                threshold = initial_score * self.divergence_factor
                 if score > threshold:
                     diverge_count += 1
                     if diverge_count >= self.divergence_patience:
                         message = (
-                            f"Abandoned: score {score:.1f} > "
-                            f"{threshold:.1f} ({self.divergence_factor:.0f}× initial) "
-                            f"for {self.divergence_patience} consecutive steps"
+                            f"Abandoned: score {score:.1f} > {threshold:.1f} "
+                            f"({self.divergence_factor:.0f}× initial) for {self.divergence_patience} steps"
                         )
                         if self.verbose:
                             logger.warning(message)
@@ -423,25 +256,16 @@ class OptaxOptimizer:
 
             prev_score = score
 
-        # Use best params found during the run
-        final_active = best_params
-        final_params = expand_np(final_active)
-
-        # best_score may be a JaxLoss-unit surrogate (use_jax_loss path).
-        # Re-evaluate the returned point with the true ObjectiveFunction so
-        # final_score is in the same units as initial_score (mirror
-        # scipy_opt) — otherwise ``improvement`` compares mismatched scales
-        # and cross-stage acceptance tests in cycling.py are corrupted.
-        final_score = float(objective(final_params))
+        final_params = space.expand(best_params, base=baseline)
+        final_score = float(value_only(best_params))
 
         if self.verbose:
             logger.info(
-                "Optimization %s: score %.6f → %.6f (%d steps, %d evals)",
+                "Optimization %s: score %.6f → %.6f (%d steps)",
                 "converged" if converged else "stopped",
                 initial_score,
                 final_score,
-                step + 1 if self.max_steps > 0 else 0,
-                objective.n_eval - n_eval_before,
+                step + 1,
             )
 
         return OptimizationResult(
@@ -450,11 +274,13 @@ class OptaxOptimizer:
             initial_score=initial_score,
             final_score=final_score,
             n_iterations=step + 1 if self.max_steps > 0 else 0,
-            n_evaluations=objective.n_eval - n_eval_before,
-            initial_params=initial_full,
+            n_evaluations=evaluator.n_evaluations - n_eval_before,
+            n_params=n_params,
+            layout_fingerprint=fingerprint,
+            initial_params=baseline,
             final_params=final_params,
-            history=list(objective.history),
+            history=evaluator.history[hist_before:] or (initial_score, final_score),
             method=method_str,
-            jac_mode=jac_mode,
-            eps=None,
+            gradient_mode=gradient_mode_str,
+            fd_step=fd_step,
         )

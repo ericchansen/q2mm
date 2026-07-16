@@ -46,10 +46,10 @@ Pass via `--fc-fraction` / `--eq-fraction` CLI flags on `scripts/benchmark.py`.
 
 The script default L-BFGS-B `ftol=1e-8` is loose for from-poor-start runs — `nfev` will often be ≤ 5 with no real optimization. Override with `--ftol 1e-12` (or tighter) for any run where you actually want the optimizer to work.
 
-### Ratio gate (`scipy_opt.py` → ratio check)
+### Executor-ratio gate (`benchmark_runner.py` → executor-ratio check)
 
-For TS systems with a poor starting FF, the JaxLoss/ObjectiveFunction ratio can be 0.1–0.4 or even diverge to 1e74 (heck-relay from QFUERZA). The default ratio check rejects these. Two options:
-- `--ratio-tol -1` to bypass entirely (use for from-QFUERZA TS runs)
+For TS systems with a poor starting FF, the JAX/Python executor ratio can be 0.1–0.4 or even diverge to 1e74 (heck-relay from QFUERZA). The default executor-ratio check rejects these. Two options:
+- `--executor-ratio-tol -1` to bypass entirely (use for from-QFUERZA TS runs)
 - Document the explosion honestly in the analysis instead of pretending it didn't happen
 
 ## Step 3 — Pre-flight checklist
@@ -76,7 +76,7 @@ PYTHONPATH=/path/to/worktree python scripts/benchmark.py \
     --ftol 1e-12 \
     --fc-fraction 0.20 \
     --eq-fraction 0.05 \
-    --ratio-tol <value> \
+    --executor-ratio-tol <value> \
     --output-dir /path/to/q2mm-data/benchmarks
 ```
 
@@ -92,7 +92,7 @@ print("n_evaluations:", r["n_evaluations"])
 print("n_iterations:", r["n_iterations"])
 print("real OF:      ", r["initial_obj_score"], "→", r["final_obj_score"])
 print("improvement%: ", r["improvement_pct"])
-print("ratio:        ", r["ratio"])
+print("executor ratio:", r["executor_ratio"])
 print("Seminario R²: ", r["seminario"])
 print("Optimized R²: ", r["optimized"])
 ```
@@ -105,7 +105,7 @@ print("Optimized R²: ", r["optimized"])
 
 **Fail criteria** (stop immediately if any holds):
 - `n_evaluations ≤ 2` AND `|improvement_pct| < 1` → **optimizer did not optimize**. Likely `ftol` too loose or bounds too wide. Do NOT launch the remaining systems. Diagnose and re-run.
-- `ratio > 100` AND `improvement_pct < 0` → JaxLoss surrogate diverged AND the optimizer made the FF worse. Diagnose: tighter bounds, FC clamping, different starting point.
+- `executor_ratio > 100` AND `improvement_pct < 0` → JAX objective executor diverged AND the optimizer made the FF worse. Diagnose: tighter bounds, FC clamping, different starting point.
 - Optimized R² < Seminario R² → the run degraded the FF. Diagnose before continuing.
 
 ## Step 6 — Launch the rest (only if Step 5 passes)
@@ -126,13 +126,13 @@ If a benchmark batch ends with multiple systems exiting at `n_evals=2`, that's a
 - "How do I know if the optimizer actually optimized?" → check `n_evaluations` and real OF delta
 - "Should I use sanity bounds or fractional bounds?" → fractional for the canonical QFUERZA-start default; sanity is fine for `--starting-point published` runs
 - "Why does `nfev=2` happen on every system?" → default `ftol` is 1e-8, way too loose for from-poor-start; use `--ftol 1e-12`
-- "Heck-relay's ratio is 1e74, is that OK?" → no, the JaxLoss surrogate exploded; document honestly and consider tighter bounds or FF pre-conditioning
-- "Should I just bypass the ratio gate with `--ratio-tol -1`?" → only if you understand why it's failing; ratio gate exists for a reason
+- "Heck-relay's executor ratio is 1e74, is that OK?" → no, the JAX objective executor exploded; document honestly and consider tighter bounds or FF pre-conditioning
+- "Should I just bypass the executor-ratio gate with `--executor-ratio-tol -1`?" → only if you understand why it's failing; the gate exists for a reason
 
 ## Anti-patterns to refuse
 
 - Launching all 5 systems in a batch without auditing the first one
 - Shipping results where `n_evaluations <= 2` on every system as if optimization happened
 - Comparing only `final_obj_score` when the user asked about parameter values or R²
-- Bypassing the ratio gate with `--ratio-tol -1` without diagnosing why it's failing
+- Bypassing the executor-ratio gate with `--executor-ratio-tol -1` without diagnosing why it's failing
 - Writing the analysis doc before re-reading the user's literal question

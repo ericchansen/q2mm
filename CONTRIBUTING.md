@@ -120,7 +120,7 @@ ruff format --check q2mm test scripts examples
 
 When running benchmarks with `q2mm-benchmark`, **always save the output force
 fields**.  Benchmark runs can take minutes to hours depending on the system
-and optimizer.  With SciPy L-BFGS-B + JaxLoss on GPU, all 5 TS systems
+and optimizer.  With SciPy L-BFGS-B + JAX objective executor on GPU, all 5 TS systems
 complete in ~15 minutes total (dominated by JIT compilation, not optimization).
 Results are not reproducible bit-for-bit due to floating-point reduction-order
 differences between devices.
@@ -169,17 +169,24 @@ All jobs must pass before merging.
 
 ### Adding a New Backend
 
-To support a new MM engine:
+To support a new MM backend:
 
-1. **Subclass `MMEngine`** in `q2mm/backends/mm/`.
-2. **Implement** `energy()`, `frequencies()`, and optionally `gradient()`.
-3. **Handle unit conversion** between canonical (kcal/mol/Å²) and whatever your
-   engine expects internally.
-4. **Declare supported forms** via `supported_functional_forms()`.
-5. **Add tests** with the appropriate backend marker (e.g., `@pytest.mark.myengine`).
+1. **Implement the prepared-session backend contract** in
+   `q2mm.backends.contracts`: the backend exposes `info` and
+   `prepare(PreparationRequest(...))`, and each prepared session handles typed
+   requests such as `EnergyRequest`, `HessianRequest`, and `FrequencyRequest`.
+2. **Handle unit conversion** between canonical units (kcal/mol, Å,
+   hartree/bohr² as appropriate) and whatever the underlying engine expects
+   internally.
+3. **Declare capabilities** in the backend `BackendInfo` so objective executors
+   can fail clearly when a requested operation is unsupported.
+4. **Register the backend** in `q2mm.backends.registry` if it should be loaded
+   by name.
+5. **Add tests** with the appropriate backend marker (e.g., `@pytest.mark.mybackend`).
 
-The optimizer, objective function, and all other pipeline components work
-unchanged.
+Optimizers consume objective executors, so a backend that satisfies the typed
+contract works with `ObjectivePlan`, `PythonObjectiveExecutor`, and any
+optimizer using `optimize(evaluator, space)`.
 
 ### Adding a New Force Field Format
 

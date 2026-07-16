@@ -43,7 +43,7 @@ with the development of transferable force fields
 
 **When to use:** Always include bond lengths as baseline training data. They
 anchor equilibrium bond distances and are inexpensive to evaluate (no Hessian
-or frequency calculation needed from the MM engine).
+or frequency calculation needed from the MM backend).
 
 **Weight guidance:** Default weight of 10.0 reflects that bond lengths are
 typically well-determined by QM and should be reproduced accurately. For
@@ -152,10 +152,10 @@ force fields typically exceed 1 kcal/mol
 **Definition:** Electronic energy from a QM calculation. Typically used as
 **relative** energies between conformers or along a reaction path.
 
-**Units:** kcal/mol. `MMEngine.energy()` returns energies in kcal/mol and
-`ObjectiveFunction` compares QM and MM values directly with no unit conversion,
-so you must convert QM energies (often reported in Hartree or kJ/mol) to
-kcal/mol before adding them as reference data.
+**Units:** kcal/mol. MM backend energy results are normalized to kcal/mol and
+the objective executors compare QM and MM values directly with no unit
+conversion, so you must convert QM energies (often reported in Hartree or
+kJ/mol) to kcal/mol before adding them as reference data.
 
 **When to use:** Include when you have multiple structures and want the
 force field to reproduce their relative energetics. Common scenarios:
@@ -206,7 +206,7 @@ MM-computed frequencies against QM reference values
 ### Frequency
 
 **Definition:** Vibrational frequency from normal mode analysis. The MM
-engine computes its own frequencies from the MM Hessian, and each
+backend computes its own frequencies from the MM Hessian, and each
 MM frequency is compared to the corresponding QM frequency.
 
 **Units:** cm⁻¹

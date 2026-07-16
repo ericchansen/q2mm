@@ -1,7 +1,7 @@
-"""Unit tests for ObjectiveSpec and JaxLoss.
+"""Focused tests for the JAX objective executor.
 
-Verifies that the JIT-compiled loss function produces identical
-results to the Python ObjectiveFunction for energy references.
+Verifies that JAX-compiled per-case objective evaluation produces identical
+results to the Python objective executor for supported references.
 """
 
 from __future__ import annotations
@@ -32,8 +32,11 @@ pytestmark = [
 from test._shared import make_diatomic, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
-from q2mm.models.parameters import ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.jax import JaxObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 
 # Module-level globals populated by autouse fixture
 JaxBackend = None
@@ -49,15 +52,22 @@ def _params(forcefield: ForceField) -> np.ndarray:
 
 def _make_objective(
     forcefield: ForceField, backend: object, molecules: list, reference: object, **kwargs: object
-) -> ObjectiveFunction:
-    return ObjectiveFunction(
-        forcefield=forcefield,
-        backend=backend,
-        molecules=molecules,
-        reference=reference,
-        layout=_layout(forcefield),
-        **kwargs,
+) -> PythonObjectiveExecutor:
+    layout = _layout(forcefield)
+    mols = tuple(molecules)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(mols))),
+        molecules=mols,
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in mols),
+        observations=reference,
+        layout=layout,
+        active_space=ActiveParameterSpace.all_active(layout, forcefield),
+        regularization=float(kwargs.pop("regularization", 0.0)),
+        reference_params=kwargs.pop("reference_params", None),
     )
+    if kwargs:
+        raise TypeError(f"Unsupported objective kwargs: {sorted(kwargs)}")
+    return PythonObjectiveExecutor(plan, backend, forcefield)
 
 
 def _h2_ff(bond_k: float = 359.7, bond_r0: float = 0.74) -> ForceField:
@@ -92,11 +102,11 @@ def _init_jax() -> None:
     JaxBackend = _JE
 
 
-class TestObjectiveSpec:
-    """Tests for ObjectiveSpec construction."""
+class TestObjectivePlan:
+    """Tests for ObjectivePlan construction."""
 
     def test_energy_spec_roundtrip(self) -> None:
-        """ObjectiveFunction.to_jax_spec() captures energy references."""
+        """ObjectivePlan captures energy observations."""
         from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
@@ -106,14 +116,16 @@ class TestObjectiveSpec:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=load_backend("jax"), molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
+        spec = obj.plan
 
         assert spec.n_params == 2
-        assert spec.n_molecules == 1
-        assert "energy" in spec.supported_categories
-        assert spec.molecules[0].has_energy
-        np.testing.assert_array_equal(spec.molecules[0].energy_refs, [0.0])
-        np.testing.assert_array_equal(spec.molecules[0].energy_weights, [1.0])
+        assert len(spec.molecules) == 1
+        assert spec.categories == frozenset({"energy"})
+        obs = spec.observations.values
+        assert len(obs) == 1
+        assert obs[0].kind == "energy"
+        assert obs[0].value == pytest.approx(0.0)
+        assert obs[0].weight == pytest.approx(1.0)
 
     def test_geometry_included(self) -> None:
         """Geometry references are included via implicit-diff path."""
@@ -127,15 +139,13 @@ class TestObjectiveSpec:
         ref = ref.with_bond_length(value=0.96, case_id="0", atom_indices=(0, 1), weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=load_backend("jax"), molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
+        spec = obj.plan
 
-        assert spec.molecules[0].has_energy
-        assert spec.molecules[0].has_bond_length
-        assert spec.molecules[0].has_geometry
-        assert "geometry" in spec.supported_categories
-        assert spec.has_geometry_refs() is True
-        np.testing.assert_array_equal(spec.molecules[0].bond_atoms, [[0, 1]])
-        np.testing.assert_array_equal(spec.molecules[0].bond_refs, [0.96])
+        assert spec.categories == frozenset({"energy", "geometry"})
+        obs = spec.observations.values
+        assert [o.kind for o in obs] == ["energy", "bond_length"]
+        assert obs[1].atom_indices == (0, 1)
+        assert obs[1].value == pytest.approx(0.96)
 
     def test_bounds_roundtrip(self) -> None:
         """Parameter bounds transferred to spec."""
@@ -148,18 +158,17 @@ class TestObjectiveSpec:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=load_backend("jax"), molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
+        spec = obj.plan
 
-        assert len(spec.lower_bounds) == 2
-        assert len(spec.upper_bounds) == 2
+        assert spec.active_space.bounds.shape == (2, 2)
+        np.testing.assert_allclose(spec.active_space.bounds, spec.layout.bounds)
 
 
-class TestJaxLoss:
-    """Tests for JaxLoss compiled loss function."""
+class TestJaxObjectiveExecutor:
+    """Tests for JaxObjectiveExecutor compiled loss function."""
 
     def test_loss_matches_objective(self) -> None:
-        """JaxLoss(params) ≈ _make_objective(params) for energy."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor(params) ≈ _make_objective(params) for energy."""
         from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
@@ -170,18 +179,17 @@ class TestJaxLoss:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         np.testing.assert_allclose(jax_score, python_score, rtol=1e-6)
 
     def test_loss_and_grad_returns_gradient(self) -> None:
         """loss_and_grad returns a scalar loss and param-shaped gradient."""
-        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
@@ -192,8 +200,8 @@ class TestJaxLoss:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
         loss, grad = jax_loss.loss_and_grad(params)
@@ -203,7 +211,6 @@ class TestJaxLoss:
 
     def test_loss_with_regularization(self) -> None:
         """L2 regularization adds penalty to loss."""
-        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
@@ -216,40 +223,41 @@ class TestJaxLoss:
         obj_noreg = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref, regularization=0.0)
         obj_reg = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref, regularization=0.1)
 
-        spec_noreg = obj_noreg.to_jax_spec()
-        spec_reg = obj_reg.to_jax_spec()
+        spec_noreg = obj_noreg.plan
+        spec_reg = obj_reg.plan
 
-        loss_noreg = JaxLoss(spec_noreg, backend, [mol], ff, sessions=obj_noreg.jax_sessions(spec_noreg))
-        loss_reg = JaxLoss(spec_reg, backend, [mol], ff, sessions=obj_reg.jax_sessions(spec_reg))
+        loss_noreg = JaxObjectiveExecutor(spec_noreg, backend, ff)
+        loss_reg = JaxObjectiveExecutor(spec_reg, backend, ff)
 
         params = _params(ff)
-        score_noreg = loss_noreg(params)
-        score_reg = loss_reg(params)
+        score_noreg = loss_noreg.value(params)
+        score_reg = loss_reg.value(params)
 
         # At reference params, L2 penalty should be zero
         np.testing.assert_allclose(score_noreg, score_reg, rtol=1e-10)
 
         # With perturbed params, regularized loss should be higher
         perturbed = params * 1.1
-        assert loss_reg(perturbed) > loss_noreg(perturbed)
+        assert loss_reg.value(perturbed) > loss_noreg.value(perturbed)
 
     def test_backend_type_check(self) -> None:
-        """JaxLoss raises TypeError for non-JAX backends."""
+        """JaxObjectiveExecutor raises TypeError for non-JAX backends."""
         from unittest.mock import MagicMock
 
-        from q2mm.optimizers.jaxloss import JaxLoss
-        from q2mm.optimizers.spec import ObjectiveSpec
+        from q2mm.models.observations import ObservationSet
 
-        spec = ObjectiveSpec(molecules=(), n_params=2)
+        mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
+        ff = _h2_ff()
+        ref = ObservationSet().with_energy(value=0.0, case_id="0", weight=1.0)
+        spec = _make_objective(forcefield=ff, backend=load_backend("jax"), molecules=[mol], reference=ref).plan
         fake_backend = MagicMock()
         fake_backend.__class__.__name__ = "FakeBackend"
 
-        with pytest.raises(TypeError, match="JaxLoss requires a JaxBackend"):
-            JaxLoss(spec, fake_backend, [], _h2_ff(), sessions={})
+        with pytest.raises(TypeError, match="JaxObjectiveExecutor requires a JaxBackend"):
+            JaxObjectiveExecutor(spec, fake_backend, ff)
 
     def test_water_energy_loss(self) -> None:
-        """JaxLoss works for water (bond + angle params)."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor works for water (bond + angle params)."""
         from q2mm.models.observations import ObservationSet
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
@@ -260,12 +268,12 @@ class TestJaxLoss:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         # Both scores are effectively zero at equilibrium; use absolute tolerance
         np.testing.assert_allclose(jax_score, python_score, atol=1e-10)
@@ -296,12 +304,11 @@ def _water_with_qm_refs(backend: object) -> tuple:
     return mol, ff_ref, ff_pert, hess_qm, freqs_qm
 
 
-class TestJaxLossFrequencyParity:
-    """Frequency path: JaxLoss vs ObjectiveFunction parity."""
+class TestJaxObjectiveExecutorFrequencyParity:
+    """Frequency path: JaxObjectiveExecutor vs PythonObjectiveExecutor parity."""
 
     def test_frequency_loss_parity(self) -> None:
-        """JaxLoss and ObjectiveFunction agree on frequency loss."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor and PythonObjectiveExecutor agree on frequency loss."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -313,19 +320,18 @@ class TestJaxLossFrequencyParity:
             ref = ref.with_frequency(freqs_qm[i], data_idx=i, weight=1.0, case_id="0")
 
         obj = _make_objective(forcefield=ff_pert, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff_pert, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff_pert)
 
         params = _params(ff_pert)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         assert python_score > 0, "Loss should be nonzero with perturbed params"
         np.testing.assert_allclose(jax_score, python_score, atol=1e-4)
 
     def test_frequency_gradient_shape_and_direction(self) -> None:
-        """JaxLoss gradient has correct shape and points downhill."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor gradient has correct shape and points downhill."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -336,8 +342,8 @@ class TestJaxLossFrequencyParity:
             ref = ref.with_frequency(freqs_qm[i], data_idx=i, weight=1.0, case_id="0")
 
         obj = _make_objective(forcefield=ff_pert, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff_pert, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff_pert)
 
         params = _params(ff_pert)
         loss, grad = jax_loss.loss_and_grad(params)
@@ -349,16 +355,15 @@ class TestJaxLossFrequencyParity:
         # Frequencies are large (cm⁻¹), so gradients are huge — use tiny step.
         lr = 1e-6 / np.linalg.norm(grad)
         step = params - lr * grad
-        loss_after = jax_loss(step)
+        loss_after = jax_loss.value(step)
         assert loss_after < loss, "One step in -grad direction should lower loss"
 
 
-class TestJaxLossHessianParity:
-    """Hessian-element path: JaxLoss vs ObjectiveFunction parity."""
+class TestJaxObjectiveExecutorHessianParity:
+    """Hessian-element path: JaxObjectiveExecutor vs PythonObjectiveExecutor parity."""
 
     def test_hessian_element_loss_parity(self) -> None:
-        """JaxLoss and ObjectiveFunction agree on hessian-element loss."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor and PythonObjectiveExecutor agree on hessian-element loss."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -374,23 +379,22 @@ class TestJaxLossHessianParity:
         )
 
         obj = _make_objective(forcefield=ff_pert, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff_pert, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff_pert)
 
         params = _params(ff_pert)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         assert python_score > 0, "Loss should be nonzero with perturbed params"
         np.testing.assert_allclose(jax_score, python_score, atol=1e-6)
 
 
-class TestJaxLossEigenmatrixParity:
-    """Eigenmatrix diagonal path: JaxLoss vs ObjectiveFunction parity."""
+class TestJaxObjectiveExecutorEigenmatrixParity:
+    """Eigenmatrix diagonal path: JaxObjectiveExecutor vs PythonObjectiveExecutor parity."""
 
     def test_eigenmatrix_diagonal_loss_parity(self) -> None:
-        """JaxLoss and ObjectiveFunction agree on eigenmatrix diagonal loss."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor and PythonObjectiveExecutor agree on eigenmatrix diagonal loss."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -406,19 +410,18 @@ class TestJaxLossEigenmatrixParity:
         )
 
         obj = _make_objective(forcefield=ff_pert, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff_pert, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff_pert)
 
         params = _params(ff_pert)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         assert python_score > 0, "Loss should be nonzero with perturbed params"
         np.testing.assert_allclose(jax_score, python_score, atol=1e-6)
 
     def test_eigenmatrix_offdiagonal_loss_parity(self) -> None:
-        """JaxLoss and ObjectiveFunction agree on the full (off-diagonal) eigenmatrix."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor and PythonObjectiveExecutor agree on the full (off-diagonal) eigenmatrix."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -434,23 +437,22 @@ class TestJaxLossEigenmatrixParity:
         )
 
         obj = _make_objective(forcefield=ff_pert, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff_pert, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff_pert)
 
         params = _params(ff_pert)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         assert python_score > 0, "Loss should be nonzero with perturbed params"
         np.testing.assert_allclose(jax_score, python_score, atol=1e-6)
 
 
-class TestJaxLossMixedObjective:
+class TestJaxObjectiveExecutorMixedObjective:
     """Multi-category loss: energy + frequency + hessian combined."""
 
     def test_mixed_loss_parity(self) -> None:
-        """JaxLoss and ObjectiveFunction agree on combined energy+freq+hessian."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor and PythonObjectiveExecutor agree on combined energy+freq+hessian."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -469,19 +471,18 @@ class TestJaxLossMixedObjective:
         )
 
         obj = _make_objective(forcefield=ff_pert, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff_pert, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff_pert)
 
         params = _params(ff_pert)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         assert python_score > 0, "Combined loss should be nonzero"
         np.testing.assert_allclose(jax_score, python_score, atol=1e-4)
 
     def test_mixed_gradient_lowers_loss(self) -> None:
         """One gradient step on combined loss reduces the score."""
-        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -500,24 +501,23 @@ class TestJaxLossMixedObjective:
         )
 
         obj = _make_objective(forcefield=ff_pert, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff_pert, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff_pert)
 
         params = _params(ff_pert)
         loss0, grad = jax_loss.loss_and_grad(params)
         lr = 1e-6 / np.linalg.norm(grad)
         step = params - lr * grad
-        loss1 = jax_loss(step)
+        loss1 = jax_loss.value(step)
 
         assert loss1 < loss0, "One gradient step should lower combined loss"
 
 
-class TestJaxLossMultiMolecule:
+class TestJaxObjectiveExecutorMultiMolecule:
     """Multi-molecule routing: H2 + water with separate energy refs."""
 
     def test_multi_molecule_energy_parity(self) -> None:
-        """JaxLoss and ObjectiveFunction agree across 2 molecules."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor and PythonObjectiveExecutor agree across 2 molecules."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -542,12 +542,12 @@ class TestJaxLossMultiMolecule:
 
         molecules = [mol_h2, mol_water]
         obj = _make_objective(forcefield=ff, backend=backend, molecules=molecules, reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, molecules, ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         assert python_score > 0, "Multi-molecule loss should be nonzero"
         np.testing.assert_allclose(jax_score, python_score, atol=1e-10)
@@ -605,14 +605,13 @@ class TestFrequencySensitivityParity:
                 assert cos_sim > 0.99, f"Mode {i}: cosine similarity {cos_sim:.4f} too low"
 
 
-class TestJaxLossGeometryParity:
+class TestJaxObjectiveExecutorGeometryParity:
     """Tests for the geometry-references implicit-diff loss path."""
 
     pytestmark = pytest.mark.skipif(not _HAS_JAXOPT, reason="jaxopt not installed (required for geometry refs)")
 
     def test_bond_length_relaxes_to_eq(self) -> None:
         """Relaxed H2 bond length matches the FF equilibrium parameter."""
-        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.models.observations import ObservationSet
 
         # Start with a stretched bond; equilibrium r0 = 0.74 Å.
@@ -625,11 +624,11 @@ class TestJaxLossGeometryParity:
         ref = ref.with_bond_length(value=0.74, case_id="0", atom_indices=(0, 1), weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
-        loss = jax_loss(params)
+        loss = jax_loss.value(params)
         # With harmonic geometry restraint (K=100), relaxation from 0.90 to
         # 0.74 Å is approximate — the restraint anchors the geometry near
         # the starting point.  Loss should be small but not exactly zero.
@@ -637,7 +636,6 @@ class TestJaxLossGeometryParity:
 
     def test_bond_length_grad_matches_fd(self) -> None:
         """∇_p loss for a bond-length ref matches finite differences."""
-        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.90, bond_tolerance=1.5)
@@ -649,8 +647,8 @@ class TestJaxLossGeometryParity:
         ref = ref.with_bond_length(value=0.80, case_id="0", atom_indices=(0, 1), weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
         _, grad_jax = jax_loss.loss_and_grad(params)
@@ -662,13 +660,12 @@ class TestJaxLossGeometryParity:
         for i in range(len(params)):
             dp = np.zeros_like(params)
             dp[i] = eps
-            grad_fd[i] = (jax_loss(params + dp) - jax_loss(params - dp)) / (2 * eps)
+            grad_fd[i] = (jax_loss.value(params + dp) - jax_loss.value(params - dp)) / (2 * eps)
 
         np.testing.assert_allclose(grad_jax, grad_fd, atol=1e-5, rtol=1e-3)
 
     def test_bond_angle_relaxes_to_eq(self) -> None:
         """Relaxed H2O bond angle matches the FF equilibrium parameter."""
-        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.models.observations import ObservationSet
 
         # Start with a perturbed angle; eq is 104.5°.
@@ -681,11 +678,11 @@ class TestJaxLossGeometryParity:
         ref = ref.with_bond_angle(value=104.5, case_id="0", atom_indices=(1, 0, 2), weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
-        loss = jax_loss(params)
+        loss = jax_loss.value(params)
         # With harmonic geometry restraint (K=100), the angle doesn't
         # fully relax from 110° to the 104.5° equilibrium — the
         # restraint anchors geometry near the starting coordinates.
@@ -693,8 +690,7 @@ class TestJaxLossGeometryParity:
         assert loss < 10.0
 
     def test_geometry_grad_jit_callable(self) -> None:
-        """JaxLoss.loss_and_grad with geometry refs is jit-compilable."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """JaxObjectiveExecutor.loss_and_grad with geometry refs is jit-compilable."""
         from q2mm.models.observations import ObservationSet
 
         mol = make_water(bond_length=0.97, angle_deg=104.5)
@@ -706,8 +702,8 @@ class TestJaxLossGeometryParity:
         ref = ref.with_bond_angle(value=104.5, case_id="0", atom_indices=(1, 0, 2), weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
         loss, grad = jax_loss.loss_and_grad(params)
@@ -719,7 +715,7 @@ class TestJaxLossGeometryParity:
         """_torsion_angles_deg produces correct dihedrals for known geometries."""
         import jax.numpy as jnp
 
-        from q2mm.optimizers.jaxloss import _torsion_angles_deg
+        from q2mm.objectives.jax import _torsion_angles_deg
 
         # Planar cis (0°): all four atoms in xy-plane, zig-zag along y.
         coords_cis = jnp.array(
@@ -783,7 +779,6 @@ class TestJaxLossGeometryParity:
         """
         import jax.numpy as jnp
 
-        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.models.observations import ObservationSet
 
         # Use a very stretched geometry far from equilibrium — the inner
@@ -796,8 +791,8 @@ class TestJaxLossGeometryParity:
         ref = ref.with_bond_length(value=0.74, case_id="0", atom_indices=(0, 1), weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = jnp.array(_params(ff), dtype=jnp.float64)
         loss, _grad = jax_loss.loss_and_grad(params)
@@ -805,16 +800,15 @@ class TestJaxLossGeometryParity:
         assert np.isfinite(loss), f"Loss is not finite: {loss}"
 
 
-class TestJaxLossTopologyBatching:
-    """Verify topology-grouped vmap batching produces identical results.
+class TestJaxObjectiveExecutorTopologyBatching:
+    """Verify per-case JIT dispatch produces identical results.
 
     Both tests add frequency references so ``needs_hessian_computation``
-    is True and the topology-grouped vmap Hessian path is exercised.
+    is True and the per-case JIT Hessian path is exercised.
     """
 
     def test_two_water_freq_batching_parity(self) -> None:
-        """Two water molecules (same topology) — vmapped Hessian matches sequential."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """Two water molecules (same topology) — per-case JIT Hessian matches Python executor."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -857,25 +851,24 @@ class TestJaxLossTopologyBatching:
             reference=ref,
         )
 
-        # Batched JaxLoss (exercises vmap path — same topology, 2 molecules)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, molecules, ff, sessions=obj.jax_sessions(spec))
+        # Per-case JaxObjectiveExecutor (same topology, 2 molecules)
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         assert jax_score > 0, "Frequency loss should be nonzero"
         np.testing.assert_allclose(jax_score, python_score, rtol=1e-6)
 
-        # Gradient should propagate through vmapped Hessian path
+        # Gradient should propagate through per-case Hessian path
         _, grad = jax_loss.loss_and_grad(params)
         assert grad.shape == params.shape
         assert np.all(np.isfinite(grad))
 
     def test_mixed_topology_freq_parity(self) -> None:
-        """H₂ + 2× water: singleton and multi-molecule topology groups."""
-        from q2mm.optimizers.jaxloss import JaxLoss
+        """H₂ + 2× water: mixed topologies use per-case compiled fragments."""
         from q2mm.models.observations import ObservationSet
 
         backend = load_backend("jax")
@@ -919,7 +912,7 @@ class TestJaxLossTopologyBatching:
         real_h2 = [i for i, f in enumerate(mm_h2) if f > 50.0]
         for idx in real_h2[:1]:
             ref = ref.with_frequency(mm_h2[idx] * 1.05, data_idx=idx, weight=1.0, case_id="0")
-        # Water 1 + 2 — same topology group (vmapped)
+        # Water 1 + 2 — same topology, separate per-case fragments
         real_w = [i for i, f in enumerate(mm_w1) if f > 50.0]
         for idx in real_w[:3]:
             ref = ref.with_frequency(mm_w1[idx] * 1.05, data_idx=idx, weight=1.0, case_id="1")
@@ -932,23 +925,22 @@ class TestJaxLossTopologyBatching:
             molecules=molecules,
             reference=ref,
         )
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, molecules, ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
-        python_score = obj(params)
-        jax_score = jax_loss(params)
+        python_score = obj.value(params)
+        jax_score = jax_loss.value(params)
 
         assert jax_score > 0, "Frequency loss should be nonzero"
         np.testing.assert_allclose(jax_score, python_score, rtol=1e-6)
 
 
-class TestJaxLossNaNProtection:
+class TestJaxObjectiveExecutorNaNProtection:
     """Tests for NaN/Inf protection in loss_and_grad."""
 
     def test_nan_returns_sentinel(self) -> None:
         """When a per-molecule function returns NaN, loss_and_grad returns (1e30, zeros)."""
-        from q2mm.optimizers.jaxloss import JaxLoss
         from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74)
@@ -958,8 +950,8 @@ class TestJaxLossNaNProtection:
         ref = ref.with_bond_length(value=0.74, case_id="0", atom_indices=(0, 1), weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, backend, [mol], ff, sessions=obj.jax_sessions(spec))
+        spec = obj.plan
+        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
         params = _params(ff)
 
@@ -969,10 +961,8 @@ class TestJaxLossNaNProtection:
         nan_val = jnp.float64(float("nan"))
         nan_grad = jnp.full_like(jnp.array(params), float("nan"))
 
-        orig_nongeom = jax_loss._compiled_nongeom_vag_fns
-        orig_geom = jax_loss._compiled_geom_vag_fns
-        jax_loss._compiled_nongeom_vag_fns = [lambda p: (nan_val, nan_grad)]
-        jax_loss._compiled_geom_vag_fns = []
+        orig_nongeom = jax_loss._compiled_vag_fns
+        jax_loss._compiled_vag_fns = [lambda p: (nan_val, nan_grad)]
 
         loss, grad = jax_loss.loss_and_grad(params)
 
@@ -980,5 +970,4 @@ class TestJaxLossNaNProtection:
         assert np.all(grad == 0.0), "Gradient should be zeros on NaN"
 
         # Restore
-        jax_loss._compiled_nongeom_vag_fns = orig_nongeom
-        jax_loss._compiled_geom_vag_fns = orig_geom
+        jax_loss._compiled_vag_fns = orig_nongeom

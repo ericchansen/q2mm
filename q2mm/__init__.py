@@ -38,8 +38,9 @@ from q2mm.benchmark_runner import (  # noqa: E402
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField  # noqa: E402
 from q2mm.models.molecule import Molecule  # noqa: E402
 from q2mm.models.observations import ObservationSet  # noqa: E402
+from q2mm.models.results import OptimizationResult  # noqa: E402
 from q2mm.models.seminario import qfuerza_fresh, qfuerza_into  # noqa: E402
-from q2mm.optimizers.objective import ObjectiveFunction  # noqa: E402
+from q2mm.objectives import ObjectivePlan, PythonObjectiveExecutor  # noqa: E402
 
 __all__ = [
     "AngleParam",
@@ -48,8 +49,10 @@ __all__ = [
     "BenchmarkRunResult",
     "BondParam",
     "ForceField",
-    "ObjectiveFunction",
+    "ObjectivePlan",
     "ObservationSet",
+    "OptimizationResult",
+    "PythonObjectiveExecutor",
     "Molecule",
     "qfuerza_fresh",
     "qfuerza_into",

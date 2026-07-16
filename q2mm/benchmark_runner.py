@@ -34,7 +34,6 @@ import shlex
 import subprocess
 import sys
 import time
-from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -81,16 +80,16 @@ class BenchmarkRunResult:
         final_ff: Force field after the workflow completes.  Same as
             *initial_ff* when ``skip_optimization=True``.
         skipped: ``True`` when no optimization ran (user opt-out, ratio
-            check, or JaxLoss divergence).
+            check, or executor divergence).
         skip_reason: Free-form string describing why optimization was
             skipped; ``None`` when an optimization ran.
         summary: Strict-JSON-safe dict matching the
             ``validation_results.json`` schema documented in
             :mod:`scripts.benchmark`.  Keys include
-            ``initial_obj_score``, ``initial_jaxloss``, ``ratio*``,
-            ``seminario`` (per-category metrics), and — when
-            optimization ran — ``final_obj_score``, ``optimized``,
-            ``improvement_pct``, ``n_iterations``, etc.
+            ``initial_obj_score``, ``initial_jax_score``,
+            ``executor_ratio*``, ``seminario`` (per-category metrics),
+            and — when optimization ran — ``final_obj_score``,
+            ``optimized``, ``improvement_pct``, ``n_iterations``, etc.
         paper: Strict-JSON-safe dict matching the ``paper_metrics.json``
             schema — Seminario and (when run) optimized per-category
             stats with embedded objective scores and ref counts.
@@ -169,7 +168,7 @@ def build_provenance(
         generator: Identifier of the caller (e.g. ``"scripts/benchmark.py"``
             or ``"q2mm.benchmark()"``).
         settings: Caller-specific knobs to embed alongside git/device
-            info (workflow name, optimizer config, ratio_tol, etc.).
+            info (workflow name, optimizer config, executor_ratio_tol, etc.).
 
     """
     return {
@@ -212,28 +211,15 @@ def _category_stats(ref_values: np.ndarray, calc_values: np.ndarray) -> dict[str
     return {"n_refs": n, "r2": r2, "rmsd": rmsd, "mae": mae}
 
 
-def per_category_metrics(obj: Any, ff: Any) -> dict[str, dict[str, float]]:
-    """Compute per-category R²/RMSD/MAE by inverting residuals through weights.
+def per_category_metrics(evaluator: Any, full_vector: Any) -> dict[str, dict[str, float]]:
+    """Compute per-category R²/RMSD/MAE from an evaluator's :meth:`evaluate`.
 
-    ``ObjectiveFunction._compute_residuals(ff)`` returns ``w_i * (ref - calc)``
-    for every reference value in order.  We bucket by ``ref.kind``, undo the
-    weight to recover ``calc``, and compute statistics on the raw values.
+    Buckets calculated-vs-reference pairs by observation kind (skipping
+    zero-weight references) using the shared metrics implementation.
     """
-    residuals = obj._compute_residuals(obj.layout.vector(ff))  # noqa: SLF001 — direct API for diagnostics
-    buckets: dict[str, list[tuple[float, float]]] = defaultdict(list)
-    for ref, weighted in zip(obj.reference.values, residuals, strict=True):
-        if ref.weight == 0.0:
-            continue
-        raw_residual = float(weighted) / float(ref.weight)
-        calc_value = float(ref.value) - raw_residual
-        buckets[ref.kind].append((float(ref.value), calc_value))
+    from q2mm.objectives.metrics import category_metrics as _category_metrics
 
-    out: dict[str, dict[str, float]] = {}
-    for kind, pairs in buckets.items():
-        ref_arr = np.array([p[0] for p in pairs])
-        calc_arr = np.array([p[1] for p in pairs])
-        out[kind] = _category_stats(ref_arr, calc_arr)
-    return out
+    return _category_metrics(evaluator.plan, evaluator.evaluate(full_vector))
 
 
 # ---------------------------------------------------------------------------
@@ -281,31 +267,35 @@ def write_strict_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def classify_ratio(ratio: float, tol: float | None) -> dict[str, Any]:
-    """Encode the JaxLoss/ObjFun ratio state as ``{ratio, ratio_status, ratio_passes}``."""
+    """Encode the JAX-executor / objective-score ratio state.
+
+    Returns ``{executor_ratio, executor_ratio_status, executor_ratio_passes}``.
+    """
     if not math.isfinite(ratio):
         return {
-            "ratio": None,
-            "ratio_status": "diverged" if math.isinf(ratio) else "nan",
-            "ratio_passes": False,
+            "executor_ratio": None,
+            "executor_ratio_status": "diverged" if math.isinf(ratio) else "nan",
+            "executor_ratio_passes": False,
         }
     if tol is None:
-        return {"ratio": ratio, "ratio_status": "ok_bypassed", "ratio_passes": True}
+        return {"executor_ratio": ratio, "executor_ratio_status": "ok_bypassed", "executor_ratio_passes": True}
     passes = (1.0 - tol) <= ratio <= (1.0 + tol)
-    return {"ratio": ratio, "ratio_status": "ok" if passes else "out_of_band", "ratio_passes": passes}
+    return {
+        "executor_ratio": ratio,
+        "executor_ratio_status": "ok" if passes else "out_of_band",
+        "executor_ratio_passes": passes,
+    }
 
 
-def _initial_jaxloss(obj: Any) -> float:
-    """Compute the JaxLoss surrogate at the current params, ``inf`` on failure."""
+def _initial_jax_value(plan: Any, backend: Any, base_ff: Any) -> float:
+    """Compute the JAX-executor objective at the baseline, ``inf`` on failure."""
     from q2mm.backends.mm.jax_engine import JaxBackend
-    from q2mm.optimizers.jaxloss import JaxLoss
+    from q2mm.objectives.jax import JaxObjectiveExecutor
 
-    if not isinstance(obj.backend, JaxBackend):
+    if not isinstance(backend, JaxBackend):
         return float("inf")
-    spec = obj.to_jax_spec()
-    jl = JaxLoss(spec, obj.backend, obj.molecules, obj.forcefield, sessions=obj.jax_sessions(spec))
-    x = obj.layout.vector(obj.forcefield)
-    val_jax, _ = jl.value_and_grad_jax(x)
-    val = float(val_jax)
+    executor = JaxObjectiveExecutor(plan, backend, base_ff)
+    val = float(executor.value(plan.active_space.baseline))
     if not math.isfinite(val):
         return float("inf")
     return val
@@ -394,7 +384,7 @@ def run_benchmark(
     workflow: str | Workflow = "method-e2",
     starting_point: str = "qfuerza",
     qfuerza_replace_with: float = 1.0,
-    ratio_tol: float | None = None,
+    executor_ratio_tol: float | None = None,
     maxiter: int = 500,
     ftol: float = 1e-8,
     fc_fraction: float | None = None,
@@ -420,10 +410,10 @@ def run_benchmark(
         qfuerza_replace_with: Forwarded to ``load_system`` —
             replacement value for the negative TS-Hessian eigenvalue
             during QFUERZA starting-FF construction.
-        ratio_tol: JaxLoss/ObjFun ratio tolerance for the safety gate.
-            ``None`` disables the gate (treat as always-passing).
-            Use ``None`` for all 5 publication TS systems where the
-            ratio sits in ``[0.1, 0.4]``.
+        executor_ratio_tol: JAX-executor / objective-score ratio tolerance
+            for the safety gate.  ``None`` disables the gate (treat as
+            always-passing).  Use ``None`` for all 5 publication TS systems
+            where the ratio sits in ``[0.1, 0.4]``.
         maxiter: ``scipy.optimize`` max iterations.
         ftol: ``L-BFGS-B`` function-value convergence tolerance.
         fc_fraction: Fractional bound width for force-constant params
@@ -447,8 +437,10 @@ def run_benchmark(
     """
     from q2mm.backends.mm.jax_engine import JaxBackend
     from q2mm.benchmarks.systems import SYSTEM_KEYS, load_system
-    from q2mm.optimizers.objective import ObjectiveFunction
+    from q2mm.objectives.plan import ObjectivePlan
+    from q2mm.objectives.python import PythonObjectiveExecutor
     from q2mm.optimizers.scipy_opt import ScipyOptimizer
+    from q2mm.workflows.base import make_evaluator_factory
 
     if system_key not in SYSTEM_KEYS:
         raise ValueError(f"Unknown system {system_key!r}.  Available: {sorted(SYSTEM_KEYS)}")
@@ -457,10 +449,6 @@ def run_benchmark(
 
     logger.info("[%s] loading (starting_point=%s)", system_key, starting_point)
     backend = JaxBackend()
-    # CH3F/CH3F-SN2 support both forms and therefore require an explicit
-    # choice. This runner always uses JAX; preserving its former unset-form
-    # behavior means selecting harmonic here. Published systems resolve
-    # their MM3 form from the source force field.
     load_kwargs: dict[str, Any] = {
         "backend": backend,
         "starting_point": starting_point,
@@ -474,17 +462,19 @@ def run_benchmark(
     layout = problem.layout
     molecules = list(problem.molecules)
 
-    # ---- Seminario fit quality at the starting FF -----------------------
-    obj_initial = ObjectiveFunction(
-        initial_ff, backend, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
-    )
-    initial_score = float(obj_initial(layout.vector(initial_ff)))
-    seminario_categories = per_category_metrics(obj_initial, initial_ff)
+    plan = ObjectivePlan.from_problem(problem)
 
-    # ---- JaxLoss ratio gate ---------------------------------------------
-    initial_jaxloss = _initial_jaxloss(obj_initial)
-    ratio = initial_jaxloss / initial_score if initial_score > 0 else float("nan")
-    ratio_info = classify_ratio(ratio, ratio_tol)
+    # ---- Seminario fit quality at the starting FF -----------------------
+    # The "real" objective score uses the general Python executor (typed
+    # backend contract) — this is the objective-executor score of record.
+    obj_initial = PythonObjectiveExecutor(plan, backend, initial_ff)
+    initial_score = float(obj_initial.value(plan.active_space.baseline))
+    seminario_categories = per_category_metrics(obj_initial, plan.active_space.baseline)
+
+    # ---- JAX-executor ratio gate ----------------------------------------
+    initial_jax_score = _initial_jax_value(plan, backend, initial_ff)
+    ratio = initial_jax_score / initial_score if initial_score > 0 else float("nan")
+    ratio_info = classify_ratio(ratio, executor_ratio_tol)
 
     n_active = problem.active_space.n_active
     summary: dict[str, Any] = {
@@ -495,7 +485,7 @@ def run_benchmark(
         "starting_point": starting_point,
         "starting_point_audit": benchmark_case.metadata.get("starting_point_audit"),
         "initial_obj_score": initial_score,
-        "initial_jaxloss": initial_jaxloss,
+        "initial_jax_score": initial_jax_score,
         **ratio_info,
         "seminario": seminario_categories,
     }
@@ -511,8 +501,10 @@ def run_benchmark(
     skip_reason: str | None = None
     if skip_optimization:
         skip_reason = "user_requested"
-    elif not ratio_info["ratio_passes"] and ratio_tol is not None:
-        skip_reason = "ratio_check_failed" if ratio_info["ratio_status"] == "out_of_band" else "jaxloss_diverged"
+    elif not ratio_info["executor_ratio_passes"] and executor_ratio_tol is not None:
+        skip_reason = (
+            "ratio_check_failed" if ratio_info["executor_ratio_status"] == "out_of_band" else "executor_diverged"
+        )
 
     if skip_reason is not None:
         summary["skipped"] = True
@@ -542,31 +534,29 @@ def run_benchmark(
         maxiter=maxiter,
         ftol=ftol,
         verbose=True,
-        jac="auto",
-        ratio_tol=ratio_tol,
         fc_fraction=fc_fraction,
         eq_fraction=eq_fraction,
     )
+    # The JAX executor supplies per-case-JIT analytical gradients.
+    make_evaluator = make_evaluator_factory(backend, initial_ff, executor="jax")
     t0 = time.perf_counter()
-    wf_result = workflow_obj.run(problem, backend, optimizer, n_evals=n_evals)
+    wf_result = workflow_obj.run(problem, make_evaluator, optimizer, n_evals=n_evals)
     elapsed = time.perf_counter() - t0
 
-    final_ff = wf_result.final_ff
+    final_ff = layout.replace(initial_ff, wf_result.final_params)
 
-    # Real ObjectiveFunction score at the final FF — measured against
-    # the ORIGINAL reference data (not any modified-Hessian Round-2
-    # reference), so the improvement number is comparable across
-    # workflows and to historical baselines.
-    obj_real_at_final = ObjectiveFunction(
-        final_ff, backend, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout
-    )
-    final_obj_score = float(obj_real_at_final(layout.vector(final_ff)))
-    optimized_categories = per_category_metrics(obj_real_at_final, final_ff)
+    # Real objective score at the final FF — measured against the ORIGINAL
+    # reference data via the Python executor, so the improvement number is
+    # comparable across workflows and to historical baselines.
+    final_vector = np.asarray(wf_result.final_params, dtype=float)
+    obj_real_at_final = PythonObjectiveExecutor(plan, backend, final_ff)
+    final_obj_score = float(obj_real_at_final.value(final_vector))
+    optimized_categories = per_category_metrics(obj_real_at_final, final_vector)
 
     last_stage = wf_result.stages[-1]
     score_summary = (
-        _score_interval_summary(wf_result.initial_obj_samples, wf_result.final_obj_samples)
-        if (wf_result.initial_obj_samples and wf_result.final_obj_samples)
+        _score_interval_summary(list(wf_result.initial_samples), list(wf_result.final_samples))
+        if (wf_result.initial_samples and wf_result.final_samples)
         else {}
     )
 
@@ -580,7 +570,7 @@ def run_benchmark(
             "n_evaluations": int(sum(stg.n_evaluations for stg in wf_result.stages)),
             "converged": bool(last_stage.converged),
             "message": str(last_stage.message),
-            "jac_mode": str(last_stage.jac_mode),
+            "jac_mode": str(last_stage.gradient_mode),
             "optimized_categories": optimized_categories,
             "opt_time_s": elapsed,
             "improvement_pct": improvement_pct,
@@ -608,7 +598,7 @@ def run_benchmark(
 
 
 def _stage_to_dict(stage: Any) -> dict[str, Any]:
-    """JSON-safe StageResult serialisation (matches WorkflowResult attrs)."""
+    """JSON-safe StageRecord serialisation (mirrors the canonical result)."""
     return {
         "name": stage.name,
         "initial_score": float(stage.initial_score),
@@ -617,7 +607,7 @@ def _stage_to_dict(stage: Any) -> dict[str, Any]:
         "n_evaluations": int(stage.n_evaluations),
         "converged": bool(stage.converged),
         "message": str(stage.message),
-        "jac_mode": str(stage.jac_mode),
+        "jac_mode": str(stage.gradient_mode),
         "elapsed_s": float(stage.elapsed_s),
         "locked_param_indices": list(stage.locked_param_indices),
         "notes": dict(stage.notes),
@@ -715,7 +705,7 @@ def run_benchmark_batch(
             logger.error(
                 "BATCH FAILURE: all %d optimized system(s) exited at n_iterations<=2 "
                 "with |improvement_pct|<1%%. The optimizer did NOT optimize. "
-                "Inspect ratio_tol, ftol, bounds, and starting force field. Systems: %s",
+                "Inspect executor_ratio_tol, ftol, bounds, and starting force field. Systems: %s",
                 len(optimized),
                 outcome.no_progress_systems,
             )

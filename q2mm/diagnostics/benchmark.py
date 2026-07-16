@@ -27,7 +27,6 @@ if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
     from q2mm.models.molecule import Molecule
     from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-    from q2mm.optimizers.objective import ObjectiveFunction
 
 
 @functools.lru_cache(maxsize=1)
@@ -117,31 +116,19 @@ class _OptResult:
 
 def _run_optimizer(
     opt: Any,
-    obj: ObjectiveFunction,
+    evaluator: Any,
     space: ActiveParameterSpace,
     *,
     method: str,
     extra: dict[str, Any] | None = None,
 ) -> _OptResult:
-    """Run an optimizer and extract result fields into a uniform struct.
-
-    Args:
-        opt: Optimizer with an ``.optimize(obj, space)`` method.
-        obj: Objective function.
-        space: Active/frozen projection over ``obj.layout``.
-            ``obj.forcefield`` is never mutated by ``opt.optimize`` —
-            the optimized force field must be materialized from
-            ``result.final_params`` (see :attr:`_OptResult.final_params`).
-        method: Method name for gradient resolution.
-        extra: Additional metadata to include in the result.
-
-    """
+    """Run an optimizer and extract result fields into a uniform struct."""
     t0 = time.perf_counter()
-    opt_result = opt.optimize(obj, space)
+    opt_result = opt.optimize(evaluator, space)
     elapsed = time.perf_counter() - t0
 
-    jac_mode = opt_result.jac_mode
-    eps = opt_result.eps
+    jac_mode = opt_result.gradient_mode
+    eps = opt_result.fd_step
 
     return _OptResult(
         elapsed=elapsed,
@@ -152,49 +139,53 @@ def _run_optimizer(
         message=opt_result.message,
         jac_mode=jac_mode,
         eps=eps,
-        gradients=_resolve_gradients(jac_mode, obj, method=method),
+        gradients=_resolve_gradients(evaluator, method=method),
         extra=extra or {},
         final_params=opt_result.final_params,
     )
 
 
 def _resolve_gradients(
-    jac_mode: str | None,
-    objective: ObjectiveFunction,
+    evaluator: Any,
     method: str = "L-BFGS-B",
 ) -> dict[str, str]:
-    """Determine per-evaluator gradient mode from jac config and objective.
+    """Determine per-category gradient source from the evaluator's declared mode.
 
-    Queries ``objective.per_evaluator_gradient_support()`` to determine
-    which evaluator categories support analytical gradients on the
-    objective's engine.  Returns a dict mapping each active category to
-    its gradient source: ``"analytical"``, ``"finite-diff"``, or ``"n/a"``.
-
-    Args:
-        jac_mode: Jacobian strategy (``"auto"``, ``"analytical"``, or
-            ``None`` for scipy finite-differences).
-        objective: The objective function whose evaluators are queried.
-        method: Optimizer method name.  Derivative-free methods
-            (``"Nelder-Mead"``, ``"Powell"``) get ``"n/a"`` for all.
-
+    Derivative-free methods report ``"n/a"``; a ``gradient_mode=none``
+    evaluator reports ``"finite-diff"`` (SciPy internal FD); otherwise the
+    evaluator's declared analytical/finite-difference mode applies to every
+    active category.
     """
+    from q2mm.objectives.protocols import GradientMode
+
     _DERIVATIVE_FREE = {"Nelder-Mead", "Powell"}
-    support = objective.per_evaluator_gradient_support()
-
+    categories = sorted(evaluator.plan.categories)
     if method in _DERIVATIVE_FREE:
-        return {cat: "n/a" for cat in support}
+        return {cat: "n/a" for cat in categories}
+    mode = evaluator.gradient_mode
+    if mode is GradientMode.NONE:
+        return {cat: "finite-diff" for cat in categories}
+    label = "analytical" if mode is GradientMode.ANALYTICAL else "finite-diff"
+    return {cat: label for cat in categories}
 
-    # jac_mode=None means scipy computes FD gradients internally
-    if jac_mode is None:
-        return {cat: "finite-diff" for cat in support}
 
-    result: dict[str, str] = {}
-    for cat, has_analytical in support.items():
-        if jac_mode in ("auto", "analytical", "jax_loss") and has_analytical:
-            result[cat] = "analytical"
-        else:
-            result[cat] = "finite-diff"
-    return result
+def _build_diagnostic_evaluator(plan: Any, backend: Any, base_ff: Any, *, want_fd: bool) -> Any:
+    """Select the executor for the diagnostics harness.
+
+    ``want_fd`` (an explicit ``gradient="finite_difference"`` request) or a
+    non-JAX backend selects the Python executor with SciPy internal finite
+    differences; otherwise the JAX executor's per-case-JIT analytical
+    gradients are used.
+    """
+    from q2mm.backends.mm.jax_engine import JaxBackend
+
+    if want_fd or not isinstance(backend, JaxBackend):
+        from q2mm.objectives.python import PythonObjectiveExecutor
+
+        return PythonObjectiveExecutor(plan, backend, base_ff)
+    from q2mm.objectives.jax import JaxObjectiveExecutor
+
+    return JaxObjectiveExecutor(plan, backend, base_ff)
 
 
 # ── Engine display name → (engine_key, ff_label) mapping ────────────
@@ -597,7 +588,7 @@ def run_combo(
         BenchmarkResult with all available metrics.
 
     """
-    from q2mm.optimizers.objective import ObjectiveFunction
+    from q2mm.objectives.plan import ObjectivePlan
 
     if optimizer_kwargs is None:
         optimizer_kwargs = {}
@@ -662,16 +653,25 @@ def run_combo(
             obj_kwargs[_k] = optimizer_kwargs[_k]
 
     # Auto-regularize unbounded JaxOpt L-BFGS to prevent parameter drift.
-    # jaxopt:lbfgs has no bounds enforcement; without regularization,
-    # equilibrium distances can drift to physically impossible values.
     if optimizer_method == "jaxopt:lbfgs" and "regularization" not in obj_kwargs:
         obj_kwargs["regularization"] = 0.01
 
     optimizer_kwargs = {k: v for k, v in optimizer_kwargs.items() if k not in _obj_only_keys}
-    obj = ObjectiveFunction(
-        ff, backend, molecules, problem.observations, case_ids=list(problem.case_ids), layout=layout, **obj_kwargs
-    )
-    initial_score = obj(seminario_params)
+
+    # Explicit gradient selection (no legacy compatibility layer): a
+    # ``gradient="analytical"`` request selects the JAX executor's
+    # per-case-JIT analytical gradients; ``"finite_difference"`` (the
+    # default) selects the Python executor with SciPy internal finite
+    # differences.  The key is consumed here and never reaches the optimizer.
+    _gradient = optimizer_kwargs.pop("gradient", "finite_difference")
+    if _gradient not in ("analytical", "finite_difference"):
+        raise ValueError(f"gradient must be 'analytical' or 'finite_difference', got {_gradient!r}.")
+    _want_fd = _gradient == "finite_difference"
+
+    plan = ObjectivePlan.from_problem(problem, **obj_kwargs)
+    evaluator = _build_diagnostic_evaluator(plan, backend, ff, want_fd=_want_fd)
+    obj = evaluator  # dispatch below drives the evaluator
+    initial_score = evaluator.value(seminario_params)
 
     result.seminario = {
         "rmsd": initial_rmsd,
@@ -686,58 +686,40 @@ def run_combo(
         from q2mm.optimizers.cycling import OptimizationLoop
 
         loop_kwargs: dict[str, Any] = {
-            "objective": obj,
-            "space": space,
             "max_params": optimizer_kwargs.get("max_params", 3),
             "convergence": optimizer_kwargs.get("convergence", 0.01),
             "max_cycles": optimizer_kwargs.get("max_cycles", 10),
             "verbose": False,
         }
-        # Only override per-pass maxiter if caller explicitly provides them;
-        # otherwise let OptimizationLoop use its own defaults (200).
         if "full_maxiter" in optimizer_kwargs:
             loop_kwargs["full_maxiter"] = optimizer_kwargs["full_maxiter"]
         if "simp_maxiter" in optimizer_kwargs:
             loop_kwargs["simp_maxiter"] = optimizer_kwargs["simp_maxiter"]
-        # Forward gradient settings to the full-space pass
-        loop_kwargs["full_jac"] = optimizer_kwargs.get("full_jac")
         if "eps" in optimizer_kwargs:
             loop_kwargs["eps"] = optimizer_kwargs["eps"]
-        # Forward full_method if specified (e.g. "multi:L-BFGS-B")
         if "full_method" in optimizer_kwargs:
             loop_kwargs["full_method"] = optimizer_kwargs["full_method"]
 
-        loop = OptimizationLoop(**loop_kwargs)
+        loop = OptimizationLoop(evaluator, space, **loop_kwargs)
         t0 = time.perf_counter()
         loop_result = loop.run()
         opt_elapsed = time.perf_counter() - t0
 
-        n_eval = loop_result.n_eval
+        n_eval = loop_result.n_evaluations
         converged = loop_result.success
         opt_initial_score = loop_result.initial_score
         opt_final_score = loop_result.final_score
         opt_message = loop_result.message
         final_params = loop_result.final_params
         extra_opt_data = {
-            "n_cycles": loop_result.n_cycles,
-            "cycle_scores": loop_result.cycle_scores,
+            "n_cycles": loop_result.n_iterations,
+            "cycle_scores": list(loop_result.history),
         }
 
-        # Cycling jac metadata: full-space pass uses full_jac, simplex is
-        # always derivative-free.
-        jac_mode = loop.full_jac
-        uses_scipy_fd = True
-        if loop.full_jac == "analytical":
-            uses_scipy_fd = False
-        elif loop.full_jac == "auto":
-            from q2mm.backends.contracts import Capability
-
-            if obj.backend.info.supports(Capability.PARAMETER_GRADIENT):
-                uses_scipy_fd = False
+        jac_mode = evaluator.gradient_mode.value
+        uses_scipy_fd = jac_mode == "none"
         eps = loop.eps if uses_scipy_fd else None
-
-        # Per-evaluator gradient resolution
-        gradients = _resolve_gradients(jac_mode, obj, method=loop.full_method)
+        gradients = _resolve_gradients(evaluator, method=loop.full_method)
     elif optimizer_method.startswith("optax:"):
         from q2mm.optimizers.optax import OptaxOptimizer
 
@@ -843,7 +825,6 @@ def run_combo(
 
         bh_kwargs: dict[str, Any] = {
             "verbose": False,
-            "jac": "auto",
             "local_maxiter": maxiter if maxiter is not None else 200,
         }
         # Parse optional local method suffix: "basinhopping:SLSQP" → local_method="SLSQP"
@@ -852,8 +833,6 @@ def run_combo(
         for key in ("niter", "T", "stepsize", "local_method", "local_maxiter", "seed"):
             if key in optimizer_kwargs:
                 bh_kwargs[key] = optimizer_kwargs[key]
-        if "jac" in optimizer_kwargs:
-            bh_kwargs["jac"] = optimizer_kwargs["jac"]
 
         opt = BasinHoppingOptimizer(**bh_kwargs)
 
@@ -884,7 +863,6 @@ def run_combo(
             "method": inner_method,
             "maxiter": maxiter if maxiter is not None else 500,
             "verbose": False,
-            "jac": "auto",
         }
         inner_opt = ScipyOptimizer(**inner_kwargs)
         multi_kwargs: dict[str, Any] = {
@@ -922,7 +900,6 @@ def run_combo(
             "method": optimizer_method,
             "maxiter": maxiter if maxiter is not None else 500,
             "verbose": False,
-            "jac": "auto",
         }
         opt_kwargs.update(optimizer_kwargs)
         opt = ScipyOptimizer(**opt_kwargs)

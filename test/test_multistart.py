@@ -1,9 +1,8 @@
 """Tests for MultiStartOptimizer."""
 
 from __future__ import annotations
-from test.backend_fixtures import mock_backend_info
 
-from dataclasses import dataclass
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -11,83 +10,71 @@ import pytest
 
 pytest.importorskip("scipy")
 
+from q2mm.models.forcefield import ForceField, FunctionalForm, TorsionParam
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.models.results import OptimizationResult
+from q2mm.objectives._base import BaseObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.multistart import MultiStartOptimizer
-from q2mm.optimizers.scipy_opt import OptimizationResult
+from test._shared import make_diatomic
 
 
-@dataclass(frozen=True)
-class MockForceField:
-    """Minimal immutable force field for optimizer tests."""
-
-    params: tuple[float, ...]
-
-
-class MockLayout:
-    """Minimal layout exposing vector/replace over MockForceField."""
-
-    def __init__(self, n_params: int) -> None:
-        self.n_params = n_params
-
-    def __len__(self) -> int:
-        return self.n_params
-
-    def vector(self, forcefield: MockForceField) -> np.ndarray:
-        return np.asarray(forcefield.params, dtype=np.float64)
-
-    def replace(self, forcefield: MockForceField, vector: np.ndarray) -> MockForceField:
-        values = np.asarray(vector, dtype=np.float64)
-        return MockForceField(tuple(values.tolist()))
+def _synthetic_forcefield(values: np.ndarray) -> ForceField:
+    return ForceField(
+        name="synthetic",
+        torsions=tuple(
+            TorsionParam(
+                elements=("C", "C", "C", "C"),
+                periodicity=i + 1,
+                force_constant=float(value),
+                env_id=f"p{i}",
+            )
+            for i, value in enumerate(values)
+        ),
+        functional_form=FunctionalForm.HARMONIC,
+    )
 
 
-class MockSpace:
-    """Active/full parameter projection used by optimizer tests."""
-
-    def __init__(
-        self,
-        baseline: np.ndarray,
-        bounds: list[tuple[float, float]] | None = None,
-        active_indices: np.ndarray | None = None,
-    ) -> None:
-        self.baseline = np.asarray(baseline, dtype=np.float64).copy()
-        self.active_indices = (
-            np.arange(self.baseline.size, dtype=int)
-            if active_indices is None
-            else np.asarray(active_indices, dtype=int)
+def _synthetic_layout(forcefield: ForceField, bounds: list[tuple[float, float]] | None) -> ParameterLayout:
+    layout = ParameterLayout.from_force_field(forcefield)
+    if bounds is None:
+        return layout
+    return ParameterLayout(
+        slots=tuple(
+            replace(slot, bounds=(float(lo), float(hi))) for slot, (lo, hi) in zip(layout.slots, bounds, strict=True)
         )
-        full_bounds = bounds if bounds is not None else [(-100.0, 100.0)] * self.baseline.size
-        self._full_bounds = np.asarray(full_bounds, dtype=np.float64)
-
-    @property
-    def n_active(self) -> int:
-        return int(self.active_indices.size)
-
-    @property
-    def n_full(self) -> int:
-        return int(self.baseline.size)
-
-    @property
-    def bounds(self) -> np.ndarray:
-        return self._full_bounds[self.active_indices]
-
-    def pack(self, full_vector: np.ndarray) -> np.ndarray:
-        full = np.asarray(full_vector, dtype=np.float64)
-        return full[self.active_indices].copy()
-
-    def expand(self, active_vector: np.ndarray, *, base: np.ndarray | None = None) -> np.ndarray:
-        full = self.baseline.copy() if base is None else np.asarray(base, dtype=np.float64).copy()
-        full[self.active_indices] = np.asarray(active_vector, dtype=np.float64)
-        return full
-
-    def with_baseline(self, vector: np.ndarray) -> MockSpace:
-        return MockSpace(
-            baseline=np.asarray(vector, dtype=np.float64),
-            bounds=self._full_bounds.tolist(),
-            active_indices=self.active_indices.copy(),
-        )
+    )
 
 
-class MockObjective:
-    """Quadratic objective: f(x) = sum((x - target)^2)."""
+def _synthetic_plan(
+    initial: np.ndarray,
+    bounds: list[tuple[float, float]] | None = None,
+    active_indices: np.ndarray | None = None,
+) -> tuple[ForceField, ActiveParameterSpace, ObjectivePlan]:
+    baseline = np.asarray(initial, dtype=np.float64)
+    ff = _synthetic_forcefield(baseline)
+    layout = _synthetic_layout(ff, bounds)
+    space = ActiveParameterSpace(
+        layout=layout,
+        baseline=baseline,
+        active_indices=np.arange(baseline.size, dtype=int) if active_indices is None else active_indices,
+    )
+    plan = ObjectivePlan(
+        case_ids=("0",),
+        molecules=(make_diatomic(),),
+        stationary_points=(StationaryPointKind.GROUND_STATE,),
+        observations=ObservationSet(),
+        layout=layout,
+        active_space=space,
+    )
+    return ff, space, plan
+
+
+class QuadraticEvaluator(BaseObjectiveExecutor):
+    """Synthetic quadratic evaluator with the new ObjectiveEvaluator protocol."""
 
     def __init__(
         self,
@@ -95,24 +82,24 @@ class MockObjective:
         bounds: list[tuple[float, float]] | None = None,
         initial: np.ndarray | None = None,
     ) -> None:
-        self.target = target.astype(np.float64)
-        baseline = np.zeros_like(self.target) if initial is None else np.asarray(initial, dtype=np.float64)
-        self.forcefield = MockForceField(tuple(baseline.tolist()))
-        self.layout = MockLayout(self.target.size)
-        self.space = MockSpace(baseline, bounds=bounds)
-        self.n_eval = 0
-        self.history: list[float] = []
-        self.backend = MagicMock()
-        self.backend.info = mock_backend_info(param_grad=False)
+        baseline = np.zeros_like(target, dtype=np.float64) if initial is None else np.asarray(initial, dtype=np.float64)
+        self.target = np.asarray(target, dtype=np.float64)
+        self.forcefield, self.space, plan = _synthetic_plan(baseline, bounds)
+        super().__init__(plan)
+        self._gradient_mode = GradientMode.ANALYTICAL
 
-    def __call__(self, x: np.ndarray) -> float:
-        score = float(np.sum((np.asarray(x, dtype=np.float64) - self.target) ** 2))
-        self.n_eval += 1
-        self.history.append(score)
-        return score
+    @property
+    def gradient_mode(self) -> GradientMode:
+        return self._gradient_mode
 
-    def gradient(self, x: np.ndarray) -> np.ndarray:
-        return 2.0 * (np.asarray(x, dtype=np.float64) - self.target)
+    def _total(self, full_vector: np.ndarray) -> float:
+        return float(np.sum((np.asarray(full_vector, dtype=np.float64) - self.target) ** 2))
+
+    def _calculated(self, full_vector: np.ndarray) -> np.ndarray:
+        return np.zeros(0, dtype=np.float64)
+
+    def _data_gradient(self, full_vector: np.ndarray) -> np.ndarray:
+        return 2.0 * (np.asarray(full_vector, dtype=np.float64) - self.target)
 
 
 class StubOptimizer:
@@ -122,11 +109,11 @@ class StubOptimizer:
         self.call_count = 0
         self.start_params: list[np.ndarray] = []
 
-    def optimize(self, objective: MockObjective, space: MockSpace) -> OptimizationResult:
+    def optimize(self, evaluator: QuadraticEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         self.call_count += 1
-        x0 = objective.layout.vector(objective.forcefield).copy()
+        x0 = np.asarray(space.baseline, dtype=np.float64).copy()
         self.start_params.append(x0.copy())
-        score = objective(x0)
+        score = evaluator.value(x0)
         return OptimizationResult(
             success=True,
             message="stub",
@@ -134,10 +121,13 @@ class StubOptimizer:
             final_score=score,
             n_iterations=1,
             n_evaluations=1,
+            n_params=space.n_full,
+            layout_fingerprint=space.layout.fingerprint,
             initial_params=x0,
             final_params=x0,
             history=[score],
             method="stub",
+            gradient_mode=evaluator.gradient_mode.value,
         )
 
 
@@ -146,7 +136,7 @@ class TestMultiStartOptimizer:
 
     def test_runs_n_starts(self) -> None:
         """Should call the inner optimizer n_starts times."""
-        obj = MockObjective(np.array([1.0, 2.0]))
+        obj = QuadraticEvaluator(np.array([1.0, 2.0]))
         inner = StubOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=5, verbose=False, seed=42)
         opt.optimize(obj, obj.space)
@@ -155,7 +145,7 @@ class TestMultiStartOptimizer:
     def test_keeps_best_result(self) -> None:
         """Should return the lowest-scoring run."""
         target = np.array([1.0, 2.0, 3.0])
-        obj = MockObjective(target)
+        obj = QuadraticEvaluator(target)
 
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -166,18 +156,18 @@ class TestMultiStartOptimizer:
 
     def test_first_start_is_original(self) -> None:
         """First start should use original parameters (no perturbation)."""
-        obj = MockObjective(np.array([1.0]))
+        obj = QuadraticEvaluator(np.array([1.0]))
         inner = StubOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=0)
-        original_ff = obj.forcefield
+        original_baseline = obj.space.baseline.copy()
         opt.optimize(obj, obj.space)
         np.testing.assert_array_equal(inner.start_params[0], np.array([0.0]))
-        assert obj.forcefield is original_ff
+        np.testing.assert_array_equal(obj.space.baseline, original_baseline)
 
     def test_perturbation_bounds(self) -> None:
         """Perturbed starts should respect parameter bounds."""
         bounds = [(0.0, 2.0), (0.0, 2.0)]
-        obj = MockObjective(np.array([1.0, 1.0]), bounds=bounds, initial=np.array([1.0, 1.0]))
+        obj = QuadraticEvaluator(np.array([1.0, 1.0]), bounds=bounds, initial=np.array([1.0, 1.0]))
         inner = StubOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=20, perturbation_pct=0.5, verbose=False, seed=42)
         opt.optimize(obj, obj.space)
@@ -188,8 +178,8 @@ class TestMultiStartOptimizer:
     def test_seed_reproducibility(self) -> None:
         """Same seed should produce same result."""
         target = np.array([1.0, 2.0])
-        obj1 = MockObjective(target)
-        obj2 = MockObjective(target)
+        obj1 = QuadraticEvaluator(target)
+        obj2 = QuadraticEvaluator(target)
         inner1 = StubOptimizer()
         inner2 = StubOptimizer()
         r1 = MultiStartOptimizer(inner1, n_starts=3, seed=99, verbose=False).optimize(obj1, obj1.space)
@@ -198,7 +188,7 @@ class TestMultiStartOptimizer:
 
     def test_method_name(self) -> None:
         """Result method should include 'multi-start'."""
-        obj = MockObjective(np.array([1.0]))
+        obj = QuadraticEvaluator(np.array([1.0]))
         inner = StubOptimizer()
         result = MultiStartOptimizer(inner, n_starts=2, verbose=False, seed=0).optimize(obj, obj.space)
         assert "multi-start" in result.method
@@ -206,30 +196,31 @@ class TestMultiStartOptimizer:
     def test_returns_best_params_without_mutating_forcefield(self) -> None:
         """The caller materializes the best force field explicitly."""
         target = np.array([5.0])
-        obj = MockObjective(target)
+        obj = QuadraticEvaluator(target)
 
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         inner = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False)
         opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=42)
-        original_ff = obj.forcefield
+        original_baseline = obj.space.baseline.copy()
         result = opt.optimize(obj, obj.space)
-        assert obj.forcefield is original_ff
-        np.testing.assert_array_equal(obj.layout.vector(obj.forcefield), np.array([0.0]))
-        final_ff = obj.layout.replace(obj.forcefield, result.final_params)
-        np.testing.assert_array_equal(obj.layout.vector(final_ff), result.final_params)
+        # REMOVED (Phase 4): objective is no longer mutated by optimizers.
+        np.testing.assert_array_equal(obj.space.baseline, original_baseline)
+        final_ff = obj.plan.layout.replace(obj.forcefield, result.final_params)
+        np.testing.assert_array_equal(obj.plan.layout.vector(final_ff), result.final_params)
 
     def test_total_eval_count(self) -> None:
-        """n_evaluations should reflect all starts plus initial eval."""
-        obj = MockObjective(np.array([1.0, 2.0]))
+        """Evaluator n_evaluations should reflect all starts plus initial eval."""
+        obj = QuadraticEvaluator(np.array([1.0, 2.0]))
         inner = StubOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=5, verbose=False, seed=42)
         result = opt.optimize(obj, obj.space)
-        assert result.n_evaluations == 6
+        assert len(result.candidates) == 5
+        assert obj.n_evaluations == 6
 
     def test_best_history_returned(self) -> None:
         """History should come from the best run, not the last."""
-        obj = MockObjective(np.array([1.0]))
+        obj = QuadraticEvaluator(np.array([1.0]))
         inner = StubOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=42)
         result = opt.optimize(obj, obj.space)
@@ -243,12 +234,12 @@ class TestMultiStartOptimizer:
             def __init__(self) -> None:
                 self.call_count = 0
 
-            def optimize(self, objective: MockObjective, space: MockSpace) -> OptimizationResult:
+            def optimize(self, evaluator: QuadraticEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
                 self.call_count += 1
                 if self.call_count == 2:
                     raise RuntimeError("Simulated failure")
-                x0 = objective.layout.vector(objective.forcefield).copy()
-                score = objective(x0)
+                x0 = np.asarray(space.baseline, dtype=np.float64).copy()
+                score = evaluator.value(x0)
                 return OptimizationResult(
                     success=True,
                     message="ok",
@@ -256,30 +247,45 @@ class TestMultiStartOptimizer:
                     final_score=score,
                     n_iterations=1,
                     n_evaluations=1,
+                    n_params=space.n_full,
+                    layout_fingerprint=space.layout.fingerprint,
                     initial_params=x0,
                     final_params=x0,
                     history=[score],
                     method="fail-test",
+                    gradient_mode=evaluator.gradient_mode.value,
                 )
 
-        obj = MockObjective(np.array([1.0]))
+        obj = QuadraticEvaluator(np.array([1.0]))
         inner = FailOnSecondOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=0)
         result = opt.optimize(obj, obj.space)
         assert "2/3" in result.message
 
-    def test_all_starts_fail_raises(self) -> None:
-        """Should raise RuntimeError if every start fails."""
+    def test_all_starts_fail_returns_failure_result(self) -> None:
+        """Every start failing returns a canonical failure result (not raises).
+
+        Phase 4: the multi-start optimizer never loses candidate records by
+        raising — it returns ``OptimizationResult(success=False)`` whose
+        candidates capture every failed start.
+        """
 
         class AlwaysFailOptimizer:
-            def optimize(self, objective: MockObjective, space: MockSpace) -> OptimizationResult:
+            def optimize(self, evaluator: QuadraticEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
                 raise RuntimeError("boom")
 
-        obj = MockObjective(np.array([1.0]))
+        obj = QuadraticEvaluator(np.array([1.0]))
         inner = AlwaysFailOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=0)
-        with pytest.raises(RuntimeError, match="All 3 multi-start runs failed"):
-            opt.optimize(obj, obj.space)
+        result = opt.optimize(obj, obj.space)
+        assert result.success is False
+        assert "all 3" in result.message
+        assert result.final_score == float("inf")
+        assert len(result.candidates) == 3
+        assert all(c.status == "failure" for c in result.candidates)
+        # Full-length baseline is returned even when everything failed.
+        assert result.final_params.shape == (obj.plan.n_params,)
+        np.testing.assert_array_equal(result.final_params, obj.space.baseline)
 
     def test_n_starts_zero_raises(self) -> None:
         """n_starts < 1 must raise ValueError."""
@@ -294,7 +300,7 @@ class TestMultiStartOptimizer:
     def test_initial_score_matches_original_params(self) -> None:
         """Initial_score must correspond to x0_original, not a perturbed start."""
         target = np.array([1.0, 2.0])
-        obj = MockObjective(target, initial=np.array([0.0, 0.0]))
+        obj = QuadraticEvaluator(target, initial=np.array([0.0, 0.0]))
 
         inner = StubOptimizer()
         opt = MultiStartOptimizer(inner, n_starts=3, perturbation_pct=0.5, verbose=False, seed=42)
@@ -302,3 +308,104 @@ class TestMultiStartOptimizer:
 
         assert result.initial_score == pytest.approx(5.0, abs=1e-10)
         np.testing.assert_array_equal(result.initial_params, np.array([0.0, 0.0]))
+
+    # -- Failure / nonconvergence semantics --------------------------------
+
+    @staticmethod
+    def _scripted(outcomes: list[tuple[bool, float]]) -> object:
+        """Inner optimizer replaying (success, final_score) per call."""
+
+        class _ScriptedOptimizer:
+            def __init__(self) -> None:
+                self.call = 0
+
+            def optimize(self, evaluator: QuadraticEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
+                success, score = outcomes[self.call]
+                self.call += 1
+                x0 = np.asarray(space.baseline, dtype=float).copy()
+                return OptimizationResult(
+                    success=success,
+                    message="ok" if success else "nonconverged",
+                    initial_score=float(evaluator.value(x0)),
+                    final_score=score,
+                    n_iterations=1,
+                    n_evaluations=1,
+                    n_params=space.n_full,
+                    layout_fingerprint=space.layout.fingerprint,
+                    initial_params=x0,
+                    final_params=x0,
+                    history=[score],
+                    method="scripted",
+                    gradient_mode=evaluator.gradient_mode.value,
+                )
+
+        return _ScriptedOptimizer()
+
+    def test_nonconverged_inner_is_failure_candidate(self) -> None:
+        """A ran-but-nonconverged start is a failure candidate; a converged one wins."""
+        obj = QuadraticEvaluator(np.array([1.0]))
+        # converged 5.0, nonconverged 2.0 (lower!), converged 3.0.
+        inner = self._scripted([(True, 5.0), (False, 2.0), (True, 3.0)])
+        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=1)
+        result = opt.optimize(obj, obj.space)
+        # Converged is preferred even though a nonconverged start scored lower.
+        assert result.success is True
+        assert result.final_score == pytest.approx(3.0)
+        statuses = [c.status for c in result.candidates]
+        assert statuses.count("success") == 2
+        assert statuses.count("failure") == 1
+        # The nonconverged candidate keeps its finite score.
+        failed = next(c for c in result.candidates if c.status == "failure")
+        assert failed.final_score == pytest.approx(2.0)
+
+    def test_all_nonconverged_returns_unsuccessful_best(self) -> None:
+        """All starts ran but none converged -> success=False, best kept."""
+        obj = QuadraticEvaluator(np.array([1.0]))
+        inner = self._scripted([(False, 5.0), (False, 2.0), (False, 3.0)])
+        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=1)
+        result = opt.optimize(obj, obj.space)
+        assert result.success is False
+        assert result.final_score == pytest.approx(2.0)  # best nonconverged
+        assert all(c.status == "failure" for c in result.candidates)
+        assert len(result.candidates) == 3
+
+    def test_best_selection_prefers_lowest_converged(self) -> None:
+        """Among converged starts, the lowest final_score is selected."""
+        obj = QuadraticEvaluator(np.array([1.0]))
+        inner = self._scripted([(True, 5.0), (True, 1.0), (True, 3.0)])
+        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=1)
+        result = opt.optimize(obj, obj.space)
+        assert result.success is True
+        assert result.final_score == pytest.approx(1.0)
+        winner = min(result.candidates, key=lambda c: c.final_score)
+        np.testing.assert_array_equal(result.final_params, winner.final_params)
+
+    def test_candidate_vectors_are_readonly_and_full_length(self) -> None:
+        """Every candidate carries full-length read-only start/final vectors."""
+        obj = QuadraticEvaluator(np.array([1.0, 2.0]))
+        inner = StubOptimizer()
+        opt = MultiStartOptimizer(inner, n_starts=4, verbose=False, seed=7)
+        result = opt.optimize(obj, obj.space)
+        n = obj.plan.n_params
+        assert len(result.candidates) == 4
+        for cand in result.candidates:
+            assert cand.initial_params.shape == (n,)
+            assert cand.final_params.shape == (n,)
+            assert cand.initial_params.flags.writeable is False
+            assert cand.final_params.flags.writeable is False
+            assert cand.index >= 0
+
+    def test_deterministic_candidate_vectors_and_seeds(self) -> None:
+        """Same seed -> identical candidate start/final vectors and seed metadata."""
+        target = np.array([1.0, 2.0])
+        opt_a = MultiStartOptimizer(StubOptimizer(), n_starts=5, perturbation_pct=0.3, verbose=False, seed=99)
+        opt_b = MultiStartOptimizer(StubOptimizer(), n_starts=5, perturbation_pct=0.3, verbose=False, seed=99)
+        obj_a = QuadraticEvaluator(target)
+        obj_b = QuadraticEvaluator(target)
+        r_a = opt_a.optimize(obj_a, obj_a.space)
+        r_b = opt_b.optimize(obj_b, obj_b.space)
+        assert [c.seed for c in r_a.candidates] == [99] * 5
+        for ca, cb in zip(r_a.candidates, r_b.candidates, strict=True):
+            np.testing.assert_array_equal(ca.initial_params, cb.initial_params)
+            np.testing.assert_array_equal(ca.final_params, cb.final_params)
+            assert ca.index == cb.index

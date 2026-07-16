@@ -324,11 +324,11 @@ Two R² metrics are relevant:
   (−1 to −5) because the Cartesian basis amplifies mismatches in
   low-frequency modes that carry little physical significance.
 
-Our JaxLoss penalty function internally uses a Cartesian basis for
+The JAX executor's eigenmatrix penalty internally uses a Cartesian basis for
 optimization (both QM and MM Hessians projected onto Cartesian QM
-eigenvectors). This is internally consistent and produces correct
-gradients. The mass-weighted R² reported here is a separate diagnostic
-metric computed after optimization.
+eigenvectors). This is internally consistent and produces correct gradients.
+The mass-weighted R² reported here is a separate diagnostic metric computed
+after optimization.
 
 ### Optimizer convergence (GPU, RTX 5090)
 
@@ -362,8 +362,8 @@ The optimizer converges in 200 L-BFGS-B iterations for all systems.
 
     The [optimizer comparison](optimizer-comparison.md) page shows
     production convergence results using **eigenmatrix-diagonal only**
-    + **convergence-based termination** with JaxLoss ratio checking.
-    Systems that pass the ratio check show 1.2–28.7% improvement;
+    + **convergence-based termination** with JAX/Python executor-ratio checking.
+    Systems that pass the executor-ratio check show 1.2–28.7% improvement;
     systems with poor Seminario starting FFs are skipped.
     These are complementary views: this table validates raw optimizer
     capability; the comparison page shows the production workflow.

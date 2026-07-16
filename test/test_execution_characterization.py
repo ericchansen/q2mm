@@ -28,8 +28,11 @@ def _water_forcefield() -> ForceField:
 
 
 def _mixed_conformer_objective() -> tuple:
-    from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.models.observations import ObservationSet
+    from q2mm.models.parameters import ActiveParameterSpace
+    from q2mm.models.problem import StationaryPointKind
+    from q2mm.objectives.plan import ObjectivePlan
+    from q2mm.objectives.python import PythonObjectiveExecutor
 
     forcefield = _water_forcefield()
     layout = ParameterLayout.from_force_field(forcefield)
@@ -64,7 +67,16 @@ def _mixed_conformer_objective() -> tuple:
             weight=0.01,
         )
 
-    objective = ObjectiveFunction(forcefield, backend, molecules, references, layout=layout)
+    space = ActiveParameterSpace.all_active(layout, forcefield)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(molecules))),
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=references,
+        layout=layout,
+        active_space=space,
+    )
+    objective = PythonObjectiveExecutor(plan, backend, forcefield)
     return objective, forcefield, layout, molecules, per_case
 
 
@@ -73,12 +85,16 @@ def _independent_case_score(
     molecules: list,
     per_case: list[tuple[float, float]],
 ) -> float:
-    from q2mm.optimizers.objective import ObjectiveFunction
     from q2mm.models.observations import ObservationSet
+    from q2mm.models.parameters import ActiveParameterSpace
+    from q2mm.models.problem import StationaryPointKind
+    from q2mm.objectives.plan import ObjectivePlan
+    from q2mm.objectives.python import PythonObjectiveExecutor
 
     score = 0.0
     layout = ParameterLayout.from_force_field(forcefield)
     parameters = layout.vector(forcefield)
+    space = ActiveParameterSpace.all_active(layout, forcefield)
     for case_index, molecule in enumerate(molecules):
         energy, frequency = per_case[case_index]
         offset = float(case_index + 1)
@@ -89,7 +105,15 @@ def _independent_case_score(
             data_idx=3 * molecule.n_atoms - 1,
             weight=0.01,
         )
-        score += ObjectiveFunction(forcefield, load_backend("jax"), [molecule], reference, layout=layout)(parameters)
+        plan = ObjectivePlan(
+            case_ids=("0",),
+            molecules=(molecule,),
+            stationary_points=(StationaryPointKind.GROUND_STATE,),
+            observations=reference,
+            layout=layout,
+            active_space=space,
+        )
+        score += PythonObjectiveExecutor(plan, load_backend("jax"), forcefield).value(parameters)
     return score
 
 
@@ -98,7 +122,7 @@ def test_same_topology_mixed_objective_preserves_conformer_identity() -> None:
     objective, forcefield, layout, molecules, per_case = _mixed_conformer_objective()
     parameters = layout.vector(forcefield)
 
-    batched_score = objective(parameters)
+    batched_score = objective.value(parameters)
     independent_score = _independent_case_score(forcefield, molecules, per_case)
 
     assert independent_score == pytest.approx(5.05, abs=1e-10)
@@ -110,9 +134,9 @@ def test_case_handles_are_distinct_and_reused() -> None:
     objective, forcefield, layout, _molecules, _per_case = _mixed_conformer_objective()
     parameters = layout.vector(forcefield)
 
-    objective(parameters)
+    objective.value(parameters)
     first_handles = {ci: id(prepared) for ci, prepared in objective._prepared.items()}
-    objective(parameters)
+    objective.value(parameters)
     second_handles = {ci: id(prepared) for ci, prepared in objective._prepared.items()}
 
     assert len(first_handles) == 2
@@ -128,7 +152,7 @@ def test_objective_evaluation_does_not_mutate_problem_inputs() -> None:
     forcefield_snapshot = layout.vector(forcefield).copy()
     geometry_snapshots = [molecule.geometry.copy() for molecule in molecules]
 
-    objective(parameters)
+    objective.value(parameters)
 
     np.testing.assert_array_equal(parameters, parameter_snapshot)
     np.testing.assert_array_equal(layout.vector(forcefield), forcefield_snapshot)

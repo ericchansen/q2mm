@@ -22,7 +22,7 @@ reaction barriers and selectivity predictions.
 !!! note "What you need before starting"
     - **Python 3.10+** with Q2MM installed (`pip install q2mm`)
     - **[NumPy](https://numpy.org/)** and **[SciPy](https://scipy.org/)** (installed automatically with Q2MM)
-    - An **MM engine** — [OpenMM](https://openmm.org/) (`pip install openmm`), [JAX](https://jax.readthedocs.io/) (`pip install "q2mm[jax]"`), [JAX-MD](https://github.com/jax-md/jax-md) (`pip install "q2mm[jax-md]"`), or [Tinker](https://dasher.wustl.edu/tinker/) (free for academic use)
+    - An **MM backend** — [OpenMM](https://openmm.org/) (`pip install openmm`), [JAX](https://jax.readthedocs.io/) (`pip install "q2mm[jax]"`), [JAX-MD](https://github.com/jax-md/jax-md) (`pip install "q2mm[jax-md]"`), or [Tinker](https://dasher.wustl.edu/tinker/) (free for academic use)
     - The installed SN2 reference files from `q2mm.resources`
 
     !!! note "Regeneration scripts require a git clone"
@@ -33,9 +33,9 @@ reaction barriers and selectivity predictions.
         cd q2mm
         ```
 
-    **QM engine optional:** Q2MM includes pre-computed QM reference data as
+    **QM backend optional:** Q2MM includes pre-computed QM reference data as
     installed package resources, so you can complete the full
-    workflow without a QM engine. If you want to generate your own QM data,
+    workflow without a QM backend. If you want to generate your own QM data,
     you'll need [Psi4](https://psicode.org/) or [Gaussian](https://gaussian.com/).
 
 !!! tip "Quick install"
@@ -67,7 +67,7 @@ the transition state: an **optimized geometry** and the **Hessian matrix**
 ???+ example "Using pre-computed data (fastest)"
 
     The installed `q2mm/data/sn2/` resource contains ready-to-use QM data for
-    the SN2 tutorial. **No QM engine needed:**
+    the SN2 tutorial. **No QM backend needed:**
 
     ```python
     import numpy as np
@@ -85,7 +85,7 @@ the transition state: an **optimized geometry** and the **Hessian matrix**
 ### Generating your own QM data
 
 If you want to run the QM calculation yourself (or adapt this for your own
-molecule), expand the section for your QM engine:
+molecule), expand the section for your QM backend:
 
 ??? example "Psi4 (recommended, open-source)"
 
@@ -563,64 +563,72 @@ and a **weight** that controls its importance in the fit.
 
 ---
 
-## Step 5: Create the Objective Function
+## Step 5: Compile the Objective Plan
 
-The `ObjectiveFunction` ties together the force field, the MM engine, the
-molecular structures, the observation set, and an explicit `ParameterLayout`
-into a single callable that `scipy.optimize.minimize` can drive.
+The `ObjectivePlan` is the immutable, backend-neutral description of *what* to
+fit: the training molecules with their stable case IDs and stationary-point
+kinds, the observation set, the `ParameterLayout`, and the
+`ActiveParameterSpace` projection. A concrete executor
+(`PythonObjectiveExecutor` or `JaxObjectiveExecutor`) attaches the MM backend
+and turns the plan into a callable that `scipy.optimize.minimize` can drive.
 
-At each evaluation it:
+At each evaluation the executor:
 
 1. Materializes a candidate `ForceField` from the current parameter vector via `ParameterLayout.replace()`
-2. Runs the MM engine (energy, geometry, frequencies) for each molecule
+2. Runs the MM backend (energy, geometry, frequencies) for each case
 3. Computes weighted residuals against the observation set
 4. Returns the sum of squared residuals
 
 ```python
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 
 layout = ParameterLayout.from_force_field(ff)
 space = ActiveParameterSpace.all_active(layout, ff)
 
-objective = ObjectiveFunction(
-    forcefield=ff,
-    engine=engine,        # your MM backend (see below)
-    molecules=[mol],
-    reference=ref,
+plan = ObjectivePlan(
+    case_ids=("0",),
+    molecules=(mol,),
+    stationary_points=(StationaryPointKind.TRANSITION_STATE,),
+    observations=ref,
     layout=layout,
+    active_space=space,
 )
 
+# Attach a backend to get an evaluator scipy.optimize can drive.
+objective = PythonObjectiveExecutor(plan, backend, ff)
+
 # Evaluate at the initial (QFUERZA) parameters
-initial_params = layout.vector(ff)
-initial_score = objective(initial_params)
+initial_score = objective.value(space.baseline)
 print(f"Initial score: {initial_score:.6f}")
 print(f"Parameters:    {len(layout)} total / {space.n_active} active")
 ```
 
-!!! note "Setting up an MM engine"
-    The `engine` argument is any object implementing the `MMEngine` abstract
-    base class from `q2mm.backends.base`.  Q2MM ships with backends for
-    OpenMM, JAX, JAX-MD, and Tinker:
+!!! note "Setting up an MM backend"
+    The `backend` argument is any object implementing the prepared-session
+    backend contract from `q2mm.backends.contracts`.  Q2MM ships with backends
+    for OpenMM, JAX, JAX-MD, and Tinker:
 
     ```python
-    from q2mm.backends.mm.openmm import OpenMMEngine
-    engine = OpenMMEngine()
+    from q2mm.backends.mm.openmm import OpenMMBackend
+    backend = OpenMMBackend()
     ```
 
     ```python
-    from q2mm.backends.mm import JaxEngine
-    engine = JaxEngine()
+    from q2mm.backends.mm import JaxBackend
+    backend = JaxBackend()
     ```
 
     ```python
-    from q2mm.backends.mm import JaxMDEngine
-    engine = JaxMDEngine()
+    from q2mm.backends.mm import JaxMdBackend
+    backend = JaxMdBackend()
     ```
 
     ```python
-    from q2mm.backends.mm.tinker import TinkerEngine
-    engine = TinkerEngine(tinker_dir="/usr/local/bin")
+    from q2mm.backends.mm.tinker import TinkerBackend
+    backend = TinkerBackend(tinker_dir="/usr/local/bin")
     ```
 
 ---
@@ -822,10 +830,10 @@ outperform L-BFGS-B. On CH₃F with MM3, Adam achieves **56.3 cm⁻¹ RMSD** —
 If you're using the **JAX backend**, you can also use
 [JAXopt](https://jaxopt.github.io/) for analytical-gradient optimisation.
 Unlike optax's adaptive first-order updates, JaxOpt gives you solvers such as
-L-BFGS and L-BFGS-B while still sourcing exact gradients from Q2MM's
-per-molecule `JaxLoss` functions. q2mm deliberately keeps the outer JaxOpt
-solver loop in Python (`jit=False`) so multi-molecule jobs do **not** get
-re-inlined into one giant XLA program.
+L-BFGS and L-BFGS-B while still sourcing exact gradients from the
+`JaxObjectiveExecutor`'s per-case compiled loss functions. q2mm deliberately
+keeps the outer JaxOpt solver loop in Python (`jit=False`) so multi-molecule
+jobs do **not** get re-inlined into one giant XLA program.
 
 ???+ example "JaxOpt L-BFGS-B optimization"
 
@@ -845,17 +853,17 @@ re-inlined into one giant XLA program.
     SciPy L-BFGS-B's 529 cm⁻¹ while using exact gradients throughout.
 
 !!! warning "JAX backend required"
-    `JaxOptOptimizer` only works with `JaxEngine`. It converts the
-    `ObjectiveFunction` into a frozen `ObjectiveSpec` and evaluates gradients
-    through `JaxLoss`; non-JAX backends are not supported.
+    `JaxOptOptimizer` only works with `JaxBackend`. It builds a
+    `JaxObjectiveExecutor` (per-case JIT, Python aggregation) and evaluates
+    analytical gradients through it; non-JAX backends are not supported.
 
 !!! tip "When to use JaxOpt"
     JaxOpt is most useful when you want the same algorithms as SciPy (L-BFGS-B)
     but with **exact analytical gradients** instead of finite differences. The
     gradient quality is identical to optax, but the optimiser itself is
-    second-order. In production, the SciPy + JaxLoss route remains the default
-    for literature-scale TS benchmarks; JaxOpt is most useful on smaller JAX
-    problems. See [Workflow D](how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax)
+    second-order. In production, the SciPy + `JaxObjectiveExecutor` route
+    remains the default for literature-scale TS benchmarks; JaxOpt is most
+    useful on smaller JAX problems. See [Workflow D](how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax)
     in the Optimization Guide for details.
 
 ---
@@ -936,19 +944,10 @@ Expand each format below for details and template-based export options:
     save_openmm_xml(optimised_ff, "forcefield.xml", molecule=mol)
     ```
 
-    You can also serialize the exact OpenMM `System` object for archival:
-
-    ```python
-    from q2mm.backends.mm.openmm import OpenMMEngine
-
-    engine = OpenMMEngine()
-    engine.export_system_xml("system.xml", mol, optimised_ff)
-    ```
-
-    **System XML** serializes the topology-specific `System` with all
-    particles and forces. **ForceField XML** is a standalone definition
-    loadable by `openmm.app.ForceField()` — more portable and applicable
-    to different topologies.
+    The prepared-session backends are evaluation surfaces, not file exporters;
+    use the standalone ForceField XML writer for portable OpenMM archival.
+    **ForceField XML** is loadable by `openmm.app.ForceField()` and can be
+    applied to compatible topologies.
 
 ??? example "JAX / JAX-MD (parameter vector)"
 
@@ -986,8 +985,10 @@ from q2mm.io.xyz import load_xyz
 from q2mm.models.forcefield import FunctionalForm
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 from q2mm.resources import sn2_reference_dir
 
@@ -1033,21 +1034,23 @@ ref = ObservationSet.from_molecule(
 )
 print(f"\nReference observations: {ref.n_observations}")
 
-# ── Step 4: Optimise (requires an MM engine) ──────────────────────
-from q2mm.backends.mm.openmm import OpenMMEngine
+# ── Step 4: Optimise (requires an MM backend) ─────────────────────
+from q2mm.backends.mm.openmm import OpenMMBackend
 
-engine = OpenMMEngine()
+backend = OpenMMBackend()
 
 layout = ParameterLayout.from_force_field(ff)
 space = ActiveParameterSpace.all_active(layout, ff)
 
-objective = ObjectiveFunction(
-    forcefield=ff,
-    engine=engine,
-    molecules=[mol],
-    reference=ref,
+plan = ObjectivePlan(
+    case_ids=("0",),
+    molecules=(mol,),
+    stationary_points=(StationaryPointKind.TRANSITION_STATE,),
+    observations=ref,
     layout=layout,
+    active_space=space,
 )
+objective = PythonObjectiveExecutor(plan, backend, ff)
 
 optimizer = ScipyOptimizer(
     method="L-BFGS-B", maxiter=500, eps=1e-3
@@ -1090,5 +1093,5 @@ Once you have completed this tutorial, consider:
   than parameters.
 
 - **Consult the API reference** — see the [API Reference](reference/q2mm/index.md) for the
-  complete interface of `ForceField`, `Molecule`, `ObservationSet`, `ObjectiveFunction`,
-  and all I/O functions.
+  complete interface of `ForceField`, `Molecule`, `ObservationSet`,
+  `ObjectivePlan`, and all I/O functions.

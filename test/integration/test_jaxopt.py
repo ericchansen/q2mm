@@ -45,8 +45,11 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, Functional
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.objectives.jax import JaxObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import ObjectiveEvaluator
 
 JaxBackend = None
 
@@ -71,19 +74,22 @@ def _materialize(forcefield: ForceField, vector: np.ndarray) -> ForceField:
 
 def _make_objective(
     forcefield: ForceField, backend: object, molecules: list, reference: ObservationSet, **kwargs: object
-) -> ObjectiveFunction:
-    return ObjectiveFunction(
-        forcefield=forcefield,
-        backend=backend,
-        molecules=molecules,
-        reference=reference,
-        layout=_layout(forcefield),
-        **kwargs,
+) -> ObjectiveEvaluator:
+    layout = _layout(forcefield)
+    space = ActiveParameterSpace.all_active(layout, forcefield)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(molecules))),
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=reference,
+        layout=layout,
+        active_space=space,
     )
+    return JaxObjectiveExecutor(plan, backend, forcefield)
 
 
-def _all_active_space(objective: ObjectiveFunction) -> ActiveParameterSpace:
-    return ActiveParameterSpace.all_active(objective.layout, objective.forcefield)
+def _all_active_space(objective: ObjectiveEvaluator) -> ActiveParameterSpace:
+    return objective.plan.active_space
 
 
 def _scale_force_constants(
@@ -336,7 +342,7 @@ class TestJaxOptCH3FValidation:
         )
         result = loop.run()
 
-        assert result.n_cycles >= 1, f"Expected at least 1 cycle, got {result.n_cycles}"
+        assert result.n_iterations >= 1, f"Expected at least 1 cycle, got {result.n_iterations}"
         assert result.final_score < result.initial_score, (
             f"Score should improve: {result.initial_score:.6f} → {result.final_score:.6f}"
         )

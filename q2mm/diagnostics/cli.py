@@ -61,13 +61,13 @@ def _optimizer_configs() -> list[tuple[str, str, dict]]:
     configs: list[tuple[str, str, dict]] = [
         # SciPy optimizers
         ("scipy-lbfgsb", "SciPy L-BFGS-B", {"method": "L-BFGS-B"}),
-        ("scipy-lbfgsb-jax", "SciPy L-BFGS-B (JAX direct)", {"method": "L-BFGS-B", "jac": "auto"}),
-        ("scipy-lbfgsb-fd", "SciPy L-BFGS-B (FD)", {"method": "L-BFGS-B", "jac": None}),
+        ("scipy-lbfgsb-jax", "SciPy L-BFGS-B (JAX direct)", {"method": "L-BFGS-B", "gradient": "analytical"}),
+        ("scipy-lbfgsb-fd", "SciPy L-BFGS-B (FD)", {"method": "L-BFGS-B", "gradient": "finite_difference"}),
         ("scipy-nm", "Nelder-Mead", {"method": "Nelder-Mead"}),
         ("scipy-powell", "Powell", {"method": "Powell"}),
         # --- Cycling ---
         ("grad-simp", "Grad-Simp", {"method": "cycling"}),
-        ("grad-simp-auto", "Grad-Simp (auto jac)", {"method": "cycling", "full_jac": "auto"}),
+        ("grad-simp-auto", "Grad-Simp (analytical)", {"method": "cycling", "gradient": "analytical"}),
         # --- Optax ---
         ("optax-adam", "Optax Adam", {"method": "optax:adam"}),
         ("optax-adam-cosine", "Optax Adam+cosine", {"method": "optax:adam", "schedule": "cosine"}),

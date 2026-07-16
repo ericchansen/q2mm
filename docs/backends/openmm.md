@@ -1,6 +1,6 @@
 # OpenMM Backend
 
-The `OpenMMEngine` is Q2MM's most versatile backend, supporting both
+The `OpenMMBackend` is Q2MM's most versatile backend, supporting both
 **Harmonic** and **MM3** functional forms. It runs in-process via the
 [OpenMM](https://openmm.org/) Python API, avoiding subprocess overhead.
 
@@ -51,7 +51,7 @@ and a compatible driver (≥ 535).
 
 ### Platform detection
 
-OpenMMEngine auto-detects the fastest available compute platform:
+OpenMMBackend auto-detects the fastest available compute platform:
 
 | Priority | Platform | Notes |
 |----------|----------|-------|
@@ -82,9 +82,9 @@ Override with the `platform_name` constructor parameter if needed.
 ## Configuration
 
 ```python
-from q2mm.backends.mm import OpenMMEngine
+from q2mm.backends.mm import OpenMMBackend
 
-engine = OpenMMEngine(
+backend = OpenMMBackend(
     platform_name=None,   # auto-detect (CUDA > OpenCL > CPU > Reference)
     precision=None,       # "single", "mixed", or "double" (GPU only; default: "mixed")
 )
@@ -97,34 +97,33 @@ engine = OpenMMEngine(
 
 ### Runtime parameter updates
 
-OpenMMEngine supports in-place parameter updates via `update_forcefield()`,
-which mutates force parameters in the existing OpenMM `Context` without
-rebuilding the system. This makes iterative optimization fast.
+`OpenMMBackend.prepare(PreparationRequest(...))` returns a prepared session
+that owns a reusable OpenMM `Context`. Each typed request carries a full
+parameter vector, and the session updates the context's force parameters
+without rebuilding the system. This makes iterative optimization fast while
+keeping all evaluations behind the typed prepared-session contract.
 
 ---
 
 ## Capabilities
 
-| Method | Supported | Notes |
+| Prepared-session operation | Supported | Notes |
 |--------|:---------:|-------|
-| `energy()` | ✅ | Returns kcal/mol |
-| `minimize()` | ✅ | OpenMM L-BFGS minimizer |
-| `hessian()` | ✅ | **Numerical** (finite-difference) |
-| `frequencies()` | ✅ | From numerical Hessian |
-| `energy_and_param_grad()` | ✅ | Exact for bond/angle/torsion; vdW via finite differences |
-| `supports_runtime_params()` | ✅ | — |
-| `supports_analytical_gradients()` | ✅ | Bond/angle/torsion exact, vdW via FD |
+| `energy(EnergyRequest)` | ✅ | Returns kcal/mol |
+| `minimize(MinimizationRequest)` | ✅ | OpenMM L-BFGS minimizer |
+| `hessian(HessianRequest)` | ✅ | **Numerical** (finite-difference) |
+| `frequencies(FrequencyRequest)` | ✅ | From numerical Hessian |
+| `parameter_gradient(ParameterGradientRequest)` | ✅ | Exact for bond/angle/torsion; vdW via finite differences |
+| `Capability.REUSABLE_STATE` | ✅ | Prepared session reuses the OpenMM context |
 
 ---
 
 ## Serialization
 
-Systems can be saved to and loaded from OpenMM XML:
-
-```python
-handle = engine.create_context(molecule, forcefield)
-engine.export_system_xml(handle, "system.xml")
-```
+Standalone force-field XML can be written with
+`q2mm.io.save_openmm_xml(force_field, path, molecule=...)`. The new backend
+surface does not expose a generic `System` XML exporter; prepared sessions are
+for typed evaluations, not file I/O.
 
 ---
 
@@ -132,7 +131,7 @@ engine.export_system_xml(handle, "system.xml")
 
 - **Numerical Hessians** — `hessian()` uses finite differences, not analytical
   second derivatives. Accurate but slower than JAX's analytical Hessian.
-- **Partial analytical gradients** — `energy_and_param_grad()` provides exact
+- **Partial analytical gradients** — `parameter_gradient()` provides exact
   gradients for bond, angle, and torsion parameters via OpenMM global-parameter
   derivatives. vdW parameter gradients are supplemented via central finite
   differences.
@@ -144,22 +143,25 @@ engine.export_system_xml(handle, "system.xml")
 ## Example
 
 ```python
-from q2mm.backends.mm import OpenMMEngine
+from q2mm.backends.contracts import EnergyRequest, FrequencyRequest, PreparationRequest
+from q2mm.backends.mm.openmm import OpenMMBackend
 from q2mm.io.amber import load_amber_frcmod
 from q2mm.io.xyz import load_xyz
-
-engine = OpenMMEngine()
 
 # Load molecule and force field
 mol = load_xyz("molecule.xyz")
 ff = load_amber_frcmod("params.frcmod")
 
+backend = OpenMMBackend()
+session = backend.prepare(PreparationRequest(case_id="example", molecule=mol, force_field=ff))
+params = session.layout.vector(ff)
+
 # Single-point energy
-e = engine.energy(mol, ff)
+e = session.energy(EnergyRequest(parameters=params)).energy
 print(f"Energy: {e:.4f} kcal/mol")
 
 # Frequencies
-freqs = engine.frequencies(mol, ff)
+freqs = session.frequencies(FrequencyRequest(parameters=params)).frequencies
 print(f"Frequencies: {freqs}")
 ```
 
@@ -167,7 +169,7 @@ print(f"Frequencies: {freqs}")
 
 ## See also
 
-- [Engine comparison table](index.md#engine-overview)
+- [Backend comparison table](index.md#backend-overview)
 - [Parameter transferability](index.md#parameter-transferability)
 - [Benchmarks](../benchmarks/index.md)
-- [API Reference: OpenMMEngine](../reference/q2mm/backends/mm/openmm.md)
+- [API Reference: OpenMMBackend](../reference/q2mm/backends/mm/openmm.md)

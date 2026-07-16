@@ -60,9 +60,9 @@ worse than simply predicting the average.
 
 ## Benchmark results
 
-SciPy L-BFGS-B with JaxLoss analytical gradients.  After the loader
+SciPy L-BFGS-B with JAX analytical executor gradients.  After the loader
 API refactor that preserves the published Wahlers OPT values
-as-published (no QFUERZA overwrite), the ratio gate passes for
+as-published (no QFUERZA overwrite), the executor-ratio gate passes for
 pd-allyl.  Run with `--n-evals 10` so the verdict is statistically
 defensible against the per-call engine noise documented in
 [#284](https://github.com/ericchansen/q2mm/issues/284).
@@ -70,11 +70,11 @@ defensible against the per-call engine noise documented in
 | Metric | Value |
 |--------|:-----:|
 | Ratio check | 1.091 (pass) |
-| Initial ObjectiveFunction (n=10 mean) | 8.036 × 10⁶ ± 0.173 % CI₉₅ |
-| Final ObjectiveFunction (n=10 mean) | 8.037 × 10⁶ ± 0.229 % CI₉₅ |
+| Initial Python objective (n=10 mean) | 8.036 × 10⁶ ± 0.173 % CI₉₅ |
+| Final Python objective (n=10 mean) | 8.037 × 10⁶ ± 0.229 % CI₉₅ |
 | Improvement (mean Δ%) | **−0.010 % (NOT SIGNIFICANT — CI₉₅ ± 0.40 %)** |
 | L-BFGS-B iterations / OF evaluations | 2 / 2 |
-| Gradient source | `jac="auto"` → `jac_mode="jax_loss"` (JaxLoss analytical) |
+| Gradient source | `JaxObjectiveExecutor` analytical gradients |
 | Wall time | 1,289 s opt + ~16 min for 20 post-eval samples |
 
 Per-category fit of the optimized force field (post-L-BFGS-B):
@@ -94,25 +94,25 @@ live at [`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benc
 and are summarized in the
 [QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
 
-!!! success "Confirmed: published Wahlers FF sits at a JaxLoss local minimum (post angle-grad fix)"
+!!! success "Confirmed: published Wahlers FF sits at a JAX-executor local minimum (post angle-grad fix)"
     With n=10 samples the 95 % CI on the improvement is **±0.40 %**,
     which excludes any improvement larger than ~0.4 %.  Unlike
     [rh-conjugate](rh-conjugate.md) and [heck-relay](heck-relay.md)
     — which were "newly unlocked" by the MM3 angle gradient
     correctness fix ([#284](https://github.com/ericchansen/q2mm/issues/284))
     — pd-allyl's verdict did not change after the fix: a true
-    JaxLoss local minimum is exactly where the published OPT values
+    JAX-executor local minimum is exactly where the published OPT values
     already sit, so the fix had no descent direction to expose.
 
     The published FF was fit by a different objective (MacroModel MM3*
-    multi-target).  The q2mm JAX engine's eigenmatrix-diagonal
+    multi-target).  The q2mm JAX backend's eigenmatrix-diagonal
     objective places its local minimum in the same location, but
     that location is not a *good* fit by either objective's full
     metric (bond_length R² ≈ 0.05, eig_diagonal R² ≈ −2.8 —
     see "Comparison and gap analysis" below).
 
 Improving on pd-allyl requires either (a) closing the MM3* ↔
-JAX-engine functional-form gap so JaxLoss's local minimum aligns with
+JAX-backend functional-form gap so the JAX executor's local minimum aligns with
 a better point on the real objective surface, or (b) using a
 different optimizer / objective that doesn't rely on the
 geometry-relaxation surrogate.  [#284](https://github.com/ericchansen/q2mm/issues/284)
@@ -126,7 +126,7 @@ cross-system comparison and methodology details.
 
 ### Comparison
 
-The paper reports Hessian R² = 0.998 under MacroModel MM3*. Our reproduction yields R² = −0.93 under the JAX engine.
+The paper reports Hessian R² = 0.998 under MacroModel MM3*. Our reproduction yields R² = −0.93 under the JAX backend.
 
 This TSFF is a **composed force field**: the published workflow layers an OPT substructure on top of an MM3 base field. That composition does not transfer cleanly into our engine — when the base field and the overlay do not interact with the same semantics they had in MacroModel, the eigenvalue structure collapses.
 

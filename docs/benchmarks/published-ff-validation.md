@@ -118,7 +118,7 @@ Q2MM_UPDATE_GOLDEN=1 python3 -m pytest test/integration/test_published_ff_valida
 ## Optimization Comparison
 
 q2mm v5 achieves lower frequency RMSD than the published FFs when both are
-evaluated under JaxEngine. However, the published FFs were optimized for a
+evaluated under JaxBackend. However, the published FFs were optimized for a
 different engine (MacroModel MM3*) and a broader objective (geometries +
 Hessian + charges + energies). On the papers' own metrics (eigenvalue R²,
 selectivity predictions), the published FFs perform well. See the

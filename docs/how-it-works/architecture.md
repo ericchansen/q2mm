@@ -49,7 +49,7 @@ graph TB
     subgraph canonical ["Canonical Unit Space"]
         direction LR
         Q[QFUERZA] --> FF[ForceField] --> OBJ[Objective] --> OPT[Optimizer]
-        OBJ <--> ENG[MM Engine]
+        OBJ <--> ENG[MM Backend]
     end
 
     L["Loaders<br/><em>format → canonical</em>"] -->|"↑ on read"| canonical
@@ -101,7 +101,7 @@ The 220–2,400× overhead far exceeds the 5× acceptance threshold for hot-loop
 code.  Additional constraints:
 
 - Pint quantities are **not JAX-traceable** and cannot enter `jax.jit` or
-  `jax.grad` contexts.  Conversions must remain at the FF↔engine boundary
+  `jax.grad` contexts.  Conversions must remain at the FF↔backend boundary
   (which is already the case), but wrapping `numpy.ndarray` Hessians with
   Pint `Quantity` objects would add friction at that boundary.
 - Q2MM's conversion functions are called millions of times during a single
@@ -159,28 +159,29 @@ See `scripts/bench_pint.py` for the microbenchmark.
 
 ### 3. Pluggable backends
 
-MM engines implement the `MMEngine` abstract base class:
+MM backends implement the typed prepared-session contract in
+`q2mm.backends.contracts`: a concrete backend exposes `info` and `prepare`,
+then the prepared session answers explicit request types for energies,
+minimization, Hessians, frequencies, and parameter derivatives.
 
 ```python
-class MMEngine(ABC):
-    @abstractmethod
-    def energy(self, structure, forcefield) -> float: ...
+from q2mm.backends.contracts import EnergyRequest, PreparationRequest
+from q2mm.backends.mm.openmm import OpenMMBackend
+from q2mm.models.parameters import ParameterLayout
 
-    @abstractmethod
-    def minimize(self, structure, forcefield) -> tuple: ...
+backend = OpenMMBackend()
+layout = ParameterLayout.from_force_field(forcefield)
+full_vector = layout.vector(forcefield)
 
-    @abstractmethod
-    def hessian(self, structure, forcefield) -> np.ndarray: ...
-
-    @abstractmethod
-    def frequencies(self, structure, forcefield) -> list[float]: ...
-
-    def supported_functional_forms(self) -> set[str]: ...
+prepared = backend.prepare(
+    PreparationRequest(case_id="example", molecule=molecule, force_field=forcefield)
+)
+energy = prepared.energy(EnergyRequest(parameters=full_vector)).energy
 ```
 
-Each engine handles its own unit conversions between canonical and whatever
-the underlying library expects (e.g., OpenMM uses kJ/mol internally, Tinker
-uses kcal/mol).
+Each backend declares its capabilities up front and handles its own unit
+conversions between canonical units and whatever the underlying library
+expects (e.g., OpenMM uses kJ/mol internally, Tinker uses kcal/mol).
 
 ---
 
@@ -205,6 +206,7 @@ q2mm/
 │   ├── observations.py   # Observation + ObservationSet
 │   ├── parameters.py     # ParameterLayout + ActiveParameterSpace
 │   ├── problem.py        # TrainingCase + OptimizationProblem
+│   ├── results.py        # Canonical OptimizationResult, CandidateRecord, StageRecord
 │   ├── seminario.py      # Hessian → initial force constants (QFUERZA)
 │   ├── hessian.py        # Hessian manipulation, eigenvalue analysis
 │   ├── units.py          # Conversion constants and helpers
@@ -223,10 +225,16 @@ q2mm/
 │   │   ├── batched.py       # Batched multi-molecule energy helpers
 │   │   └── _jax_common.py   # Backend jax/jnp/jaxopt globals + ForceField match/offset helpers (JAX import guard itself lives in q2mm/_jax_support.py)
 │   └── qm/
-│       └── psi4.py       # Psi4 engine (QM single-points, Hessians)
+│       └── psi4.py       # Psi4 backend (QM single-points, Hessians)
+│
+├── objectives/           # Objective planning, executor protocol, and residual semantics
+│   ├── plan.py           # ObjectivePlan: backend-neutral cases, observations, layout, active space
+│   ├── protocols.py      # ObjectiveEvaluator protocol, Evaluation, GradientMode, objective errors
+│   ├── python.py         # PythonObjectiveExecutor over the prepared-backend contract
+│   ├── jax.py            # JaxObjectiveExecutor for differentiable objectives
+│   └── metrics.py        # Shared residual, regularization, and category metric helpers
 │
 ├── optimizers/           # Parameter fitting machinery
-│   ├── objective.py      # ObjectiveFunction
 │   ├── protocols.py      # Shared _Optimizer structural protocol
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
@@ -234,15 +242,7 @@ q2mm/
 │   ├── basinhopping.py   # BasinHoppingOptimizer (stochastic global search)
 │   ├── multistart.py     # MultiStartOptimizer (best-of-N perturbed starts)
 │   ├── jax_multistart.py # JaxMultiStartOptimizer (JAX multi-start)
-│   ├── jaxloss.py        # JaxLoss — JIT-compiled loss for JaxOpt/Optax
-│   ├── spec.py           # ObjectiveSpec — frozen JAX-compatible objective description
-│   ├── cycling.py        # grad-simp parameter cycling (OptimizationLoop)
-│   └── evaluators/       # Per-category residual evaluators
-│       ├── energy.py          # Relative energy residuals
-│       ├── frequency.py       # Vibrational frequency residuals
-│       ├── geometry.py        # Bond / angle / torsion geometry residuals
-│       ├── hessian_element.py # Hessian-element residuals
-│       └── eigenmatrix.py     # Eigenmatrix (diagonal / off-diagonal) residuals
+│   └── cycling.py        # grad-simp parameter cycling (OptimizationLoop, sensitivity)
 │
 ├── io/                   # File format I/O
 │   ├── __init__.py       # Re-exports public functions
@@ -262,7 +262,7 @@ q2mm/
 │   └── reference.py      # load_reference_yaml, save_reference_yaml
 │
 ├── workflows/            # Multi-stage parameterization protocols
-│   ├── base.py           # Workflow Protocol, WorkflowResult, StageResult
+│   ├── base.py           # Workflow Protocol returning OptimizationResult + StageRecord data
 │   ├── single_stage.py   # SingleStageWorkflow
 │   └── method_e2.py      # MethodE2Workflow (two-stage)
 │
@@ -316,13 +316,13 @@ flowchart TD
     end
 
     subgraph Opt["Optimizers"]
-        obj[Objective]
         obs[ObservationSet]
+        plan[ObjectivePlan]
+        pyexec[PythonObjectiveExecutor]
+        jaxexec[JaxObjectiveExecutor]
         scipy[ScipyOptimizer]
         optax_opt[OptaxOptimizer]
         jaxopt_opt[JaxOptOptimizer]
-        spec[ObjectiveSpec]
-        jaxloss[JaxLoss]
         cycling[OptimizationLoop]
     end
 
@@ -346,22 +346,25 @@ flowchart TD
     mol --> sem
     hess --> sem
 
-    ff --> obj
-    ref --> obj
-    mol --> obj
-    obj --> scipy
-    obj --> optax_opt
-    obj --> spec
-    spec --> jaxloss
-    jaxloss --> jaxopt_opt
-    obj --> cycling
+    ff --> plan
+    obs --> plan
+    mol --> plan
+    plan --> pyexec
+    plan --> jaxexec
+    pyexec --> scipy
+    pyexec --> cycling
+    jaxexec --> scipy
+    jaxexec --> optax_opt
+    jaxexec --> jaxopt_opt
+    jaxexec --> cycling
 
-    obj --> omm
-    obj --> tk
-    obj --> jax
+    pyexec --> omm
+    pyexec --> tk
+    pyexec --> jax
+    jaxexec --> jax
 
     IO --> mol
-    IO --> ref
+    IO --> obs
     IO --> ff
 ```
 
@@ -370,58 +373,60 @@ flowchart TD
 ## Differentiability status
 
 Q2MM's long-term goal is end-to-end analytical optimization: every
-reference-to-loss contribution expressed as a pure, JIT-compiled JAX
-computation so that `jax.value_and_grad` gives exact parameter gradients
-within one JIT-compiled XLA program/call, avoiding Python↔JAX
-round-trips. The table below records what is delivered today versus
-what is still tracked.
+reference-to-loss contribution expressed through an explicit executor whose
+gradient mode is declared up front. The production JAX path deliberately
+compiles one JIT fragment per training case and aggregates those case losses
+in Python. That avoids putting all molecules into one large XLA graph while
+still using `jax.value_and_grad` for exact parameter gradients inside each
+case. The table below records what is delivered today versus what is still
+tracked.
 
 ### Reference kinds
 
 Columns:
 
-- **Python path** — does `ObjectiveFunction` already score this kind via
-  its Python evaluators?
+- **Python executor** — does `PythonObjectiveExecutor` score this kind via
+  the typed backend contract?
 - **Analytical ∂L/∂p** — is the residual differentiable through the
-  category's per-category evaluator on the Python path? This assumes a
-  backend that provides the required analytical Jacobians/Hessian-gradient
-  support (for example JAX); otherwise the Python path falls back to
-  finite-difference gradients.
-- **In JIT loss** — does `jaxloss.JaxLoss` score this kind inside the
-  JIT-compiled graph (auto-diff through `value_and_grad`)?
+  Python executor? This assumes a backend that provides the required
+  analytical Jacobians/Hessian-gradient support. Unsupported requests raise
+  `ObjectiveGradientError`; there is no silent fallback.
+- **JAX executor** — does `JaxObjectiveExecutor` score this kind inside its
+  per-case JIT fragment (auto-diff through `value_and_grad`)?
 
-| Reference kind     | Python path | Analytical ∂L/∂p | In JIT loss | Notes |
+| Reference kind     | Python executor | Analytical ∂L/∂p | JAX executor | Notes |
 | ------------------ | :---------: | :--------------: | :---------: | ----- |
 | `energy`           | ✅ | ✅ | ✅ | `energy_fn(params, coords)` directly. |
 | `frequency`        | ✅ | ✅ | ✅ | `_jax_frequencies_from_hessian` + autodiff through `eigh`. |
 | `hessian_element`  | ✅ | ✅ | ✅ | Packed `row * 3N + col` index into `jax.hessian` output. |
 | `eig_diagonal`     | ✅ | ✅ | ✅ | Diagonal of `Vᵀ H V` in QM eigenbasis. |
 | `eig_offdiagonal`  | ✅ | ✅ | ✅ | Off-diagonal of `Vᵀ H V`; same packed index. |
-| `bond_length`      | ✅ | ❌ | ❌ | End-to-end `∂L/∂p` requires differentiable inner minimization (implicit differentiation). Not yet in JIT loss. |
-| `bond_angle`       | ✅ | ❌ | ❌ | Same as `bond_length`. |
-| `torsion_angle`    | ✅ | ❌ | ❌ | Same as `bond_length`. |
+| `bond_length`      | ✅ | ❌ | ✅ | Python analytical gradients are unsupported for geometry categories; use the JAX executor for analytical geometry gradients. |
+| `bond_angle`       | ✅ | ❌ | ✅ | Same as `bond_length`. |
+| `torsion_angle`    | ✅ | ❌ | ✅ | Same as `bond_length`. |
 
 ### Optimizers
 
 Columns:
 
-- **Uses JIT loss** — pulls gradients from `JaxLoss` rather than the
-  Python-side evaluators.
+- **Uses JAX executor** — pulls gradients from `JaxObjectiveExecutor` rather
+  than finite differences on the Python executor.
 - **Full XLA loop** — the entire optimizer iteration lives inside
   `jax.jit` (no Python ↔ XLA round-trips per step).
 - **Multi-start in XLA** — N-start search fused into one kernel via
   `jax.vmap` (vs. Python `for`-loop orchestration).
 
-| Optimizer                  | Uses JIT loss | Full XLA loop | Multi-start in XLA |
+| Optimizer                  | Uses JAX executor | Full XLA loop | Multi-start in XLA |
 | -------------------------- | :-----------: | :-----------: | :----------------: |
-| `ScipyOptimizer`           | ❌ | ❌ | ❌ |
-| `OptimizationLoop` (cycling) | ✅ when configured [^cycling-jit] | ❌ | ❌ |
+| `ScipyOptimizer`           | ✅ when passed a JAX executor | ❌ | ❌ |
+| `OptimizationLoop` (cycling) | ✅ when passed a JAX executor [^cycling-jit] | ❌ | ❌ |
 | `OptaxOptimizer`           | ✅ | ❌ (Python step loop) | ❌ |
 | `JaxOptOptimizer` (`lbfgs`, `lbfgsb` [^lbfgsb-cpu], `gradient_descent`) | ✅ | ❌ (Python step loop) | ❌ |
 
-[^cycling-jit]: `OptimizationLoop` uses `JaxLoss` only when its
-    full-space phase is configured with `full_method="jaxopt:*"` or
-    `full_method="optax:*"`; otherwise it uses the Python-side evaluators.
+[^cycling-jit]: `OptimizationLoop` consumes the evaluator you pass in. A
+    `JaxObjectiveExecutor` gives the full-space phase analytical per-case JAX
+    gradients; a default `PythonObjectiveExecutor` lets SciPy use finite
+    differences.
 
 [^lbfgsb-cpu]: `jaxopt:lbfgsb` raises `RuntimeError` on non-CPU backends —
     the upstream jaxopt LBFGSB kernel uses XLA argsort/scatter primitives
@@ -431,7 +436,7 @@ Columns:
 
 | Lever                                   | Status |
 | --------------------------------------- | :----: |
-| `vmap` over molecules in `JaxLoss._loss_fn` | ✅ Done (topology-grouped) |
+| Per-case JIT fragments with Python aggregation | ✅ Done |
 | Multi-start as one XLA kernel (`vmap` over init params) | Not started |
 | Basin-hopping as a `lax.while_loop` primitive | Not started |
 | TS curvature inversion (QFUERZA) inside JIT | ✅ Done |
@@ -443,17 +448,19 @@ Columns:
 
 1. **Canonical units everywhere inside the pipeline.** No format-specific unit
    ever reaches the optimizer. Loaders convert on input; savers convert on
-   output; engines convert at their own boundary.
+   output; backends convert at their own boundary.
 
 2. **Immutable scientific models.** `Molecule` topology (bonds, angles) is
    fixed at construction, and `ForceField` rows are frozen dataclass values.
    Optimization changes only explicit parameter vectors/materialized replacements
    via `ParameterLayout` and `ActiveParameterSpace`.
 
-3. **Stateless engines.** `energy()` and `frequencies()` are pure functions of
-   (molecule, forcefield). Engines may cache OpenMM `Context` objects for
-   performance, but the cache is invalidated when topology changes.
+3. **Prepared-session backends.** A backend factory prepares one session per
+   training case; typed requests carry full parameter vectors for `energy()`,
+   `frequencies()`, and related operations. Backends may cache native state
+   such as an OpenMM `Context`, but topology changes require a new prepared
+   session.
 
 4. **Functional form consistency.** A `ForceField` carries its `functional_form`
-   from load to save. Engines and savers validate compatibility — you cannot
-   accidentally evaluate an MM3 force field with a harmonic engine.
+   from load to save. Backends and savers validate compatibility — you cannot
+   accidentally evaluate an MM3 force field with a harmonic backend.

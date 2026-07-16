@@ -10,11 +10,11 @@ q2mm does not include a licensed MacroModel compatibility layer.  The question
 here is narrower and testable:
 
 > Given the published OPT-substructure parameters as a starting point, can
-> q2mm's JAX engine and analytical-gradient optimizer reduce q2mm's own
+> q2mm's JAX backend and analytical-gradient optimizer reduce q2mm's own
 > multi-target objective without corrupting the force field?
 
 For four of the five systems the answer is yes.  Pd-allyl is the exception: it
-passes the surrogate-ratio gate, but the published Wahlers parameters already
+passes the executor-ratio gate, but the published Wahlers parameters already
 sit at a local minimum for the current q2mm objective.
 
 ---
@@ -34,35 +34,36 @@ All multi-target benchmarks use the same production setup:
   published-start baseline; for the canonical QFUERZA-start results
   (default since q2mm#290) see the
   [QFUERZA-recovery doc](qfuerza-recovery.md).
-- **Optimizer:** SciPy L-BFGS-B with `jac="auto"`.
-- **Gradient source:** `jac="auto"` resolves to JaxLoss analytical gradients
-  when the JaxLoss/ObjectiveFunction ratio check is within the default
-  ±15% band.
-- **Validation:** the real Python `ObjectiveFunction` is evaluated before and
-  after the JaxLoss-guided optimization.  For noisy systems, the reported
+- **Optimizer:** SciPy L-BFGS-B driven by `JaxObjectiveExecutor`
+  analytical gradients.
+- **Gradient source:** the `scipy-lbfgsb-jax` CLI path builds the JAX
+  executor explicitly when the JAX/Python executor ratio check is within the
+  default ±15% band.
+- **Validation:** the Python executor is evaluated before and
+  after the JAX-executor-guided optimization.  For noisy systems, the reported
   improvement is the mean over 10 initial and 10 final evaluations with a
   95% confidence interval.
 
 The raw JSON outputs and optimized force fields for these published-start
 runs live in
 [`ericchansen/q2mm-data/benchmarks/<system>/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks).
-They include provenance such as q2mm git SHA, device, ratio tolerance, and
+They include provenance such as q2mm git SHA, device, executor-ratio tolerance, and
 run timestamp.  (Sibling `convergence/` directories hold the canonical
 QFUERZA-start runs covered by the QFUERZA-recovery doc.)
 
 ---
 
-## Surrogate ratio gate
+## Executor-ratio gate
 
-Before using JaxLoss gradients, q2mm compares the JaxLoss value with the real
-`ObjectiveFunction` value.  Ratios inside the default `[0.85, 1.15]` band are
-accepted; outside the band, the analytical surrogate is considered unreliable
-for that parameter regime.
+Before using JAX analytical gradients, q2mm compares the JAX executor value
+with the Python executor value. Ratios inside the default `[0.85, 1.15]` band
+are accepted; outside the band, the analytical surrogate is considered
+unreliable for that parameter regime.
 
 After the loader API refactor and the MM3 angle-gradient fix, every system in
 this table is inside the default band.
 
-| System | Mols | Active params | Ratio | Gate |
+| System | Mols | Active params | Executor ratio | Gate |
 |--------|:----:|:-------------:|:-----:|:----:|
 | [Rh-enamide](../systems/rh-enamide.md) | 9 | 182 | 1.07 | ✓ |
 | [Heck relay](../systems/heck-relay.md) | 23 | 462 | 1.085 | ✓ |
@@ -79,8 +80,8 @@ Two fixes changed the interpretation of this table:
    near collinear geometries.
 
 Heck relay is the clearest example: its ratio moved from outside the default
-band to 1.085 after the angle-gradient fix, and JaxLoss-guided optimization
-now transfers to the real objective.
+band to 1.085 after the angle-gradient fix, and JAX-executor-guided
+optimization now transfers to the real objective.
 
 ---
 
@@ -109,15 +110,14 @@ Rh-enamide and ch3f were re-evaluated with `--n-evals 5`; the others with
 Interpretation:
 
 - **Rh-enamide, Heck relay, Pd 1,4-conj, and Rh 1,4-conj improve
-  substantially** under the q2mm JAX objective.
+  substantially** under the q2mm JAX-backend objective.
 - **Pd-allyl does not improve in a statistically meaningful way.**  The
-  optimizer converges quickly, the ratio gate is healthy, and the 10-sample
+  optimizer converges quickly, the executor-ratio gate is healthy, and the 10-sample
   confidence interval excludes any hidden >0.4% improvement.  This is a local
   minimum of the current objective, not a failed run.
-- **Small L-BFGS-B iteration counts are expected.**  In the JaxLoss path,
-  SciPy evaluates the surrogate many times internally; the real
-  `ObjectiveFunction` is called only for the initial baseline and final
-  validation.
+- **Small L-BFGS-B iteration counts are expected.**  In the JAX executor path,
+  SciPy evaluates the surrogate many times internally; the Python executor is
+  called only for the initial baseline and final validation.
 
 ---
 
@@ -139,7 +139,7 @@ These R² values should not be read as claims about the original papers'
 performance.  The papers used MacroModel MM3* and often the full lower-triangle
 eigenmatrix, charges, and/or selectivity validation.  The table reports how the
 same published OPT values and q2mm-optimized descendants behave under q2mm's
-current JAX engine and objective.
+current JAX backend and objective.
 
 ---
 
@@ -147,7 +147,7 @@ current JAX engine and objective.
 
 The published TSFFs remain scientifically valid in their original setting, but
 several do not transfer their internal Hessian/eigenmatrix quality into q2mm's
-JAX engine.  This is not a release blocker for q2mm because exact MacroModel
+JAX backend.  This is not a release blocker for q2mm because exact MacroModel
 MM3* reproduction is outside the current alpha scope.
 
 Known transfer gaps include:
@@ -164,22 +164,22 @@ q2mm's supported path is therefore:
 
 1. load the published or QFUERZA starting force field without corrupting it,
 2. build an `ActiveParameterSpace` that keeps non-OPT parameters inactive for literature-scale TS systems,
-3. optimize under the q2mm engine/objective being used,
+3. optimize under the q2mm backend/objective being used,
 4. report the remaining cross-engine gap honestly.
 
 ---
 
 ## Recommendations
 
-- Use `scipy-lbfgsb-jax` on the CLI or
-  `ScipyOptimizer(method="L-BFGS-B", jac="auto")` in Python for
-  multi-molecule TS systems.
-- Keep the default ratio gate enabled.  It now admits all five benchmark
+- Use `scipy-lbfgsb-jax` on the CLI or build a `JaxObjectiveExecutor` and pass
+  it to `ScipyOptimizer(method="L-BFGS-B")` in Python for multi-molecule TS
+  systems.
+- Keep the default executor-ratio gate enabled.  It now admits all five benchmark
   systems after the loader and angle-gradient fixes, and it remains useful as
   a guard against future surrogate/objective divergence.
 - Do not use `JaxOptOptimizer` as the default for multi-molecule TS systems.
   Its monolithic optimization path is useful on small systems, but the
-  per-molecule JaxLoss + SciPy L-BFGS-B path is the production route for the
+  per-case JAX executor + SciPy L-BFGS-B path is the production route for the
   literature-scale benchmarks.
 - Do not treat failure to beat a MacroModel-published FF under q2mm as a bug by
   itself.  Treat it as evidence of the documented MM3* transfer boundary unless

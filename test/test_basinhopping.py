@@ -1,109 +1,91 @@
 """Tests for BasinHoppingOptimizer."""
 
 from __future__ import annotations
-from test.backend_fixtures import mock_backend_info
 
-from dataclasses import dataclass
-from unittest.mock import MagicMock
+from dataclasses import replace
 
 import numpy as np
 import pytest
 
 pytest.importorskip("scipy")
 
+from q2mm.models.forcefield import ForceField, FunctionalForm, TorsionParam
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives._base import BaseObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.basinhopping import BasinHoppingOptimizer, _BoundedStep
+from test._shared import make_diatomic
 
 
-@dataclass(frozen=True)
-class MockForceField:
-    """Minimal immutable force field for optimizer tests."""
-
-    params: tuple[float, ...]
-
-
-class MockLayout:
-    """Minimal layout exposing vector/replace over MockForceField."""
-
-    def __init__(self, n_params: int) -> None:
-        self.n_params = n_params
-
-    def __len__(self) -> int:
-        return self.n_params
-
-    def vector(self, forcefield: MockForceField) -> np.ndarray:
-        return np.asarray(forcefield.params, dtype=np.float64)
-
-    def replace(self, forcefield: MockForceField, vector: np.ndarray) -> MockForceField:
-        values = np.asarray(vector, dtype=np.float64)
-        return MockForceField(tuple(values.tolist()))
+def _synthetic_forcefield(values: np.ndarray) -> ForceField:
+    return ForceField(
+        name="synthetic",
+        torsions=tuple(
+            TorsionParam(
+                elements=("C", "C", "C", "C"),
+                periodicity=i + 1,
+                force_constant=float(value),
+                env_id=f"p{i}",
+            )
+            for i, value in enumerate(values)
+        ),
+        functional_form=FunctionalForm.HARMONIC,
+    )
 
 
-class MockSpace:
-    """Active/full parameter projection used by optimizer tests."""
-
-    def __init__(
-        self,
-        baseline: np.ndarray,
-        bounds: list[tuple[float, float]] | None = None,
-        active_indices: np.ndarray | None = None,
-    ) -> None:
-        self.baseline = np.asarray(baseline, dtype=np.float64).copy()
-        self.active_indices = (
-            np.arange(self.baseline.size, dtype=int)
-            if active_indices is None
-            else np.asarray(active_indices, dtype=int)
+def _synthetic_layout(forcefield: ForceField, bounds: list[tuple[float, float]] | None) -> ParameterLayout:
+    layout = ParameterLayout.from_force_field(forcefield)
+    if bounds is None:
+        return layout
+    return ParameterLayout(
+        slots=tuple(
+            replace(slot, bounds=(float(lo), float(hi))) for slot, (lo, hi) in zip(layout.slots, bounds, strict=True)
         )
-        full_bounds = bounds if bounds is not None else [(-100.0, 100.0)] * self.baseline.size
-        self._full_bounds = np.asarray(full_bounds, dtype=np.float64)
+    )
+
+
+def _synthetic_plan(
+    initial: np.ndarray, bounds: list[tuple[float, float]] | None = None
+) -> tuple[ForceField, ActiveParameterSpace, ObjectivePlan]:
+    baseline = np.asarray(initial, dtype=np.float64)
+    ff = _synthetic_forcefield(baseline)
+    layout = _synthetic_layout(ff, bounds)
+    space = ActiveParameterSpace(layout=layout, baseline=baseline, active_indices=np.arange(baseline.size, dtype=int))
+    plan = ObjectivePlan(
+        case_ids=("0",),
+        molecules=(make_diatomic(),),
+        stationary_points=(StationaryPointKind.GROUND_STATE,),
+        observations=ObservationSet(),
+        layout=layout,
+        active_space=space,
+    )
+    return ff, space, plan
+
+
+class QuadraticEvaluator(BaseObjectiveExecutor):
+    """Synthetic quadratic evaluator with the new ObjectiveEvaluator protocol."""
+
+    def __init__(self, target: np.ndarray, bounds: list[tuple[float, float]] | None = None) -> None:
+        self.target = np.asarray(target, dtype=np.float64)
+        self.forcefield, self.space, plan = _synthetic_plan(np.zeros_like(self.target), bounds)
+        super().__init__(plan)
+        self._gradient_mode = GradientMode.ANALYTICAL
 
     @property
-    def n_active(self) -> int:
-        return int(self.active_indices.size)
+    def gradient_mode(self) -> GradientMode:
+        return self._gradient_mode
 
-    @property
-    def n_full(self) -> int:
-        return int(self.baseline.size)
+    def _total(self, full_vector: np.ndarray) -> float:
+        return float(np.sum((np.asarray(full_vector, dtype=np.float64) - self.target) ** 2))
 
-    @property
-    def bounds(self) -> np.ndarray:
-        return self._full_bounds[self.active_indices]
+    def _calculated(self, full_vector: np.ndarray) -> np.ndarray:
+        return np.zeros(0, dtype=np.float64)
 
-    def pack(self, full_vector: np.ndarray) -> np.ndarray:
-        full = np.asarray(full_vector, dtype=np.float64)
-        return full[self.active_indices].copy()
-
-    def expand(self, active_vector: np.ndarray, *, base: np.ndarray | None = None) -> np.ndarray:
-        full = self.baseline.copy() if base is None else np.asarray(base, dtype=np.float64).copy()
-        full[self.active_indices] = np.asarray(active_vector, dtype=np.float64)
-        return full
-
-
-class MockObjective:
-    """Quadratic objective: f(x) = sum((x - target)^2)."""
-
-    def __init__(
-        self,
-        target: np.ndarray,
-        bounds: list[tuple[float, float]] | None = None,
-    ) -> None:
-        self.target = target.astype(np.float64)
-        baseline = np.zeros_like(self.target)
-        self.forcefield = MockForceField(tuple(baseline.tolist()))
-        self.layout = MockLayout(self.target.size)
-        self.space = MockSpace(baseline, bounds=bounds)
-        self.n_eval = 0
-        self.history: list[float] = []
-        self.backend = MagicMock()
-        self.backend.info = mock_backend_info(param_grad=False)
-
-    def __call__(self, x: np.ndarray) -> float:
-        score = float(np.sum((np.asarray(x, dtype=np.float64) - self.target) ** 2))
-        self.n_eval += 1
-        self.history.append(score)
-        return score
-
-    def gradient(self, x: np.ndarray) -> np.ndarray:
-        return 2.0 * (np.asarray(x, dtype=np.float64) - self.target)
+    def _data_gradient(self, full_vector: np.ndarray) -> np.ndarray:
+        return 2.0 * (np.asarray(full_vector, dtype=np.float64) - self.target)
 
 
 class TestBoundedStep:
@@ -133,7 +115,7 @@ class TestBasinHoppingOptimizer:
     def test_converges_on_quadratic(self) -> None:
         """Should find the global minimum of a simple quadratic."""
         target = np.array([1.0, 2.0, 3.0])
-        obj = MockObjective(target)
+        obj = QuadraticEvaluator(target)
         opt = BasinHoppingOptimizer(niter=10, verbose=False, seed=42)
         result = opt.optimize(obj, obj.space)
         np.testing.assert_allclose(result.final_params, target, atol=0.1)
@@ -141,7 +123,7 @@ class TestBasinHoppingOptimizer:
 
     def test_returns_optimization_result(self) -> None:
         """Should return a proper OptimizationResult."""
-        obj = MockObjective(np.array([1.0]))
+        obj = QuadraticEvaluator(np.array([1.0]))
         opt = BasinHoppingOptimizer(niter=5, verbose=False, seed=0)
         result = opt.optimize(obj, obj.space)
         assert hasattr(result, "success")
@@ -153,7 +135,7 @@ class TestBasinHoppingOptimizer:
         """Final params should stay within bounds."""
         bounds = [(-5.0, 5.0), (-5.0, 5.0)]
         target = np.array([10.0, 10.0])  # outside bounds
-        obj = MockObjective(target, bounds=bounds)
+        obj = QuadraticEvaluator(target, bounds=bounds)
         opt = BasinHoppingOptimizer(niter=10, verbose=False, seed=42)
         result = opt.optimize(obj, obj.space)
         for i, (lo, hi) in enumerate(bounds):
@@ -163,8 +145,8 @@ class TestBasinHoppingOptimizer:
     def test_seed_reproducibility(self) -> None:
         """Same seed should give same result."""
         target = np.array([1.0, 2.0])
-        obj1 = MockObjective(target)
-        obj2 = MockObjective(target)
+        obj1 = QuadraticEvaluator(target)
+        obj2 = QuadraticEvaluator(target)
         opt1 = BasinHoppingOptimizer(niter=5, verbose=False, seed=123)
         opt2 = BasinHoppingOptimizer(niter=5, verbose=False, seed=123)
         r1 = opt1.optimize(obj1, obj1.space)
@@ -174,8 +156,8 @@ class TestBasinHoppingOptimizer:
     def test_different_seeds_differ(self) -> None:
         """Different seeds should (usually) give different trajectories."""
         target = np.array([1.0, 2.0, 3.0])
-        obj1 = MockObjective(target)
-        obj2 = MockObjective(target)
+        obj1 = QuadraticEvaluator(target)
+        obj2 = QuadraticEvaluator(target)
         opt1 = BasinHoppingOptimizer(niter=5, verbose=False, seed=1)
         opt2 = BasinHoppingOptimizer(niter=5, verbose=False, seed=99)
         r1 = opt1.optimize(obj1, obj1.space)
@@ -185,26 +167,26 @@ class TestBasinHoppingOptimizer:
     def test_niter_controls_hops(self) -> None:
         """More hops should produce more evaluations."""
         target = np.array([1.0])
-        obj_few = MockObjective(target)
-        obj_many = MockObjective(target)
+        obj_few = QuadraticEvaluator(target)
+        obj_many = QuadraticEvaluator(target)
         r_few = BasinHoppingOptimizer(niter=2, verbose=False, seed=0).optimize(obj_few, obj_few.space)
         r_many = BasinHoppingOptimizer(niter=20, verbose=False, seed=0).optimize(obj_many, obj_many.space)
         assert r_many.n_evaluations > r_few.n_evaluations
 
     def test_does_not_mutate_forcefield(self) -> None:
         """Caller materializes the optimized ForceField explicitly."""
-        obj = MockObjective(np.array([1.0, 2.0]))
-        initial_ff = obj.forcefield
+        obj = QuadraticEvaluator(np.array([1.0, 2.0]))
+        initial_baseline = obj.space.baseline.copy()
         opt = BasinHoppingOptimizer(niter=3, verbose=False, seed=42)
         result = opt.optimize(obj, obj.space)
-        assert obj.forcefield is initial_ff
-        np.testing.assert_array_equal(obj.layout.vector(obj.forcefield), np.zeros(2))
-        final_ff = obj.layout.replace(obj.forcefield, result.final_params)
-        np.testing.assert_array_equal(obj.layout.vector(final_ff), result.final_params)
+        # REMOVED (Phase 4): objective is no longer mutated by optimizers.
+        np.testing.assert_array_equal(obj.space.baseline, initial_baseline)
+        final_ff = obj.plan.layout.replace(obj.forcefield, result.final_params)
+        np.testing.assert_array_equal(obj.plan.layout.vector(final_ff), result.final_params)
 
     def test_summary(self) -> None:
         """OptimizationResult.summary() should work."""
-        obj = MockObjective(np.array([1.0]))
+        obj = QuadraticEvaluator(np.array([1.0]))
         result = BasinHoppingOptimizer(niter=3, verbose=False, seed=0).optimize(obj, obj.space)
         summary = result.summary()
         assert "basinhopping" in summary

@@ -1,13 +1,15 @@
 """Basin-hopping global optimizer for force field parameterization.
 
 Wraps :func:`scipy.optimize.basinhopping` with a local L-BFGS-B minimizer
-(using analytical gradients when available) and bounded perturbation steps.
-Basin-hopping combines stochastic global search with gradient-based local
-exploitation — it "hops" between basins by randomly perturbing parameters,
-then locally optimizes each landing point.
+and bounded perturbation steps.  Consumes an
+:class:`~q2mm.objectives.protocols.ObjectiveEvaluator` and returns the
+canonical :class:`~q2mm.models.results.OptimizationResult`.
 
-This is particularly effective for the non-convex MM3 landscapes where
-L-BFGS-B alone gets trapped in local minima.
+Active/full projection uses ``space.pack``/``space.expand`` directly.  The
+local minimizer uses the evaluator's analytical/FD gradients whenever the
+evaluator declares a non-``NONE`` gradient mode; otherwise SciPy computes
+its own finite differences.  The gradient behaviour is chosen by the
+caller's executor selection — never probed here.
 """
 
 from __future__ import annotations
@@ -17,8 +19,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from q2mm.optimizers.objective import ObjectiveFunction
-from q2mm.optimizers.scipy_opt import OptimizationResult
+from q2mm.models.results import OptimizationResult
+from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
@@ -27,18 +29,9 @@ logger = logging.getLogger(__name__)
 
 
 class _BoundedStep:
-    """Random perturbation step that respects parameter bounds.
+    """Random perturbation step that respects parameter bounds."""
 
-    Each hop perturbs the current parameter vector by
-    ``uniform(-stepsize, +stepsize)`` and clips to bounds.
-    """
-
-    def __init__(
-        self,
-        stepsize: float,
-        bounds: list[tuple[float, float]] | None,
-        rng: np.random.Generator,
-    ) -> None:
+    def __init__(self, stepsize: float, bounds: list[tuple[float, float]] | None, rng: np.random.Generator) -> None:
         self.stepsize = stepsize
         self.bounds = bounds
         self.rng = rng
@@ -54,21 +47,7 @@ class _BoundedStep:
 
 
 class BasinHoppingOptimizer:
-    """Global optimizer using basin-hopping with L-BFGS-B local steps.
-
-    Args:
-        niter: Number of basin-hopping iterations (hops).
-        T: Temperature parameter for the Metropolis acceptance criterion.
-            Higher values accept more uphill moves.
-        stepsize: Magnitude of random perturbation at each hop.
-        local_method: Local minimizer method (default ``'L-BFGS-B'``).
-        local_maxiter: Maximum iterations per local minimization.
-        jac: Jacobian strategy for local minimizer.  ``'auto'`` probes
-            the engine for analytical gradient support.
-        seed: Random seed for reproducible basin-hopping runs.
-        verbose: Log progress during optimization.
-
-    """
+    """Global optimizer using basin-hopping with L-BFGS-B local steps."""
 
     def __init__(
         self,
@@ -77,7 +56,6 @@ class BasinHoppingOptimizer:
         stepsize: float = 0.5,
         local_method: str = "L-BFGS-B",
         local_maxiter: int = 200,
-        jac: str | None = "auto",
         seed: int | None = None,
         verbose: bool = True,
     ) -> None:
@@ -86,60 +64,46 @@ class BasinHoppingOptimizer:
         self.stepsize = stepsize
         self.local_method = local_method
         self.local_maxiter = local_maxiter
-        self.jac = jac
         self.seed = seed
         self.verbose = verbose
 
-    def optimize(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> OptimizationResult:
-        """Run basin-hopping optimization.
-
-        Args:
-            objective: Configured objective with forcefield, backend,
-                molecules, and reference data.
-            space: The active/frozen projection over ``objective.layout``.
-                Only active parameters are perturbed/optimized;
-                ``objective.forcefield`` is never mutated — materialize
-                the optimized force field explicitly via
-                ``objective.layout.replace(objective.forcefield, result.final_params)``.
-
-        Returns:
-            OptimizationResult with the globally best full-vector
-            parameters found (length ``space.n_full``).
-
-        """
+    def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
+        """Run basin-hopping and return the canonical result."""
         from scipy.optimize import basinhopping
 
-        if objective.forcefield is None or objective.layout is None:
-            raise ValueError("BasinHoppingOptimizer.optimize() requires objective.forcefield and objective.layout.")
+        n_params = space.n_full
+        fingerprint = space.layout.fingerprint
+        baseline = np.array(space.baseline, dtype=float)
+        x0 = space.pack(baseline)
 
-        objective.history.clear()
-        n_eval_before = objective.n_eval
+        n_eval_before = evaluator.n_evaluations
+        hist_before = len(evaluator.history)
+        initial_score = evaluator.value(space.expand(x0, base=baseline))
 
-        initial_full = objective.layout.vector(objective.forcefield)
-        x0 = space.pack(initial_full)
-        initial_score = objective(initial_full)
-
-        def wrapped_objective(x_active: np.ndarray) -> float:
-            return objective(space.expand(x_active))
+        use_evaluator_gradient = evaluator.gradient_mode is not GradientMode.NONE
+        if use_evaluator_gradient:
+            gradient_mode = evaluator.gradient_mode.value
+            fd_step = evaluator.finite_difference_step
+        else:
+            gradient_mode = "finite_difference"
+            fd_step = 1e-3
 
         bounds = space.bounds.tolist()
         rng = np.random.default_rng(self.seed)
 
-        # Resolve Jacobian for the local minimizer
-        jac_fn = self._resolve_jac(objective, space)
-
-        # Local minimizer kwargs
         options: dict[str, Any] = {"maxiter": self.local_maxiter}
-        if jac_fn is None:
-            # Match ScipyOptimizer: SciPy default FD step is too small for
-            # force-field parameters.
+        jac_fn = None
+        if use_evaluator_gradient:
+
+            def jac_fn(x_active: np.ndarray) -> np.ndarray:  # noqa: F811
+                return space.pack(evaluator.value_and_gradient(space.expand(x_active, base=baseline))[1])
+        else:
             options["eps"] = 1e-3
 
-        minimizer_kwargs: dict[str, Any] = {
-            "method": self.local_method,
-            "jac": jac_fn,
-            "options": options,
-        }
+        def value_only(x_active: np.ndarray) -> float:
+            return evaluator.value(space.expand(x_active, base=baseline))
+
+        minimizer_kwargs: dict[str, Any] = {"method": self.local_method, "jac": jac_fn, "options": options}
         if bounds and self.local_method in ("L-BFGS-B", "trust-constr", "SLSQP"):
             minimizer_kwargs["bounds"] = bounds
 
@@ -147,12 +111,11 @@ class BasinHoppingOptimizer:
 
         if self.verbose:
             logger.info(
-                "Basin-hopping: %d hops, T=%.2f, stepsize=%.2f, local=%s (maxiter=%d)",
+                "Basin-hopping: %d hops, T=%.2f, stepsize=%.2f, local=%s",
                 self.niter,
                 self.T,
                 self.stepsize,
                 self.local_method,
-                self.local_maxiter,
             )
 
         if x0.size == 0:
@@ -162,17 +125,19 @@ class BasinHoppingOptimizer:
                 initial_score=initial_score,
                 final_score=initial_score,
                 n_iterations=0,
-                n_evaluations=objective.n_eval - n_eval_before,
-                initial_params=initial_full,
-                final_params=initial_full.copy(),
-                history=list(objective.history),
+                n_evaluations=evaluator.n_evaluations - n_eval_before,
+                n_params=n_params,
+                layout_fingerprint=fingerprint,
+                initial_params=baseline,
+                final_params=baseline.copy(),
+                history=evaluator.history[hist_before:] or (initial_score,),
                 method=f"basinhopping({self.local_method})",
-                jac_mode=self.jac,
-                eps=None,
+                gradient_mode=gradient_mode,
+                fd_step=fd_step,
             )
 
         result = basinhopping(
-            wrapped_objective,
+            value_only,
             x0,
             niter=self.niter,
             T=self.T,
@@ -181,17 +146,15 @@ class BasinHoppingOptimizer:
             seed=int(rng.integers(2**31)),
         )
 
-        final_active = result.x.copy()
-        final_params = space.expand(final_active)
+        final_params = space.expand(result.x.copy(), base=baseline)
         final_score = float(result.fun)
 
         if self.verbose:
             logger.info(
-                "Basin-hopping %s: score %.6f → %.6f (%d evals, %d hops)",
+                "Basin-hopping %s: score %.6f → %.6f (%d hops)",
                 "converged" if result.lowest_optimization_result.success else "finished",
                 initial_score,
                 final_score,
-                objective.n_eval - n_eval_before,
                 self.niter,
             )
 
@@ -201,25 +164,13 @@ class BasinHoppingOptimizer:
             initial_score=initial_score,
             final_score=final_score,
             n_iterations=self.niter,
-            n_evaluations=objective.n_eval - n_eval_before,
-            initial_params=initial_full,
+            n_evaluations=evaluator.n_evaluations - n_eval_before,
+            n_params=n_params,
+            layout_fingerprint=fingerprint,
+            initial_params=baseline,
             final_params=final_params,
-            history=list(objective.history),
+            history=evaluator.history[hist_before:] or (initial_score, final_score),
             method=f"basinhopping({self.local_method})",
-            jac_mode=self.jac,
-            eps=None if jac_fn is not None else 1e-3,
+            gradient_mode=gradient_mode,
+            fd_step=fd_step,
         )
-
-    def _resolve_jac(self, objective: ObjectiveFunction, space: ActiveParameterSpace) -> Any:
-        """Resolve the Jacobian function for the local minimizer."""
-        if self.jac == "analytical":
-            return lambda x_active: space.pack(objective.gradient(space.expand(x_active)))
-        if self.jac == "auto":
-            if hasattr(objective, "backend"):
-                from q2mm.backends.contracts import Capability
-
-                if objective.backend.info.supports(Capability.PARAMETER_GRADIENT):
-                    if self.verbose:
-                        logger.info("  Basin-hopping: using analytical gradients")
-                    return lambda x_active: space.pack(objective.gradient(space.expand(x_active)))
-        return None

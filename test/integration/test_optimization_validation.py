@@ -41,8 +41,12 @@ from q2mm.models.hessian import HessianProvenance, HessianUnits
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import Observation, ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
 from q2mm.models.seminario import qfuerza_fresh
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.objectives._observables import extract_calc_value
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
+from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -118,10 +122,18 @@ def _build_objective(
     backend: Backend,
     molecules: list[Molecule],
     reference: ObservationSet,
-) -> tuple[ObjectiveFunction, ParameterLayout, ActiveParameterSpace]:
+) -> tuple[PythonObjectiveExecutor, ParameterLayout, ActiveParameterSpace]:
     layout = ParameterLayout.from_force_field(ff)
-    objective = ObjectiveFunction(ff, backend, molecules, reference, layout=layout)
     space = ActiveParameterSpace.all_active(layout, ff)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(molecules))),
+        molecules=tuple(molecules),
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in molecules),
+        observations=reference,
+        layout=layout,
+        active_space=space,
+    )
+    objective = PythonObjectiveExecutor(plan, backend, ff, gradient_mode=GradientMode.NONE)
     return objective, layout, space
 
 
@@ -317,7 +329,7 @@ class TestMultiMethodConvergence:
 
 
 class TestScoreParity:
-    """Verify ObjectiveFunction scoring computes sum((w * diff)²)."""
+    """Verify objective-executor scoring computes sum((w * diff)²)."""
 
     def test_single_energy_score(self) -> None:
         """With 1 energy point, score = (w * diff)²."""
@@ -332,7 +344,7 @@ class TestScoreParity:
         ref = ObservationSet()
         ref = ref.with_energy(ref_energy, weight=1.0, case_id="0")
         obj, layout, _space = _build_objective(ff, backend, [mol], ref)
-        score = obj(layout.vector(ff))
+        score = obj.value(layout.vector(ff))
 
         expected = (1.0 * offset) ** 2
         assert score == pytest.approx(expected, rel=0.01), f"score={score}, expected={expected}"
@@ -354,7 +366,7 @@ class TestScoreParity:
         ref = ref.with_energy(ref_e1, weight=1.0, case_id="0")
         ref = ref.with_energy(ref_e2, weight=1.0, case_id="1")
         obj, layout, _space = _build_objective(ff, backend, [mol1, mol2], ref)
-        score = obj(layout.vector(ff))
+        score = obj.value(layout.vector(ff))
 
         expected = 2 * (1.0 * offset) ** 2
         assert score == pytest.approx(expected, rel=0.05), f"score={score}, expected={expected}"
@@ -483,7 +495,7 @@ class TestAtomIdentityMatching:
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97},
         }
         ref = Observation(kind="bond_length", value=0.97, atom_indices=(0, 2))
-        extracted = ObjectiveFunction._extract_value(calc, ref)
+        extracted = extract_calc_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
     def test_bond_length_atom_indices_order_independent(self) -> None:
@@ -493,7 +505,7 @@ class TestAtomIdentityMatching:
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97},
         }
         ref = Observation(kind="bond_length", value=0.97, atom_indices=(2, 0))
-        extracted = ObjectiveFunction._extract_value(calc, ref)
+        extracted = extract_calc_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
     def test_bond_angle_by_atom_indices(self) -> None:
@@ -503,7 +515,7 @@ class TestAtomIdentityMatching:
             "bond_angles_by_atoms": {(1, 0, 2): 104.5},
         }
         ref = Observation(kind="bond_angle", value=104.5, atom_indices=(1, 0, 2))
-        extracted = ObjectiveFunction._extract_value(calc, ref)
+        extracted = extract_calc_value(calc, ref)
         assert extracted == pytest.approx(104.5)
 
     def test_bond_angle_reversed_order(self) -> None:
@@ -513,7 +525,7 @@ class TestAtomIdentityMatching:
             "bond_angles_by_atoms": {(1, 0, 2): 104.5},
         }
         ref = Observation(kind="bond_angle", value=104.5, atom_indices=(2, 0, 1))
-        extracted = ObjectiveFunction._extract_value(calc, ref)
+        extracted = extract_calc_value(calc, ref)
         assert extracted == pytest.approx(104.5)
 
     def test_fallback_to_data_idx(self) -> None:
@@ -521,9 +533,10 @@ class TestAtomIdentityMatching:
         calc = {
             "bond_lengths": [0.96, 0.97, 0.98],
             "bond_lengths_by_atoms": {(0, 1): 0.96, (0, 2): 0.97, (1, 2): 0.98},
+            "_bond_lengths_ordered": [0.96, 0.97, 0.98],
         }
         ref = Observation(kind="bond_length", value=0.97, data_idx=1, atom_indices=None)
-        extracted = ObjectiveFunction._extract_value(calc, ref)
+        extracted = extract_calc_value(calc, ref)
         assert extracted == pytest.approx(0.97)
 
     def test_missing_atom_indices_raises(self) -> None:
@@ -534,7 +547,7 @@ class TestAtomIdentityMatching:
         }
         ref = Observation(kind="bond_length", value=1.0, atom_indices=(5, 6))
         with pytest.raises(KeyError):
-            ObjectiveFunction._extract_value(calc, ref)
+            extract_calc_value(calc, ref)
 
     def test_add_bond_length_requires_idx_or_atoms(self) -> None:
         """ObservationSet.add_bond_length raises without data_idx or atom_indices."""

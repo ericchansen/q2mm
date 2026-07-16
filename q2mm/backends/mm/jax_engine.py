@@ -1252,9 +1252,9 @@ class PreparedJax(AbstractPreparedBackend):
         """Return this session's compiled ``energy_fn(params, coords)`` kernel.
 
         Narrowly-typed private accessor used by
-        :class:`~q2mm.optimizers.jaxloss.JaxLoss` so compatible conformers can
-        share a compiled topology kernel without exposing the private native
-        state as a public handle.
+        :class:`~q2mm.objectives.jax.JaxObjectiveExecutor` so compatible
+        conformers can share a compiled topology kernel without exposing the
+        private native state as a public handle.
         """
         return self._state._energy_fn
 

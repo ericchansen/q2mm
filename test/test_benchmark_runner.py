@@ -86,29 +86,29 @@ class TestClassifyRatio:
 
     def test_ratio_in_band_passes(self) -> None:
         info = classify_ratio(1.05, tol=0.15)
-        assert info["ratio"] == pytest.approx(1.05)
-        assert info["ratio_status"] == "ok"
-        assert info["ratio_passes"] is True
+        assert info["executor_ratio"] == pytest.approx(1.05)
+        assert info["executor_ratio_status"] == "ok"
+        assert info["executor_ratio_passes"] is True
 
     def test_ratio_out_of_band_fails(self) -> None:
         info = classify_ratio(0.3, tol=0.15)
-        assert info["ratio_status"] == "out_of_band"
-        assert info["ratio_passes"] is False
+        assert info["executor_ratio_status"] == "out_of_band"
+        assert info["executor_ratio_passes"] is False
 
     def test_ratio_nan_diverged(self) -> None:
         info = classify_ratio(float("nan"), tol=0.15)
-        assert info["ratio"] is None
-        assert info["ratio_status"] == "nan"
-        assert info["ratio_passes"] is False
+        assert info["executor_ratio"] is None
+        assert info["executor_ratio_status"] == "nan"
+        assert info["executor_ratio_passes"] is False
 
     def test_ratio_inf_diverged(self) -> None:
         info = classify_ratio(float("inf"), tol=0.15)
-        assert info["ratio_status"] == "diverged"
+        assert info["executor_ratio_status"] == "diverged"
 
     def test_ratio_tol_none_bypasses(self) -> None:
         info = classify_ratio(0.001, tol=None)
-        assert info["ratio_status"] == "ok_bypassed"
-        assert info["ratio_passes"] is True
+        assert info["executor_ratio_status"] == "ok_bypassed"
+        assert info["executor_ratio_passes"] is True
 
 
 class TestRunBenchmarkInputValidation:
@@ -139,7 +139,7 @@ class TestRunBenchmarkEndToEnd:
         """Default Method E2 workflow runs end-to-end on CH3F."""
         result = run_benchmark(
             "ch3f",
-            ratio_tol=None,
+            executor_ratio_tol=None,
             maxiter=2,
             n_evals=0,
         )
@@ -161,7 +161,7 @@ class TestRunBenchmarkEndToEnd:
         result = run_benchmark(
             "ch3f",
             workflow="single-stage",
-            ratio_tol=None,
+            executor_ratio_tol=None,
             maxiter=2,
             n_evals=0,
         )
@@ -176,7 +176,7 @@ class TestRunBenchmarkBatch:
         outcome = run_benchmark_batch(
             ["ch3f"],
             output_dir=tmp_path,
-            ratio_tol=None,
+            executor_ratio_tol=None,
             maxiter=2,
             n_evals=0,
         )

@@ -9,8 +9,8 @@ space; workflows define *what sequence of search problems to solve*.
 Implementations:
 
 - :class:`q2mm.workflows.SingleStageWorkflow` — the standard Q2MM
-  workflow: one optimization pass against the
-  :class:`~q2mm.optimizers.objective.ObjectiveFunction` built from
+  workflow: one optimization pass against an
+  :class:`~q2mm.objectives.protocols.ObjectiveEvaluator` built from
   ``OptimizationProblem.observations``.  Equivalent to the current
   default behavior used throughout the codebase; this class makes the
   pattern composable and substitutable.
@@ -32,7 +32,7 @@ References
 
 from __future__ import annotations
 
-from q2mm.workflows.base import StageResult, Workflow, WorkflowResult
+from q2mm.workflows.base import Workflow, make_evaluator_factory
 from q2mm.workflows.method_e2 import APPROXN_DEFAULTS, MethodE2Workflow
 from q2mm.workflows.single_stage import SingleStageWorkflow
 
@@ -40,7 +40,6 @@ __all__ = [
     "APPROXN_DEFAULTS",
     "MethodE2Workflow",
     "SingleStageWorkflow",
-    "StageResult",
     "Workflow",
-    "WorkflowResult",
+    "make_evaluator_factory",
 ]

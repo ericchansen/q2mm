@@ -1,22 +1,22 @@
-# Backend Engines
+# Backends
 
-Q2MM supports multiple MM backend engines for energy evaluation, frequency
+Q2MM supports multiple MM backends for energy evaluation, frequency
 calculation, and geometry optimization.  This page compares their capabilities
-and documents when optimized parameters can be transferred between engines.
+and documents when optimized parameters can be transferred between backends.
 
 For detailed information on each backend, see the individual pages:
 
 - [OpenMM](openmm.md) — mature, dual functional-form support (Harmonic + MM3)
-- [Tinker](tinker.md) — subprocess-based MM3 engine
-- [JAX](jax-engine.md) — pure-JAX differentiable engine with analytical gradients
-- [JAX-MD](jax-md.md) — JAX-MD engine with periodic boundaries and neighbor lists
-- [Psi4](psi4.md) — quantum mechanics engine for generating reference data
+- [Tinker](tinker.md) — subprocess-based MM3 backend
+- [JAX](jax-engine.md) — pure-JAX differentiable backend with analytical gradients
+- [JAX-MD](jax-md.md) — JAX-MD backend with periodic boundaries and neighbor lists
+- [Psi4](psi4.md) — quantum mechanics backend for generating reference data
 
 ---
 
-## Engine overview
+## Backend overview
 
-Psi4 is a QM engine used to generate reference data and is not included in the
+Psi4 is a QM backend used to generate reference data and is not included in the
 MM comparison tables below.
 
 | Feature | OpenMM | Tinker | JAX | JAX-MD |
@@ -40,7 +40,7 @@ MM comparison tables below.
 
 ## Functional forms
 
-Each engine only accepts force fields whose `functional_form` is in its
+Each backend only accepts force fields whose `functional_form` is in its
 supported set.  Attempting to use an unsupported form raises an error.
 
 ### Harmonic
@@ -64,7 +64,7 @@ Allinger's MM3 potential with higher-order anharmonic corrections:
 Supported by: **OpenMM**, **JAX**, **Tinker**
 
 !!! info "JAX MM3 support"
-    The JAX engine supports both harmonic and MM3 functional forms, including
+    The JAX backend supports both harmonic and MM3 functional forms, including
     cubic bond stretch, sextic angle bend, and Buckingham exp-6 vdW terms.
 
 ---
@@ -73,11 +73,11 @@ Supported by: **OpenMM**, **JAX**, **Tinker**
 
 Non-bonded interactions (van der Waals, electrostatics) are computed
 between all atom pairs not excluded by bonding topology.  The details
-differ between engines.
+differ between backends.
 
 ### Exclusions
 
-All engines exclude **1-2** (bonded) and **1-3** (angle endpoint) pairs
+All backends exclude **1-2** (bonded) and **1-3** (angle endpoint) pairs
 from non-bonded calculations.
 
 ### 1-4 Scaling
@@ -85,7 +85,7 @@ from non-bonded calculations.
 Atoms separated by exactly 3 bonds ("1-4 pairs") often receive scaled-down
 non-bonded interactions.  **This is a key compatibility difference:**
 
-| Engine | 1-4 LJ Scaling | 1-4 Coulomb Scaling |
+| Backend | 1-4 LJ Scaling | 1-4 Coulomb Scaling |
 |--------|----------------|---------------------|
 | **OpenMM** (Harmonic) | ε/2 (AMBER `scnb=2.0`) | N/A (no charges) |
 | **OpenMM** (MM3) | None (MM3 convention) | N/A |
@@ -93,8 +93,8 @@ non-bonded interactions.  **This is a key compatibility difference:**
 | **JAX** | **Not implemented** | N/A |
 | **JAX-MD** | Configurable (default: 0.5) | Configurable |
 
-!!! warning "JAX Engine lacks 1-4 scaling"
-    The JAX engine does not implement 1-4 pair scaling.  For molecules with
+!!! warning "JAX backend lacks 1-4 scaling"
+    The JAX backend does not implement 1-4 pair scaling.  For molecules with
     1-4 non-bonded interactions (anything with 4+ atoms in a chain), JAX
     will compute slightly different non-bonded energies than OpenMM or
     JAX-MD.  For small molecules where the bonded energy dominates (bonds +
@@ -102,7 +102,7 @@ non-bonded interactions.  **This is a key compatibility difference:**
 
 ### Combining rules
 
-All engines use **geometric** combining rules for cross-term vdW
+All backends use **geometric** combining rules for cross-term vdW
 parameters:
 
 - `σ_ij = √(σ_i · σ_j)`
@@ -110,7 +110,7 @@ parameters:
 
 ### Cutoffs
 
-| Engine | Default | Notes |
+| Backend | Default | Notes |
 |--------|---------|-------|
 | **OpenMM** | No cutoff | All pairs computed |
 | **Tinker** | Tinker config | Depends on .key file |
@@ -121,8 +121,8 @@ parameters:
 
 ## Parameter transferability
 
-Can parameters optimized on one engine be used on another?  This depends
-on whether the engines compute the same energy for the same force field.
+Can parameters optimized on one backend be used on another?  This depends
+on whether the backends compute the same energy for the same force field.
 
 ### Compatibility matrix
 
@@ -151,30 +151,30 @@ energies when:
    non-bonded differences vanish entirely.
 
 For molecules with significant 1-4 interactions (longer chains, rings),
-the JAX engine will give different non-bonded energies than OpenMM or
+the JAX backend will give different non-bonded energies than OpenMM or
 JAX-MD.
 
 ### Verified parity
 
-Cross-engine energy and frequency agreement has been measured on CH₃F
+Cross-backend energy and frequency agreement has been measured on CH₃F
 (see [benchmarks](../systems/small-molecules.md#interpretation)):
 
 - **JAX ↔ JAX-MD:** < 10⁻²⁰ kcal/mol energy difference (machine precision)
 - **JAX ↔ OpenMM:** < 10⁻¹⁸ kcal/mol energy difference
-- **Frequencies:** < 0.001 cm⁻¹ max deviation across all engines
+- **Frequencies:** < 0.001 cm⁻¹ max deviation across all backends
 
-CH₃F has no 1-4 pairs, so all three harmonic engines agree exactly.
+CH₃F has no 1-4 pairs, so all three harmonic backends agree exactly.
 
 ---
 
-## Choosing an engine
+## Choosing a backend
 
-| Use Case | Recommended Engine | Why |
+| Use Case | Recommended Backend | Why |
 |----------|-------------------|-----|
 | **Fast optimization** | JAX or JAX-MD | Fastest harmonic / analytical-gradient options in the current benchmark set; see [benchmarks](../benchmarks/index.md) for workload-specific comparisons |
-| **MM3 force fields** | OpenMM, Tinker, or JAX | Engines supporting MM3 functional forms |
-| **Periodic systems** | JAX-MD | Only engine with periodic boundary support |
-| **Torsion optimization** | OpenMM, Tinker, JAX, or JAX-MD | All engines support torsions |
+| **MM3 force fields** | OpenMM, Tinker, or JAX | Backends supporting MM3 functional forms |
+| **Periodic systems** | JAX-MD | Only backend with periodic boundary support |
+| **Torsion optimization** | OpenMM, Tinker, JAX, or JAX-MD | All backends support torsions |
 | **Widest compatibility** | OpenMM | Supports both Harmonic and MM3, mature ecosystem |
 | **Gradient-based optimizers** | JAX or JAX-MD | Analytical `jax.grad` eliminates finite-difference overhead |
 
@@ -182,8 +182,8 @@ CH₃F has no 1-4 pairs, so all three harmonic engines agree exactly.
 
 ## Unit conventions
 
-All engines accept parameters in **canonical units** (defined in
-`q2mm.models.units`).  Each engine converts internally as needed:
+All backends accept parameters in **canonical units** (defined in
+`q2mm.models.units`).  Each backend converts internally as needed:
 
 | Quantity | Canonical Unit | Convention |
 |----------|---------------|------------|
@@ -197,5 +197,5 @@ All engines accept parameters in **canonical units** (defined in
 !!! note "The ½ factor"
     Q2MM uses `E = k·(x − x₀)²` **without** the ½ factor.  This matches
     AMBER and MM3 conventions.  OpenMM's `HarmonicBondForce` uses
-    `E = ½·k·(r − r₀)²`, so the engine doubles the force constant during
+    `E = ½·k·(r − r₀)²`, so the backend doubles the force constant during
     conversion.

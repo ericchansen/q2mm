@@ -311,37 +311,46 @@ itself. All three optimizers (SciPy, Optax, JaxOpt) take this
 `ActiveParameterSpace` as their required second `optimize()` argument
 and respect `space.n_active`.
 
-### Two Gradient Pipelines
+### Objective Executors and Gradient Selection
 
-q2mm has two separate gradient pipelines — know which one you are using:
+q2mm separates the immutable fitting plan from the backend-specific executor:
+build an `ObjectivePlan`, attach either a `PythonObjectiveExecutor` or a
+`JaxObjectiveExecutor`, then pass that evaluator plus the
+`ActiveParameterSpace` to `optimizer.optimize(evaluator, space)`. Gradient
+selection is explicit — there is no `jac` auto-detection and no silent
+finite-difference fallback.
 
-| Pipeline | Used by | Geometry gradients | When to use |
-|----------|---------|:------------------:|-------------|
-| **SciPy + JaxLoss** (recommended) | `ScipyOptimizer(jac='auto')` on JaxEngine | Analytical (per-molecule JIT) | **All TS systems** — fastest, most robust |
-| **Python path** | SciPy (FD fallback), Optax (non-JAX) | FD fallback (slow) | Frequency-only objectives, small systems |
-| **JIT/JaxLoss path** | JaxOpt, Optax (JAX) | Analytical (implicit diff) | ⚠️ See jaxopt warning below |
+| Pipeline | Executor and optimizer use | Geometry gradients | When to use |
+|----------|----------------------------|:------------------:|-------------|
+| **SciPy + JAX objective executor** (recommended) | `JaxObjectiveExecutor(plan, JaxBackend(), ff)` with `ScipyOptimizer(method="L-BFGS-B").optimize(evaluator, space)` | Analytical (per-case JIT) | **All TS systems** — fastest, most robust |
+| **Python executor, scalar-only** | `PythonObjectiveExecutor(plan, backend, ff, gradient_mode=GradientMode.NONE)` with SciPy's internal finite differences | SciPy FD (slow) | Frequency-only objectives, small systems, non-JAX backends |
+| **Python executor, explicit FD** | `PythonObjectiveExecutor(..., gradient_mode=GradientMode.FINITE_DIFFERENCE)` | Executor FD (slow) | When FD evaluations must be counted by the executor |
+| **JAX-native optimizer path** | `JaxObjectiveExecutor` with JaxOpt or Optax | Analytical (implicit diff / autodiff) | ⚠️ See jaxopt warning below |
 
-Both JaxOpt and Optax route through `JaxLoss` when the engine is a
-`JaxEngine`.  `JaxLoss` compiles each molecule's loss function
-independently (per-molecule JIT split), then dispatches them from
-Python and sums — no single XLA program contains all molecules.
-This prevents compilation OOM on multi-molecule systems.
+`JaxObjectiveExecutor` compiles each case's loss function independently
+(per-case JIT split), then dispatches them from Python and sums — no single
+XLA program contains all molecules. This prevents compilation OOM on
+multi-molecule systems.
 
-- **SciPy + JaxLoss** (recommended): `ScipyOptimizer(jac='auto',
-  ratio_tol=None)` builds JaxLoss internally and feeds analytical
-  gradients to `scipy.optimize.minimize(method='L-BFGS-B', jac=True)`.
-  Use `ratio_tol=None` for TS systems (the default ratio check fails
-  for all 5 TS systems with ratios of 0.1–0.4).
+- **SciPy + JAX objective executor** (recommended): build
+  `JaxObjectiveExecutor(plan, backend, starting_ff)` yourself and pass it to
+  `ScipyOptimizer(method="L-BFGS-B").optimize(evaluator, space)`. The
+  optimizer sees `GradientMode.ANALYTICAL` and feeds analytical gradients to
+  `scipy.optimize.minimize(..., jac=True)`.
+- **Python executor**: build `PythonObjectiveExecutor(plan, backend,
+  starting_ff, gradient_mode=GradientMode.NONE)` to let SciPy compute internal
+  finite differences, or choose `GradientMode.FINITE_DIFFERENCE` for
+  executor-owned finite differences.
 - **JaxOpt** uses `jit=False` + `value_and_grad=True` so
   `solver.run()` executes a Python while-loop, dispatching
   per-molecule compiled functions at each step.
-- **Optax** calls `JaxLoss.value_and_grad_jax()` directly
+- **Optax** calls `JaxObjectiveExecutor.value_and_grad_jax()` directly
   (Python dispatch) instead of wrapping in `jax.jit(jax.value_and_grad(...))`.
 
 ⚠️ **jaxopt ≥ 0.8.5 is not recommended for multi-molecule systems.**
 The default `linesearch="zoom"` triggers 30–60 minutes of additional
-XLA compilation beyond the JaxLoss JIT phase.  This makes jaxopt
-impractical for convergence runs.  Use `scipy-lbfgsb-jax` instead —
+XLA compilation beyond the JAX executor JIT phase. This makes jaxopt
+impractical for convergence runs. Use `scipy-lbfgsb-jax` instead —
 it completes in seconds post-JIT.
 
 ### Expected Runtimes
@@ -350,7 +359,7 @@ Runtimes on RTX 5090 GPU (WSL2). Each system's time is JIT + optimization.
 
 | Benchmark | JIT | Optimization | Total |
 |-----------|-----|:------------:|-------|
-| **SciPy L-BFGS-B + JaxLoss (GPU, recommended)** |||
+| **SciPy L-BFGS-B + JAX objective executor (GPU, recommended)** |||
 | Rh-enamide (9 mol, 182 params) | 95 s | 6 s | ~2 min |
 | Heck relay (23 mol, 462 params) | 249 s | 18 s | ~5 min |
 | Pd-allyl (21 mol, 482 params) | 227 s | 13 s | ~4 min |
@@ -426,12 +435,12 @@ metadata in this project.
 | **Long benchmarks** | OpenMM L-BFGS-B can take hours | Check CPU/GPU utilization periodically with `nvidia-smi` |
 | **Rewriting without full context** | Page rewrite introduces errors because not all data sources were checked | Gather ALL related dirs, issues, PRs, and prior work before rewriting (§2) |
 | **Wrong publication year** | CrossRef has multiple date fields that disagree; using the wrong one corrupts citations | Always validate via Zotero MCP (§10) |
-| **JIT-wrapping `JaxLoss._loss_fn`** | `jax.jit()` or `jax.vmap()` on multi-molecule `_loss_fn` re-inlines all molecules into one XLA program → compilation OOM | Use `JaxLoss.value_and_grad_jax()` (Python dispatch) or `JaxLoss.loss_and_grad()` instead. See §6 Two Gradient Pipelines. |
+| **JIT-wrapping `JaxObjectiveExecutor` internals** | Wrapping the full multi-case objective in another `jax.jit()` or `jax.vmap()` re-inlines all molecules into one XLA program → compilation OOM | Use `JaxObjectiveExecutor.value_and_grad_jax()` (Python dispatch) or `JaxObjectiveExecutor.value_and_gradient()` instead. See §6 Objective Executors and Gradient Selection. |
 | **Frequency-only refs for TS** | Misses geometry + eigenmatrix targets that the papers actually used → wrong optimization | Use `ObservationSet.from_molecules()` + `invert_ts_curvature=True` for TS systems. See §6 Reference Data. |
 | **jaxopt zoom linesearch** | `jaxopt ≥ 0.8.5` LBFGS default `linesearch="zoom"` triggers 30–60 min extra XLA compilation post-JIT | Use `scipy-lbfgsb-jax` instead — same L-BFGS-B algorithm, completes in seconds post-JIT |
-| **TS ratio check fallback** | `ScipyOptimizer(jac='auto')` ratio check fails for ALL TS systems (0.1–0.4), silently falls back to slow FD gradients | Set `ratio_tol=None` to bypass. CLI key: `scipy-lbfgsb-jax` |
+| **TS executor-ratio gate** | Literature-scale TS systems can have JAX/Python executor ratios of 0.1–0.4 from poor starts; the optimizer no longer falls back silently | Pass `--executor-ratio-tol none` for documented TS runs when intentionally bypassing the gate. CLI key: `scipy-lbfgsb-jax` |
 | **Heck relay bounds** | ±20% bounds cause 35–92% NaN rate due to fragile TS landscape with large negative FCs (−3753) | Use ±5% bounds for heck-relay specifically |
-| **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible OF change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--ftol` (e.g. `1e-12`); apply `--fc-fraction`/`--eq-fraction` to keep optimizer in starting basin; check JaxLoss/OF ratio. The new diagnostic warning in `scipy_opt._run_minimize` flags this. |
+| **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible objective-executor score change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--ftol` (e.g. `1e-12`); apply `--fc-fraction`/`--eq-fraction` to keep optimizer in starting basin; check the `executor_ratio`. The diagnostic warning in `scipy_opt._run_minimize` flags this. |
 | **Default sanity bounds for from-poor-start runs** | `DEFAULT_BOUNDS` (bond_k ±3600, bond_eq 0.5–3.0 Å) let L-BFGS-B escape the QFUERZA / random-default starting basin → final FF unrelated to start | Use `ScipyOptimizer(fc_fraction=0.20, eq_fraction=0.05)` (or CLI flags `--fc-fraction --eq-fraction`) to bound each param to a ± fraction of its current value. |
 | **Benchmark batch never optimized** | All systems exit at `nfev≤2` with no OF change but the batch reports "success" | The runner now emits ERROR + non-zero exit code (`scripts/benchmark.py`). Re-tune `ftol` or bounds and re-run. See §11. |
 
@@ -485,7 +494,7 @@ file, ~2,000 lines) and do not need composition.
    `_REGISTRY` dict.
 3. Create a validation test under `test/integration/` following the pattern
    of `test_published_ff_validation.py` — load published FF via
-   `q2mm.benchmarks.systems.load_system(...)`, evaluate with `JaxEngine`,
+   `q2mm.benchmarks.systems.load_system(...)`, evaluate with `JaxBackend`,
    compare QM vs MM, pin results in a golden fixture JSON.
 4. Mark with `@pytest.mark.validation` so it runs with `--run-validation`.
 5. If the system depends on external (gitignored) data, the loader must
@@ -516,16 +525,16 @@ Many hours of GPU time have been wasted on batches where the optimizer never act
 2. **Sanity-check optimizer config** for the starting point:
    - Canonical default (QFUERZA-start, `starting_point="qfuerza"`): use `--ftol 1e-12` and `--fc-fraction 0.20 --eq-fraction 0.05` (or `--fc-fraction 0.05` for heck-relay).
    - Publication-baseline (`--starting-point published`): `ftol=1e-8`, sanity bounds → fine (starting FF is already in the published basin).
-   - Always pass `--ratio-tol none` for TS systems (ratios are 0.1–0.4).
+   - Always pass `--executor-ratio-tol none` for TS systems when intentionally bypassing the executor-ratio gate (ratios can be 0.1–0.4).
 
 3. **Verify GPU + device** (§4 + §7): `python -c "import jax; print(jax.devices())"` → must show `CudaDevice`.
 
 4. **Run the FIRST system alone.** Do NOT launch all systems sequentially in one call.
 
 5. **AUDIT GATE — read the first system's JSON before launching the rest:**
-   - `n_iterations > 5` (not just `n_evaluations`; that counter is misleading on the JaxLoss path — see `scipy_opt._run_minimize`).
-   - `|improvement_pct| > 1%` on the real ObjectiveFunction (the `improvement_pct` field, not `final_optimizer_score`).
-   - JaxLoss `initial_jaxloss / initial_obj_score` ratio in `[0.1, 10]` (or document why it's outside).
+   - `n_iterations > 5` (not just `n_evaluations`; that counter can be misleading on the JAX executor path — see `scipy_opt._run_minimize`).
+   - `|improvement_pct| > 1%` on the Python objective-executor score of record (the `improvement_pct` field, not `final_optimizer_score`).
+   - `executor_ratio = initial_jax_score / initial_obj_score` in `[0.1, 10]` (or document why it's outside).
    - Per-category R² (`seminario` → `optimized_categories`) improves on at least one of bond_length, bond_angle, eigenmatrix.
    - If ANY of these fail, **STOP**. Re-tune and re-run the single system. Do not launch the batch.
 

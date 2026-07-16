@@ -1,8 +1,8 @@
 """Unit tests for JaxMultiStartOptimizer.
 
 Verifies constructor validation, determinism, argmin-best-of-N
-selection, and that the fused vmap path matches a Python-loop
-multi-start baseline on a simple system.
+selection, and that single-start multi-start matches a plain
+jaxopt run on a simple system.
 """
 
 from __future__ import annotations
@@ -26,7 +26,10 @@ from test._shared import make_diatomic, make_water
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.optimizers.objective import ObjectiveFunction
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives.jax import JaxObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.python import PythonObjectiveExecutor
 
 JaxBackend = None
 
@@ -39,21 +42,33 @@ def _params(forcefield: ForceField) -> np.ndarray:
     return _layout(forcefield).vector(forcefield)
 
 
+def _make_plan(forcefield: ForceField, molecules: list, reference: object, **kwargs: object) -> ObjectivePlan:
+    layout = _layout(forcefield)
+    mols = tuple(molecules)
+    plan = ObjectivePlan(
+        case_ids=tuple(str(i) for i in range(len(mols))),
+        molecules=mols,
+        stationary_points=tuple(StationaryPointKind.GROUND_STATE for _ in mols),
+        observations=reference,
+        layout=layout,
+        active_space=ActiveParameterSpace.all_active(layout, forcefield),
+        regularization=float(kwargs.pop("regularization", 0.0)),
+        reference_params=kwargs.pop("reference_params", None),
+    )
+    if kwargs:
+        raise TypeError(f"Unsupported objective kwargs: {sorted(kwargs)}")
+    return plan
+
+
 def _make_objective(
     forcefield: ForceField, backend: object, molecules: list, reference: object, **kwargs: object
-) -> ObjectiveFunction:
-    return ObjectiveFunction(
-        forcefield=forcefield,
-        backend=backend,
-        molecules=molecules,
-        reference=reference,
-        layout=_layout(forcefield),
-        **kwargs,
-    )
+) -> JaxObjectiveExecutor:
+    plan = _make_plan(forcefield, molecules, reference, **kwargs)
+    return JaxObjectiveExecutor(plan, backend, forcefield)
 
 
-def _all_active_space(objective: ObjectiveFunction) -> ActiveParameterSpace:
-    return ActiveParameterSpace.all_active(objective.layout, objective.forcefield)
+def _all_active_space(objective: JaxObjectiveExecutor) -> ActiveParameterSpace:
+    return objective.plan.active_space
 
 
 def _h2_ff(bond_k: float = 215.8, bond_r0: float = 0.80) -> ForceField:
@@ -130,17 +145,18 @@ class TestJaxMultiStartValidation:
 
         fake_backend = MagicMock()
         fake_backend.__class__.__name__ = "FakeBackend"
-        obj = _make_objective(forcefield=ff, backend=fake_backend, molecules=[mol], reference=ref)
+        plan = _make_plan(ff, [mol], ref)
+        obj = PythonObjectiveExecutor(plan, fake_backend, ff)
 
         optimizer = JaxMultiStartOptimizer(method="lbfgs", n_starts=3, maxiter=10, verbose=False)
-        with pytest.raises(TypeError, match="JaxMultiStartOptimizer requires a JaxBackend"):
+        with pytest.raises(TypeError, match="JaxObjectiveExecutor"):
             optimizer.optimize(obj, _all_active_space(obj))
 
 
 class TestJaxMultiStartConvergence:
     """End-to-end optimization tests."""
 
-    def _make_h2_obj(self) -> ObjectiveFunction:
+    def _make_h2_obj(self) -> JaxObjectiveExecutor:
         from q2mm.models.observations import ObservationSet
 
         mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
@@ -169,8 +185,11 @@ class TestJaxMultiStartConvergence:
 
         assert result.final_score <= result.initial_score
         assert result.method == "jaxopt-multi:lbfgs"
-        assert result.jac_mode == "analytical"
-        assert result.eps is None
+        assert result.gradient_mode == "analytical"
+        assert result.fd_step is None
+        assert len(result.candidates) == 3
+        assert all(c.status == "success" for c in result.candidates)
+        assert result.final_params.shape == result.initial_params.shape
 
     def test_single_start_matches_plain_jaxopt(self) -> None:
         """n_starts=1 reproduces a plain JaxOptOptimizer run."""
@@ -194,6 +213,7 @@ class TestJaxMultiStartConvergence:
 
         np.testing.assert_allclose(r_multi.final_params, r_plain.final_params, rtol=1e-5, atol=1e-8)
         assert abs(r_multi.final_score - r_plain.final_score) < 1e-8
+        assert len(r_multi.candidates) == 1
 
     def test_determinism_with_seed(self) -> None:
         """Same seed → same final params."""
@@ -223,11 +243,11 @@ class TestJaxMultiStartConvergence:
 
         np.testing.assert_allclose(r_a.final_params, r_b.final_params, rtol=1e-8)
         assert r_a.final_score == pytest.approx(r_b.final_score, abs=1e-8)
+        assert [(c.index, c.status) for c in r_a.candidates] == [(c.index, c.status) for c in r_b.candidates]
 
     def test_best_of_n_selection(self) -> None:
         """Selects the replica with the lowest final loss."""
         from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
-        from q2mm.optimizers.jaxloss import JaxLoss
 
         obj = self._make_h2_obj()
         opt = JaxMultiStartOptimizer(
@@ -240,11 +260,11 @@ class TestJaxMultiStartConvergence:
         )
         result = opt.optimize(obj, _all_active_space(obj))
 
-        spec = obj.to_jax_spec()
-        jax_loss = JaxLoss(spec, obj.backend, obj.molecules, obj.forcefield, sessions=obj.jax_sessions(spec))
-        score_at_returned = float(jax_loss(result.final_params))
+        score_at_returned = float(obj.value(result.final_params))
 
         assert abs(score_at_returned - result.final_score) < 1e-6
+        assert len(result.candidates) == 4
+        assert result.final_score == pytest.approx(min(c.final_score for c in result.candidates), abs=1e-8)
 
     def test_forcefield_remains_immutable(self) -> None:
         """After optimize(), result.final_params materialize the optimized force field."""
@@ -261,8 +281,8 @@ class TestJaxMultiStartConvergence:
         )
         result = opt.optimize(obj, _all_active_space(obj))
 
-        np.testing.assert_allclose(_params(obj.forcefield), result.initial_params, rtol=1e-10)
-        optimized_ff = _layout(obj.forcefield).replace(obj.forcefield, result.final_params)
+        np.testing.assert_allclose(_params(obj.base_force_field), result.initial_params, rtol=1e-10)
+        optimized_ff = _layout(obj.base_force_field).replace(obj.base_force_field, result.final_params)
         np.testing.assert_allclose(_params(optimized_ff), result.final_params, rtol=1e-10)
 
     def test_water_multi_start(self) -> None:
@@ -293,8 +313,12 @@ class TestJaxMultiStartConvergence:
 class TestJaxMultiStartBackendGuard:
     """Backend-specific guards."""
 
-    def test_lbfgsb_gpu_guard(self) -> None:
-        """LBFGSB raises on non-CPU backends with a clear message."""
+    def test_lbfgsb_gpu_guard(self, caplog: pytest.LogCaptureFixture) -> None:
+        """LBFGSB on a non-CPU backend returns a canonical failure result.
+
+        Phase 4: every replica fails but no exception is raised — the
+        candidates are preserved on the returned result.
+        """
         from unittest.mock import patch
 
         from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
@@ -311,8 +335,11 @@ class TestJaxMultiStartBackendGuard:
 
         from q2mm.backends.mm._jax_common import jax as jax_mod
 
-        with (
-            patch.object(jax_mod, "default_backend", return_value="gpu"),
-            pytest.raises(RuntimeError, match="LBFGSB is not supported"),
-        ):
-            optimizer.optimize(obj, _all_active_space(obj))
+        with patch.object(jax_mod, "default_backend", return_value="gpu"):
+            result = optimizer.optimize(obj, _all_active_space(obj))
+        assert result.success is False
+        assert "all 2" in result.message
+        assert result.final_score == float("inf")
+        assert len(result.candidates) == 2
+        assert all(c.status == "failure" for c in result.candidates)
+        assert "LBFGSB is not supported" in caplog.text
