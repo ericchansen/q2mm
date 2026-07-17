@@ -20,14 +20,15 @@ from __future__ import annotations
 import copy
 import logging
 import warnings
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
 import numpy as np
 
 from q2mm import constants as co
+from q2mm._provenance import freeze_json_mapping
 from q2mm.models.units import hessian_au_to_kjmola2
 
 logger = logging.getLogger(__name__)
@@ -94,12 +95,27 @@ class HessianProvenance:
             ``"fchk"``, or ``"programmatic"`` for Hessians attached directly
             via :meth:`~q2mm.models.molecule.Molecule.with_hessian`.
         path: File path the Hessian was parsed from, if any.
+        source_details: Structured JSON-safe details supplied by the source.
 
     """
 
     units: HessianUnits
     source: str = "programmatic"
     path: str | None = None
+    source_details: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.units, HessianUnits):
+            raise ValueError("HessianProvenance.units must be a HessianUnits member.")
+        if not isinstance(self.source, str) or not self.source:
+            raise ValueError("HessianProvenance.source must be a non-empty string.")
+        if self.path is not None and not isinstance(self.path, str):
+            raise ValueError("HessianProvenance.path must be a string or None.")
+        object.__setattr__(
+            self,
+            "source_details",
+            freeze_json_mapping(self.source_details, path="HessianProvenance.source_details"),
+        )
 
 
 def _strip_pint(hessian: Any) -> Any:

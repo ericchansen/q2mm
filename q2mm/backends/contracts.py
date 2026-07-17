@@ -1,7 +1,7 @@
 """Backend capability contracts and prepared-session vocabulary.
 
 This module is the single source of truth for how Q2MM talks to a computational
-backend (MM or QM).  It defines:
+backend (MM or reference).  It defines:
 
 * :class:`BackendRole` / :class:`Capability` / :class:`BackendInfo` /
   :class:`BackendProvenance` — the vocabulary a backend uses to *declare* what
@@ -24,13 +24,13 @@ backend (MM or QM).  It defines:
   concrete backend exposes only ``info`` and ``prepare`` (plus clearly
   backend-specific serialization/config); the prepared session is the only
   evaluation surface.
-* Side-effect-free registry :class:`BackendDescriptor` (which carries a static
-  :class:`BackendInfo` and a descriptor-API version) / :class:`DependencyProbe`
-  plumbing used by :mod:`q2mm.backends.registry`.
+* Side-effect-free registry :class:`BackendDescriptor` (which carries static
+  capability and functional-form ceilings) / :class:`DependencyProbe` plumbing
+  used by :mod:`q2mm.backends.registry`.
 
 **Canonical unit contracts** (results always carry these units):
 
-* MM energy: **kcal/mol** (:attr:`EnergyUnit.KCAL_PER_MOL`); QM energy:
+* MM energy: **kcal/mol** (:attr:`EnergyUnit.KCAL_PER_MOL`); reference energy:
   **Hartree** (:attr:`EnergyUnit.HARTREE`) — must match :class:`BackendRole`.
 * Geometry: **Å** (:attr:`LengthUnit.ANGSTROM`).
 * Hessian: **Hartree/Bohr²** (:attr:`HessianUnit.HARTREE_PER_BOHR2`).
@@ -58,15 +58,17 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 import numpy as np
 import numpy.typing as npt
 
+from q2mm._provenance import freeze_json_mapping
+
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
+    from q2mm.models.hessian import HessianProvenance
     from q2mm.models.molecule import Molecule
     from q2mm.models.parameters import ParameterLayout
 
 
-#: Descriptor-API version.  Bumped when the descriptor/contract shape changes
-#: in a way out-of-tree plugins must adapt to.
-DESCRIPTOR_API_VERSION = 1
+#: Backend API version targeted by manifests and runtime descriptors.
+BACKEND_API_VERSION = 1
 
 
 # ---------------------------------------------------------------------------
@@ -75,10 +77,10 @@ DESCRIPTOR_API_VERSION = 1
 
 
 class BackendRole(str, enum.Enum):
-    """Whether a backend computes molecular-mechanics or quantum energies."""
+    """Whether a backend computes molecular-mechanics or reference data."""
 
     MM = "mm"
-    QM = "qm"
+    REFERENCE = "reference"
 
 
 class Capability(str, enum.Enum):
@@ -95,6 +97,7 @@ class Capability(str, enum.Enum):
     HESSIAN = "hessian"
     FREQUENCIES = "frequencies"
     PARAMETER_GRADIENT = "parameter_gradient"
+    COORDINATE_GRADIENT = "coordinate_gradient"
     HESSIAN_PARAMETER_JACOBIAN = "hessian_parameter_jacobian"
     BATCHED_ENERGY = "batched_energy"
     BATCHED_HESSIAN = "batched_hessian"
@@ -127,10 +130,16 @@ class FrequencyUnit(str, enum.Enum):
     INVERSE_CM = "cm^-1"
 
 
+class CoordinateGradientUnit(str, enum.Enum):
+    """Explicit canonical Cartesian coordinate-gradient unit."""
+
+    HARTREE_PER_BOHR = "hartree/bohr"
+
+
 #: Canonical energy unit implied by a backend role.
 _ROLE_ENERGY_UNIT = {
     BackendRole.MM: EnergyUnit.KCAL_PER_MOL,
-    BackendRole.QM: EnergyUnit.HARTREE,
+    BackendRole.REFERENCE: EnergyUnit.HARTREE,
 }
 
 
@@ -140,16 +149,18 @@ class BackendProvenance:
 
     Args:
         backend: Registry key of the backend (e.g. ``"openmm"``, ``"jax"``).
-        role: Whether the producing backend is MM or QM.
+        role: Whether the producing backend is MM or reference.
         version: Backend library version string if known (else ``""``).
-        detail: Free-form detail — QM method/basis, OpenMM platform/device, etc.
+        details: Structured JSON-safe implementation, model, calculator,
+            configuration, driver, platform, native-provenance, schema, or
+            conversion details.
 
     """
 
     backend: str
     role: BackendRole
     version: str = ""
-    detail: str = ""
+    details: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.backend, str) or not self.backend:
@@ -158,8 +169,11 @@ class BackendProvenance:
             raise ValueError(f"BackendProvenance.role must be a BackendRole; got {self.role!r}.")
         if not isinstance(self.version, str):
             raise ValueError(f"BackendProvenance.version must be a string; got {self.version!r}.")
-        if not isinstance(self.detail, str):
-            raise ValueError(f"BackendProvenance.detail must be a string; got {self.detail!r}.")
+        object.__setattr__(
+            self,
+            "details",
+            freeze_json_mapping(self.details, path="BackendProvenance.details"),
+        )
 
 
 @dataclass(frozen=True)
@@ -172,10 +186,10 @@ class BackendInfo:
 
     Args:
         name: Human-readable backend name (e.g. ``"OpenMM"``).
-        role: MM or QM.
+        role: MM or reference.
         capabilities: Operations the backend supports.
         functional_forms: :class:`~q2mm.models.forcefield.FunctionalForm`
-            values (as strings) the backend can evaluate.  Empty for QM
+            values (as strings) the backend can evaluate.  Empty for reference
             backends, which do not consume force fields.
         provenance: Canonical provenance stamped onto every result.
 
@@ -196,13 +210,15 @@ class BackendInfo:
         caps = frozenset(self.capabilities)
         if not all(isinstance(c, Capability) for c in caps):
             raise ValueError("BackendInfo.capabilities must all be Capability members.")
+        if self.role is BackendRole.MM and Capability.COORDINATE_GRADIENT in caps:
+            raise ValueError("BackendInfo: MM backends cannot declare COORDINATE_GRADIENT.")
         forms = frozenset(self.functional_forms)
         if not all(isinstance(f, str) for f in forms):
             raise ValueError("BackendInfo.functional_forms must all be strings.")
         object.__setattr__(self, "capabilities", caps)
         object.__setattr__(self, "functional_forms", forms)
-        if self.role is BackendRole.QM and forms:
-            raise ValueError("BackendInfo: QM backends must declare no functional_forms.")
+        if self.role is BackendRole.REFERENCE and forms:
+            raise ValueError("BackendInfo: reference backends must declare no functional_forms.")
         if self.provenance is not None:
             if not isinstance(self.provenance, BackendProvenance):
                 raise ValueError("BackendInfo.provenance must be a BackendProvenance or None.")
@@ -409,7 +425,7 @@ class PreparationRequest:
         case_id: Stable, non-empty identifier for the training case.  Exactly
             one prepared session is built per ``case_id``.
         molecule: The molecule (with reference geometry) to prepare.
-        force_field: Base force field (MM backends only; ``None`` for QM).
+        force_field: Base force field (MM backends only; ``None`` for reference).
             The prepared session derives its :class:`ParameterLayout` from
             this force field and owns both.
         options: Backend-specific preparation options (string keys).  Copied to
@@ -563,28 +579,28 @@ _MM_REQUEST_TYPES = (
 
 
 # ---------------------------------------------------------------------------
-# QM evaluation requests (no parameter vectors — method/basis fixed at prepare)
+# Reference evaluation requests (no parameter vectors — model fixed at prepare)
 # ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
-class QMEnergyRequest:
-    """Single-point QM energy request."""
+class ReferenceEnergyRequest:
+    """Single-point reference energy request."""
 
 
 @dataclass(frozen=True)
-class QMHessianRequest:
-    """QM Hessian request."""
+class ReferenceHessianRequest:
+    """Reference Hessian request."""
 
 
 @dataclass(frozen=True)
-class QMFrequencyRequest:
-    """QM vibrational-frequency request."""
+class ReferenceFrequencyRequest:
+    """Reference vibrational-frequency request."""
 
 
 @dataclass(frozen=True)
-class QMGeometryOptimizationRequest:
-    """QM geometry optimization request.
+class ReferenceGeometryOptimizationRequest:
+    """Reference geometry optimization request.
 
     Args:
         opt_type: ``"min"`` for a minimum, ``"ts"`` for a transition state.
@@ -594,12 +610,18 @@ class QMGeometryOptimizationRequest:
     opt_type: str = "min"
 
 
-#: QM evaluation request types (used for request-family validation).
-_QM_REQUEST_TYPES = (
-    QMEnergyRequest,
-    QMHessianRequest,
-    QMFrequencyRequest,
-    QMGeometryOptimizationRequest,
+@dataclass(frozen=True)
+class ReferenceCoordinateGradientRequest:
+    """Reference Cartesian coordinate-gradient request."""
+
+
+#: Reference evaluation request types (used for request-family validation).
+_REFERENCE_REQUEST_TYPES = (
+    ReferenceEnergyRequest,
+    ReferenceHessianRequest,
+    ReferenceFrequencyRequest,
+    ReferenceGeometryOptimizationRequest,
+    ReferenceCoordinateGradientRequest,
 )
 
 
@@ -614,7 +636,7 @@ class EnergyResult:
 
     Args:
         energy: Energy value.
-        unit: Explicit canonical unit (kcal/mol for MM, Hartree for QM).
+        unit: Explicit canonical unit (kcal/mol for MM, Hartree for reference).
         provenance: Producing backend.
 
     """
@@ -687,6 +709,22 @@ class HessianResult:
         _require_finite(hess, name="HessianResult.hessian")
         object.__setattr__(self, "hessian", hess)
 
+    @property
+    def hessian_provenance(self) -> HessianProvenance:
+        """Return molecule-level atomic-unit provenance for this Hessian."""
+        from q2mm.models.hessian import HessianProvenance, HessianUnits
+
+        return HessianProvenance(
+            units=HessianUnits.ATOMIC,
+            source=self.provenance.backend,
+            source_details={
+                "backend": self.provenance.backend,
+                "role": self.provenance.role.value,
+                "version": self.provenance.version,
+                "details": self.provenance.details,
+            },
+        )
+
 
 @dataclass(frozen=True, eq=False)
 class FrequencyResult:
@@ -739,6 +777,26 @@ class ParameterGradientResult:
         grad = _readonly_vector(self.gradient, name="gradient")
         _require_finite(grad, name="ParameterGradientResult.gradient")
         object.__setattr__(self, "gradient", grad)
+
+
+@dataclass(frozen=True, eq=False)
+class CoordinateGradientResult:
+    """Reference Cartesian coordinate gradient in Hartree/Bohr."""
+
+    gradient: np.ndarray
+    unit: CoordinateGradientUnit
+    provenance: BackendProvenance
+
+    def __post_init__(self) -> None:
+        provenance = _validate_result_provenance(self.provenance, cls_name="CoordinateGradientResult")
+        if provenance.role is not BackendRole.REFERENCE:
+            raise EvaluationError("CoordinateGradientResult provenance must have the reference role.")
+        _check_unit_type(self.unit, CoordinateGradientUnit, cls_name="CoordinateGradientResult")
+        if self.unit is not CoordinateGradientUnit.HARTREE_PER_BOHR:
+            raise EvaluationError("CoordinateGradientResult.unit must be HARTREE_PER_BOHR.")
+        gradient = _readonly_matrix(self.gradient, name="gradient", ncols=3)
+        _require_finite(gradient, name="CoordinateGradientResult.gradient")
+        object.__setattr__(self, "gradient", gradient)
 
 
 @dataclass(frozen=True, eq=False)
@@ -865,7 +923,7 @@ class PreparedBackend(Protocol):
         """The molecule owned by this session."""
         ...
 
-    def energy(self, request: EnergyRequest | QMEnergyRequest) -> EnergyResult:
+    def energy(self, request: EnergyRequest | ReferenceEnergyRequest) -> EnergyResult:
         """Single-point energy."""
         ...
 
@@ -873,20 +931,24 @@ class PreparedBackend(Protocol):
         """Energy-minimize (MM)."""
         ...
 
-    def optimize_geometry(self, request: QMGeometryOptimizationRequest) -> GeometryResult:
-        """Geometry-optimize (QM)."""
+    def optimize_geometry(self, request: ReferenceGeometryOptimizationRequest) -> GeometryResult:
+        """Geometry-optimize a reference structure."""
         ...
 
-    def hessian(self, request: HessianRequest | QMHessianRequest) -> HessianResult:
+    def hessian(self, request: HessianRequest | ReferenceHessianRequest) -> HessianResult:
         """Cartesian Hessian."""
         ...
 
-    def frequencies(self, request: FrequencyRequest | QMFrequencyRequest) -> FrequencyResult:
+    def frequencies(self, request: FrequencyRequest | ReferenceFrequencyRequest) -> FrequencyResult:
         """Vibrational frequencies."""
         ...
 
     def parameter_gradient(self, request: ParameterGradientRequest) -> ParameterGradientResult:
         """Energy plus parameter gradient (MM)."""
+        ...
+
+    def coordinate_gradient(self, request: ReferenceCoordinateGradientRequest) -> CoordinateGradientResult:
+        """Compute a reference Cartesian coordinate gradient."""
         ...
 
     def hessian_parameter_jacobian(self, request: HessianJacobianRequest) -> HessianJacobianResult:
@@ -1081,7 +1143,7 @@ class AbstractPreparedBackend(ABC):
         request: object,
         *,
         mm_type: type | None,
-        qm_type: type | None,
+        reference_type: type | None,
         operation: str,
     ) -> None:
         """Validate *request* is exactly the type this role expects for *operation*.
@@ -1089,7 +1151,7 @@ class AbstractPreparedBackend(ABC):
         Wrong role (operation not defined for the role) or wrong request type
         raises :class:`EvaluationError` **before** dispatch.
         """
-        expected = mm_type if self._info.role is BackendRole.MM else qm_type
+        expected = mm_type if self._info.role is BackendRole.MM else reference_type
         if expected is None:
             raise EvaluationError(
                 f"{self._info.name} (role={self._info.role.value}) does not support the "
@@ -1215,6 +1277,19 @@ class AbstractPreparedBackend(ABC):
             )
         return result
 
+    def _validate_coordinate_gradient_result(self, result: CoordinateGradientResult) -> CoordinateGradientResult:
+        if not isinstance(result, CoordinateGradientResult):
+            raise EvaluationError(
+                f"{self._info.name}: coordinate_gradient hook must return a CoordinateGradientResult."
+            )
+        self._check_result_provenance(result.provenance, op="coordinate_gradient")
+        if result.unit is not CoordinateGradientUnit.HARTREE_PER_BOHR:
+            raise EvaluationError(f"{self._info.name}: coordinate-gradient unit must be HARTREE_PER_BOHR.")
+        n = self._n_atoms()
+        if result.gradient.shape != (n, 3):
+            raise EvaluationError(f"{self._info.name}: coordinate gradient shape {result.gradient.shape} != ({n}, 3).")
+        return result
+
     def _validate_hess_jac_result(self, result: HessianJacobianResult) -> HessianJacobianResult:
         if not isinstance(result, HessianJacobianResult):
             raise EvaluationError(
@@ -1242,37 +1317,58 @@ class AbstractPreparedBackend(ABC):
 
     # -- public API (capability- and role-gated) ----------------------------
 
-    def energy(self, request: EnergyRequest | QMEnergyRequest) -> EnergyResult:
+    def energy(self, request: EnergyRequest | ReferenceEnergyRequest) -> EnergyResult:
         """Single-point energy in the backend's canonical unit."""
         self._require(Capability.ENERGY)
-        self._require_exact_request(request, mm_type=EnergyRequest, qm_type=QMEnergyRequest, operation="energy")
+        self._require_exact_request(
+            request,
+            mm_type=EnergyRequest,
+            reference_type=ReferenceEnergyRequest,
+            operation="energy",
+        )
         return self._validate_energy_result(self._energy(request))
 
     def minimize(self, request: MinimizationRequest) -> GeometryResult:
         """Energy-minimize (relax) the geometry (MM)."""
         self._require(Capability.MINIMIZE)
-        self._require_exact_request(request, mm_type=MinimizationRequest, qm_type=None, operation="minimize")
+        self._require_exact_request(
+            request,
+            mm_type=MinimizationRequest,
+            reference_type=None,
+            operation="minimize",
+        )
         return self._validate_geometry_result(self._minimize(request), op="minimize")
 
-    def optimize_geometry(self, request: QMGeometryOptimizationRequest) -> GeometryResult:
-        """Geometry-optimize the structure (QM)."""
+    def optimize_geometry(self, request: ReferenceGeometryOptimizationRequest) -> GeometryResult:
+        """Geometry-optimize the reference structure."""
         self._require(Capability.GEOMETRY_OPTIMIZATION)
         self._require_exact_request(
-            request, mm_type=None, qm_type=QMGeometryOptimizationRequest, operation="optimize_geometry"
+            request,
+            mm_type=None,
+            reference_type=ReferenceGeometryOptimizationRequest,
+            operation="optimize_geometry",
         )
         return self._validate_geometry_result(self._optimize_geometry(request), op="optimize_geometry")
 
-    def hessian(self, request: HessianRequest | QMHessianRequest) -> HessianResult:
+    def hessian(self, request: HessianRequest | ReferenceHessianRequest) -> HessianResult:
         """Cartesian Hessian in Hartree/Bohr²."""
         self._require(Capability.HESSIAN)
-        self._require_exact_request(request, mm_type=HessianRequest, qm_type=QMHessianRequest, operation="hessian")
+        self._require_exact_request(
+            request,
+            mm_type=HessianRequest,
+            reference_type=ReferenceHessianRequest,
+            operation="hessian",
+        )
         return self._validate_hessian_result(self._hessian(request))
 
-    def frequencies(self, request: FrequencyRequest | QMFrequencyRequest) -> FrequencyResult:
+    def frequencies(self, request: FrequencyRequest | ReferenceFrequencyRequest) -> FrequencyResult:
         """Vibrational frequencies in cm⁻¹."""
         self._require(Capability.FREQUENCIES)
         self._require_exact_request(
-            request, mm_type=FrequencyRequest, qm_type=QMFrequencyRequest, operation="frequencies"
+            request,
+            mm_type=FrequencyRequest,
+            reference_type=ReferenceFrequencyRequest,
+            operation="frequencies",
         )
         return self._validate_frequency_result(self._frequencies(request))
 
@@ -1280,44 +1376,69 @@ class AbstractPreparedBackend(ABC):
         """Energy plus analytical parameter gradient (MM)."""
         self._require(Capability.PARAMETER_GRADIENT)
         self._require_exact_request(
-            request, mm_type=ParameterGradientRequest, qm_type=None, operation="parameter_gradient"
+            request,
+            mm_type=ParameterGradientRequest,
+            reference_type=None,
+            operation="parameter_gradient",
         )
         return self._validate_param_grad_result(self._parameter_gradient(request))
+
+    def coordinate_gradient(self, request: ReferenceCoordinateGradientRequest) -> CoordinateGradientResult:
+        """Compute a reference Cartesian coordinate gradient in Hartree/Bohr."""
+        self._require(Capability.COORDINATE_GRADIENT)
+        self._require_exact_request(
+            request,
+            mm_type=None,
+            reference_type=ReferenceCoordinateGradientRequest,
+            operation="coordinate_gradient",
+        )
+        return self._validate_coordinate_gradient_result(self._coordinate_gradient(request))
 
     def hessian_parameter_jacobian(self, request: HessianJacobianRequest) -> HessianJacobianResult:
         """Hessian plus its analytical parameter Jacobian (MM)."""
         self._require(Capability.HESSIAN_PARAMETER_JACOBIAN)
         self._require_exact_request(
-            request, mm_type=HessianJacobianRequest, qm_type=None, operation="hessian_parameter_jacobian"
+            request,
+            mm_type=HessianJacobianRequest,
+            reference_type=None,
+            operation="hessian_parameter_jacobian",
         )
         return self._validate_hess_jac_result(self._hessian_parameter_jacobian(request))
 
     def batched_energy(self, request: BatchedEnergyRequest) -> BatchedEnergyResult:
         """Energies for a batch of full parameter vectors (MM)."""
         self._require(Capability.BATCHED_ENERGY)
-        self._require_exact_request(request, mm_type=BatchedEnergyRequest, qm_type=None, operation="batched_energy")
+        self._require_exact_request(
+            request,
+            mm_type=BatchedEnergyRequest,
+            reference_type=None,
+            operation="batched_energy",
+        )
         n_rows = int(np.asarray(request.parameter_matrix).shape[0])
         return self._validate_batched_energy_result(self._batched_energy(request), n_rows=n_rows)
 
     # -- hooks (override in concrete sessions) ------------------------------
 
-    def _energy(self, request: EnergyRequest | QMEnergyRequest) -> EnergyResult:
+    def _energy(self, request: EnergyRequest | ReferenceEnergyRequest) -> EnergyResult:
         raise UnsupportedCapabilityError(self._info.name, Capability.ENERGY)
 
     def _minimize(self, request: MinimizationRequest) -> GeometryResult:
         raise UnsupportedCapabilityError(self._info.name, Capability.MINIMIZE)
 
-    def _optimize_geometry(self, request: QMGeometryOptimizationRequest) -> GeometryResult:
+    def _optimize_geometry(self, request: ReferenceGeometryOptimizationRequest) -> GeometryResult:
         raise UnsupportedCapabilityError(self._info.name, Capability.GEOMETRY_OPTIMIZATION)
 
-    def _hessian(self, request: HessianRequest | QMHessianRequest) -> HessianResult:
+    def _hessian(self, request: HessianRequest | ReferenceHessianRequest) -> HessianResult:
         raise UnsupportedCapabilityError(self._info.name, Capability.HESSIAN)
 
-    def _frequencies(self, request: FrequencyRequest | QMFrequencyRequest) -> FrequencyResult:
+    def _frequencies(self, request: FrequencyRequest | ReferenceFrequencyRequest) -> FrequencyResult:
         raise UnsupportedCapabilityError(self._info.name, Capability.FREQUENCIES)
 
     def _parameter_gradient(self, request: ParameterGradientRequest) -> ParameterGradientResult:
         raise UnsupportedCapabilityError(self._info.name, Capability.PARAMETER_GRADIENT)
+
+    def _coordinate_gradient(self, request: ReferenceCoordinateGradientRequest) -> CoordinateGradientResult:
+        raise UnsupportedCapabilityError(self._info.name, Capability.COORDINATE_GRADIENT)
 
     def _hessian_parameter_jacobian(self, request: HessianJacobianRequest) -> HessianJacobianResult:
         raise UnsupportedCapabilityError(self._info.name, Capability.HESSIAN_PARAMETER_JACOBIAN)
@@ -1378,48 +1499,56 @@ class DependencyProbe:
 class BackendDescriptor:
     """Validated, lazily-loadable description of a backend.
 
-    The descriptor carries a **static** :class:`BackendInfo` (generic
-    provenance) so the catalog can report a backend's exact capabilities and
-    functional forms without importing or constructing it.  On explicit load,
-    the constructed backend's runtime info is validated against this static
-    declaration.
+    Static ceilings advertise what an installation may support without
+    importing it.  A loaded backend's :class:`BackendInfo` is authoritative and
+    may declare any exact subset of those ceilings.
 
     Args:
         name: Registry key (e.g. ``"openmm"``, ``"jax-md"``).
-        info: Static capability declaration (role/capabilities/forms).
+        role: Backend role.
+        capability_ceiling: Potential capabilities for any runtime instance.
+        functional_form_ceiling: Potential functional forms for any runtime
+            instance.
         factory: Import string ``"pkg.module:Attribute"`` naming a zero-arg
             callable (typically the backend class) that returns a
             :class:`Backend`.
         probe: Cheap dependency probe used for **listing only**.
-        api_version: Descriptor-API version this descriptor targets.
+        backend_api_version: Backend API version this descriptor targets.
 
     """
 
     name: str
-    info: BackendInfo
+    role: BackendRole
+    capability_ceiling: frozenset[Capability]
+    functional_form_ceiling: frozenset[str]
     factory: str
     probe: DependencyProbe = field(default_factory=DependencyProbe)
-    api_version: int = DESCRIPTOR_API_VERSION
+    backend_api_version: int = BACKEND_API_VERSION
 
     def __post_init__(self) -> None:
-        if not self.name:
+        if not isinstance(self.name, str) or not self.name:
             raise ValueError("BackendDescriptor.name must be non-empty.")
-        if ":" not in self.factory:
+        if not isinstance(self.role, BackendRole):
+            raise ValueError("BackendDescriptor.role must be a BackendRole.")
+        capabilities = frozenset(self.capability_ceiling)
+        if not all(isinstance(capability, Capability) for capability in capabilities):
+            raise ValueError("BackendDescriptor.capability_ceiling must contain only Capability members.")
+        forms = frozenset(self.functional_form_ceiling)
+        if not all(isinstance(form, str) for form in forms):
+            raise ValueError("BackendDescriptor.functional_form_ceiling must contain only strings.")
+        if self.role is BackendRole.REFERENCE and forms:
+            raise ValueError("BackendDescriptor reference backends must have an empty functional_form_ceiling.")
+        if self.role is BackendRole.MM and Capability.COORDINATE_GRADIENT in capabilities:
+            raise ValueError("BackendDescriptor MM backends cannot include COORDINATE_GRADIENT in their ceiling.")
+        object.__setattr__(self, "capability_ceiling", capabilities)
+        object.__setattr__(self, "functional_form_ceiling", forms)
+        if not isinstance(self.factory, str) or ":" not in self.factory:
             raise ValueError(f"BackendDescriptor.factory must be 'module:attr'; got {self.factory!r}.")
-        if not isinstance(self.info, BackendInfo):
-            raise ValueError("BackendDescriptor.info must be a BackendInfo.")
-        if self.info.provenance is None or self.info.provenance.backend != self.name:
-            raise ValueError(f"BackendDescriptor.info.provenance.backend must equal name {self.name!r}.")
-        if self.api_version != DESCRIPTOR_API_VERSION:
+        if self.backend_api_version != BACKEND_API_VERSION:
             raise ValueError(
-                f"BackendDescriptor {self.name!r} targets api_version {self.api_version}, "
-                f"this runtime is {DESCRIPTOR_API_VERSION}."
+                f"BackendDescriptor {self.name!r} targets backend_api_version {self.backend_api_version}, "
+                f"this runtime is {BACKEND_API_VERSION}."
             )
-
-    @property
-    def role(self) -> BackendRole:
-        """Role from the static info."""
-        return self.info.role
 
     def is_available(self) -> tuple[bool, str]:
         """Return ``(healthy, reason)`` via the cheap probe only (catalog use)."""
@@ -1479,14 +1608,23 @@ class BackendDescriptor:
             raise BackendConfigurationError(
                 f"Backend {self.name!r} .info is {type(runtime_info).__name__}, expected BackendInfo."
             )
-        if not runtime_info.matches(self.info):
+        if runtime_info.role is not self.role:
             raise BackendConfigurationError(
-                f"Backend {self.name!r} runtime info (role={runtime_info.role.value}, "
-                f"capabilities={sorted(c.value for c in runtime_info.capabilities)}, "
-                f"forms={sorted(runtime_info.functional_forms)}) disagrees with descriptor "
-                f"(role={self.info.role.value}, "
-                f"capabilities={sorted(c.value for c in self.info.capabilities)}, "
-                f"forms={sorted(self.info.functional_forms)})."
+                f"Backend {self.name!r} runtime role {runtime_info.role.value!r} does not match "
+                f"descriptor role {self.role.value!r}."
+            )
+        capability_overclaims = runtime_info.capabilities - self.capability_ceiling
+        if capability_overclaims:
+            raise BackendConfigurationError(
+                f"Backend {self.name!r} runtime capabilities "
+                f"{sorted(capability.value for capability in capability_overclaims)} exceed descriptor "
+                f"capability_ceiling {sorted(capability.value for capability in self.capability_ceiling)}."
+            )
+        form_overclaims = runtime_info.functional_forms - self.functional_form_ceiling
+        if form_overclaims:
+            raise BackendConfigurationError(
+                f"Backend {self.name!r} runtime functional forms {sorted(form_overclaims)} exceed descriptor "
+                f"functional_form_ceiling {sorted(self.functional_form_ceiling)}."
             )
         # Runtime provenance must identify the same backend key and role
         # (the human display name may differ, but the registry key must match).
@@ -1498,10 +1636,10 @@ class BackendDescriptor:
                 f"Backend {self.name!r} runtime provenance.backend {prov.backend!r} does not match "
                 f"descriptor name {self.name!r}."
             )
-        if prov.role is not self.info.role:
+        if prov.role is not self.role:
             raise BackendConfigurationError(
                 f"Backend {self.name!r} runtime provenance role {prov.role.value} does not match "
-                f"descriptor role {self.info.role.value}."
+                f"descriptor role {self.role.value}."
             )
         return backend
 
@@ -1530,8 +1668,3 @@ class BackendStatus:
     def role(self) -> BackendRole:
         """Role of the described backend."""
         return self.descriptor.role
-
-    @property
-    def info(self) -> BackendInfo:
-        """Static capability declaration of the described backend."""
-        return self.descriptor.info

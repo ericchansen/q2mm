@@ -101,13 +101,13 @@ def main() -> None:
         jag_hessian = mol.hessian
 
         # Compute Psi4 Hessian at B3LYP/def2-SVP (charge=+1 for cationic Rh complex)
-        from q2mm.backends.contracts import PreparationRequest, QMEnergyRequest, QMHessianRequest
+        from q2mm.backends.contracts import PreparationRequest, ReferenceEnergyRequest, ReferenceHessianRequest
 
         t0 = time.perf_counter()
         with load_backend("psi4", method="b3lyp", basis="def2-svp", charge=1, n_threads=16, memory="8 GB") as backend:
             prepared = backend.prepare(PreparationRequest(case_id=label, molecule=mol))
-            psi4_hessian = np.asarray(prepared.hessian(QMHessianRequest()).hessian)
-            psi4_energy = float(prepared.energy(QMEnergyRequest()).energy)
+            psi4_hessian = np.asarray(prepared.hessian(ReferenceHessianRequest()).hessian)
+            psi4_energy = float(prepared.energy(ReferenceEnergyRequest()).energy)
         elapsed = time.perf_counter() - t0
         print(f"  Psi4 Hessian computed in {elapsed:.1f}s")
 

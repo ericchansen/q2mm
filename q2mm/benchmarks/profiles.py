@@ -539,7 +539,7 @@ class ResolvedProfile:
     backend_name: str
     backend_role: str
     backend_version: str
-    backend_detail: str
+    backend_details: Mapping[str, Any]
     capabilities: tuple[str, ...]
     backend_functional_forms: tuple[str, ...]
     # Objective / optimizer / workflow.
@@ -571,6 +571,7 @@ class ResolvedProfile:
         object.__setattr__(self, "backend_functional_forms", tuple(self.backend_functional_forms))
         for name in (
             "static_descriptor",
+            "backend_details",
             "optimizer_settings",
             "workflow_settings",
             "data_provenance",
@@ -589,7 +590,7 @@ class ResolvedProfile:
             "backend_name": self.backend_name,
             "backend_role": self.backend_role,
             "backend_version": self.backend_version,
-            "backend_detail": self.backend_detail,
+            "backend_details": _jsonify(dict(self.backend_details)),
             "capabilities": list(self.capabilities),
             "backend_functional_forms": list(self.backend_functional_forms),
             "functional_form": self.functional_form,
@@ -645,38 +646,29 @@ def _static_descriptor_map(descriptor: BackendDescriptor | None, profile_backend
     a silent gap, so an injected run still fingerprints deterministically and
     is distinguishable from a registry-loaded one.
     """
-    from q2mm.backends.contracts import DESCRIPTOR_API_VERSION
+    from q2mm.backends.contracts import BACKEND_API_VERSION
 
     if descriptor is None:
         return {
             "name": profile_backend,
-            "api_version": DESCRIPTOR_API_VERSION,
+            "backend_api_version": BACKEND_API_VERSION,
             "factory": "<injected>",
             "probe_modules": [],
             "probe_executables": [],
             "role": "",
-            "capabilities": [],
-            "functional_forms": [],
-            "provenance": {"backend": "", "role": "", "version": "", "detail": ""},
+            "capability_ceiling": [],
+            "functional_form_ceiling": [],
         }
-    info = descriptor.info
-    prov = info.provenance
     probe = descriptor.probe
     return {
         "name": descriptor.name,
-        "api_version": descriptor.api_version,
+        "backend_api_version": descriptor.backend_api_version,
         "factory": descriptor.factory,
         "probe_modules": sorted(getattr(probe, "modules", ()) or ()),
         "probe_executables": sorted(getattr(probe, "executables", ()) or ()),
-        "role": info.role.value,
-        "capabilities": sorted(cap.value for cap in info.capabilities),
-        "functional_forms": sorted(info.functional_forms),
-        "provenance": {
-            "backend": "" if prov is None else prov.backend,
-            "role": "" if prov is None else prov.role.value,
-            "version": "" if prov is None else prov.version,
-            "detail": "" if prov is None else prov.detail,
-        },
+        "role": descriptor.role.value,
+        "capability_ceiling": sorted(cap.value for cap in descriptor.capability_ceiling),
+        "functional_form_ceiling": sorted(descriptor.functional_form_ceiling),
     }
 
 
@@ -715,7 +707,7 @@ def resolve(
         backend_name=backend_info.name,
         backend_role=backend_info.role.value,
         backend_version="" if prov is None else prov.version,
-        backend_detail="" if prov is None else prov.detail,
+        backend_details={} if prov is None else prov.details,
         capabilities=tuple(sorted(cap.value for cap in backend_info.capabilities)),
         backend_functional_forms=tuple(sorted(backend_info.functional_forms)),
         functional_form=functional_form,

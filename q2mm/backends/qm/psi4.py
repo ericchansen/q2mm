@@ -1,11 +1,11 @@
-"""Psi4 quantum-mechanics backend.
+"""Psi4 reference backend.
 
-Wraps the Psi4 Python API for QM calculations: energy, Hessian, geometry
+Wraps the Psi4 Python API for reference calculations: energy, Hessian, geometry
 optimization, and vibrational frequencies.
 
 Requires: ``conda install psi4 -c conda-forge``
 
-Psi4 is a QM backend: it consumes no force field, so its
+Psi4 is a reference backend: it consumes no force field, so its
 :class:`~q2mm.backends.contracts.BackendInfo` declares **no** functional
 forms.  Method and basis are fixed when the backend is constructed.
 """
@@ -35,10 +35,10 @@ from q2mm.backends.contracts import (
     HessianUnit,
     LengthUnit,
     PreparationRequest,
-    QMEnergyRequest,
-    QMFrequencyRequest,
-    QMGeometryOptimizationRequest,
-    QMHessianRequest,
+    ReferenceEnergyRequest,
+    ReferenceFrequencyRequest,
+    ReferenceGeometryOptimizationRequest,
+    ReferenceHessianRequest,
     readonly_array,
 )
 from q2mm.constants import BOHR_TO_ANG
@@ -73,7 +73,7 @@ def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, m
 
 
 class Psi4Backend:
-    """Quantum-mechanics backend using Psi4.
+    """Reference backend using Psi4.
 
     Args:
         method: DFT functional or method (default: "b3lyp")
@@ -113,13 +113,18 @@ class Psi4Backend:
         version = getattr(_psi4, "__version__", "")
         self._provenance = BackendProvenance(
             backend="psi4",
-            role=BackendRole.QM,
+            role=BackendRole.REFERENCE,
             version=str(version),
-            detail=f"{method}/{basis}",
+            details={
+                "implementation": {"name": "Psi4", "version": str(version)},
+                "model": {"method": method, "basis": basis},
+                "calculator": {"charge": charge, "multiplicity": multiplicity},
+                "config": {"memory": memory, "n_threads": n_threads},
+            },
         )
         self._info = BackendInfo(
             name=f"Psi4 ({method}/{basis})",
-            role=BackendRole.QM,
+            role=BackendRole.REFERENCE,
             capabilities=frozenset(
                 {
                     Capability.ENERGY,
@@ -138,11 +143,11 @@ class Psi4Backend:
         return self._info
 
     def prepare(self, request: PreparationRequest) -> PreparedPsi4:
-        """Build a prepared QM session for one training case.
+        """Build a prepared reference session for one training case.
 
         Args:
             request: Preparation request carrying the molecule.  ``force_field``
-                is ignored — Psi4 is a QM backend.
+                is ignored — Psi4 is a reference backend.
 
         Returns:
             PreparedPsi4: A per-case QM session.
@@ -202,7 +207,7 @@ class Psi4Backend:
 
 
 class PreparedPsi4(AbstractPreparedBackend):
-    """Prepared Psi4 QM session for a single molecule."""
+    """Prepared Psi4 reference session for a single molecule."""
 
     def __init__(self, *, backend: Psi4Backend, case_id: str, molecule: Molecule) -> None:
         super().__init__(
@@ -214,14 +219,14 @@ class PreparedPsi4(AbstractPreparedBackend):
         )
         self._backend = backend
 
-    def _energy(self, request: QMEnergyRequest) -> EnergyResult:  # type: ignore[override]
+    def _energy(self, request: ReferenceEnergyRequest) -> EnergyResult:
         try:
             value = self._backend._evaluate_energy(self.molecule)
         except Exception as exc:  # noqa: BLE001
             raise EvaluationError(f"Psi4 energy evaluation failed: {exc}") from exc
         return EnergyResult(energy=value, unit=EnergyUnit.HARTREE, provenance=self._backend.info.provenance)
 
-    def _hessian(self, request: QMHessianRequest) -> HessianResult:  # type: ignore[override]
+    def _hessian(self, request: ReferenceHessianRequest) -> HessianResult:
         try:
             hess = self._backend._evaluate_hessian(self.molecule)
         except Exception as exc:  # noqa: BLE001
@@ -230,7 +235,7 @@ class PreparedPsi4(AbstractPreparedBackend):
             hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._backend.info.provenance
         )
 
-    def _frequencies(self, request: QMFrequencyRequest) -> FrequencyResult:  # type: ignore[override]
+    def _frequencies(self, request: ReferenceFrequencyRequest) -> FrequencyResult:
         try:
             freqs = self._backend._evaluate_frequencies(self.molecule)
         except Exception as exc:  # noqa: BLE001
@@ -239,7 +244,7 @@ class PreparedPsi4(AbstractPreparedBackend):
             frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=self._backend.info.provenance
         )
 
-    def _optimize_geometry(self, request: QMGeometryOptimizationRequest) -> GeometryResult:  # type: ignore[override]
+    def _optimize_geometry(self, request: ReferenceGeometryOptimizationRequest) -> GeometryResult:
         try:
             energy, atoms, coords = self._backend._evaluate_optimize(self.molecule, request.opt_type)
         except Exception as exc:  # noqa: BLE001

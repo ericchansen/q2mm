@@ -6,7 +6,7 @@ Tests that call Psi4 directly are marked with ``@pytest.mark.psi4``.
 """
 
 from q2mm.backends.contracts import (
-    QMEnergyRequest,
+    ReferenceEnergyRequest,
 )
 from q2mm.backends.registry import load_backend
 from test.backend_fixtures import qm_prepare_case
@@ -60,12 +60,12 @@ class TestPsi4EnergyCH3F:
         self.mol = _load(str(QM_REF / "ch3f-optimized.xyz"))
 
     def test_energy_returns_float(self) -> None:
-        energy = qm_prepare_case(self.backend, self.mol).energy(QMEnergyRequest()).energy
+        energy = qm_prepare_case(self.backend, self.mol).energy(ReferenceEnergyRequest()).energy
         assert isinstance(energy, float)
 
     def test_energy_matches_reference(self) -> None:
         """Energy should match the saved reference within 1e-5 Ha."""
-        energy = qm_prepare_case(self.backend, self.mol).energy(QMEnergyRequest()).energy
+        energy = qm_prepare_case(self.backend, self.mol).energy(ReferenceEnergyRequest()).energy
         ref_energy = -139.751112913417
         assert energy == pytest.approx(ref_energy, abs=1e-5), f"Energy {energy} differs from reference {ref_energy}"
 
@@ -79,7 +79,7 @@ class TestPsi4BackendLoadMolecule:
         xyz = str(QM_REF / "ch3f-optimized.xyz")
         if not Path(xyz).exists():
             pytest.skip("CH3F fixture not found")
-        energy = qm_prepare_case(backend, _load(xyz)).energy(QMEnergyRequest()).energy
+        energy = qm_prepare_case(backend, _load(xyz)).energy(ReferenceEnergyRequest()).energy
         assert np.isfinite(energy)
 
     def test_energy_h2(self) -> None:
@@ -91,7 +91,7 @@ class TestPsi4BackendLoadMolecule:
             geometry=np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.74]]),
             atom_types=["H", "H"],
         )
-        energy = qm_prepare_case(backend, mol).energy(QMEnergyRequest()).energy
+        energy = qm_prepare_case(backend, mol).energy(ReferenceEnergyRequest()).energy
         assert np.isfinite(energy)
         # H2 energy should be around -1.17 Ha at B3LYP/6-31+G(d)
         assert energy == pytest.approx(-1.17, abs=0.05)

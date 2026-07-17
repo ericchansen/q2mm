@@ -196,7 +196,12 @@ def _resolve(profile: RunProfile, **overrides: object) -> ResolvedProfile:
         role=BackendRole.MM,
         capabilities=frozenset({Capability.ENERGY, Capability.FREQUENCIES}),
         functional_forms=frozenset({"harmonic", "mm3"}),
-        provenance=BackendProvenance(backend="jax", role=BackendRole.MM, version="0.9.0", detail="cpu"),
+        provenance=BackendProvenance(
+            backend="jax",
+            role=BackendRole.MM,
+            version="0.9.0",
+            details={"platform": {"backend": "cpu"}},
+        ),
     )
     kwargs: dict[str, object] = {
         "descriptor": get_descriptor("jax"),
@@ -239,7 +244,7 @@ class TestResolvedProfile:
             "runtime_backend_key",
             "backend_name",
             "backend_version",
-            "backend_detail",
+            "backend_details",
             "capabilities",
             "backend_functional_forms",
             "functional_form",
@@ -266,19 +271,18 @@ class TestResolvedProfile:
         assert required <= set(prov)
         # The complete static descriptor identity is nested, not flattened.
         sd = prov["static_descriptor"]
-        assert sd["api_version"] == 1
+        assert sd["backend_api_version"] == 1
         assert sd["factory"].endswith("JaxBackend")
         assert sd["name"] == "jax"
         assert set(sd) >= {
             "name",
-            "api_version",
+            "backend_api_version",
             "factory",
             "probe_modules",
             "probe_executables",
             "role",
-            "capabilities",
-            "functional_forms",
-            "provenance",
+            "capability_ceiling",
+            "functional_form_ceiling",
         }
         assert prov["runtime_backend_key"] == "jax"
         assert prov["backend_version"] == "0.9.0"

@@ -35,7 +35,7 @@ from q2mm.backends.contracts import (
     UnsupportedCapabilityError,
 )
 from q2mm.backends.discovery import (
-    DESCRIPTOR_API_VERSION,
+    BACKEND_API_VERSION,
     DiscoveryIssueKind,
     DiscoveryRecord,
     DiscoveryReport,
@@ -111,11 +111,11 @@ class FakeEntryPoint:
 def _manifest(**overrides: object) -> dict[str, object]:
     """Return a valid manifest mapping with *overrides* applied."""
     manifest: dict[str, object] = {
-        "api_version": DESCRIPTOR_API_VERSION,
+        "backend_api_version": BACKEND_API_VERSION,
         "name": "extra",
         "role": "mm",
-        "capabilities": ["energy"],
-        "forms": ["harmonic"],
+        "capability_ceiling": ["energy"],
+        "functional_form_ceiling": ["harmonic"],
         "factory": "q2mm_fixture_backend.backend:HarmonicFixtureBackend",
         "probe": {"modules": ["numpy"]},
     }
@@ -289,25 +289,25 @@ class _HookSpyBackend:
         return self.prepared
 
 
-_QM_PROV = BackendProvenance(backend="qmlike", role=BackendRole.QM)
-_QM_INFO = BackendInfo(
-    name="qmlike",
-    role=BackendRole.QM,
+_REFERENCE_PROV = BackendProvenance(backend="reference-like", role=BackendRole.REFERENCE)
+_REFERENCE_INFO = BackendInfo(
+    name="reference-like",
+    role=BackendRole.REFERENCE,
     capabilities=frozenset({Capability.ENERGY}),
     functional_forms=frozenset(),
-    provenance=_QM_PROV,
+    provenance=_REFERENCE_PROV,
 )
 
 
-class _QmLikeBackend:
-    """A QM-role backend the MM conformance helper must refuse."""
+class _ReferenceLikeBackend:
+    """A reference-role backend the MM conformance helper must refuse."""
 
     @property
     def info(self) -> BackendInfo:
-        return _QM_INFO
+        return _REFERENCE_INFO
 
     def prepare(self, request: PreparationRequest) -> Any:  # pragma: no cover - never reached
-        raise AssertionError("MM conformance helper must not prepare a QM backend")
+        raise AssertionError("MM conformance helper must not prepare a reference backend")
 
 
 _HR_PROV = BackendProvenance(backend="hr-fake", role=BackendRole.MM)
@@ -354,8 +354,8 @@ class TestManifestValidation:
         assert not isinstance(result, ManifestFailure)
         assert result.name == "ok"
         assert result.role is BackendRole.MM
-        assert result.info.capabilities == frozenset({Capability.ENERGY})
-        assert result.info.functional_forms == frozenset({"harmonic"})
+        assert result.capability_ceiling == frozenset({Capability.ENERGY})
+        assert result.functional_form_ceiling == frozenset({"harmonic"})
 
     def test_builtins_use_same_validator(self) -> None:
         # Every built-in manifest must validate through the one public validator.
@@ -364,12 +364,12 @@ class TestManifestValidation:
             assert not isinstance(result, ManifestFailure), manifest
 
     def test_incompatible_api_version(self) -> None:
-        result = validate_manifest(_manifest(api_version=DESCRIPTOR_API_VERSION + 1))
+        result = validate_manifest(_manifest(backend_api_version=BACKEND_API_VERSION + 1))
         assert isinstance(result, ManifestFailure)
         assert result.kind is DiscoveryIssueKind.INCOMPATIBLE_API_VERSION
 
     def test_non_int_api_version_is_invalid_descriptor(self) -> None:
-        result = validate_manifest(_manifest(api_version="1"))
+        result = validate_manifest(_manifest(backend_api_version="1"))
         assert isinstance(result, ManifestFailure)
         assert result.kind is DiscoveryIssueKind.INVALID_DESCRIPTOR
 
@@ -389,26 +389,44 @@ class TestManifestValidation:
         assert result.kind is DiscoveryIssueKind.INVALID_DESCRIPTOR
 
     def test_invalid_capability_claim(self) -> None:
-        result = validate_manifest(_manifest(capabilities=["energy", "fly"]))
+        result = validate_manifest(_manifest(capability_ceiling=["energy", "fly"]))
+        assert isinstance(result, ManifestFailure)
+        assert result.kind is DiscoveryIssueKind.INVALID_CAPABILITY_CLAIM
+
+    def test_mm_coordinate_gradient_claim_rejected(self) -> None:
+        result = validate_manifest(_manifest(capability_ceiling=["coordinate_gradient"]))
         assert isinstance(result, ManifestFailure)
         assert result.kind is DiscoveryIssueKind.INVALID_CAPABILITY_CLAIM
 
     def test_invalid_functional_form_claim(self) -> None:
-        result = validate_manifest(_manifest(forms=["harmonic", "banana"]))
+        result = validate_manifest(_manifest(functional_form_ceiling=["harmonic", "banana"]))
         assert isinstance(result, ManifestFailure)
         assert result.kind is DiscoveryIssueKind.INVALID_FUNCTIONAL_FORM_CLAIM
 
-    def test_qm_backend_must_declare_no_forms(self) -> None:
-        result = validate_manifest(_manifest(name="q", role="qm", forms=["harmonic"], capabilities=["energy"]))
-        assert isinstance(result, ManifestFailure)
-        assert result.kind is DiscoveryIssueKind.INVALID_FUNCTIONAL_FORM_CLAIM
-
-    def test_qm_backend_with_empty_forms_valid(self) -> None:
+    def test_reference_backend_must_declare_no_forms(self) -> None:
         result = validate_manifest(
-            _manifest(name="q", role="qm", forms=[], capabilities=["energy"], factory="numpy:zeros")
+            _manifest(
+                name="reference",
+                role="reference",
+                functional_form_ceiling=["harmonic"],
+                capability_ceiling=["energy"],
+            )
+        )
+        assert isinstance(result, ManifestFailure)
+        assert result.kind is DiscoveryIssueKind.INVALID_FUNCTIONAL_FORM_CLAIM
+
+    def test_reference_backend_with_empty_forms_valid(self) -> None:
+        result = validate_manifest(
+            _manifest(
+                name="reference",
+                role="reference",
+                functional_form_ceiling=[],
+                capability_ceiling=["energy"],
+                factory="numpy:zeros",
+            )
         )
         assert not isinstance(result, ManifestFailure)
-        assert result.role is BackendRole.QM
+        assert result.role is BackendRole.REFERENCE
 
     def test_invalid_factory_shapes(self) -> None:
         for bad in ("nocolon", ":attr", "module:", "", 5):
@@ -429,15 +447,15 @@ class TestManifestValidation:
 
     def test_defaults_capabilities_and_forms_empty(self) -> None:
         manifest = {
-            "api_version": DESCRIPTOR_API_VERSION,
+            "backend_api_version": BACKEND_API_VERSION,
             "name": "bare",
             "role": "mm",
             "factory": "numpy:zeros",
         }
         result = validate_manifest(manifest)
         assert not isinstance(result, ManifestFailure)
-        assert result.info.capabilities == frozenset()
-        assert result.info.functional_forms == frozenset()
+        assert result.capability_ceiling == frozenset()
+        assert result.functional_form_ceiling == frozenset()
 
     # -- Hardening: unknown keys, strict grammar, strict factory/probe --------
 
@@ -447,10 +465,24 @@ class TestManifestValidation:
         assert result.kind is DiscoveryIssueKind.INVALID_DESCRIPTOR
         assert "surprise" in result.message
 
+    @pytest.mark.parametrize(
+        ("old_key", "value"),
+        [
+            ("api_version", BACKEND_API_VERSION),
+            ("capabilities", ["energy"]),
+            ("forms", ["harmonic"]),
+        ],
+    )
+    def test_pre_v1_manifest_fields_are_rejected(self, old_key: str, value: object) -> None:
+        result = validate_manifest(_manifest(**{old_key: value}))
+        assert isinstance(result, ManifestFailure)
+        assert result.kind is DiscoveryIssueKind.INVALID_DESCRIPTOR
+        assert old_key in result.message
+
     def test_unknown_key_with_future_api_is_incompatible(self) -> None:
         # api_version gate wins so a genuinely newer descriptor is classed as
         # incompatible, not invalid-for-its-new-keys.
-        result = validate_manifest(_manifest(api_version=DESCRIPTOR_API_VERSION + 1, surprise=True))
+        result = validate_manifest(_manifest(backend_api_version=BACKEND_API_VERSION + 1, surprise=True))
         assert isinstance(result, ManifestFailure)
         assert result.kind is DiscoveryIssueKind.INCOMPATIBLE_API_VERSION
 
@@ -502,14 +534,14 @@ class TestManifestValidation:
         result = validate_manifest(_manifest(probe={"modules": ["a.b", "c"], "executables": ["/usr/bin/tool"]}))
         assert not isinstance(result, ManifestFailure)
 
-    def test_builtin_manifests_use_runtime_api_version(self) -> None:
+    def test_builtin_manifests_use_runtime_backend_api_version(self) -> None:
         for manifest in registry._BUILTIN_MANIFESTS:
-            assert manifest["api_version"] == DESCRIPTOR_API_VERSION, manifest["name"]
+            assert manifest["backend_api_version"] == BACKEND_API_VERSION, manifest["name"]
 
-    def test_fixture_manifest_uses_runtime_api_version(self, fixture_on_path: None) -> None:
+    def test_fixture_manifest_uses_runtime_backend_api_version(self, fixture_on_path: None) -> None:
         import q2mm_fixture_backend.descriptor as descriptor_module
 
-        assert descriptor_module.MANIFEST["api_version"] == DESCRIPTOR_API_VERSION
+        assert descriptor_module.MANIFEST["backend_api_version"] == BACKEND_API_VERSION
         # Importing the descriptor must not import the implementation module.
         assert "q2mm_fixture_backend.backend" not in sys.modules
 
@@ -525,8 +557,8 @@ class TestSnapshotComposition:
         assert "harmonic-fixture" in snapshot.descriptors
         desc = snapshot.descriptors["harmonic-fixture"]
         assert desc.role is BackendRole.MM
-        assert desc.info.capabilities == frozenset({Capability.ENERGY})
-        assert desc.info.functional_forms == frozenset({"harmonic"})
+        assert desc.capability_ceiling == frozenset({Capability.ENERGY})
+        assert desc.functional_form_ceiling == frozenset({"harmonic"})
         record = next(r for r in snapshot.records if r.name == "harmonic-fixture")
         assert record.source is DiscoverySource.ENTRY_POINT
         assert record.state is DiscoveryState.REGISTERED
@@ -578,7 +610,7 @@ class TestSnapshotComposition:
 
     def test_invalid_builtin_manifest_raises(self) -> None:
         with pytest.raises(RuntimeError, match="Built-in backend manifest is invalid"):
-            build_snapshot([_manifest(name="bad", capabilities=["fly"])], entry_points=[])
+            build_snapshot([_manifest(name="bad", capability_ceiling=["fly"])], entry_points=[])
 
     def test_entry_point_name_mismatch(self) -> None:
         ep = FakeEntryPoint("advertised", load_result=_manifest(name="declared"))
@@ -622,15 +654,21 @@ class TestSnapshotComposition:
         assert record.issue is DiscoveryIssueKind.DESCRIPTOR_IMPORT_ERROR
 
     def test_incompatible_api_version_isolated(self) -> None:
-        ep = FakeEntryPoint("old", load_result=_manifest(name="old", api_version=DESCRIPTOR_API_VERSION + 5))
+        ep = FakeEntryPoint(
+            "old",
+            load_result=_manifest(name="old", backend_api_version=BACKEND_API_VERSION + 5),
+        )
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=[ep])
         assert "old" not in snapshot.descriptors
         record = next(r for r in snapshot.records if r.entry_point == "old")
         assert record.issue is DiscoveryIssueKind.INCOMPATIBLE_API_VERSION
 
     def test_invalid_capability_and_form_isolated(self) -> None:
-        cap_ep = FakeEntryPoint("badcap", load_result=_manifest(name="badcap", capabilities=["fly"]))
-        form_ep = FakeEntryPoint("badform", load_result=_manifest(name="badform", forms=["banana"]))
+        cap_ep = FakeEntryPoint("badcap", load_result=_manifest(name="badcap", capability_ceiling=["fly"]))
+        form_ep = FakeEntryPoint(
+            "badform",
+            load_result=_manifest(name="badform", functional_form_ceiling=["banana"]),
+        )
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=[cap_ep, form_ep])
         assert "badcap" not in snapshot.descriptors
         assert "badform" not in snapshot.descriptors
@@ -653,7 +691,7 @@ class TestSnapshotComposition:
         eps_forward = [
             _fixture_entry_point(),
             FakeEntryPoint("zzz", load_result=_manifest(name="zzz", probe={"modules": ["missing_zzz"]})),
-            FakeEntryPoint("badcap", load_result=_manifest(name="badcap", capabilities=["fly"])),
+            FakeEntryPoint("badcap", load_result=_manifest(name="badcap", capability_ceiling=["fly"])),
         ]
         eps_reversed = list(reversed(eps_forward))
         snapshot_a = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=eps_forward)
@@ -665,9 +703,12 @@ class TestSnapshotComposition:
         eps = [
             _fixture_entry_point(),
             FakeEntryPoint("import-fail", load_error=ImportError("nope")),
-            FakeEntryPoint("api-fail", load_result=_manifest(name="api-fail", api_version=99)),
-            FakeEntryPoint("cap-fail", load_result=_manifest(name="cap-fail", capabilities=["fly"])),
-            FakeEntryPoint("form-fail", load_result=_manifest(name="form-fail", forms=["banana"])),
+            FakeEntryPoint("api-fail", load_result=_manifest(name="api-fail", backend_api_version=99)),
+            FakeEntryPoint("cap-fail", load_result=_manifest(name="cap-fail", capability_ceiling=["fly"])),
+            FakeEntryPoint(
+                "form-fail",
+                load_result=_manifest(name="form-fail", functional_form_ceiling=["banana"]),
+            ),
             FakeEntryPoint("shape-fail", load_result=_manifest(name="shape-fail", factory="bad")),
             FakeEntryPoint("dep-fail", load_result=_manifest(name="dep-fail", probe={"modules": ["missing_qqq"]})),
             FakeEntryPoint("dupe", load_result=_manifest(name="dupe")),
@@ -764,8 +805,11 @@ class TestSnapshotComposition:
         # name so discovery_report().for_name(...) can find the rejected plugin.
         eps = [
             FakeEntryPoint("importboom", load_error=ImportError("x")),
-            FakeEntryPoint("oldapi", load_result=_manifest(name="oldapi", api_version=DESCRIPTOR_API_VERSION + 9)),
-            FakeEntryPoint("badcap", load_result=_manifest(name="badcap", capabilities=["fly"])),
+            FakeEntryPoint(
+                "oldapi",
+                load_result=_manifest(name="oldapi", backend_api_version=BACKEND_API_VERSION + 9),
+            ),
+            FakeEntryPoint("badcap", load_result=_manifest(name="badcap", capability_ceiling=["fly"])),
         ]
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=eps)
         report = DiscoveryReport(records=snapshot.records)
@@ -1008,7 +1052,7 @@ class TestRegistryDiscovery:
         inject_entry_points([_fixture_entry_point()])
         assert "harmonic-fixture" in registry.available_mm_backends()
         desc = registry.get_descriptor("harmonic-fixture")
-        assert desc.info.role is BackendRole.MM
+        assert desc.role is BackendRole.MM
 
     def test_catalog_no_factory_import(
         self, fixture_on_path: None, inject_entry_points: Callable[[list[FakeEntryPoint]], None]
@@ -1055,7 +1099,7 @@ class TestRegistryDiscovery:
         inject_entry_points(
             [
                 _fixture_entry_point(),
-                FakeEntryPoint("cap-fail", load_result=_manifest(name="cap-fail", capabilities=["fly"])),
+                FakeEntryPoint("cap-fail", load_result=_manifest(name="cap-fail", capability_ceiling=["fly"])),
             ]
         )
         report = registry.discovery_report()
@@ -1103,6 +1147,7 @@ class TestCapabilityConformance:
             Capability.HESSIAN,
             Capability.FREQUENCIES,
             Capability.PARAMETER_GRADIENT,
+            Capability.COORDINATE_GRADIENT,
             Capability.HESSIAN_PARAMETER_JACOBIAN,
             Capability.BATCHED_ENERGY,
             Capability.BATCHED_HESSIAN,
@@ -1166,7 +1211,7 @@ class TestCapabilityConformance:
     def test_conformance_rejects_qm_backend(self) -> None:
         molecule, force_field = _harmonic_case()
         with pytest.raises(ConformanceError, match="MM backends only"):
-            assert_capability_conformance(_QmLikeBackend(), molecule=molecule, force_field=force_field)
+            assert_capability_conformance(_ReferenceLikeBackend(), molecule=molecule, force_field=force_field)
 
     @pytest.mark.openmm
     def test_openmm_claim_gated_conformance(self) -> None:

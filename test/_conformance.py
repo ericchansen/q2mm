@@ -14,6 +14,7 @@ Scope (intentionally precise):
   operation and is out of scope; QM conformance is not driven here.
 * The *drivable prepared-session* capabilities are ``ENERGY``, ``MINIMIZE``,
   ``HESSIAN``, ``FREQUENCIES``, ``PARAMETER_GRADIENT``,
+  ``COORDINATE_GRADIENT``,
   ``HESSIAN_PARAMETER_JACOBIAN``, and ``BATCHED_ENERGY``.  ``BATCHED_HESSIAN`` is
   driven through the backend-level
   :func:`~q2mm.backends.contracts.prepare_hessian_batches` surface (it is not a
@@ -46,6 +47,7 @@ from q2mm.backends.contracts import (
     BatchedHessianRequest,
     BatchedHessianResult,
     Capability,
+    CoordinateGradientResult,
     EnergyRequest,
     EnergyResult,
     FrequencyRequest,
@@ -59,6 +61,7 @@ from q2mm.backends.contracts import (
     ParameterGradientRequest,
     ParameterGradientResult,
     PreparationRequest,
+    ReferenceCoordinateGradientRequest,
     UnsupportedCapabilityError,
     prepare_hessian_batches,
 )
@@ -97,6 +100,11 @@ _MM_DRIVERS: dict[Capability, tuple[str, Callable[[np.ndarray], object], type]] 
         "parameter_gradient",
         lambda vec: ParameterGradientRequest(parameters=vec),
         ParameterGradientResult,
+    ),
+    Capability.COORDINATE_GRADIENT: (
+        "coordinate_gradient",
+        lambda _vec: ReferenceCoordinateGradientRequest(),
+        CoordinateGradientResult,
     ),
     Capability.HESSIAN_PARAMETER_JACOBIAN: (
         "hessian_parameter_jacobian",

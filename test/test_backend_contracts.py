@@ -19,21 +19,32 @@ import pytest
 
 from q2mm.backends.contracts import (
     AbstractPreparedBackend,
+    BACKEND_API_VERSION,
+    BackendDescriptor,
     BackendInfo,
     BackendProvenance,
     BackendRole,
     BatchedHessianRequest,
     Capability,
+    CoordinateGradientResult,
+    CoordinateGradientUnit,
     DependencyProbe,
     EnergyRequest,
     EnergyUnit,
+    EvaluationError,
     FrequencyResult,
     FrequencyUnit,
     FrequencyRequest,
     HessianJacobianRequest,
     HessianRequest,
+    HessianResult,
+    HessianUnit,
     ParameterGradientRequest,
     PreparationRequest,
+    ReferenceCoordinateGradientRequest,
+    ReferenceEnergyRequest,
+    ReferenceGeometryOptimizationRequest,
+    ReferenceHessianRequest,
     UnsupportedCapabilityError,
 )
 from q2mm.backends.registry import (
@@ -162,14 +173,22 @@ def test_unknown_backend_raises() -> None:
 
 
 def test_descriptor_validation_rejects_bad_factory() -> None:
-    from q2mm.backends.contracts import BackendDescriptor, BackendInfo, BackendProvenance
-
-    info_x = BackendInfo(name="x", role=BackendRole.MM, provenance=BackendProvenance(backend="x", role=BackendRole.MM))
     with pytest.raises(ValueError):
-        BackendDescriptor(name="x", info=info_x, factory="no_colon_here")
-    # An empty descriptor name is rejected before the provenance-match check.
+        BackendDescriptor(
+            name="x",
+            role=BackendRole.MM,
+            capability_ceiling=frozenset(),
+            functional_form_ceiling=frozenset(),
+            factory="no_colon_here",
+        )
     with pytest.raises(ValueError):
-        BackendDescriptor(name="", info=info_x, factory="a:b")
+        BackendDescriptor(
+            name="",
+            role=BackendRole.MM,
+            capability_ceiling=frozenset(),
+            functional_form_ceiling=frozenset(),
+            factory="a:b",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +237,6 @@ def test_capability_claims_match_methods(key: str) -> None:
         HessianResult,
         MinimizationRequest,
         ParameterGradientResult,
-        QMGeometryOptimizationRequest,
     )
 
     mol, ff, layout = _methane()
@@ -252,8 +270,12 @@ def test_capability_claims_match_methods(key: str) -> None:
         # GEOMETRY_OPTIMIZATION is QM-only; for an MM backend it must be
         # undeclared and raise UnsupportedCapabilityError.
         Capability.GEOMETRY_OPTIMIZATION: (
-            lambda: prepared.optimize_geometry(QMGeometryOptimizationRequest()),
+            lambda: prepared.optimize_geometry(ReferenceGeometryOptimizationRequest()),
             GeometryResult,
+        ),
+        Capability.COORDINATE_GRADIENT: (
+            lambda: prepared.coordinate_gradient(ReferenceCoordinateGradientRequest()),
+            CoordinateGradientResult,
         ),
     }
 
@@ -268,7 +290,7 @@ def test_capability_claims_match_methods(key: str) -> None:
 @pytest.mark.parametrize("key", _MM_HARMONIC_BACKENDS)
 def test_exact_request_family_validation(key: str) -> None:
     """Wrong request type for the right role raises EvaluationError before dispatch."""
-    from q2mm.backends.contracts import EvaluationError, MinimizationRequest, QMEnergyRequest
+    from q2mm.backends.contracts import EvaluationError, MinimizationRequest
 
     mol, ff, layout = _methane()
     backend = load_backend(key)
@@ -284,9 +306,9 @@ def test_exact_request_family_validation(key: str) -> None:
         prepared.minimize(EnergyRequest(parameters=vec))
     with pytest.raises(EvaluationError):
         prepared.frequencies(EnergyRequest(parameters=vec))
-    # An MM session must reject a QM request family.
+    # An MM session must reject a reference request family.
     with pytest.raises(EvaluationError):
-        prepared.energy(QMEnergyRequest())
+        prepared.energy(ReferenceEnergyRequest())
 
 
 @pytest.mark.parametrize("key", _MM_HARMONIC_BACKENDS)
@@ -518,13 +540,9 @@ def test_explicit_config_bypasses_unhealthy_probe(monkeypatch: pytest.MonkeyPatc
 
     desc = BackendDescriptor(
         name="fake-explicit",
-        info=BackendInfo(
-            name="fake-explicit",
-            role=BackendRole.MM,
-            capabilities=frozenset({Capability.ENERGY}),
-            functional_forms=frozenset({"mm3"}),
-            provenance=BackendProvenance(backend="fake-explicit", role=BackendRole.MM),
-        ),
+        role=BackendRole.MM,
+        capability_ceiling=frozenset({Capability.ENERGY}),
+        functional_form_ceiling=frozenset({"mm3"}),
         factory="q2mm_fake_backend_mod:_FakeBackend",
         # Intentionally unhealthy probe (module does not exist).
         probe=DependencyProbe(modules=("definitely_not_installed_xyz_123",)),
@@ -563,11 +581,11 @@ def test_openmm_platform_failure_raises_typed_no_fallback() -> None:
 
 
 # ---------------------------------------------------------------------------
-# QM request-family validation (fake QM session)
+# Reference request-family validation (fake reference session)
 # ---------------------------------------------------------------------------
 
 
-def _fake_qm_prepared() -> AbstractPreparedBackend:
+def _fake_reference_prepared() -> AbstractPreparedBackend:
     from q2mm.backends.contracts import (
         BackendInfo,
         BackendProvenance,
@@ -583,38 +601,49 @@ def _fake_qm_prepared() -> AbstractPreparedBackend:
     )
     from test.backend_fixtures import mock_molecule
 
-    prov = BackendProvenance(backend="fakeqm", role=BackendRole.QM)
+    prov = BackendProvenance(
+        backend="fake-reference",
+        role=BackendRole.REFERENCE,
+        details={"implementation": {"name": "fake"}, "model": {"method": "test"}},
+    )
     info = BackendInfo(
-        name="fakeqm",
-        role=BackendRole.QM,
-        capabilities=frozenset({Capability.ENERGY, Capability.HESSIAN}),
+        name="fake-reference",
+        role=BackendRole.REFERENCE,
+        capabilities=frozenset({Capability.ENERGY, Capability.HESSIAN, Capability.COORDINATE_GRADIENT}),
         functional_forms=frozenset(),
         provenance=prov,
     )
     mol = mock_molecule(["H", "H"])
 
-    class _QM(AbstractPreparedBackend):
+    class _Reference(AbstractPreparedBackend):
         def _energy(self, request: object) -> _ER:  # type: ignore[override]
             return _ER(energy=-1.0, unit=EnergyUnit.HARTREE, provenance=prov)
 
         def _hessian(self, request: object) -> _HR:  # type: ignore[override]
             return _HR(hessian=np.eye(6), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=prov)
 
-    return _QM(info=info, case_id="0", molecule=mol, force_field=None, layout=None)
+        def _coordinate_gradient(self, request: object) -> CoordinateGradientResult:  # type: ignore[override]
+            return CoordinateGradientResult(
+                gradient=np.zeros((2, 3)),
+                unit=CoordinateGradientUnit.HARTREE_PER_BOHR,
+                provenance=prov,
+            )
+
+    return _Reference(info=info, case_id="0", molecule=mol, force_field=None, layout=None)
 
 
-def test_qm_session_request_family() -> None:
+def test_reference_session_request_family_and_coordinate_gradient() -> None:
     from q2mm.backends.contracts import (
         EvaluationError,
-        QMEnergyRequest,
-        QMHessianRequest,
     )
 
-    prepared = _fake_qm_prepared()
-    # Correct QM requests succeed.
-    assert prepared.energy(QMEnergyRequest()).unit.value == "hartree"
-    assert prepared.hessian(QMHessianRequest()).hessian.shape == (6, 6)
-    # MM request families are rejected on a QM session.
+    prepared = _fake_reference_prepared()
+    assert prepared.energy(ReferenceEnergyRequest()).unit.value == "hartree"
+    assert prepared.hessian(ReferenceHessianRequest()).hessian.shape == (6, 6)
+    gradient = prepared.coordinate_gradient(ReferenceCoordinateGradientRequest())
+    assert gradient.gradient.shape == (2, 3)
+    assert not gradient.gradient.flags.writeable
+    # MM request families are rejected on a reference session.
     with pytest.raises(EvaluationError):
         prepared.energy(EnergyRequest(parameters=np.zeros(1)))
     with pytest.raises(EvaluationError):
@@ -661,13 +690,13 @@ def test_result_direct_construction_validates() -> None:
     )
 
     prov_mm = BackendProvenance(backend="x", role=BackendRole.MM)
-    prov_qm = BackendProvenance(backend="x", role=BackendRole.QM)
+    prov_reference = BackendProvenance(backend="x", role=BackendRole.REFERENCE)
 
     # Wrong energy unit for the provenance role.
     with pytest.raises(EvaluationError):
         EnergyResult(energy=1.0, unit=EnergyUnit.HARTREE, provenance=prov_mm)
     with pytest.raises(EvaluationError):
-        EnergyResult(energy=1.0, unit=EnergyUnit.KCAL_PER_MOL, provenance=prov_qm)
+        EnergyResult(energy=1.0, unit=EnergyUnit.KCAL_PER_MOL, provenance=prov_reference)
     # Non-finite scalar.
     with pytest.raises(EvaluationError):
         EnergyResult(energy=float("nan"), unit=EnergyUnit.KCAL_PER_MOL, provenance=prov_mm)
@@ -690,16 +719,113 @@ def test_backend_info_and_provenance_validation() -> None:
     # Empty provenance backend is rejected.
     with pytest.raises(ValueError):
         BackendProvenance(backend="", role=BackendRole.MM)
-    # QM info must declare no functional forms.
+    # Reference info must declare no functional forms.
     with pytest.raises(ValueError):
-        BackendInfo(name="x", role=BackendRole.QM, functional_forms=frozenset({"mm3"}))
+        BackendInfo(name="x", role=BackendRole.REFERENCE, functional_forms=frozenset({"mm3"}))
+    with pytest.raises(ValueError, match="COORDINATE_GRADIENT"):
+        BackendInfo(
+            name="x",
+            role=BackendRole.MM,
+            capabilities=frozenset({Capability.COORDINATE_GRADIENT}),
+        )
     # info provenance role must agree with info role.
     with pytest.raises(ValueError):
         BackendInfo(
             name="x",
             role=BackendRole.MM,
-            provenance=BackendProvenance(backend="x", role=BackendRole.QM),
+            provenance=BackendProvenance(backend="x", role=BackendRole.REFERENCE),
         )
+
+
+def test_backend_api_v1_has_no_pre_v1_contract_names() -> None:
+    import q2mm.backends.contracts as contracts
+
+    assert BACKEND_API_VERSION == 1
+    for name in (
+        "DESCRIPTOR_API_VERSION",
+        "QMEnergyRequest",
+        "QMHessianRequest",
+        "QMFrequencyRequest",
+        "QMGeometryOptimizationRequest",
+    ):
+        assert not hasattr(contracts, name)
+
+
+def test_structured_provenance_is_immutable_json_safe_and_secret_free() -> None:
+    import json
+
+    source = {
+        "implementation": {"name": "engine", "version": "1.2"},
+        "model": {"method": "method", "options": [1, True, None]},
+    }
+    provenance = BackendProvenance(
+        backend="reference",
+        role=BackendRole.REFERENCE,
+        version="1.2",
+        details=source,
+    )
+    source["implementation"]["name"] = "mutated"
+    assert provenance.details["implementation"]["name"] == "engine"
+    assert json.loads(json.dumps(provenance.details))["model"]["options"] == [1, True, None]
+    with pytest.raises(TypeError):
+        provenance.details["new"] = "value"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        provenance.details["implementation"]["name"] = "value"  # type: ignore[index]
+
+    bad_details = (
+        {1: "value"},
+        {"config": {"api_token": "value"}},
+        {"config": {"authToken": "value"}},
+        {"config": {"clientSecret": "value"}},
+        {"config": {"value": float("nan")}},
+        {"config": object()},
+        {"native": "Bearer abc123"},
+    )
+    for details in bad_details:
+        with pytest.raises(ValueError):
+            BackendProvenance(backend="x", role=BackendRole.MM, details=details)  # type: ignore[arg-type]
+
+
+def test_coordinate_gradient_and_hessian_provenance_contracts() -> None:
+    from q2mm.models.hessian import HessianUnits
+
+    provenance = BackendProvenance(
+        backend="reference",
+        role=BackendRole.REFERENCE,
+        details={"model": {"method": "test"}},
+    )
+    gradient = CoordinateGradientResult(
+        gradient=np.zeros((2, 3)),
+        unit=CoordinateGradientUnit.HARTREE_PER_BOHR,
+        provenance=provenance,
+    )
+    assert gradient.gradient.shape == (2, 3)
+    assert not gradient.gradient.flags.writeable
+    with pytest.raises(EvaluationError):
+        CoordinateGradientResult(
+            gradient=np.zeros(6),
+            unit=CoordinateGradientUnit.HARTREE_PER_BOHR,
+            provenance=provenance,
+        )
+    with pytest.raises(EvaluationError):
+        CoordinateGradientResult(
+            gradient=np.full((2, 3), np.inf),
+            unit=CoordinateGradientUnit.HARTREE_PER_BOHR,
+            provenance=provenance,
+        )
+
+    result = HessianResult(
+        hessian=np.eye(6),
+        unit=HessianUnit.HARTREE_PER_BOHR2,
+        provenance=provenance,
+    )
+    molecule_provenance = result.hessian_provenance
+    assert molecule_provenance.units is HessianUnits.ATOMIC
+    assert molecule_provenance.source == "reference"
+    assert molecule_provenance.path is None
+    assert molecule_provenance.source_details["details"]["model"]["method"] == "test"
+    with pytest.raises(TypeError):
+        molecule_provenance.source_details["new"] = "value"  # type: ignore[index]
 
 
 # ---------------------------------------------------------------------------

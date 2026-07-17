@@ -603,7 +603,11 @@ class OpenMMBackend:
             backend="openmm",
             role=BackendRole.MM,
             version=_openmm_version(),
-            detail=self._platform_name,
+            details={
+                "implementation": {"name": "OpenMM", "version": _openmm_version()},
+                "platform": {"name": self._platform_name},
+                "config": {"precision": self._precision},
+            },
         )
         return BackendInfo(
             name=f"OpenMM ({self._platform_name})",

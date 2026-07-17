@@ -41,7 +41,7 @@ import threading
 from typing import TYPE_CHECKING
 
 from q2mm.backends.contracts import (
-    DESCRIPTOR_API_VERSION,
+    BACKEND_API_VERSION,
     BackendConfigurationError,
     BackendRole,
     BackendStatus,
@@ -79,10 +79,10 @@ class BackendNotRegistered(BackendUnavailableError):
 # ---------------------------------------------------------------------------
 _BUILTIN_MANIFESTS: tuple[dict[str, object], ...] = (
     {
-        "api_version": DESCRIPTOR_API_VERSION,
+        "backend_api_version": BACKEND_API_VERSION,
         "name": "openmm",
         "role": "mm",
-        "capabilities": [
+        "capability_ceiling": [
             "energy",
             "minimize",
             "hessian",
@@ -90,24 +90,24 @@ _BUILTIN_MANIFESTS: tuple[dict[str, object], ...] = (
             "parameter_gradient",
             "reusable_state",
         ],
-        "forms": ["harmonic", "mm3"],
+        "functional_form_ceiling": ["harmonic", "mm3"],
         "factory": "q2mm.backends.mm.openmm:OpenMMBackend",
         "probe": {"modules": ["openmm"]},
     },
     {
-        "api_version": DESCRIPTOR_API_VERSION,
+        "backend_api_version": BACKEND_API_VERSION,
         "name": "tinker",
         "role": "mm",
-        "capabilities": ["energy", "minimize", "hessian", "frequencies"],
-        "forms": ["mm3"],
+        "capability_ceiling": ["energy", "minimize", "hessian", "frequencies"],
+        "functional_form_ceiling": ["mm3"],
         "factory": "q2mm.backends.mm.tinker:TinkerBackend",
         "probe": {"executables": ["analyze"]},
     },
     {
-        "api_version": DESCRIPTOR_API_VERSION,
+        "backend_api_version": BACKEND_API_VERSION,
         "name": "jax",
         "role": "mm",
-        "capabilities": [
+        "capability_ceiling": [
             "energy",
             "minimize",
             "hessian",
@@ -118,15 +118,15 @@ _BUILTIN_MANIFESTS: tuple[dict[str, object], ...] = (
             "batched_hessian",
             "reusable_state",
         ],
-        "forms": ["harmonic", "mm3"],
+        "functional_form_ceiling": ["harmonic", "mm3"],
         "factory": "q2mm.backends.mm.jax_engine:JaxBackend",
         "probe": {"modules": ["jax", "jaxlib"]},
     },
     {
-        "api_version": DESCRIPTOR_API_VERSION,
+        "backend_api_version": BACKEND_API_VERSION,
         "name": "jax-md",
         "role": "mm",
-        "capabilities": [
+        "capability_ceiling": [
             "energy",
             "minimize",
             "hessian",
@@ -135,16 +135,16 @@ _BUILTIN_MANIFESTS: tuple[dict[str, object], ...] = (
             "batched_energy",
             "reusable_state",
         ],
-        "forms": ["harmonic"],
+        "functional_form_ceiling": ["harmonic"],
         "factory": "q2mm.backends.mm.jax_md_engine:JaxMdBackend",
         "probe": {"modules": ["jax", "jaxlib", "jax_md"]},
     },
     {
-        "api_version": DESCRIPTOR_API_VERSION,
+        "backend_api_version": BACKEND_API_VERSION,
         "name": "psi4",
-        "role": "qm",
-        "capabilities": ["energy", "hessian", "frequencies", "geometry_optimization"],
-        "forms": [],
+        "role": "reference",
+        "capability_ceiling": ["energy", "hessian", "frequencies", "geometry_optimization"],
+        "functional_form_ceiling": [],
         "factory": "q2mm.backends.qm.psi4:Psi4Backend",
         "probe": {"modules": ["psi4"]},
     },
@@ -205,7 +205,7 @@ def catalog(*, role: BackendRole | None = None) -> list[BackendStatus]:
     while healthy descriptors remain visible.
 
     Args:
-        role: Optional filter to MM or QM descriptors.
+        role: Optional filter to MM or reference descriptors.
 
     Returns:
         list[BackendStatus]: One status per descriptor, sorted by name.
@@ -240,9 +240,9 @@ def available_mm_backends() -> list[str]:
     return available_backends(role=BackendRole.MM)
 
 
-def available_qm_backends() -> list[str]:
-    """Return names of available QM backends."""
-    return available_backends(role=BackendRole.QM)
+def available_reference_backends() -> list[str]:
+    """Return names of available reference backends."""
+    return available_backends(role=BackendRole.REFERENCE)
 
 
 def registered_backends(*, role: BackendRole | None = None) -> list[str]:

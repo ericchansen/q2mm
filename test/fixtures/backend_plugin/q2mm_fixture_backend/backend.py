@@ -30,12 +30,18 @@ from q2mm.backends.contracts import (
     EnergyResult,
     EnergyUnit,
     PreparationRequest,
-    QMEnergyRequest,
 )
 from q2mm.models.parameters import ParameterLayout
 
 _NAME = "harmonic-fixture"
-_PROVENANCE = BackendProvenance(backend=_NAME, role=BackendRole.MM, detail="fixture harmonic bond-stretch")
+_PROVENANCE = BackendProvenance(
+    backend=_NAME,
+    role=BackendRole.MM,
+    details={
+        "implementation": {"name": "q2mm fixture backend"},
+        "model": {"functional_form": "harmonic", "terms": ["bond_stretch"]},
+    },
+)
 _INFO = BackendInfo(
     name=_NAME,
     role=BackendRole.MM,
@@ -48,11 +54,7 @@ _INFO = BackendInfo(
 class _HarmonicFixturePrepared(AbstractPreparedBackend):
     """Prepared session computing a harmonic bond-stretch energy."""
 
-    def _energy(self, request: EnergyRequest | QMEnergyRequest) -> EnergyResult:
-        if not isinstance(request, EnergyRequest):
-            # The base class already guarantees an MM EnergyRequest for MM role,
-            # but narrow the type explicitly for the parameter application below.
-            raise TypeError("harmonic-fixture is an MM backend and expects an EnergyRequest.")
+    def _energy(self, request: EnergyRequest) -> EnergyResult:
         force_field = self.layout.replace(self.force_field, request.parameters)
         coordinates = np.asarray(self.molecule.geometry, dtype=float)
         symbols = self.molecule.symbols
