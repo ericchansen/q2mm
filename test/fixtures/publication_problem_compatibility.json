@@ -1,0 +1,1021 @@
+{
+  "incremental_per_row": true,
+  "profile": "repository-geometry-eigenmatrix-v1",
+  "rows": [
+    {
+      "active_indices": {
+        "count": 182,
+        "fingerprint": "sha256:6510dbcd2ceca646e2416b187ca67ca7b1f6acdebf4a513e56491d7fd92f9d3f"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "rh_enamide_training_set.mmo-000",
+        "rh_enamide_training_set.mmo-001",
+        "rh_enamide_training_set.mmo-002",
+        "rh_enamide_training_set.mmo-003",
+        "rh_enamide_training_set.mmo-004",
+        "rh_enamide_training_set.mmo-005",
+        "rh_enamide_training_set.mmo-006",
+        "rh_enamide_training_set.mmo-007",
+        "rh_enamide_training_set.mmo-008"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 2742,
+        "fingerprint": "sha256:f4d3851a7624725726d0ae0359145a9aa62308dbc7eb6c35fb3be5026dd4ad24"
+      },
+      "molecule_names": [
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo"
+      ],
+      "molecule_order_fingerprint": "sha256:18f569093be0147576e883890fb1c763dc87274d8a67e1d583c7301cd6f7b8a7",
+      "observations": {
+        "count": 116228,
+        "identity_fingerprint": "sha256:85100609a77a9e30130911ecd953b3e4e338075c35673c43226a77df29ec65d7",
+        "indices_fingerprint": "sha256:efff89526ad0b602e0d5e6e8cbc4d6a1f526d53eeee767bf0c4cd0902176d95c",
+        "kind_histogram": {
+          "bond_angle": 1050,
+          "bond_length": 500,
+          "eig_diagonal": 1404,
+          "eig_offdiagonal": 113274
+        },
+        "values_fingerprint": "sha256:023d4b24e4a909ac35c923cfacd93718bbd596c5ffd89701f4f04933fffbca1c",
+        "weights_fingerprint": "sha256:3efb70df7a815960559cb85b917833ef604b26281599a2785b75536ec56ee36b"
+      },
+      "problem_fingerprint": "sha256:606f457b8e2ae4cb6722656821578a194164e937be7b0e26e2a8e195cbe93b90",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "1ZDMPfromJCTCSI_loner1.01",
+        "2DMPEConformation1fromJCTCSI_isomer1.01",
+        "3DMPEConformation2fromJCTCSI_isomer2.01",
+        "4RR-Me-DuPHOSpro-RfromJCTCSI_isomer3.01",
+        "5RR-Me-DuPHOSpro-SfromJCTCSI_isomer4.01",
+        "6RR-Me-BPEpro-RConformation1fromJCTCSI_isomer5.01",
+        "7RR-Me-BPEpro-RConformation2fromJCTCSI_isomer6.01",
+        "8RR-Me-BPEpro-SConformation1fromJCTCSI_isomer7.01",
+        "9RR-Me-BPEpro-SConformation2fromJCTCSI_isomer8.01"
+      ],
+      "starting_point": "published",
+      "starting_vector": {
+        "count": 2742,
+        "fingerprint": "sha256:54a4e18c6f113c53ea81904502fe0958a5f479a0e71bb407db1efb76c33e6560"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "rh-enamide"
+    },
+    {
+      "active_indices": {
+        "count": 182,
+        "fingerprint": "sha256:6510dbcd2ceca646e2416b187ca67ca7b1f6acdebf4a513e56491d7fd92f9d3f"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "rh_enamide_training_set.mmo-000",
+        "rh_enamide_training_set.mmo-001",
+        "rh_enamide_training_set.mmo-002",
+        "rh_enamide_training_set.mmo-003",
+        "rh_enamide_training_set.mmo-004",
+        "rh_enamide_training_set.mmo-005",
+        "rh_enamide_training_set.mmo-006",
+        "rh_enamide_training_set.mmo-007",
+        "rh_enamide_training_set.mmo-008"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 2742,
+        "fingerprint": "sha256:f4d3851a7624725726d0ae0359145a9aa62308dbc7eb6c35fb3be5026dd4ad24"
+      },
+      "molecule_names": [
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo",
+        "rh_enamide_training_set.mmo"
+      ],
+      "molecule_order_fingerprint": "sha256:18f569093be0147576e883890fb1c763dc87274d8a67e1d583c7301cd6f7b8a7",
+      "observations": {
+        "count": 116228,
+        "identity_fingerprint": "sha256:85100609a77a9e30130911ecd953b3e4e338075c35673c43226a77df29ec65d7",
+        "indices_fingerprint": "sha256:efff89526ad0b602e0d5e6e8cbc4d6a1f526d53eeee767bf0c4cd0902176d95c",
+        "kind_histogram": {
+          "bond_angle": 1050,
+          "bond_length": 500,
+          "eig_diagonal": 1404,
+          "eig_offdiagonal": 113274
+        },
+        "values_fingerprint": "sha256:023d4b24e4a909ac35c923cfacd93718bbd596c5ffd89701f4f04933fffbca1c",
+        "weights_fingerprint": "sha256:3efb70df7a815960559cb85b917833ef604b26281599a2785b75536ec56ee36b"
+      },
+      "problem_fingerprint": "sha256:f1eff245caeeafd9186aae557cdbca6c841eefb72e3215d1e53acc9f3b72c4f6",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "1ZDMPfromJCTCSI_loner1.01",
+        "2DMPEConformation1fromJCTCSI_isomer1.01",
+        "3DMPEConformation2fromJCTCSI_isomer2.01",
+        "4RR-Me-DuPHOSpro-RfromJCTCSI_isomer3.01",
+        "5RR-Me-DuPHOSpro-SfromJCTCSI_isomer4.01",
+        "6RR-Me-BPEpro-RConformation1fromJCTCSI_isomer5.01",
+        "7RR-Me-BPEpro-RConformation2fromJCTCSI_isomer6.01",
+        "8RR-Me-BPEpro-SConformation1fromJCTCSI_isomer7.01",
+        "9RR-Me-BPEpro-SConformation2fromJCTCSI_isomer8.01"
+      ],
+      "starting_point": "qfuerza",
+      "starting_vector": {
+        "count": 2742,
+        "fingerprint": "sha256:c691d24eebabd20964e785329a5d63e7ce94d406774a812d8eeba22cb10e185c"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "rh-enamide"
+    },
+    {
+      "active_indices": {
+        "count": 462,
+        "fingerprint": "sha256:3e7beec50d14e118558c7c74e74d8195a5b0e05e1197ceca73ec7b500271e81b"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "aagts1-000",
+        "aagts2-001",
+        "bgts1-002",
+        "bgts2-003",
+        "cf3ets1-004",
+        "cf3ets2-005",
+        "dimeets1-006",
+        "dimeets2-007",
+        "epgts1-008",
+        "epgts2-009",
+        "ipets1-010",
+        "ipets2-011",
+        "meets1-012",
+        "meets2-013",
+        "prrts2-014",
+        "prsts1-015",
+        "prsts2-016",
+        "tbets1-017",
+        "tbets2-018",
+        "tmets1-019",
+        "tmets2-020",
+        "zpgts1-021",
+        "zpgts2-022"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 3024,
+        "fingerprint": "sha256:00ec8f93357dd1473043b6362576c27cfd50935c73d3dadf203ce74aac1cd29c"
+      },
+      "molecule_names": [
+        "aagts1",
+        "aagts2",
+        "bgts1",
+        "bgts2",
+        "cf3ets1",
+        "cf3ets2",
+        "dimeets1",
+        "dimeets2",
+        "epgts1",
+        "epgts2",
+        "ipets1",
+        "ipets2",
+        "meets1",
+        "meets2",
+        "prrts2",
+        "prsts1",
+        "prsts2",
+        "tbets1",
+        "tbets2",
+        "tmets1",
+        "tmets2",
+        "zpgts1",
+        "zpgts2"
+      ],
+      "molecule_order_fingerprint": "sha256:5a684bb754c3a6b04f81b5a9c850cd7d21a1c4af48d6511db587a677bfad5eaf",
+      "observations": {
+        "count": 221391,
+        "identity_fingerprint": "sha256:986ccee73ae2144e10a416478a0f8ab0c12b9b37f95bab255cf1e0bd8653b5d5",
+        "indices_fingerprint": "sha256:94b9c92f64d03818d4abe8663cb7e69636e232ef4707836b0953aa33a70ebdf6",
+        "kind_histogram": {
+          "bond_angle": 2157,
+          "bond_length": 1140,
+          "eig_diagonal": 3144,
+          "eig_offdiagonal": 214950
+        },
+        "values_fingerprint": "sha256:00eae32fa3de12734df76cbe188a156117fadc1bf8dffc1aafb5f13ae88c53ec",
+        "weights_fingerprint": "sha256:fd806b8caddca9dd59b803b89ecfc464a99f16a88824479bb9cb89a38feda806"
+      },
+      "problem_fingerprint": "sha256:b4bc1716d201112fa205a93890dd54a0c7e6ebca34ce0a1982ff69b32d094ebf",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "aagts1",
+        "aagts2",
+        "bgts1",
+        "bgts2",
+        "cf3ets1",
+        "cf3ets2",
+        "dimeets1",
+        "dimeets2",
+        "epgts1",
+        "epgts2",
+        "ipets1",
+        "ipets2",
+        "meets1",
+        "meets2",
+        "prrts2",
+        "prsts1",
+        "prsts2",
+        "tbets1",
+        "tbets2",
+        "tmets1",
+        "tmets2",
+        "zpgts1",
+        "zpgts2"
+      ],
+      "starting_point": "published",
+      "starting_vector": {
+        "count": 3024,
+        "fingerprint": "sha256:6b6c021bb22fbc7481b090450ace8b068ef6a13548e33f2005635e2fcff54b51"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "heck-relay"
+    },
+    {
+      "active_indices": {
+        "count": 462,
+        "fingerprint": "sha256:3e7beec50d14e118558c7c74e74d8195a5b0e05e1197ceca73ec7b500271e81b"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "aagts1-000",
+        "aagts2-001",
+        "bgts1-002",
+        "bgts2-003",
+        "cf3ets1-004",
+        "cf3ets2-005",
+        "dimeets1-006",
+        "dimeets2-007",
+        "epgts1-008",
+        "epgts2-009",
+        "ipets1-010",
+        "ipets2-011",
+        "meets1-012",
+        "meets2-013",
+        "prrts2-014",
+        "prsts1-015",
+        "prsts2-016",
+        "tbets1-017",
+        "tbets2-018",
+        "tmets1-019",
+        "tmets2-020",
+        "zpgts1-021",
+        "zpgts2-022"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 3024,
+        "fingerprint": "sha256:00ec8f93357dd1473043b6362576c27cfd50935c73d3dadf203ce74aac1cd29c"
+      },
+      "molecule_names": [
+        "aagts1",
+        "aagts2",
+        "bgts1",
+        "bgts2",
+        "cf3ets1",
+        "cf3ets2",
+        "dimeets1",
+        "dimeets2",
+        "epgts1",
+        "epgts2",
+        "ipets1",
+        "ipets2",
+        "meets1",
+        "meets2",
+        "prrts2",
+        "prsts1",
+        "prsts2",
+        "tbets1",
+        "tbets2",
+        "tmets1",
+        "tmets2",
+        "zpgts1",
+        "zpgts2"
+      ],
+      "molecule_order_fingerprint": "sha256:5a684bb754c3a6b04f81b5a9c850cd7d21a1c4af48d6511db587a677bfad5eaf",
+      "observations": {
+        "count": 221391,
+        "identity_fingerprint": "sha256:986ccee73ae2144e10a416478a0f8ab0c12b9b37f95bab255cf1e0bd8653b5d5",
+        "indices_fingerprint": "sha256:94b9c92f64d03818d4abe8663cb7e69636e232ef4707836b0953aa33a70ebdf6",
+        "kind_histogram": {
+          "bond_angle": 2157,
+          "bond_length": 1140,
+          "eig_diagonal": 3144,
+          "eig_offdiagonal": 214950
+        },
+        "values_fingerprint": "sha256:00eae32fa3de12734df76cbe188a156117fadc1bf8dffc1aafb5f13ae88c53ec",
+        "weights_fingerprint": "sha256:fd806b8caddca9dd59b803b89ecfc464a99f16a88824479bb9cb89a38feda806"
+      },
+      "problem_fingerprint": "sha256:cd74234169fa1cfd964c1947b5d0ef2b9a2440649bef8f73110df9f96227df0b",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "aagts1",
+        "aagts2",
+        "bgts1",
+        "bgts2",
+        "cf3ets1",
+        "cf3ets2",
+        "dimeets1",
+        "dimeets2",
+        "epgts1",
+        "epgts2",
+        "ipets1",
+        "ipets2",
+        "meets1",
+        "meets2",
+        "prrts2",
+        "prsts1",
+        "prsts2",
+        "tbets1",
+        "tbets2",
+        "tmets1",
+        "tmets2",
+        "zpgts1",
+        "zpgts2"
+      ],
+      "starting_point": "qfuerza",
+      "starting_vector": {
+        "count": 3024,
+        "fingerprint": "sha256:6659e9b3d8c1eb9f9f00f612b03b6bb92d6a713d25fec90098a33a6a7e1dca7b"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "heck-relay"
+    },
+    {
+      "active_indices": {
+        "count": 482,
+        "fingerprint": "sha256:c377792bb4ebfb251b538ebb10714b4e2a9077d3a27c607027472e6ff1ed14a6"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "TS1-000",
+        "TS10-001",
+        "TS11-002",
+        "TS12-003",
+        "TS13-004",
+        "TS14-005",
+        "TS15-006",
+        "TS16-007",
+        "TS17-008",
+        "TS18-009",
+        "TS19-010",
+        "TS2-011",
+        "TS20-012",
+        "TS21-013",
+        "TS3-014",
+        "TS4-015",
+        "TS5-016",
+        "TS6-017",
+        "TS7-018",
+        "TS8-019",
+        "TS9-020"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 3116,
+        "fingerprint": "sha256:6a554304d6d707003d11c5dead5977674072b3194c62847a88f57afa186bb0e8"
+      },
+      "molecule_names": [
+        "TS1",
+        "TS10",
+        "TS11",
+        "TS12",
+        "TS13",
+        "TS14",
+        "TS15",
+        "TS16",
+        "TS17",
+        "TS18",
+        "TS19",
+        "TS2",
+        "TS20",
+        "TS21",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "molecule_order_fingerprint": "sha256:463b768f294ea40e3fe7c5da13fae6ed179b4a9e5e57ed546c280391ace6d711",
+      "observations": {
+        "count": 170602,
+        "identity_fingerprint": "sha256:5f34498e74db71b67350c07986dfc2e991133d9a72a843f77b183a78a47c4a64",
+        "indices_fingerprint": "sha256:d63c4f857c0398181735299ae8cd9e9f78dd3bd0285b9b2557093cd0a5a7e16e",
+        "kind_histogram": {
+          "bond_angle": 1582,
+          "bond_length": 849,
+          "eig_diagonal": 2433,
+          "eig_offdiagonal": 165738
+        },
+        "values_fingerprint": "sha256:cb354944d7797ba0ad8df4cdeb47aa25936781befddc4b2cdf0b3124e7689e09",
+        "weights_fingerprint": "sha256:659f7d055c3e171811de830430e2e406734287c693a8607c36b35048bd7c175d"
+      },
+      "problem_fingerprint": "sha256:f81c8a894550da06ffce984f435821524f33ea04b944d0dd3e64a9910fb1f97f",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "TS1",
+        "TS10",
+        "TS11",
+        "TS12",
+        "TS13",
+        "TS14",
+        "TS15",
+        "TS16",
+        "TS17",
+        "TS18",
+        "TS19",
+        "TS2",
+        "TS20",
+        "TS21",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "starting_point": "published",
+      "starting_vector": {
+        "count": 3116,
+        "fingerprint": "sha256:dcf276a87bc23f7a965dca88d42f802ebff19299fc53dc2d755cd8b2262b7adf"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "pd-allyl"
+    },
+    {
+      "active_indices": {
+        "count": 482,
+        "fingerprint": "sha256:c377792bb4ebfb251b538ebb10714b4e2a9077d3a27c607027472e6ff1ed14a6"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "TS1-000",
+        "TS10-001",
+        "TS11-002",
+        "TS12-003",
+        "TS13-004",
+        "TS14-005",
+        "TS15-006",
+        "TS16-007",
+        "TS17-008",
+        "TS18-009",
+        "TS19-010",
+        "TS2-011",
+        "TS20-012",
+        "TS21-013",
+        "TS3-014",
+        "TS4-015",
+        "TS5-016",
+        "TS6-017",
+        "TS7-018",
+        "TS8-019",
+        "TS9-020"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 3116,
+        "fingerprint": "sha256:6a554304d6d707003d11c5dead5977674072b3194c62847a88f57afa186bb0e8"
+      },
+      "molecule_names": [
+        "TS1",
+        "TS10",
+        "TS11",
+        "TS12",
+        "TS13",
+        "TS14",
+        "TS15",
+        "TS16",
+        "TS17",
+        "TS18",
+        "TS19",
+        "TS2",
+        "TS20",
+        "TS21",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "molecule_order_fingerprint": "sha256:463b768f294ea40e3fe7c5da13fae6ed179b4a9e5e57ed546c280391ace6d711",
+      "observations": {
+        "count": 170602,
+        "identity_fingerprint": "sha256:5f34498e74db71b67350c07986dfc2e991133d9a72a843f77b183a78a47c4a64",
+        "indices_fingerprint": "sha256:d63c4f857c0398181735299ae8cd9e9f78dd3bd0285b9b2557093cd0a5a7e16e",
+        "kind_histogram": {
+          "bond_angle": 1582,
+          "bond_length": 849,
+          "eig_diagonal": 2433,
+          "eig_offdiagonal": 165738
+        },
+        "values_fingerprint": "sha256:cb354944d7797ba0ad8df4cdeb47aa25936781befddc4b2cdf0b3124e7689e09",
+        "weights_fingerprint": "sha256:659f7d055c3e171811de830430e2e406734287c693a8607c36b35048bd7c175d"
+      },
+      "problem_fingerprint": "sha256:2a2b386fef09c9e15c016a784196630428760a935db2199f00599f670e1fe524",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "TS1",
+        "TS10",
+        "TS11",
+        "TS12",
+        "TS13",
+        "TS14",
+        "TS15",
+        "TS16",
+        "TS17",
+        "TS18",
+        "TS19",
+        "TS2",
+        "TS20",
+        "TS21",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "starting_point": "qfuerza",
+      "starting_vector": {
+        "count": 3116,
+        "fingerprint": "sha256:49a46d64855bb482b74ab28d2ade5e7603fbd7acd7e82b57dfe91ae9184d0f54"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "pd-allyl"
+    },
+    {
+      "active_indices": {
+        "count": 340,
+        "fingerprint": "sha256:09789206d6eac62b1eb8c8dfd423b3976b14cc11ce7dd59de5a963f61646a48a"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "TS1-000",
+        "TS10-001",
+        "TS2-002",
+        "TS3-003",
+        "TS4-004",
+        "TS5-005",
+        "TS6-006",
+        "TS7-007",
+        "TS8-008",
+        "TS9-009"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 2974,
+        "fingerprint": "sha256:0dfd13a3e88af86ac5a2092d38f9ef508b77a2c5be9353ff19ed1679acfa7994"
+      },
+      "molecule_names": [
+        "TS1",
+        "TS10",
+        "TS2",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "molecule_order_fingerprint": "sha256:3c36d45425b1af61ba743b848d535fc05a8cb1ab9f26f246c58fd429fea8ba8f",
+      "observations": {
+        "count": 86739,
+        "identity_fingerprint": "sha256:be21fa1631e479cbcb276392518942bb2483c27a1ce314b027ae285ffab4a180",
+        "indices_fingerprint": "sha256:6ef92857bf77bc412be69f34bf620d6ad2762bd05d300c0a5cc497cbddac0a0a",
+        "kind_histogram": {
+          "bond_angle": 892,
+          "bond_length": 473,
+          "eig_diagonal": 1296,
+          "eig_offdiagonal": 84078
+        },
+        "values_fingerprint": "sha256:de033d97fcbbbc28d775a11d07cc54036ee559d6bb02ed3cbd267b38493be531",
+        "weights_fingerprint": "sha256:0f9bde266be99423e6806b0f44074c03cf306a928d5b8366219e9a5422dfc14e"
+      },
+      "problem_fingerprint": "sha256:c5e558185fa115f80a91b7b6eea6729bbaffeaaaff535b86ea4329b951d2cc31",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "TS1",
+        "TS10",
+        "TS2",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "starting_point": "published",
+      "starting_vector": {
+        "count": 2974,
+        "fingerprint": "sha256:a276da6a7c2c659afbc9d64cfe334f86c3c372f4b97bde72a40cbe600c5752a1"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "pd-conjugate"
+    },
+    {
+      "active_indices": {
+        "count": 340,
+        "fingerprint": "sha256:09789206d6eac62b1eb8c8dfd423b3976b14cc11ce7dd59de5a963f61646a48a"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "TS1-000",
+        "TS10-001",
+        "TS2-002",
+        "TS3-003",
+        "TS4-004",
+        "TS5-005",
+        "TS6-006",
+        "TS7-007",
+        "TS8-008",
+        "TS9-009"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 2974,
+        "fingerprint": "sha256:0dfd13a3e88af86ac5a2092d38f9ef508b77a2c5be9353ff19ed1679acfa7994"
+      },
+      "molecule_names": [
+        "TS1",
+        "TS10",
+        "TS2",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "molecule_order_fingerprint": "sha256:3c36d45425b1af61ba743b848d535fc05a8cb1ab9f26f246c58fd429fea8ba8f",
+      "observations": {
+        "count": 86739,
+        "identity_fingerprint": "sha256:be21fa1631e479cbcb276392518942bb2483c27a1ce314b027ae285ffab4a180",
+        "indices_fingerprint": "sha256:6ef92857bf77bc412be69f34bf620d6ad2762bd05d300c0a5cc497cbddac0a0a",
+        "kind_histogram": {
+          "bond_angle": 892,
+          "bond_length": 473,
+          "eig_diagonal": 1296,
+          "eig_offdiagonal": 84078
+        },
+        "values_fingerprint": "sha256:de033d97fcbbbc28d775a11d07cc54036ee559d6bb02ed3cbd267b38493be531",
+        "weights_fingerprint": "sha256:0f9bde266be99423e6806b0f44074c03cf306a928d5b8366219e9a5422dfc14e"
+      },
+      "problem_fingerprint": "sha256:cfd9f6e6269fa7899a4475181f8f82dd4e42c916c07c7be52cd2c55852f07514",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "TS1",
+        "TS10",
+        "TS2",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "starting_point": "qfuerza",
+      "starting_vector": {
+        "count": 2974,
+        "fingerprint": "sha256:54bb9b33da983ef6900d07ead3e33cb39b53fddbaaf8e8c58918e87a801246e6"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "pd-conjugate"
+    },
+    {
+      "active_indices": {
+        "count": 488,
+        "fingerprint": "sha256:650a8592da0616570fffccd7cfcbf0c6cfb1b544d49f534e154271e628a7b4b5"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "TS1-000",
+        "TS10-001",
+        "TS2-002",
+        "TS3-003",
+        "TS4-004",
+        "TS5-005",
+        "TS6-006",
+        "TS7-007",
+        "TS8-008",
+        "TS9-009"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 3120,
+        "fingerprint": "sha256:3016eaca369385ccd9019d06fb44533814ca5f851b34e4491d7f8f1c35f4a4da"
+      },
+      "molecule_names": [
+        "TS1",
+        "TS10",
+        "TS2",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "molecule_order_fingerprint": "sha256:a593acf4fedacef06bd677ad2352fb5e3400db2ed66bdccb953fa1731d5d2c9c",
+      "observations": {
+        "count": 90948,
+        "identity_fingerprint": "sha256:21ec32164e257c6ec693a5ed70f35ec0d9e60f2b16702a6a41103aac57ada957",
+        "indices_fingerprint": "sha256:dcc41638bd2be244d84b28a7d4b282f2f0c0d14b4d5af8834b8a3989a6aa878a",
+        "kind_histogram": {
+          "bond_angle": 926,
+          "bond_length": 457,
+          "eig_diagonal": 1254,
+          "eig_offdiagonal": 88311
+        },
+        "values_fingerprint": "sha256:67f36c510f8d405162d835378830a1b0d3d7d761c74a3107bd6a499b648f4409",
+        "weights_fingerprint": "sha256:1f007291df21e84ce55eecbdc17cec894e74584c06b226bb92c71f30b885754c"
+      },
+      "problem_fingerprint": "sha256:d814f463e4e5360648cd33e056a55a262411506d140a8e46809eaeff1b1a82d0",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "TS1",
+        "TS10",
+        "TS2",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "starting_point": "published",
+      "starting_vector": {
+        "count": 3120,
+        "fingerprint": "sha256:15884e4fd9f63cae724034f9557cdf75717d85c6b28f47082fbeab1539259106"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "rh-conjugate"
+    },
+    {
+      "active_indices": {
+        "count": 488,
+        "fingerprint": "sha256:650a8592da0616570fffccd7cfcbf0c6cfb1b544d49f534e154271e628a7b4b5"
+      },
+      "baseline_evaluation": null,
+      "baseline_evaluation_policy": "compare-old-new-in-process",
+      "case_ids": [
+        "TS1-000",
+        "TS10-001",
+        "TS2-002",
+        "TS3-003",
+        "TS4-004",
+        "TS5-005",
+        "TS6-006",
+        "TS7-007",
+        "TS8-008",
+        "TS9-009"
+      ],
+      "functional_form": "mm3",
+      "layout": {
+        "count": 3120,
+        "fingerprint": "sha256:3016eaca369385ccd9019d06fb44533814ca5f851b34e4491d7f8f1c35f4a4da"
+      },
+      "molecule_names": [
+        "TS1",
+        "TS10",
+        "TS2",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "molecule_order_fingerprint": "sha256:a593acf4fedacef06bd677ad2352fb5e3400db2ed66bdccb953fa1731d5d2c9c",
+      "observations": {
+        "count": 90948,
+        "identity_fingerprint": "sha256:21ec32164e257c6ec693a5ed70f35ec0d9e60f2b16702a6a41103aac57ada957",
+        "indices_fingerprint": "sha256:dcc41638bd2be244d84b28a7d4b282f2f0c0d14b4d5af8834b8a3989a6aa878a",
+        "kind_histogram": {
+          "bond_angle": 926,
+          "bond_length": 457,
+          "eig_diagonal": 1254,
+          "eig_offdiagonal": 88311
+        },
+        "values_fingerprint": "sha256:67f36c510f8d405162d835378830a1b0d3d7d761c74a3107bd6a499b648f4409",
+        "weights_fingerprint": "sha256:1f007291df21e84ce55eecbdc17cec894e74584c06b226bb92c71f30b885754c"
+      },
+      "problem_fingerprint": "sha256:5f78c2d77cf7d4cf4cf2a64b4643903373584c9b0c90d220129a866ffc11fb30",
+      "profile": "repository-geometry-eigenmatrix-v1",
+      "source_order": [
+        "TS1",
+        "TS10",
+        "TS2",
+        "TS3",
+        "TS4",
+        "TS5",
+        "TS6",
+        "TS7",
+        "TS8",
+        "TS9"
+      ],
+      "starting_point": "qfuerza",
+      "starting_vector": {
+        "count": 3120,
+        "fingerprint": "sha256:f2ed8032b26b1f997a6e3ecf624f61b6a533c70cd9aac78a1de10908fdb9ef04"
+      },
+      "stationary_points": [
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state",
+        "transition_state"
+      ],
+      "system": "rh-conjugate"
+    }
+  ],
+  "schema_version": 1
+}

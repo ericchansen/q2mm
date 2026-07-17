@@ -350,6 +350,8 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
         raise ArtifactContractError("installed `q2mm-benchmark single` wrote no candidate record")
     smoke_code = """
 import numpy as np
+from pathlib import Path
+import q2mm
 from q2mm.backends.contracts import (
     AbstractPreparedBackend,
     BackendInfo,
@@ -359,7 +361,10 @@ from q2mm.backends.contracts import (
     FrequencyResult,
     FrequencyUnit,
 )
+from q2mm.models.molecule import Molecule
 from q2mm.models.parameters import ParameterLayout
+from q2mm.models.results import OptimizationResult
+from q2mm.preparation import MatchedFrequencyObservations
 from q2mm.resources import validate_sn2_resources
 from q2mm.benchmarks.systems import load_system
 
@@ -397,10 +402,60 @@ class SmokeBackend:
         )
 
 
+class SmokeOptimizer:
+    def optimize(self, evaluator, space):
+        parameters = np.array(space.baseline, copy=True)
+        score = evaluator.value(parameters)
+        return OptimizationResult(
+            success=True,
+            message="installed optimizer entry",
+            initial_score=score,
+            final_score=score,
+            n_iterations=0,
+            n_evaluations=1,
+            n_params=space.n_full,
+            layout_fingerprint=space.layout.fingerprint,
+            initial_params=parameters,
+            final_params=parameters,
+            method="installed-smoke",
+            gradient_mode="none",
+        )
+
+
 validate_sn2_resources()
 case = load_system("ch3f", backend=SmokeBackend(), functional_form="harmonic")
 assert case.problem.molecules[0].hessian.shape == (15, 15)
-print("installed-import=ok cli-help=ok cli-list=ok cli-single-skip=ok sn2-resource=ok ch3f-system=ok")
+molecule = Molecule(
+    symbols=("H", "H"),
+    geometry=np.array([[0.0, 0.0, 0.0], [0.74, 0.0, 0.0]]),
+    hessian=np.eye(6) * 0.1,
+    name="installed-byo",
+)
+problem = q2mm.prepare(
+    molecule,
+    stationary_point="ground_state",
+    functional_form="harmonic",
+    observations=MatchedFrequencyObservations(
+        qm_frequencies=(100.0,),
+        backend=SmokeBackend(),
+    ),
+)
+evaluation = q2mm.evaluate(problem, backend=SmokeBackend(), executor="python")
+assert evaluation.total >= 0.0
+run = q2mm.optimize(
+    problem,
+    backend=SmokeBackend(),
+    recipe="explicit",
+    optimizer=SmokeOptimizer(),
+    workflow="single-stage",
+    executor="python",
+)
+output = Path("installed-byo.frcmod")
+saved = q2mm.save(run, output)
+assert output.is_file()
+assert saved.manifest_path is not None and saved.manifest_path.is_file()
+print("installed-import=ok cli-help=ok cli-list=ok cli-single-skip=ok sn2-resource=ok "
+      "ch3f-system=ok generic-prepare=ok generic-evaluate=ok optimizer-entry=ok generic-save=ok")
 """
     completed = subprocess.run(
         [str(python), "-I", "-c", smoke_code],

@@ -7,6 +7,7 @@ from typing import Any, Literal, cast
 
 import numpy as np
 
+from q2mm._canonical import canonical_fingerprint
 from q2mm.backends.contracts import Backend, BackendRole
 from q2mm.models.forcefield import ForceField
 from q2mm.models.problem import OptimizationProblem, StationaryPointKind
@@ -411,6 +412,34 @@ def optimize(
         raise ApplicationOptimizationError(
             f"Optimization result gradient_mode={result.gradient_mode!r}; expected {expected_gradient!r}."
         )
+    run_provenance: dict[str, object] = {
+        "case_ids": list(problem.case_ids),
+        "stationary_points": [case.stationary_point.value for case in problem.cases],
+        "n_cases": len(problem.cases),
+        "n_observations": len(problem.observations.values),
+        "n_active": problem.active_space.n_active,
+        "n_parameters": len(problem.layout),
+    }
+    if problem.preparation_provenance is not None:
+        preparation = problem.preparation_provenance
+        preparation_payload = {
+            "schema_version": preparation.schema_version,
+            "profile": preparation.profile,
+            "initialize_source": preparation.initialize_source,
+            "functional_form": preparation.functional_form,
+            "qfuerza_settings": dict(preparation.qfuerza_settings),
+            "pre_qfuerza_vector_fingerprint": preparation.pre_qfuerza_vector_fingerprint,
+            "parameter_counts": dict(preparation.parameter_counts),
+            "stationary_points": list(preparation.stationary_points),
+            "case_ids": list(preparation.case_ids),
+            "input_fingerprints": dict(preparation.input_fingerprints),
+            "observation_recipe": dict(preparation.observation_recipe),
+        }
+        run_provenance["preparation"] = preparation_payload
+        run_provenance["preparation_fingerprint"] = canonical_fingerprint(
+            preparation_payload,
+            screen_secrets=True,
+        )
     return OptimizationRun(
         result=result,
         final_force_field=final_force_field,
@@ -420,14 +449,7 @@ def optimize(
         input_fingerprints=problem_input_fingerprints(problem),
         active_indices=tuple(int(index) for index in problem.active_space.active_indices),
         baseline=problem.active_space.baseline,
-        provenance={
-            "case_ids": list(problem.case_ids),
-            "stationary_points": [case.stationary_point.value for case in problem.cases],
-            "n_cases": len(problem.cases),
-            "n_observations": len(problem.observations.values),
-            "n_active": problem.active_space.n_active,
-            "n_parameters": len(problem.layout),
-        },
+        provenance=run_provenance,
     )
 
 

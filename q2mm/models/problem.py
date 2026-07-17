@@ -1,8 +1,8 @@
 """Immutable training-case and optimization-problem model for Q2MM.
 
-:class:`OptimizationProblem` is the one immutable bundle produced by a
-benchmark-system loader (see ``q2mm.benchmarks.systems``) and consumed by
-objective/optimizer/workflow code: training cases (each a canonical
+:class:`OptimizationProblem` is the one immutable bundle produced by generic
+preparation, a benchmark-system loader, or direct advanced construction and
+consumed by objective/optimizer/workflow code: training cases (each a canonical
 :class:`~q2mm.models.molecule.Molecule` with a stable ID and explicit
 ground-state/transition-state kind), the starting force field, its
 :class:`~q2mm.models.parameters.ParameterLayout`, an
@@ -17,15 +17,17 @@ the one Hessian/provenance vocabulary).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import Enum
 
+from q2mm._provenance import freeze_json_mapping
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import ObservationSet
-from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.parameters import ActiveParameterSpace, ParameterKind, ParameterLayout
 
-__all__ = ["StationaryPointKind", "TrainingCase", "OptimizationProblem"]
+__all__ = ["StationaryPointKind", "TrainingCase", "PreparationProvenance", "OptimizationProblem"]
 
 
 class StationaryPointKind(str, Enum):
@@ -69,6 +71,63 @@ class TrainingCase:
             raise TypeError(f"TrainingCase.molecule must be a Molecule, got {type(self.molecule).__name__}.")
 
 
+@dataclass(frozen=True)
+class PreparationProvenance:
+    """Immutable, path-free audit of how a convenience problem was prepared."""
+
+    profile: str
+    initialize_source: str
+    functional_form: str
+    pre_qfuerza_vector_fingerprint: str
+    qfuerza_settings: Mapping[str, object] = field(default_factory=dict)
+    parameter_counts: Mapping[str, Mapping[str, int]] = field(default_factory=dict)
+    stationary_points: tuple[str, ...] = ()
+    case_ids: tuple[str, ...] = ()
+    input_fingerprints: Mapping[str, str] = field(default_factory=dict)
+    observation_recipe: Mapping[str, object] = field(default_factory=dict)
+    schema_version: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.profile:
+            raise ValueError("PreparationProvenance.profile must be non-empty.")
+        if self.initialize_source not in {"provided", "qfuerza"}:
+            raise ValueError("PreparationProvenance.initialize_source must be 'provided' or 'qfuerza'.")
+        if not self.functional_form:
+            raise ValueError("PreparationProvenance.functional_form must be non-empty.")
+        fingerprint = self.pre_qfuerza_vector_fingerprint
+        if not fingerprint.startswith("sha256:"):
+            raise ValueError("pre_qfuerza_vector_fingerprint must be a canonical SHA-256 fingerprint.")
+        valid_kinds = {kind.value for kind in ParameterKind}
+        for kind, counts in self.parameter_counts.items():
+            if kind not in valid_kinds:
+                raise ValueError(f"PreparationProvenance.parameter_counts has unknown kind {kind!r}.")
+            if set(counts) != {"overwritten", "retained", "frozen"}:
+                raise ValueError(
+                    "Each PreparationProvenance.parameter_counts entry must contain overwritten, retained, and frozen."
+                )
+            if any(not isinstance(count, int) or isinstance(count, bool) or count < 0 for count in counts.values()):
+                raise ValueError("PreparationProvenance parameter counts must be non-negative integers.")
+        if not self.input_fingerprints or any(
+            not isinstance(value, str) or not value.startswith("sha256:") for value in self.input_fingerprints.values()
+        ):
+            raise ValueError("PreparationProvenance.input_fingerprints must contain canonical SHA-256 values.")
+        stationary_points = tuple(str(value) for value in self.stationary_points)
+        valid_stationary_points = {kind.value for kind in StationaryPointKind}
+        if any(value not in valid_stationary_points for value in stationary_points):
+            raise ValueError("PreparationProvenance.stationary_points contains an unknown stationary-point kind.")
+        case_ids = tuple(str(value) for value in self.case_ids)
+        if not case_ids or any(not value for value in case_ids) or len(set(case_ids)) != len(case_ids):
+            raise ValueError("PreparationProvenance.case_ids must be non-empty and unique.")
+        object.__setattr__(self, "stationary_points", stationary_points)
+        object.__setattr__(self, "case_ids", case_ids)
+        for name in ("qfuerza_settings", "parameter_counts", "input_fingerprints", "observation_recipe"):
+            object.__setattr__(
+                self,
+                name,
+                freeze_json_mapping(getattr(self, name), path=f"PreparationProvenance.{name}"),
+            )
+
+
 @dataclass(frozen=True, eq=False)
 class OptimizationProblem:
     """Immutable bundle of training cases, starting force field, layout, active space, and observations.
@@ -91,6 +150,7 @@ class OptimizationProblem:
     layout: ParameterLayout
     active_space: ActiveParameterSpace
     observations: ObservationSet
+    preparation_provenance: PreparationProvenance | None = None
 
     def __post_init__(self) -> None:
         cases = tuple(self.cases)
@@ -128,6 +188,11 @@ class OptimizationProblem:
                 f"active_space baseline length ({self.active_space.n_full}) "
                 f"does not match layout length ({expected_len})."
             )
+        if self.preparation_provenance is not None:
+            if not isinstance(self.preparation_provenance, PreparationProvenance):
+                raise TypeError("preparation_provenance must be PreparationProvenance or None.")
+            if self.preparation_provenance.case_ids != self.case_ids:
+                raise ValueError("preparation_provenance.case_ids must match the problem's case IDs.")
 
     @property
     def case_ids(self) -> tuple[str, ...]:

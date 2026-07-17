@@ -1,6 +1,9 @@
-"""Stable application services over Q2MM's canonical domain models."""
+"""Stable application services with lazy execution-module imports."""
 
-from .evaluation import evaluate, evaluate_problem, evaluate_property
+from __future__ import annotations
+
+from typing import Any
+
 from .models import (
     ApplicationConfigurationError,
     ApplicationError,
@@ -19,8 +22,29 @@ from .models import (
     problem_fingerprint,
     problem_input_fingerprints,
 )
-from .optimization import optimize
-from .persistence import MANIFEST_SUFFIX, save
+
+_LAZY_EXPORTS = {
+    "evaluate": ("q2mm.application.evaluation", "evaluate"),
+    "evaluate_problem": ("q2mm.application.evaluation", "evaluate_problem"),
+    "evaluate_property": ("q2mm.application.evaluation", "evaluate_property"),
+    "optimize": ("q2mm.application.optimization", "optimize"),
+    "MANIFEST_SUFFIX": ("q2mm.application.persistence", "MANIFEST_SUFFIX"),
+    "save": ("q2mm.application.persistence", "save"),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Import execution and persistence services only on first access."""
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    module_name, attribute = target
+    from importlib import import_module
+
+    value = getattr(import_module(module_name), attribute)
+    globals()[name] = value
+    return value
+
 
 __all__ = [
     "MANIFEST_SUFFIX",

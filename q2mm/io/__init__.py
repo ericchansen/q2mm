@@ -17,3 +17,9 @@ from q2mm.io.macromodel import MacroModel, MacroModelLog  # noqa: F401
 from q2mm.io.mol2 import Mol2  # noqa: F401
 from q2mm.io.reference import load_reference_yaml, save_reference_yaml  # noqa: F401
 from q2mm.io.cmap import parse_cmap_section, load_cmap_from_prm  # noqa: F401
+from q2mm.io.molecules import (  # noqa: F401
+    load_fchk_molecule,
+    load_gaussian_molecules,
+    load_jaguar_molecules,
+    load_macromodel_molecules,
+)

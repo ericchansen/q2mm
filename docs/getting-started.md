@@ -64,6 +64,35 @@ the installed package.
 
 ---
 
+## Generic preparation API
+
+The package root provides the small workflow facade:
+`q2mm.prepare`, `q2mm.evaluate`, `q2mm.optimize`, and `q2mm.save`.
+Preparation requires an explicit ground-state or transition-state choice. A
+single molecule without a force-field template also requires its functional
+form:
+
+```python
+import q2mm
+from q2mm.io import load_fchk_molecule
+
+molecule = load_fchk_molecule("calculation.fchk")
+problem = q2mm.prepare(
+    molecule,
+    stationary_point="ground_state",
+    functional_form="harmonic",
+)
+```
+
+For trajectory-like files, use the format-specific
+`load_gaussian_molecules`, `load_jaguar_molecules`, or
+`load_macromodel_molecules` bridge and pass `structure_index` explicitly.
+These bridges never infer whether the first or last structure is intended.
+Low-level parser classes remain available when a workflow needs custom record
+selection.
+
+---
+
 ## QM/MM backends
 
 Q2MM can interface with several quantum-mechanical and molecular-mechanics
@@ -122,6 +151,8 @@ q2mm/
 ├── io/            # File format I/O (Gaussian, Jaguar, MM3, MOL2, AMBER, etc.)
 ├── backends/      # QM/MM backend integrations (OpenMM, Tinker, JAX, Psi4)
 ├── models/        # Molecule/force-field models + QFUERZA estimation
+├── preparation.py # Generic immutable problem construction
+├── application/   # Generic evaluation, optimization, and persistence
 ├── objectives/    # Objective plans, executors, and fit metrics
 ├── optimizers/    # Optimizers that consume objective executors
 ├── workflows/     # Multi-stage parameterization workflows
