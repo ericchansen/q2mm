@@ -1,4 +1,4 @@
-"""Reusable capability-conformance driver for MM backends.
+"""Reusable capability-conformance drivers for MM and reference backends.
 
 The single entry point, :func:`assert_capability_conformance`, executes **only**
 the capabilities a backend declares in its
@@ -10,8 +10,9 @@ never invoked for an undeclared capability.
 
 Scope (intentionally precise):
 
-* This helper covers **MM** backends only.  ``GEOMETRY_OPTIMIZATION`` is a QM
-  operation and is out of scope; QM conformance is not driven here.
+* :func:`assert_capability_conformance` covers **MM** backends.
+  :func:`assert_reference_capability_conformance` covers reference prepared
+  sessions without force fields.
 * The *drivable prepared-session* capabilities are ``ENERGY``, ``MINIMIZE``,
   ``HESSIAN``, ``FREQUENCIES``, ``PARAMETER_GRADIENT``,
   ``COORDINATE_GRADIENT``,
@@ -62,6 +63,10 @@ from q2mm.backends.contracts import (
     ParameterGradientResult,
     PreparationRequest,
     ReferenceCoordinateGradientRequest,
+    ReferenceEnergyRequest,
+    ReferenceFrequencyRequest,
+    ReferenceGeometryOptimizationRequest,
+    ReferenceHessianRequest,
     UnsupportedCapabilityError,
     prepare_hessian_batches,
 )
@@ -115,6 +120,22 @@ _MM_DRIVERS: dict[Capability, tuple[str, Callable[[np.ndarray], object], type]] 
         "batched_energy",
         lambda vec: BatchedEnergyRequest(parameter_matrix=np.asarray(vec, dtype=float).reshape(1, -1)),
         BatchedEnergyResult,
+    ),
+}
+
+_REFERENCE_DRIVERS: dict[Capability, tuple[str, Callable[[], object], type]] = {
+    Capability.ENERGY: ("energy", ReferenceEnergyRequest, EnergyResult),
+    Capability.COORDINATE_GRADIENT: (
+        "coordinate_gradient",
+        ReferenceCoordinateGradientRequest,
+        CoordinateGradientResult,
+    ),
+    Capability.HESSIAN: ("hessian", ReferenceHessianRequest, HessianResult),
+    Capability.FREQUENCIES: ("frequencies", ReferenceFrequencyRequest, FrequencyResult),
+    Capability.GEOMETRY_OPTIMIZATION: (
+        "optimize_geometry",
+        ReferenceGeometryOptimizationRequest,
+        GeometryResult,
     ),
 }
 
@@ -273,6 +294,62 @@ def assert_capability_conformance(
     if info.supports(Capability.ENERGY) and Capability.ENERGY not in executed:
         raise ConformanceError(f"{info.name}: declared ENERGY was not executed.")
 
+    return ConformanceOutcome(
+        backend=info.name,
+        executed=tuple(executed),
+        unsupported_verified=tuple(unsupported),
+    )
+
+
+def assert_reference_capability_conformance(
+    backend: object,
+    *,
+    molecule: object,
+    execute: frozenset[Capability] | None = None,
+) -> ConformanceOutcome:
+    """Drive declared reference capabilities and verify undeclared operations."""
+    info = backend.info  # type: ignore[attr-defined]
+    if info.role is not BackendRole.REFERENCE:
+        raise ConformanceError(
+            f"{info.name}: reference conformance helper requires reference role (role={info.role.value})."
+        )
+    prepared = backend.prepare(  # type: ignore[attr-defined]
+        PreparationRequest(case_id="reference-conformance", molecule=molecule)
+    )
+    executed: list[Capability] = []
+    unsupported: list[Capability] = []
+    for capability, (method_name, build_request, result_type) in _REFERENCE_DRIVERS.items():
+        method = getattr(prepared, method_name)
+        if info.supports(capability):
+            if execute is not None and capability not in execute:
+                continue
+            try:
+                result = method(build_request())
+            except Exception as exc:  # noqa: BLE001
+                raise ConformanceError(
+                    f"{info.name}: declared reference capability {capability.value} failed: {exc!r}"
+                ) from exc
+            if not isinstance(result, result_type):
+                raise ConformanceError(
+                    f"{info.name}: reference capability {capability.value} returned "
+                    f"{type(result).__name__}, expected {result_type.__name__}."
+                )
+            executed.append(capability)
+        else:
+            try:
+                method(build_request())
+            except UnsupportedCapabilityError:
+                unsupported.append(capability)
+            except Exception as exc:  # noqa: BLE001
+                raise ConformanceError(
+                    f"{info.name}: undeclared reference capability {capability.value} raised "
+                    f"{type(exc).__name__}, expected UnsupportedCapabilityError."
+                ) from exc
+            else:
+                raise ConformanceError(
+                    f"{info.name}: undeclared reference capability {capability.value} "
+                    "did not raise UnsupportedCapabilityError."
+                )
     return ConformanceOutcome(
         backend=info.name,
         executed=tuple(executed),
