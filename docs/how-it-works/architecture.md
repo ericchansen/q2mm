@@ -243,7 +243,8 @@ q2mm/
 │   ├── qm/
 │   │   └── psi4.py       # Direct Psi4 reference backend
 │   └── reference/
-│       └── qcengine.py   # QCEngine atomic energy, coordinate-gradient, and Hessian adapter
+│       ├── qcengine.py   # QCEngine atomic energy, coordinate-gradient, and Hessian adapter
+│       └── ase.py        # Optional non-periodic ASE energy and force adapter
 │
 ├── objectives/           # Objective planning, executor protocol, and residual semantics
 │   ├── plan.py           # ObjectivePlan: backend-neutral cases, observations, layout, active space

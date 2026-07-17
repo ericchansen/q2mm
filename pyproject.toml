@@ -84,6 +84,9 @@ qcel = [
 qcengine = [
     "qcengine",
 ]
+ase = [
+    "ase",
+]
 dev = [
     "pytest",
     "pytest-benchmark",
@@ -94,6 +97,7 @@ dev = [
     "parmed",
     "qcelemental",
     "qcengine",
+    "ase",
     "openmm",
     "build",
     "tomli; python_version < '3.11'",
@@ -113,6 +117,7 @@ all = [
     "scipy",
     "qcelemental",
     "qcengine",
+    "ase",
     "jax",
     "jaxlib",
     "jax-md; sys_platform != 'win32'",
