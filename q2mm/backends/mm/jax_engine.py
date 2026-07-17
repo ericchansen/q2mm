@@ -672,12 +672,18 @@ def _torsion_energy(
 # ---------------------------------------------------------------------------
 
 
-def _build_vdw_pairs(n_atoms: int, bond_pairs: list[tuple[int, int]]) -> np.ndarray:
+def _build_vdw_pairs(
+    n_atoms: int,
+    bond_pairs: list[tuple[int, int]],
+    *,
+    excluded_atoms: frozenset[int] = frozenset(),
+) -> np.ndarray:
     """Build non-excluded vdW pair list (1-2 and 1-3 exclusions).
 
     Args:
         n_atoms: Total number of atoms.
         bond_pairs: List of ``(i, j)`` bonded atom index pairs.
+        excluded_atoms: Explicit atoms that carry no nonbonded center.
 
     Returns:
         np.ndarray: Shape ``(n_pairs, 2)`` array of non-excluded pairs
@@ -702,7 +708,12 @@ def _build_vdw_pairs(n_atoms: int, bond_pairs: list[tuple[int, int]]) -> np.ndar
                 pair = (min(neighbors[ni], neighbors[nj]), max(neighbors[ni], neighbors[nj]))
                 excluded.add(pair)
 
-    pairs = [(i, j) for i in range(n_atoms) for j in range(i + 1, n_atoms) if (i, j) not in excluded]
+    pairs = [
+        (i, j)
+        for i in range(n_atoms)
+        for j in range(i + 1, n_atoms)
+        if i not in excluded_atoms and j not in excluded_atoms and (i, j) not in excluded
+    ]
     return np.array(pairs, dtype=np.int32) if pairs else np.empty((0, 2), dtype=np.int32)
 
 
@@ -1019,7 +1030,13 @@ class JaxBackend:
         # the energy and gradients.  When the force field defines no vdW
         # terms at all, vdW energy is effectively disabled and unmatched
         # atoms are safe.
-        unmatched = [i for i, idx in enumerate(atom_vdw_map) if idx == -1]
+        excluded_types = {value.casefold() for value in forcefield.nonbonded_excluded_atom_types}
+        explicitly_excluded = frozenset(
+            index
+            for index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=True))
+            if symbol.casefold() in excluded_types or atom_type.casefold() in excluded_types
+        )
+        unmatched = [i for i, idx in enumerate(atom_vdw_map) if idx == -1 and i not in explicitly_excluded]
         if getattr(forcefield, "vdws", None) and unmatched:
             raise ValueError(
                 f"Unmatched vdW parameters for atoms at indices {unmatched}. "
@@ -1032,6 +1049,7 @@ class JaxBackend:
         vdw_pairs = _build_vdw_pairs(
             len(molecule.symbols),
             [(b.atom_i, b.atom_j) for b in molecule.bonds],
+            excluded_atoms=explicitly_excluded,
         )
 
         # Build bond-dipole electrostatics topology

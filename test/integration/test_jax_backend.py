@@ -277,6 +277,10 @@ class TestBuildVdwPairs:
         pairs = _build_vdw_pairs(1, [])
         assert len(pairs) == 0
 
+    def test_explicit_nonbonded_center_exclusion(self) -> None:
+        pairs = _build_vdw_pairs(4, [], excluded_atoms=frozenset({1}))
+        np.testing.assert_array_equal(pairs, np.array([[0, 2], [0, 3], [2, 3]]))
+
 
 class TestJaxOptimizerIntegration:
     """Test JaxBackend + ScipyOptimizer with analytical gradients."""

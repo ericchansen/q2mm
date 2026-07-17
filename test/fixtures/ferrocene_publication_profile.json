@@ -1,0 +1,100 @@
+{
+  "active_indices": {
+    "count": 134,
+    "fingerprint": "sha256:36bc363e6c2a5bf1dc3b8e760231e7181080f965cbbcc47611fd85b38e2d94b3"
+  },
+  "case_ids": [
+    "TS1",
+    "TS2",
+    "TS3",
+    "TS4",
+    "TS5",
+    "TS6",
+    "TS7"
+  ],
+  "evaluation": {
+    "calculated_fingerprint": "sha256:e7ce281176df341ab94a5fa611eaeb4c0dffe3ce7192e65a02762e2342605178",
+    "category_names": [
+      "eigenmatrix",
+      "geometry"
+    ],
+    "finite": true,
+    "raw_residuals_fingerprint": "sha256:a6f958b3677a381debd93e7057e4ff52ff6671fb59ea9d948cf552cd3c819a39",
+    "round_decimals": 6,
+    "weighted_residuals_fingerprint": "sha256:ac86139a83a6e214d8cbd20b33a0a33e3c820ad88226c9766e7498164c6bc985"
+  },
+  "force_field_blocks": [
+    "Ferrocene_2016",
+    "Ferrocene_C2_Ligands_2016",
+    "Ferrocene_C3_Ligands_2016",
+    "Ferrocene_PX_Ligands_2016"
+  ],
+  "layout": {
+    "count": 2766,
+    "fingerprint": "sha256:2ca3aed589d8fbd329766d06e179d1fbec08a3766a9a8e15b61366352fa61708"
+  },
+  "molecule_order_fingerprint": "sha256:9bf9a54061bdfe6334a84d4187a65615da71d5f40b608c06688e7b2d687601c4",
+  "nonbonded_excluded_atom_types": [
+    "FE"
+  ],
+  "objective_profile": "wahlers-ferrocene-seven-structure-v1",
+  "observations": {
+    "count": 53482,
+    "identity_fingerprint": "sha256:0f1cbbdf6ef0ed9eee3f8fd7c6ce0a7fab5471e425fe5de8c868cf0158be213d",
+    "indices_fingerprint": "sha256:4bd97c84c000f3d9db37e5f43f8493472dccafb2cdb3a8e9cf64705bd263c3a6",
+    "kind_histogram": {
+      "bond_angle": 975,
+      "bond_length": 343,
+      "eig_diagonal": 828,
+      "eig_offdiagonal": 51336
+    },
+    "values_fingerprint": "sha256:9ecc2c842d93ce81de529fd2c9c5f1df7fa40d0b5b2baf6fce6e425eddbb9215",
+    "weights_fingerprint": "sha256:40233c6eab3e7488718a179e160946bbcc4dbbb61563558a2a7a4a556b1387a3"
+  },
+  "problem_fingerprint": "sha256:6f78a5a6619210d04f620cf33602e0e21d1e10fbf44e6a25edc41e951c203bf3",
+  "publication_metadata_fingerprint": "sha256:be6ee0d3d4c023c364eeff06a2fbe512c7097f1dec8194ed4b70f3f1a7a294c4",
+  "reproduction_status": "partial_repository_reproduction",
+  "schema_version": 1,
+  "source_artifacts": [
+    {
+      "fingerprint": "md5:47dbdbc26362d7b3487ea9855c0d1718",
+      "identity": "Wahlers dissertation supporting-information archive"
+    },
+    {
+      "fingerprint": null,
+      "identity": "mm3_base.fld"
+    },
+    {
+      "fingerprint": "sha256:923625fe4203f1263c5bb2221c07805bef473077488a29cf7d39768adeca8c8f",
+      "identity": "Chapter 4 TS1-TS7 Gaussian-log manifest"
+    },
+    {
+      "fingerprint": "sha256:93a1f1fe8d8f48921a2884c385da16de03e264e1c3e415c124164e610c8dff41",
+      "identity": "mm3.ferrocene.fld"
+    }
+  ],
+  "source_order": [
+    "TS1",
+    "TS2",
+    "TS3",
+    "TS4",
+    "TS5",
+    "TS6",
+    "TS7"
+  ],
+  "starting_point": "published",
+  "starting_vector": {
+    "count": 2766,
+    "fingerprint": "sha256:7ee2be00c5501a2cc1cb7df2569f6a2848ecbcc2e9f8b24b77239eb647a0f3fb"
+  },
+  "stationary_points": [
+    "ground_state",
+    "ground_state",
+    "ground_state",
+    "ground_state",
+    "ground_state",
+    "ground_state",
+    "ground_state"
+  ],
+  "system": "ferrocene"
+}

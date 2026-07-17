@@ -440,6 +440,12 @@ def optimize(
             preparation_payload,
             screen_secrets=True,
         )
+    if problem.publication_metadata is not None:
+        publication_payload = problem.publication_metadata.to_dict()
+        run_provenance["publication_metadata"] = publication_payload
+        run_provenance["publication_metadata_fingerprint"] = problem.publication_metadata.fingerprint
+        run_provenance["objective_profile"] = problem.publication_metadata.objective_profile.identifier
+        run_provenance["reproduction_status"] = problem.publication_metadata.status.value
     return OptimizationRun(
         result=result,
         final_force_field=final_force_field,

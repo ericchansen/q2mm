@@ -14,6 +14,7 @@ import numpy as np
 
 from q2mm._canonical import canonical_fingerprint, json_value
 from q2mm.models.forcefield import ForceField
+from q2mm.models.observations import observation_payload
 from q2mm.models.problem import OptimizationProblem
 from q2mm.models.results import OptimizationResult, deep_freeze
 
@@ -216,7 +217,7 @@ def molecule_fingerprint_payload(molecule: Any) -> dict[str, Any]:
 
 def force_field_fingerprint_payload(force_field: ForceField, vector: np.ndarray) -> dict[str, Any]:
     """Return force-field structure, values, form, and source identity."""
-    return {
+    payload = {
         "name": force_field.name,
         "functional_form": force_field.functional_form.value,
         "source_format": force_field.source_format,
@@ -229,6 +230,9 @@ def force_field_fingerprint_payload(force_field: ForceField, vector: np.ndarray)
         "vdws": _scientific_value(force_field.vdws),
         "cmaps": _scientific_value(force_field.cmaps),
     }
+    if force_field.nonbonded_excluded_atom_types:
+        payload["nonbonded_excluded_atom_types"] = list(force_field.nonbonded_excluded_atom_types)
+    return payload
 
 
 def problem_fingerprint_payload(problem: OptimizationProblem) -> dict[str, Any]:
@@ -270,20 +274,7 @@ def problem_fingerprint_payload(problem: OptimizationProblem) -> dict[str, Any]:
             "active_indices": [int(index) for index in problem.active_space.active_indices],
             "baseline": np.asarray(problem.active_space.baseline, dtype=float).tolist(),
         },
-        "observations": [
-            {
-                "kind": observation.kind,
-                "value": float(observation.value),
-                "weight": float(observation.weight),
-                "label": observation.label,
-                "case_id": observation.case_id,
-                "data_idx": int(observation.data_idx),
-                "atom_indices": None
-                if observation.atom_indices is None
-                else [int(index) for index in observation.atom_indices],
-            }
-            for observation in problem.observations.values
-        ],
+        "observations": [observation_payload(observation) for observation in problem.observations.values],
     }
 
 

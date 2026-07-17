@@ -15,6 +15,7 @@ from q2mm.models.forcefield import ForceField, FunctionalForm
 from q2mm.models.hessian import hessian_to_frequencies
 from q2mm.models.molecule import Molecule
 from q2mm.models.problem import OptimizationProblem, StationaryPointKind
+from q2mm.models.publication import PublicationMetadata
 from q2mm.preparation import (
     MatchedFrequencyObservations,
     MoleculeObservations,
@@ -81,27 +82,55 @@ def assemble_published_case(
     qfuerza_replace_with: float,
     functional_form: str | None,
     metadata: Mapping[str, Any],
+    publication_metadata: PublicationMetadata,
     metal: str | None = None,
     normal_modes: Mapping[str, np.ndarray] | None = None,
     default_forms: tuple[str, ...] = ("mm3",),
     description: str = "",
+    case_ids: tuple[str, ...] | None = None,
 ) -> BenchmarkCase:
     """Prepare a publication-template benchmark and retain benchmark-only data."""
     del metal
     _validate_starting_point(starting_point)
     if functional_form is not None:
         composed_ff = dataclasses.replace(composed_ff, functional_form=FunctionalForm(functional_form))
-    case_ids = _case_ids_for(molecules, key=key)
+    resolved_case_ids = _case_ids_for(molecules, key=key) if case_ids is None else tuple(case_ids)
+    if len(resolved_case_ids) != len(molecules):
+        raise ValueError("Explicit publication case IDs must have one entry per molecule.")
     problem = prepare(
         molecules,
         stationary_point=stationary_point,
         force_field=composed_ff,
         active_parameters=opt_only_ff,
         observations=MoleculeObservations(),
-        case_ids=case_ids,
+        case_ids=resolved_case_ids,
         functional_form=composed_ff.functional_form,
         initialize="provided" if starting_point == "published" else "qfuerza",
         qfuerza=None if starting_point == "published" else QFuerzaConfig(replace_with=qfuerza_replace_with),
+    )
+    provenance = problem.preparation_provenance
+    if provenance is None:
+        raise RuntimeError("Generic preparation did not record its audit provenance.")
+    objective_profile = publication_metadata.objective_profile.identifier
+    if provenance.profile != objective_profile:
+        recipe = dict(provenance.observation_recipe)
+        recipe["profile"] = objective_profile
+        provenance = dataclasses.replace(
+            provenance,
+            profile=objective_profile,
+            observation_recipe=recipe,
+        )
+    source_ids = publication_metadata.authoritative_case_ids
+    if len(source_ids) != len(problem.cases):
+        raise ValueError("Publication authoritative case IDs must have one entry per prepared problem case.")
+    problem = dataclasses.replace(
+        problem,
+        cases=tuple(
+            dataclasses.replace(case, source_id=source_id)
+            for case, source_id in zip(problem.cases, source_ids, strict=True)
+        ),
+        preparation_provenance=provenance,
+        publication_metadata=publication_metadata,
     )
     qm_freqs_per_mol = tuple(
         np.asarray(sorted(value for value in _qm_frequencies(molecule) if value > 50.0)) for molecule in molecules
@@ -113,6 +142,10 @@ def assemble_published_case(
         "n_atoms_per_mol": [len(molecule.symbols) for molecule in molecules],
         "starting_point": starting_point,
         "starting_point_audit": _benchmark_audit(problem, starting_point=starting_point),
+        "objective_profile": objective_profile,
+        "reproduction_status": publication_metadata.status.value,
+        "publication_metadata": publication_metadata.to_dict(),
+        "publication_metadata_fingerprint": publication_metadata.fingerprint,
         **dict(metadata),
         "functional_form": resolved_form,
     }

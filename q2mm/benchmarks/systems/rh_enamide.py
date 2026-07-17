@@ -10,6 +10,7 @@ from __future__ import annotations
 
 
 from q2mm.benchmarks.cases import BenchmarkCase
+from q2mm.benchmarks.publications import REPOSITORY_OBJECTIVE_PROFILE, publication_record
 from q2mm.benchmarks.systems._assembly import assemble_published_case
 from q2mm.benchmarks.systems._forcefield import load_published_opt
 from q2mm.benchmarks.systems._paths import ExternalDataRoots, StartingPoint, natural_sort_key, resolve_rh_enamide_dir
@@ -74,6 +75,7 @@ def load(
     starting_point: StartingPoint = "qfuerza",
     qfuerza_replace_with: float = 1.0,
     functional_form: str | None = None,
+    objective_profile: str = REPOSITORY_OBJECTIVE_PROFILE,
 ) -> BenchmarkCase:
     """Build the Rh-enamide :class:`~q2mm.benchmarks.cases.BenchmarkCase`.
 
@@ -89,11 +91,13 @@ def load(
             most-negative TS-Hessian eigenvalue during QFUERZA
             projection (Limé & Norrby Method C; default ``1.0``).
         functional_form: Optional override (``"harmonic"`` or ``"mm3"``).
+        objective_profile: Canonical publication objective-profile identifier.
 
     Returns:
         A fully-populated :class:`~q2mm.benchmarks.cases.BenchmarkCase`.
 
     """
+    publication_metadata = publication_record(KEY, objective_profile, starting_point)
     resolved_roots = ExternalDataRoots() if data_roots is None else data_roots
     molecules = load_molecules(data_roots=resolved_roots)
     ff_path = resolve_rh_enamide_dir(resolved_roots) / "mm3.fld"
@@ -109,6 +113,7 @@ def load(
         qfuerza_replace_with=qfuerza_replace_with,
         functional_form=functional_form,
         metadata=METADATA,
+        publication_metadata=publication_metadata,
         default_forms=DEFAULT_FORMS,
         description=DESCRIPTION,
     )

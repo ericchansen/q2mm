@@ -280,6 +280,10 @@ def save(
             f"{selected_format!r} requires functional form {required_form.value!r}; "
             f"force field uses {force_field.functional_form.value!r}."
         )
+    if force_field.nonbonded_excluded_atom_types and selected_format != "mm3_fld":
+        raise OutputFormatError(
+            f"{selected_format!r} cannot represent nonbonded_excluded_atom_types; use MM3 .fld output."
+        )
     manifest_target = Path(f"{target}{MANIFEST_SUFFIX}") if isinstance(value, OptimizationRun) else None
     invalid_targets = [
         candidate

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -147,17 +148,17 @@ def _mm3_atom_types(env_id: str, elements: tuple[str, ...]) -> list[str]:
 
 
 def _format_mm3_bond_line(atom_types: list[str], equilibrium: float, force_constant: float) -> str:
-    prefix = f" 1{atom_types[0]:>4}{atom_types[1]:>4}{'':13}"
+    prefix = f" 1  {atom_types[0]:>2} - {atom_types[1]:>2}{'':12}"
     return f"{prefix}{equilibrium:10.4f} {force_constant:10.4f}\n"
 
 
 def _format_mm3_angle_line(atom_types: list[str], equilibrium: float, force_constant: float) -> str:
-    prefix = f" 2{atom_types[0]:>4}{atom_types[1]:>4}{atom_types[2]:>4}{'':9}"
+    prefix = f" 2  {atom_types[0]:>2} - {atom_types[1]:>2} - {atom_types[2]:>2}{'':7}"
     return f"{prefix}{equilibrium:10.4f} {force_constant:10.4f}\n"
 
 
 def _format_mm3_torsion_line(atom_types: list[str], v1: float, v2: float, v3: float) -> str:
-    prefix = f" 4{atom_types[0]:>4}{atom_types[1]:>4}{atom_types[2]:>4}{atom_types[3]:>4}{'':5}"
+    prefix = f" 4  {atom_types[0]:>2} - {atom_types[1]:>2} - {atom_types[2]:>2} - {atom_types[3]:>2}  "
     return f"{prefix}{v1:10.4f} {v2:10.4f} {v3:10.4f}\n"
 
 
@@ -405,6 +406,39 @@ def _convert_to_types(atom_labels: list[str], atom_types: list[str]) -> list[str
 # ---------------------------------------------------------------------------
 # Standalone import / export
 # ---------------------------------------------------------------------------
+
+_NONBONDED_EXCLUSION_DIRECTIVE = " C  Q2MM-NONBONDED-EXCLUDED-ATOM-TYPES "
+
+
+def _parse_nonbonded_exclusions(lines: list[str]) -> tuple[str, ...]:
+    """Parse Q2MM's round-trippable MM3 zero-center declaration."""
+    matches = [line for line in lines if line.startswith(_NONBONDED_EXCLUSION_DIRECTIVE)]
+    if len(matches) > 1:
+        raise ValueError("MM3 file contains multiple Q2MM nonbonded-exclusion directives.")
+    if not matches:
+        return ()
+    payload = matches[0][len(_NONBONDED_EXCLUSION_DIRECTIVE) :].strip()
+    try:
+        values = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise ValueError("Malformed Q2MM nonbonded-exclusion directive in MM3 file.") from exc
+    if (
+        not isinstance(values, list)
+        or not all(isinstance(value, str) and value.strip() for value in values)
+        or len(set(values)) != len(values)
+    ):
+        raise ValueError("Q2MM nonbonded-exclusion directive must contain unique non-empty atom-type strings.")
+    return tuple(values)
+
+
+def _write_nonbonded_exclusions(path: Path, values: tuple[str, ...]) -> None:
+    """Replace the Q2MM zero-center declaration in an exported MM3 file."""
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    lines = [line for line in lines if not line.startswith(_NONBONDED_EXCLUSION_DIRECTIVE)]
+    if values:
+        directive = f"{_NONBONDED_EXCLUSION_DIRECTIVE}{json.dumps(list(values), separators=(',', ':'))}\n"
+        lines.insert(0, directive)
+    path.write_text("".join(lines), encoding="utf-8")
 
 
 def _mm3_import_ff(
@@ -814,7 +848,7 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
         parameters.
 
     """
-    parsed_rows, _ = _mm3_import_ff(path, include_standard=include_standard)
+    parsed_rows, source_lines = _mm3_import_ff(path, include_standard=include_standard)
 
     bonds = []
     angles = []
@@ -932,6 +966,7 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
         source_path=Path(path),
         source_format="mm3_fld",
         functional_form=FunctionalForm.MM3,
+        nonbonded_excluded_atom_types=_parse_nonbonded_exclusions(source_lines),
     )
     return ff
 
@@ -950,7 +985,7 @@ def save_mm3_fld(
     :func:`load_mm3_fld`, the existing file is updated in-place via the
     legacy MM3 exporter so comments and unrelated parameters are preserved.
 
-    Otherwise, a minimal bond/angle-only MM3 substructure is generated.
+    Otherwise, a self-contained standard-parameter MM3 file is generated.
     """
     _validate_form_for_format(ff, "mm3_fld")
     output_path = Path(path)
@@ -990,9 +1025,19 @@ def save_mm3_fld(
         _mm3_export_ff(output_path, updated_rows, list(template_lines))
         if ff.vdws:
             _update_mm3_vdw_lines(output_path, ff.vdws)
+        _write_nonbonded_exclusions(output_path, ff.nonbonded_excluded_atom_types)
         return output_path
 
-    lines = [f" C  OPT {substructure_name}\n", f" 9  {smiles}\n"]
+    del substructure_name, smiles
+    lines: list[str] = []
+    if ff.nonbonded_excluded_atom_types:
+        lines.insert(
+            0,
+            (
+                f"{_NONBONDED_EXCLUSION_DIRECTIVE}"
+                f"{json.dumps(list(ff.nonbonded_excluded_atom_types), separators=(',', ':'))}\n"
+            ),
+        )
     for bond in ff.bonds:
         lines.append(
             _format_mm3_bond_line(
@@ -1024,11 +1069,12 @@ def save_mm3_fld(
         for key, vs in torsion_groups.items():
             atom_types = _mm3_atom_types(key, torsion_elements[key])
             lines.append(_format_mm3_torsion_line(atom_types, vs.get(1, 0.0), vs.get(2, 0.0), vs.get(3, 0.0)))
-    lines.append("-3\n")
     if ff.vdws:
         lines.extend(["-6\n"])
         for vdw in ff.vdws:
             lines.append(_format_mm3_vdw_line(vdw))
         lines.extend([" END OF NONBONDED INTERACTIONS\n", "-2\n"])
+    else:
+        lines.append("-2\n")
     output_path.write_text("".join(lines), encoding="utf-8")
     return output_path

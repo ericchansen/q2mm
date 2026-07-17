@@ -224,18 +224,21 @@ q2mm/
 │
 ├── benchmarks/           # Benchmark systems, explicit profiles, acceptance, and publication persistence
 │   ├── cases.py         # BenchmarkCase wrapper around OptimizationProblem
+│   ├── publications.py  # Canonical source-completeness records and blocked rows
 │   ├── profiles.py      # Immutable RunProfile + deterministic ResolvedProfile/provenance/fingerprint
 │   ├── acceptance.py    # Closed candidate-status vocabulary + the single no-progress decision
 │   ├── runner.py        # The one execution/result/persistence/promotion path (single/batch/matrix)
 │   ├── cli.py           # q2mm-benchmark console entry point (list/preflight/single/batch/matrix/load)
 │   └── systems/         # load_system(), SYSTEM_KEYS, per-system modules
+│       └── ferrocene.py # Wahlers Chapter 4 seven-structure ground-state profile
 │
 ├── models/               # Format-neutral data structures
 │   ├── forcefield.py     # ForceField, BondParam, AngleParam, TorsionParam, FunctionalForm
 │   ├── molecule.py       # Molecule, Bond, Angle, Torsion
-│   ├── observations.py   # Observation + ObservationSet
+│   ├── observations.py   # Geometry/Hessian plus typed publication objective observations
 │   ├── parameters.py     # ParameterLayout + ActiveParameterSpace
 │   ├── problem.py        # TrainingCase + OptimizationProblem + path-free PreparationProvenance
+│   ├── publication.py    # Reproduction statuses, citations, completeness, source identities
 │   ├── results.py        # Canonical OptimizationResult, CandidateRecord, StageRecord
 │   ├── seminario.py      # Hessian → initial force constants (QFUERZA)
 │   ├── hessian.py        # Hessian manipulation, eigenvalue analysis

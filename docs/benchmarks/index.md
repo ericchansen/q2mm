@@ -22,7 +22,7 @@ q2mm's benchmark program answers three questions:
 
 | Section | What it covers | Key result |
 |---------|---------------|------------|
-| [Published FF Validation](published-ff-validation.md) | Load published FFs and document the MacroModel MM3* transfer boundary | Rh-enamide Check 1 reaches R² = 0.60 under q2mm; beating QFUERZA is out of scope without MacroModel parity |
+| [Publication Reproduction Coverage](published-ff-validation.md) | Distinguish executable, partial, demonstration, and blocked publication rows | Path-free compatibility and SDK-path proofs; numerical claims require linked q2mm-data artifacts |
 | [QFUERZA Validation](qfuerza-validation.md) | Verify our QFUERZA implementation against the paper and Zenodo data; evaluate starting-point quality across 5 systems | Cisplatin matches Zenodo exactly for QFUERZA angles; all five TS systems have positive mass-weighted starting-point R² |
 | [Optimizer Comparison](optimizer-comparison.md) | Compare the production SciPy L-BFGS-B + JAX executor path on literature-scale TS systems | 4 of 5 systems show significant q2mm-objective improvement; pd-allyl is a confirmed local minimum |
 | [GPU Acceleration](gpu.md) | CPU-vs-GPU wall-clock comparisons | JAX GPU ~5.6× faster on Rh-enamide |

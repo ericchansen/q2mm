@@ -304,8 +304,10 @@ def _build_jaxmd_params_fn(
         # vdW: extract radius and epsilon per type, map to per-atom sigma
         if n_vt > 0:
             vdw_params = param_vector[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)
-            per_atom_radius = vdw_params[atom_vdw_map, 0]
-            per_atom_epsilon = vdw_params[atom_vdw_map, 1]
+            vdw_mask = atom_vdw_map >= 0
+            safe_vdw_map = jnp.maximum(atom_vdw_map, 0)
+            per_atom_radius = vdw_params[safe_vdw_map, 0] * vdw_mask
+            per_atom_epsilon = vdw_params[safe_vdw_map, 1] * vdw_mask
             # Convert Rmin/2 → LJ sigma
             per_atom_sigma = per_atom_radius * 2.0 / (2.0 ** (1.0 / 6.0))
         else:
@@ -746,12 +748,21 @@ class JaxMdBackend:
 
         # Match vdW
         atom_vdw_map = []
+        excluded_types = {value.casefold() for value in forcefield.nonbonded_excluded_atom_types}
         for symbol, atom_type in zip(molecule.symbols, molecule.atom_types, strict=False):
+            if symbol.casefold() in excluded_types or atom_type.casefold() in excluded_types:
+                atom_vdw_map.append(-1)
+                continue
             idx, param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
             atom_vdw_map.append(idx if idx is not None else -1)
 
         # Validate vdW
-        unmatched = [i for i, idx in enumerate(atom_vdw_map) if idx == -1]
+        explicitly_excluded = {
+            index
+            for index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=True))
+            if symbol.casefold() in excluded_types or atom_type.casefold() in excluded_types
+        }
+        unmatched = [i for i, idx in enumerate(atom_vdw_map) if idx == -1 and i not in explicitly_excluded]
         if getattr(forcefield, "vdws", None) and unmatched:
             raise ValueError(
                 f"Unmatched vdW parameters for atoms at indices {unmatched}. "

@@ -10,10 +10,12 @@ import zipfile
 import pytest
 
 from scripts.check_release_artifacts import (
+    INSTALLED_PUBLICATION_CHECK,
     REFERENCE_PLUGIN_DIR,
     ArtifactContractError,
     _sdist_member_allowed,
     _validate_resource_manifest,
+    smoke_test_installed_publications,
     _wheel_member_allowed,
     compare_wheel_payload,
     inspect_sdist,
@@ -124,6 +126,11 @@ def test_backend_reference_plugin_present_in_repo() -> None:
     assert (REFERENCE_PLUGIN_DIR / "pyproject.toml").is_file()
     assert (REFERENCE_PLUGIN_DIR / "q2mm_reference_backend" / "descriptor.py").is_file()
     assert (REFERENCE_PLUGIN_DIR / "q2mm_reference_backend" / "backend.py").is_file()
+    assert INSTALLED_PUBLICATION_CHECK.is_file()
+
+
+def test_installed_publication_proof_reports_missing_configuration(tmp_path: Path) -> None:
+    assert smoke_test_installed_publications(Path("python"), tmp_path, {}) == "installed-publication-sdk=not-configured"
 
 
 def test_wheel_allowlist_excludes_reference_plugin() -> None:

@@ -460,6 +460,15 @@ def test_save_rejects_incompatible_form_and_cleans_atomic_failure(
     assert not list(tmp_path.glob(".*q2mm*"))
 
 
+def test_save_rejects_nonrepresentable_nonbonded_exclusions(tmp_path: Path) -> None:
+    force_field = replace(
+        _force_field(FunctionalForm.MM3),
+        nonbonded_excluded_atom_types=("FE",),
+    )
+    with pytest.raises(OutputFormatError, match="cannot represent"):
+        save(force_field, tmp_path / "excluded.prm")
+
+
 def test_save_rolls_back_second_atomic_replace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import os
 

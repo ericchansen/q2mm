@@ -22,8 +22,10 @@ from q2mm.benchmarks.profiles import (
     RunProfile,
     canonical_fingerprint,
     canonical_json,
+    recommended_publication_profile,
     resolve,
 )
+from q2mm.benchmarks.publications import FERROCENE_SEVEN_STRUCTURE_PROFILE, REPOSITORY_OBJECTIVE_PROFILE
 
 
 class TestRunProfileValidation:
@@ -39,6 +41,9 @@ class TestRunProfileValidation:
         p = RunProfile(system="ch3f")
         assert p.backend == "jax"
         assert p.optimizer == "scipy-lbfgsb-jax"
+        assert p.objective_profile is None
+        assert p.effective_objective_profile is None
+        assert RunProfile(system="rh-enamide").effective_objective_profile == REPOSITORY_OBJECTIVE_PROFILE
 
     def test_is_frozen(self) -> None:
         with pytest.raises(dataclasses.FrozenInstanceError):
@@ -51,6 +56,7 @@ class TestRunProfileValidation:
             {"system": "ch3f", "backend": ""},
             {"system": "ch3f", "functional_form": "bogus"},
             {"system": "ch3f", "starting_point": "bogus"},
+            {"system": "ch3f", "objective_profile": "bogus"},
             {"system": "ch3f", "workflow": "bogus"},
             {"system": "ch3f", "optimizer": "not-a-real-optimizer"},
             {"system": "ch3f", "maxiter": -1},
@@ -175,6 +181,15 @@ class TestCandidateIdCollisions:
         b = RunProfile(system="ch3f", optimizer="scipy-lbfgsb-l2", regularization=0.0)
         assert a.candidate_id() != b.candidate_id()
 
+    def test_publication_objective_profiles_have_distinct_identities(self) -> None:
+        compatibility = RunProfile(system="ferrocene", starting_point="published")
+        named = RunProfile(
+            system="ferrocene",
+            starting_point="published",
+            objective_profile=FERROCENE_SEVEN_STRUCTURE_PROFILE,
+        )
+        assert compatibility.candidate_id() != named.candidate_id()
+
     def test_identical_profiles_share_identity(self) -> None:
         assert RunProfile(**self._BASE).candidate_id() == RunProfile(**self._BASE).candidate_id()  # type: ignore[arg-type]
 
@@ -240,6 +255,9 @@ class TestResolvedProfile:
         required = {
             "profile_fingerprint",
             "resolved_fingerprint",
+            "objective_profile",
+            "reproduction_status",
+            "publication_metadata",
             "static_descriptor",
             "runtime_backend_key",
             "backend_name",
@@ -302,6 +320,18 @@ class TestResolvedProfile:
         other = _resolve(RunProfile(system="ch3f"), data_provenance={"metadata": {"doi": "10.0/y"}, "hessians": []})
         assert base.fingerprint() != other.fingerprint()
 
+    def test_resolved_profile_surfaces_reproduction_status(self) -> None:
+        publication = {
+            "status": "partial_repository_reproduction",
+            "objective_profile": {"identifier": REPOSITORY_OBJECTIVE_PROFILE},
+        }
+        resolved = _resolve(
+            RunProfile(system="ch3f"),
+            data_provenance={"publication_metadata": publication},
+        ).to_dict()
+        assert resolved["reproduction_status"] == "partial_repository_reproduction"
+        assert resolved["publication_metadata"] == publication
+
     def test_resolved_id_embeds_concrete_form(self) -> None:
         cid = _resolve(RunProfile(system="ch3f", functional_form=None), functional_form="mm3").candidate_id()
         assert cid.startswith("ch3f_jax_mm3_")
@@ -327,3 +357,21 @@ class TestResolvedProfile:
     def test_canonical_fingerprint_helper(self) -> None:
         assert canonical_fingerprint({"a": 1}) == canonical_fingerprint({"a": 1})
         assert canonical_fingerprint({"a": 1}) != canonical_fingerprint({"a": 2})
+
+
+def test_publication_run_policies_keep_heck_override_explicit_and_starts_separate() -> None:
+    generic = recommended_publication_profile("rh-enamide")
+    heck = recommended_publication_profile("heck-relay")
+    published = recommended_publication_profile("heck-relay", starting_point="published")
+
+    assert generic.fc_fraction == 0.20 and generic.eq_fraction == 0.05 and generic.ftol == 1e-12
+    assert heck.fc_fraction == 0.05 and heck.eq_fraction == 0.05 and heck.ftol == 1e-12
+    assert published.starting_point == "published"
+    assert published.fc_fraction is None and published.eq_fraction is None and published.ftol == 1e-8
+    assert heck.candidate_id() != published.candidate_id()
+
+
+def test_ferrocene_policy_is_published_only() -> None:
+    assert recommended_publication_profile("ferrocene", starting_point="published").starting_point == "published"
+    with pytest.raises(ValueError, match="no QFUERZA"):
+        recommended_publication_profile("ferrocene", starting_point="qfuerza")

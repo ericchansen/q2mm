@@ -75,6 +75,7 @@ DATA_DIR_FOR_SYSTEM: Mapping[str, str] = MappingProxyType(
         "pd-allyl": "pd-allyl-amination",
         "pd-conjugate": "pd-1,4-conjugate-addition",
         "rh-conjugate": "rh-1,4-conjugate-addition",
+        "ferrocene": "ferrocene",
     }
 )
 
@@ -661,6 +662,11 @@ def _load_kwargs(profile: RunProfile, form: str) -> tuple[dict[str, Any], dict[s
             resolved["ch3f"] = str(_norm_path(str(sn2_reference_dir())))
         return kwargs, resolved
 
+    objective_profile = profile.effective_objective_profile
+    if objective_profile is None:
+        raise ConfigurationError(f"Publication system {profile.system!r} has no resolved objective profile.")
+    kwargs["objective_profile"] = objective_profile
+
     from q2mm.benchmarks.systems._paths import ExternalDataRoots, resolve_external_roots
 
     explicit = ExternalDataRoots(
@@ -695,6 +701,19 @@ def _data_provenance(case: BenchmarkCase, resolved_roots: Mapping[str, str]) -> 
         )
     return {
         "metadata": dict(case.metadata),
+        "objective_profile": (
+            problem.publication_metadata.objective_profile.identifier
+            if problem.publication_metadata is not None
+            else None
+            if problem.preparation_provenance is None
+            else problem.preparation_provenance.profile
+        ),
+        "publication_metadata": (
+            None if problem.publication_metadata is None else problem.publication_metadata.to_dict()
+        ),
+        "publication_metadata_fingerprint": (
+            None if problem.publication_metadata is None else problem.publication_metadata.fingerprint
+        ),
         "cases": cases,
         "hessians": hessians,
         "default_forms": list(case.default_forms),
@@ -842,8 +861,32 @@ def _run_profile_inner(
     from q2mm.benchmarks.systems import load_system
 
     try:
-        case = load_system(profile.system, backend=backend, **load_kwargs)
-    except FileNotFoundError as exc:
+        if profile.system in ("ch3f", "ch3f-sn2"):
+            load_kwargs["backend"] = backend
+        case = load_system(profile.system, **load_kwargs)
+    except Exception as exc:
+        from q2mm.benchmarks.publications import PublicationProfileBlockedError, PublicationProfileError
+
+        if isinstance(exc, PublicationProfileBlockedError):
+            publication = exc.record
+            return _terminal(
+                requested_id,
+                AcceptancePolicy.errored(str(exc)),
+                profile,
+                None,
+                {
+                    "system": profile.system,
+                    "objective_profile": publication.objective_profile.identifier,
+                    "reproduction_status": publication.status.value,
+                    "publication_metadata": publication.to_dict(),
+                    "publication_metadata_fingerprint": publication.fingerprint,
+                    "blocked": True,
+                },
+            )
+        if isinstance(exc, PublicationProfileError):
+            raise ConfigurationError(str(exc)) from exc
+        if not isinstance(exc, FileNotFoundError):
+            raise
         return _terminal(
             requested_id,
             AcceptancePolicy.skipped(f"system {profile.system!r} data unavailable: {exc}"),
@@ -853,6 +896,15 @@ def _run_profile_inner(
         )
 
     problem = case.problem
+    success_spec = None
+    if problem.publication_metadata is not None:
+        from q2mm.benchmarks.publications import publication_success_spec
+
+        success_spec = publication_success_spec(
+            profile.system,
+            profile.effective_objective_profile or "",
+            profile.starting_point,
+        )
     evaluator_kind = spec.evaluator
     gradient_mode = spec.gradient_mode
     fd_step = spec.fd_step if spec.gradient_mode == "finite_difference" else None
@@ -865,6 +917,9 @@ def _run_profile_inner(
 
     from q2mm.benchmarks.profiles import resolve as _resolve_profile
 
+    data_provenance = _data_provenance(case, resolved_roots)
+    if success_spec is not None:
+        data_provenance["publication_success_spec"] = success_spec.to_dict()
     resolved = _resolve_profile(
         profile,
         descriptor=descriptor,
@@ -881,7 +936,7 @@ def _run_profile_inner(
         n_active_params=problem.active_space.n_active,
         n_full_params=problem.active_space.n_full,
         n_molecules=len(problem.molecules),
-        data_provenance=_data_provenance(case, resolved_roots),
+        data_provenance=data_provenance,
         resolved_data_roots=resolved_roots,
         include_device=include_device,
     )
@@ -901,6 +956,14 @@ def _run_profile_inner(
         "expected_result_gradient_mode": expected_grad,
         "effective_regularization": profile.effective_regularization,
         "starting_point": profile.starting_point,
+        "objective_profile": profile.effective_objective_profile,
+        "reproduction_status": (
+            None if problem.publication_metadata is None else problem.publication_metadata.status.value
+        ),
+        "publication_metadata_fingerprint": (
+            None if problem.publication_metadata is None else problem.publication_metadata.fingerprint
+        ),
+        "publication_success_spec": None if success_spec is None else success_spec.to_dict(),
         "starting_point_audit": case.metadata.get("starting_point_audit"),
         "n_molecules": len(problem.molecules),
         "n_active_params": problem.active_space.n_active,

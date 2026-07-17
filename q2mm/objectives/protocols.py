@@ -33,6 +33,7 @@ __all__ = [
     "GradientMode",
     "ObjectiveError",
     "ObjectiveGradientError",
+    "UnsupportedObservationError",
     "Evaluation",
     "ObjectiveEvaluator",
 ]
@@ -68,6 +69,17 @@ class ObjectiveGradientError(ObjectiveError):
     either select an executor with the required gradient mode or request
     finite differences explicitly.
     """
+
+
+class UnsupportedObservationError(ObjectiveError):
+    """Raised when an executor cannot represent selected observation kinds."""
+
+    def __init__(self, executor: str, kinds: set[str] | frozenset[str], reason: str) -> None:
+        self.executor = executor
+        self.kinds = frozenset(kinds)
+        self.reason = reason
+        rendered = ", ".join(sorted(self.kinds))
+        super().__init__(f"{executor} does not support observation kind(s) {rendered}: {reason}")
 
 
 @dataclass(frozen=True, eq=False)

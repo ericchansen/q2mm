@@ -1038,6 +1038,20 @@ class TestForceField:
         assert hydrogen.radius == pytest.approx(1.62)
         assert hydrogen.epsilon == pytest.approx(0.02)
 
+    def test_mm3_nonbonded_exclusions_roundtrip(self, tmp_path: Path) -> None:
+        ff = ForceField(
+            vdws=[VdwParam("FE", 1.7, 0.414)],
+            functional_form=FunctionalForm.MM3,
+            nonbonded_excluded_atom_types=("FE",),
+        )
+        out_path = tmp_path / "excluded.fld"
+
+        save_mm3_fld(ff, out_path)
+        roundtrip = load_mm3_fld(out_path)
+
+        assert roundtrip.nonbonded_excluded_atom_types == ("FE",)
+        assert "Q2MM-NONBONDED-EXCLUDED-ATOM-TYPES" in out_path.read_text(encoding="utf-8")
+
     def test_mm3_standalone_torsion_roundtrip(self, tmp_path: Path) -> None:
         """Standalone MM3 export should include torsion parameters."""
         ff = ForceField(

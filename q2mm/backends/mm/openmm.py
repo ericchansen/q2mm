@@ -326,19 +326,23 @@ def _collect_torsion_assignments(
 def _collect_vdw_assignments(
     molecule: Molecule,
     forcefield: ForceField,
-) -> list[tuple[int, str, str, VdwParam]]:
+) -> list[tuple[int, str, str, VdwParam | None]]:
     """Match each atom to a force field vdW parameter.
 
-    Returns a list of ``(atom_index, symbol, atom_type, param)`` tuples.
+    Returns ``(atom_index, symbol, atom_type, param)`` tuples. ``param`` is
+    ``None`` only for an atom type explicitly declared as a zero nonbonded
+    center by the force field.
 
     Raises:
         ValueError: If any atom has no matching vdW parameter.
 
     """
-    assignments: list[tuple[int, str, str, VdwParam]] = []
+    assignments: list[tuple[int, str, str, VdwParam | None]] = []
+    excluded_types = {value.casefold() for value in forcefield.nonbonded_excluded_atom_types}
     for atom_index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=False)):
-        param = forcefield.match_vdw(atom_type=atom_type, element=symbol)
-        if param is None:
+        explicitly_excluded = symbol.casefold() in excluded_types or atom_type.casefold() in excluded_types
+        param = None if explicitly_excluded else forcefield.match_vdw(atom_type=atom_type, element=symbol)
+        if param is None and not explicitly_excluded:
             raise ValueError(f"Missing vdW parameter for atom {atom_index + 1} ({atom_type or symbol}).")
         assignments.append((atom_index, symbol, atom_type, param))
     return assignments
@@ -989,6 +993,12 @@ class OpenMMBackend:
         if forcefield.vdws:
             vdw_assignments = _collect_vdw_assignments(molecule, forcefield)
             for atom_index, symbol, atom_type, param in vdw_assignments:
+                if param is None:
+                    if use_harmonic:
+                        vdw_force.addParticle(0.0, 0.0, 0.0)
+                    else:
+                        vdw_force.addParticle([0.0, 0.0])
+                    continue
                 if use_harmonic:
                     vdw_force.addParticle(0.0, _vdw_sigma_nm(param.radius), _vdw_epsilon_to_openmm(param.epsilon))
                 else:
@@ -1412,7 +1422,14 @@ class OpenMMBackend:
                 vdw_force = mm.NonbondedForce()
                 vdw_force.setNonbondedMethod(mm.NonbondedForce.NoCutoff)
                 for _atom_index, _symbol, _atom_type, param in vdw_assignments:
-                    vdw_force.addParticle(0.0, _vdw_sigma_nm(param.radius), _vdw_epsilon_to_openmm(param.epsilon))
+                    if param is None:
+                        vdw_force.addParticle(0.0, 0.0, 0.0)
+                    else:
+                        vdw_force.addParticle(
+                            0.0,
+                            _vdw_sigma_nm(param.radius),
+                            _vdw_epsilon_to_openmm(param.epsilon),
+                        )
                 _build_harmonic_exclusions(molecule, vdw_force)
             else:
                 vdw_force = mm.CustomNonbondedForce(
@@ -1426,7 +1443,12 @@ class OpenMMBackend:
                 vdw_force.addPerParticleParameter("epsilon")
                 vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
                 for _atom_index, _symbol, _atom_type, param in vdw_assignments:
-                    vdw_force.addParticle([_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)])
+                    if param is None:
+                        vdw_force.addParticle([0.0, 0.0])
+                    else:
+                        vdw_force.addParticle(
+                            [_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)]
+                        )
                 vdw_force.createExclusionsFromBonds([(b.atom_i, b.atom_j) for b in molecule.bonds], 2)
 
             system.addForce(vdw_force)

@@ -190,6 +190,28 @@ class TestKnobThreading:
         args = self._parse(["single", "--system", "ch3f"])
         assert _optimizer_knobs(args)["regularization"] is None  # type: ignore[arg-type]
 
+    def test_objective_profile_threads_into_run_profile(self) -> None:
+        from q2mm.benchmarks.publications import FERROCENE_SEVEN_STRUCTURE_PROFILE
+        from q2mm.benchmarks.profiles import RunProfile
+
+        args = self._parse(
+            [
+                "single",
+                "--system",
+                "ferrocene",
+                "--starting-point",
+                "published",
+                "--objective-profile",
+                FERROCENE_SEVEN_STRUCTURE_PROFILE,
+            ]
+        )
+        profile = RunProfile(
+            system=args.system,  # type: ignore[attr-defined]
+            starting_point=args.starting_point,  # type: ignore[attr-defined]
+            objective_profile=args.objective_profile,  # type: ignore[attr-defined]
+        )
+        assert profile.objective_profile == FERROCENE_SEVEN_STRUCTURE_PROFILE
+
     def test_data_root_rejects_unknown_key(self) -> None:
         import argparse
 

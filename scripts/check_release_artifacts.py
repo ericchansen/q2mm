@@ -22,6 +22,7 @@ from collections.abc import Callable
 #: Canonical external reference plugin. It is independently installable from the
 #: source checkout but excluded from both Q2MM release artifacts.
 REFERENCE_PLUGIN_DIR = Path(__file__).resolve().parent.parent / "examples" / "backend-plugin"
+INSTALLED_PUBLICATION_CHECK = Path(__file__).resolve().parent / "check_installed_publication_sdk.py"
 
 
 APPROVED_RESOURCE_FILES = frozenset(
@@ -467,7 +468,8 @@ print("installed-import=ok cli-help=ok cli-list=ok cli-single-skip=ok sn2-resour
         encoding="utf-8",
     )
     external = smoke_test_external_plugin(python, cli, destination, environment)
-    return f"{completed.stdout.strip()} {external}"
+    publication = smoke_test_installed_publications(python, destination, environment)
+    return f"{completed.stdout.strip()} {external} {publication}"
 
 
 _EXTERNAL_PLUGIN_PROOF = """
@@ -572,6 +574,49 @@ def smoke_test_external_plugin(python: Path, cli: Path, destination: Path, envir
     )
     if "harmonic-reference" not in listing.stdout:
         raise ArtifactContractError("`q2mm-benchmark list` did not include the discovered plugin")
+    return marker
+
+
+def smoke_test_installed_publications(python: Path, destination: Path, environment: dict[str, str]) -> str:
+    """Run provisionable publication rows through the installed wheel when configured."""
+    required = {
+        "Q2MM_SUPPORTING_INFO": environment.get("Q2MM_SUPPORTING_INFO"),
+        "Q2MM_MM3_BASE": environment.get("Q2MM_MM3_BASE"),
+        "Q2MM_RH_ENAMIDE": environment.get("Q2MM_RH_ENAMIDE"),
+    }
+    if not all(required.values()):
+        return "installed-publication-sdk=not-configured"
+    if not INSTALLED_PUBLICATION_CHECK.is_file():
+        raise ArtifactContractError(f"installed publication checker is missing: {INSTALLED_PUBLICATION_CHECK}")
+    try:
+        completed = subprocess.run(
+            [
+                str(python),
+                "-I",
+                str(INSTALLED_PUBLICATION_CHECK),
+                "--supporting-info",
+                str(required["Q2MM_SUPPORTING_INFO"]),
+                "--mm3-base",
+                str(required["Q2MM_MM3_BASE"]),
+                "--rh-enamide",
+                str(required["Q2MM_RH_ENAMIDE"]),
+                "--output",
+                str(destination / "publication-sdk"),
+            ],
+            check=True,
+            cwd=destination,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError as exc:
+        raise ArtifactContractError(
+            f"installed publication proof failed:\nstdout:\n{exc.stdout or ''}\nstderr:\n{exc.stderr or ''}"
+        ) from exc
+    marker = completed.stdout.strip().splitlines()[-1]
+    if marker != "installed-publication-sdk=ok":
+        raise ArtifactContractError(f"installed publication proof produced unexpected output: {marker!r}")
     return marker
 
 

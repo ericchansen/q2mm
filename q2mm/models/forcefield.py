@@ -236,6 +236,11 @@ class ForceField:
     always state which physical functional form the parameter values
     are meant to be evaluated under.
 
+    ``nonbonded_excluded_atom_types`` is an explicit topology declaration for
+    source force fields that intentionally define no vdW center for selected
+    atom types. It adds no scalar parameter. A backend must implement this
+    declaration or reject the force field rather than inventing vdW values.
+
     Usage::
 
         from q2mm.io.mm3 import load_mm3_fld
@@ -259,6 +264,7 @@ class ForceField:
         default=None, repr=False
     )
     functional_form: FunctionalForm = field(kw_only=True)
+    nonbonded_excluded_atom_types: tuple[str, ...] = field(default_factory=tuple, kw_only=True)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "bonds", tuple(self.bonds))
@@ -267,6 +273,10 @@ class ForceField:
         object.__setattr__(self, "torsions", tuple(self.torsions))
         object.__setattr__(self, "vdws", tuple(self.vdws))
         object.__setattr__(self, "cmaps", tuple(self.cmaps))
+        excluded = tuple(str(value).strip() for value in self.nonbonded_excluded_atom_types)
+        if any(not value for value in excluded) or len(set(excluded)) != len(excluded):
+            raise ValueError("nonbonded_excluded_atom_types must contain unique, non-empty atom types.")
+        object.__setattr__(self, "nonbonded_excluded_atom_types", excluded)
 
     @property
     def _ub_angles(self) -> tuple[AngleParam, ...]:

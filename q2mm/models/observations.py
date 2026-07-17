@@ -31,13 +31,16 @@ without silently re-binding any observation to the wrong molecule.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
-from dataclasses import dataclass
-from typing import Literal
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Literal, TypeAlias
 
 import numpy as np
 
 from q2mm.models.molecule import Molecule
+from q2mm.models.parameters import ParameterId, ParameterUnit
 
 _ObservationKind = Literal[
     "energy",
@@ -49,6 +52,284 @@ _ObservationKind = Literal[
     "eig_offdiagonal",
     "hessian_element",
 ]
+_PublicationObservationKind = Literal[
+    "atomic_partial_charge",
+    "direct_electrostatic_potential",
+    "relative_energy",
+    "scan_energy",
+    "parameter_tether",
+]
+
+
+class ObservationEnergyUnit(str, Enum):
+    """Units accepted by grouped relative and constrained-scan energies."""
+
+    KCAL_PER_MOL = "kcal/mol"
+    KJ_PER_MOL = "kJ/mol"
+    HARTREE = "hartree"
+
+
+class ThermodynamicQuantity(str, Enum):
+    """Whether a grouped difference represents energy or enthalpy."""
+
+    ENERGY = "energy"
+    ENTHALPY = "enthalpy"
+
+
+class ChargeUnit(str, Enum):
+    """Canonical atomic partial-charge unit."""
+
+    ELEMENTARY_CHARGE = "elementary_charge"
+
+
+class ElectrostaticPotentialUnit(str, Enum):
+    """Canonical direct electrostatic-potential unit."""
+
+    HARTREE_PER_ELEMENTARY_CHARGE = "hartree/elementary_charge"
+
+
+class ScanCoordinateKind(str, Enum):
+    """Supported constrained-scan coordinate kinds."""
+
+    DISTANCE = "distance"
+    ANGLE = "angle"
+    TORSION = "torsion"
+
+
+def _validate_scalar_observation(
+    *,
+    value: float,
+    weight: float,
+    case_id: str,
+    label: str,
+) -> tuple[float, float, str, str]:
+    normalized_value = float(value)
+    normalized_weight = float(weight)
+    if not math.isfinite(normalized_value):
+        raise ValueError("Observation value must be finite.")
+    if not math.isfinite(normalized_weight) or normalized_weight < 0.0:
+        raise ValueError("Observation weight must be finite and non-negative.")
+    normalized_case_id = str(case_id).strip()
+    if not normalized_case_id:
+        raise ValueError("Observation case_id must be non-empty.")
+    return normalized_value, normalized_weight, normalized_case_id, str(label)
+
+
+@dataclass(frozen=True)
+class ScanCoordinate:
+    """One explicit coordinate value defining a constrained scan point."""
+
+    kind: ScanCoordinateKind
+    atom_indices: tuple[int, ...]
+    value: float
+    unit: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.kind, ScanCoordinateKind):
+            try:
+                object.__setattr__(self, "kind", ScanCoordinateKind(self.kind))
+            except ValueError as exc:
+                raise ValueError(f"Unknown scan coordinate kind {self.kind!r}.") from exc
+        atom_indices = tuple(int(index) for index in self.atom_indices)
+        expected = {
+            ScanCoordinateKind.DISTANCE: (2, "angstrom"),
+            ScanCoordinateKind.ANGLE: (3, "degree"),
+            ScanCoordinateKind.TORSION: (4, "degree"),
+        }
+        arity, required_unit = expected[self.kind]
+        if len(atom_indices) != arity or any(index < 0 for index in atom_indices):
+            raise ValueError(f"{self.kind.value} scan coordinates require {arity} non-negative atom indices.")
+        normalized_value = float(self.value)
+        if not math.isfinite(normalized_value):
+            raise ValueError("ScanCoordinate.value must be finite.")
+        if self.unit != required_unit:
+            raise ValueError(f"{self.kind.value} scan coordinates require unit {required_unit!r}.")
+        object.__setattr__(self, "atom_indices", atom_indices)
+        object.__setattr__(self, "value", normalized_value)
+
+
+@dataclass(frozen=True)
+class AtomicPartialChargeObservation:
+    """Reference atomic partial charge for one explicit atom."""
+
+    value: float
+    atom_index: int
+    weight: float = 1.0
+    label: str = ""
+    case_id: str = "0"
+    unit: ChargeUnit = ChargeUnit.ELEMENTARY_CHARGE
+    kind: _PublicationObservationKind = field(default="atomic_partial_charge", init=False)
+
+    def __post_init__(self) -> None:
+        value, weight, case_id, label = _validate_scalar_observation(
+            value=self.value,
+            weight=self.weight,
+            case_id=self.case_id,
+            label=self.label,
+        )
+        if not isinstance(self.atom_index, int) or isinstance(self.atom_index, bool) or self.atom_index < 0:
+            raise ValueError("AtomicPartialChargeObservation.atom_index must be a non-negative integer.")
+        if not isinstance(self.unit, ChargeUnit):
+            try:
+                object.__setattr__(self, "unit", ChargeUnit(self.unit))
+            except ValueError as exc:
+                raise ValueError(f"Unknown atomic-charge unit {self.unit!r}.") from exc
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "weight", weight)
+        object.__setattr__(self, "case_id", case_id)
+        object.__setattr__(self, "label", label)
+
+
+@dataclass(frozen=True)
+class DirectElectrostaticPotentialObservation:
+    """Direct electrostatic potential at one explicit Cartesian grid point."""
+
+    value: float
+    point: tuple[float, float, float]
+    weight: float = 1.0
+    label: str = ""
+    case_id: str = "0"
+    point_unit: str = "angstrom"
+    unit: ElectrostaticPotentialUnit = ElectrostaticPotentialUnit.HARTREE_PER_ELEMENTARY_CHARGE
+    kind: _PublicationObservationKind = field(default="direct_electrostatic_potential", init=False)
+
+    def __post_init__(self) -> None:
+        value, weight, case_id, label = _validate_scalar_observation(
+            value=self.value,
+            weight=self.weight,
+            case_id=self.case_id,
+            label=self.label,
+        )
+        point = tuple(float(component) for component in self.point)
+        if len(point) != 3 or any(not math.isfinite(component) for component in point):
+            raise ValueError("Direct ESP grid points must contain three finite Cartesian coordinates.")
+        if self.point_unit != "angstrom":
+            raise ValueError("Direct ESP grid points must use angstrom.")
+        if not isinstance(self.unit, ElectrostaticPotentialUnit):
+            try:
+                object.__setattr__(self, "unit", ElectrostaticPotentialUnit(self.unit))
+            except ValueError as exc:
+                raise ValueError(f"Unknown electrostatic-potential unit {self.unit!r}.") from exc
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "weight", weight)
+        object.__setattr__(self, "case_id", case_id)
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "point", point)
+
+
+@dataclass(frozen=True)
+class RelativeEnergyObservation:
+    """One member of a grouped case-energy or case-enthalpy difference."""
+
+    value: float
+    group_id: str
+    reference_case_id: str
+    unit: ObservationEnergyUnit
+    quantity: ThermodynamicQuantity
+    weight: float = 1.0
+    label: str = ""
+    case_id: str = "0"
+    kind: _PublicationObservationKind = field(default="relative_energy", init=False)
+
+    def __post_init__(self) -> None:
+        value, weight, case_id, label = _validate_scalar_observation(
+            value=self.value,
+            weight=self.weight,
+            case_id=self.case_id,
+            label=self.label,
+        )
+        group_id = str(self.group_id).strip()
+        reference_case_id = str(self.reference_case_id).strip()
+        if not group_id or not reference_case_id:
+            raise ValueError("Relative-energy group and reference case IDs must be non-empty.")
+        if not isinstance(self.unit, ObservationEnergyUnit):
+            try:
+                object.__setattr__(self, "unit", ObservationEnergyUnit(self.unit))
+            except ValueError as exc:
+                raise ValueError(f"Unknown relative-energy unit {self.unit!r}.") from exc
+        if not isinstance(self.quantity, ThermodynamicQuantity):
+            try:
+                object.__setattr__(self, "quantity", ThermodynamicQuantity(self.quantity))
+            except ValueError as exc:
+                raise ValueError(f"Unknown thermodynamic quantity {self.quantity!r}.") from exc
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "weight", weight)
+        object.__setattr__(self, "case_id", case_id)
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "group_id", group_id)
+        object.__setattr__(self, "reference_case_id", reference_case_id)
+
+
+@dataclass(frozen=True)
+class ScanEnergyObservation:
+    """One explicit constrained-scan energy point."""
+
+    value: float
+    group_id: str
+    reference_case_id: str
+    coordinate: ScanCoordinate
+    unit: ObservationEnergyUnit
+    weight: float = 1.0
+    label: str = ""
+    case_id: str = "0"
+    kind: _PublicationObservationKind = field(default="scan_energy", init=False)
+
+    def __post_init__(self) -> None:
+        value, weight, case_id, label = _validate_scalar_observation(
+            value=self.value,
+            weight=self.weight,
+            case_id=self.case_id,
+            label=self.label,
+        )
+        group_id = str(self.group_id).strip()
+        reference_case_id = str(self.reference_case_id).strip()
+        if not group_id or not reference_case_id:
+            raise ValueError("Scan-energy group and reference case IDs must be non-empty.")
+        if not isinstance(self.coordinate, ScanCoordinate):
+            raise TypeError("ScanEnergyObservation.coordinate must be a ScanCoordinate.")
+        if not isinstance(self.unit, ObservationEnergyUnit):
+            try:
+                object.__setattr__(self, "unit", ObservationEnergyUnit(self.unit))
+            except ValueError as exc:
+                raise ValueError(f"Unknown scan-energy unit {self.unit!r}.") from exc
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "weight", weight)
+        object.__setattr__(self, "case_id", case_id)
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "group_id", group_id)
+        object.__setattr__(self, "reference_case_id", reference_case_id)
+
+
+@dataclass(frozen=True)
+class ParameterTetherObservation:
+    """Harmonic penalty on one stable, named scalar parameter slot."""
+
+    value: float
+    parameter_id: ParameterId
+    unit: ParameterUnit
+    weight: float = 1.0
+    label: str = ""
+    case_id: str = "0"
+    kind: _PublicationObservationKind = field(default="parameter_tether", init=False)
+
+    def __post_init__(self) -> None:
+        value, weight, case_id, label = _validate_scalar_observation(
+            value=self.value,
+            weight=self.weight,
+            case_id=self.case_id,
+            label=self.label,
+        )
+        if not isinstance(self.parameter_id, ParameterId):
+            raise TypeError("ParameterTetherObservation.parameter_id must be a ParameterId.")
+        if not isinstance(self.unit, ParameterUnit):
+            try:
+                object.__setattr__(self, "unit", ParameterUnit(self.unit))
+            except ValueError as exc:
+                raise ValueError(f"Unknown parameter-tether unit {self.unit!r}.") from exc
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "weight", weight)
+        object.__setattr__(self, "case_id", case_id)
+        object.__setattr__(self, "label", label)
 
 
 @dataclass(frozen=True)
@@ -68,6 +349,45 @@ class Observation:
     data_idx: int = 0
     # Atom-identity matching (preferred over positional data_idx for geometry)
     atom_indices: tuple[int, ...] | None = None
+
+    def __post_init__(self) -> None:
+        value, weight, case_id, label = _validate_scalar_observation(
+            value=self.value,
+            weight=self.weight,
+            case_id=self.case_id,
+            label=self.label,
+        )
+        if self.kind not in {
+            "energy",
+            "frequency",
+            "bond_length",
+            "bond_angle",
+            "torsion_angle",
+            "eig_diagonal",
+            "eig_offdiagonal",
+            "hessian_element",
+        }:
+            raise ValueError(f"Unknown observation kind {self.kind!r}.")
+        if not isinstance(self.data_idx, int) or isinstance(self.data_idx, bool) or self.data_idx < 0:
+            raise ValueError("Observation.data_idx must be a non-negative integer.")
+        atom_indices = None if self.atom_indices is None else tuple(int(index) for index in self.atom_indices)
+        if atom_indices is not None and any(index < 0 for index in atom_indices):
+            raise ValueError("Observation.atom_indices must be non-negative.")
+        object.__setattr__(self, "value", value)
+        object.__setattr__(self, "weight", weight)
+        object.__setattr__(self, "case_id", case_id)
+        object.__setattr__(self, "label", label)
+        object.__setattr__(self, "atom_indices", atom_indices)
+
+
+ObservationValue: TypeAlias = (
+    Observation
+    | AtomicPartialChargeObservation
+    | DirectElectrostaticPotentialObservation
+    | RelativeEnergyObservation
+    | ScanEnergyObservation
+    | ParameterTetherObservation
+)
 
 
 def _energy_observation(value: float, *, weight: float, case_id: str, label: str) -> Observation:
@@ -159,6 +479,117 @@ def _hessian_element_observation(
     )
 
 
+def energy_conversion_from_kcal_per_mol(unit: ObservationEnergyUnit) -> float:
+    """Return the multiplier converting canonical MM kcal/mol into *unit*."""
+    from q2mm.constants import HARTREE_TO_KCALMOL, KCAL_TO_KJ
+
+    resolved = unit if isinstance(unit, ObservationEnergyUnit) else ObservationEnergyUnit(unit)
+    if resolved is ObservationEnergyUnit.KCAL_PER_MOL:
+        return 1.0
+    if resolved is ObservationEnergyUnit.KJ_PER_MOL:
+        return float(KCAL_TO_KJ)
+    return 1.0 / float(HARTREE_TO_KCALMOL)
+
+
+def _validate_grouped_observations(
+    values: tuple[ObservationValue, ...],
+    observation_type: type[RelativeEnergyObservation] | type[ScanEnergyObservation],
+) -> None:
+    grouped: dict[str, list[RelativeEnergyObservation | ScanEnergyObservation]] = {}
+    for observation in values:
+        if isinstance(observation, observation_type):
+            grouped.setdefault(observation.group_id, []).append(observation)
+    for group_id, entries in grouped.items():
+        reference_ids = {entry.reference_case_id for entry in entries}
+        units = {entry.unit for entry in entries}
+        case_ids = [entry.case_id for entry in entries]
+        if len(reference_ids) != 1 or len(units) != 1:
+            raise ValueError(f"Grouped observations {group_id!r} must share one reference case and unit.")
+        if len(set(case_ids)) != len(case_ids):
+            raise ValueError(f"Grouped observations {group_id!r} must use unique case IDs.")
+        reference_case_id = entries[0].reference_case_id
+        reference_entries = [entry for entry in entries if entry.case_id == reference_case_id]
+        if len(reference_entries) != 1 or reference_entries[0].value != 0.0:
+            raise ValueError(
+                f"Grouped observations {group_id!r} require exactly one explicit zero-valued reference entry."
+            )
+        if observation_type is RelativeEnergyObservation:
+            quantities = {entry.quantity for entry in entries if isinstance(entry, RelativeEnergyObservation)}
+            if len(quantities) != 1:
+                raise ValueError(f"Relative-energy group {group_id!r} must share one thermodynamic quantity.")
+
+
+def observation_payload(observation: ObservationValue) -> dict[str, object]:
+    """Return the deterministic identity payload for one observation.
+
+    The legacy :class:`Observation` shape is intentionally unchanged so the
+    frozen ``repository-geometry-eigenmatrix-v1`` fingerprints remain exact.
+    """
+    if isinstance(observation, Observation):
+        return {
+            "kind": observation.kind,
+            "value": float(observation.value),
+            "weight": float(observation.weight),
+            "label": observation.label,
+            "case_id": observation.case_id,
+            "data_idx": int(observation.data_idx),
+            "atom_indices": None
+            if observation.atom_indices is None
+            else [int(index) for index in observation.atom_indices],
+        }
+    common: dict[str, object] = {
+        "kind": observation.kind,
+        "value": float(observation.value),
+        "weight": float(observation.weight),
+        "label": observation.label,
+        "case_id": observation.case_id,
+    }
+    if isinstance(observation, AtomicPartialChargeObservation):
+        return {
+            **common,
+            "atom_index": observation.atom_index,
+            "unit": observation.unit.value,
+        }
+    if isinstance(observation, DirectElectrostaticPotentialObservation):
+        return {
+            **common,
+            "point": list(observation.point),
+            "point_unit": observation.point_unit,
+            "unit": observation.unit.value,
+        }
+    if isinstance(observation, RelativeEnergyObservation):
+        return {
+            **common,
+            "group_id": observation.group_id,
+            "reference_case_id": observation.reference_case_id,
+            "unit": observation.unit.value,
+            "quantity": observation.quantity.value,
+        }
+    if isinstance(observation, ScanEnergyObservation):
+        return {
+            **common,
+            "group_id": observation.group_id,
+            "reference_case_id": observation.reference_case_id,
+            "unit": observation.unit.value,
+            "coordinate": {
+                "kind": observation.coordinate.kind.value,
+                "atom_indices": list(observation.coordinate.atom_indices),
+                "value": observation.coordinate.value,
+                "unit": observation.coordinate.unit,
+            },
+        }
+    return {
+        **common,
+        "parameter_id": {
+            "family": observation.parameter_id.family,
+            "identity": list(observation.parameter_id.identity),
+            "occurrence": observation.parameter_id.occurrence,
+            "field": observation.parameter_id.field,
+        },
+        "unit": observation.unit.value,
+    }
+
+
 @dataclass(frozen=True)
 class ObservationSet:
     """Complete, immutable set of reference observations for an optimization.
@@ -169,14 +600,153 @@ class ObservationSet:
     and never mutates ``self`` or any argument.
     """
 
-    values: tuple[Observation, ...] = ()
+    values: tuple[ObservationValue, ...] = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "values", tuple(self.values))
+        values = tuple(self.values)
+        if not all(
+            isinstance(
+                observation,
+                (
+                    Observation,
+                    AtomicPartialChargeObservation,
+                    DirectElectrostaticPotentialObservation,
+                    RelativeEnergyObservation,
+                    ScanEnergyObservation,
+                    ParameterTetherObservation,
+                ),
+            )
+            for observation in values
+        ):
+            raise TypeError("ObservationSet.values contains an unsupported observation type.")
+        _validate_grouped_observations(values, RelativeEnergyObservation)
+        _validate_grouped_observations(values, ScanEnergyObservation)
+        object.__setattr__(self, "values", values)
 
-    def _with(self, *new_observations: Observation) -> ObservationSet:
+    def _with(self, *new_observations: ObservationValue) -> ObservationSet:
         """Return a new :class:`ObservationSet` with *new_observations* appended."""
         return ObservationSet(values=(*self.values, *new_observations))
+
+    def with_atomic_partial_charge(
+        self,
+        value: float,
+        *,
+        atom_index: int,
+        weight: float = 1.0,
+        case_id: str = "0",
+        label: str = "",
+        unit: ChargeUnit = ChargeUnit.ELEMENTARY_CHARGE,
+    ) -> ObservationSet:
+        """Return a new set with one typed atomic partial-charge target."""
+        return self._with(
+            AtomicPartialChargeObservation(
+                value=value,
+                atom_index=atom_index,
+                weight=weight,
+                case_id=case_id,
+                label=label,
+                unit=unit,
+            )
+        )
+
+    def with_direct_electrostatic_potential(
+        self,
+        value: float,
+        *,
+        point: tuple[float, float, float],
+        weight: float = 1.0,
+        case_id: str = "0",
+        label: str = "",
+        point_unit: str = "angstrom",
+        unit: ElectrostaticPotentialUnit = ElectrostaticPotentialUnit.HARTREE_PER_ELEMENTARY_CHARGE,
+    ) -> ObservationSet:
+        """Return a new set with one typed direct-ESP grid target."""
+        return self._with(
+            DirectElectrostaticPotentialObservation(
+                value=value,
+                point=point,
+                weight=weight,
+                case_id=case_id,
+                label=label,
+                point_unit=point_unit,
+                unit=unit,
+            )
+        )
+
+    def with_relative_energy_group(
+        self,
+        values: Sequence[tuple[str, float]],
+        *,
+        group_id: str,
+        reference_case_id: str,
+        unit: ObservationEnergyUnit,
+        quantity: ThermodynamicQuantity = ThermodynamicQuantity.ENERGY,
+        weight: float = 1.0,
+        label: str = "",
+    ) -> ObservationSet:
+        """Return a new set with one complete, explicit relative-energy group."""
+        entries = tuple(
+            RelativeEnergyObservation(
+                value=value,
+                group_id=group_id,
+                reference_case_id=reference_case_id,
+                unit=unit,
+                quantity=quantity,
+                weight=weight,
+                case_id=case_id,
+                label=f"{label}: {case_id}" if label else case_id,
+            )
+            for case_id, value in values
+        )
+        return self._with(*entries)
+
+    def with_scan_energy_group(
+        self,
+        values: Sequence[tuple[str, float, ScanCoordinate]],
+        *,
+        group_id: str,
+        reference_case_id: str,
+        unit: ObservationEnergyUnit,
+        weight: float = 1.0,
+        label: str = "",
+    ) -> ObservationSet:
+        """Return a new set with one complete constrained-scan energy group."""
+        entries = tuple(
+            ScanEnergyObservation(
+                value=value,
+                group_id=group_id,
+                reference_case_id=reference_case_id,
+                coordinate=coordinate,
+                unit=unit,
+                weight=weight,
+                case_id=case_id,
+                label=f"{label}: {case_id}" if label else case_id,
+            )
+            for case_id, value, coordinate in values
+        )
+        return self._with(*entries)
+
+    def with_parameter_tether(
+        self,
+        value: float,
+        *,
+        parameter_id: ParameterId,
+        unit: ParameterUnit,
+        weight: float = 1.0,
+        case_id: str = "0",
+        label: str = "",
+    ) -> ObservationSet:
+        """Return a new set with one harmonic named-parameter tether."""
+        return self._with(
+            ParameterTetherObservation(
+                value=value,
+                parameter_id=parameter_id,
+                unit=unit,
+                weight=weight,
+                case_id=case_id,
+                label=label,
+            )
+        )
 
     def with_energy(
         self,
@@ -824,7 +1394,7 @@ class ObservationSet:
                 f"molecules length ({len(molecules)})."
             )
 
-        combined: list[Observation] = []
+        combined: list[ObservationValue] = []
         for idx, mol in enumerate(molecules):
             single = cls.from_molecule(
                 mol,

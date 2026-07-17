@@ -40,6 +40,11 @@ from typing import TYPE_CHECKING, Any
 from q2mm._canonical import canonical_fingerprint as _canonical_fingerprint
 from q2mm._canonical import canonical_json as _canonical_json
 from q2mm._canonical import json_value
+from q2mm.benchmarks.publications import (
+    KNOWN_OBJECTIVE_PROFILES,
+    PUBLICATION_SYSTEM_KEYS,
+    REPOSITORY_OBJECTIVE_PROFILE,
+)
 from q2mm.models.results import deep_freeze
 from q2mm.optimizers.catalog import OPTIMIZER_CATALOG, OptimizerSpec
 
@@ -55,6 +60,7 @@ __all__ = [
     "EVALUATORS",
     "GRADIENT_MODES",
     "DATA_ROOT_KEYS",
+    "KNOWN_OBJECTIVE_PROFILES",
     "RunProfile",
     "ResolvedProfile",
     "canonical_json",
@@ -62,6 +68,7 @@ __all__ = [
     "dependency_versions",
     "device_info",
     "resolve",
+    "recommended_publication_profile",
 ]
 
 
@@ -152,6 +159,9 @@ class RunProfile:
         functional_form: Explicit form (``"harmonic"``/``"mm3"``), or
             ``None`` to use the backend/system default.
         starting_point: ``"qfuerza"`` (Farrugia 2025) or ``"published"``.
+        objective_profile: Explicit publication objective/completeness profile,
+            or ``None`` for the repository compatibility default on publication
+            systems and no publication profile on small-system fixtures.
         workflow: ``"single-stage"`` or ``"method-e2"``.
         optimizer: Key into :data:`OPTIMIZER_CATALOG`.
         maxiter: Optimizer iteration cap (non-negative), or ``None`` for the
@@ -180,6 +190,7 @@ class RunProfile:
     backend: str = "jax"
     functional_form: str | None = None
     starting_point: str = "qfuerza"
+    objective_profile: str | None = None
     workflow: str = "single-stage"
     optimizer: str = "scipy-lbfgsb-jax"
     maxiter: int | None = None
@@ -211,6 +222,13 @@ class RunProfile:
             )
         if self.starting_point not in STARTING_POINTS:
             raise ValueError(f"RunProfile.starting_point must be one of {sorted(STARTING_POINTS)}.")
+        if self.objective_profile is not None and self.objective_profile not in KNOWN_OBJECTIVE_PROFILES:
+            raise ValueError(
+                f"RunProfile.objective_profile must be one of {sorted(KNOWN_OBJECTIVE_PROFILES)}, "
+                f"got {self.objective_profile!r}."
+            )
+        if self.system not in PUBLICATION_SYSTEM_KEYS and self.objective_profile is not None:
+            raise ValueError("objective_profile applies only to registered publication systems.")
         if self.workflow not in WORKFLOWS:
             raise ValueError(f"RunProfile.workflow must be one of {sorted(WORKFLOWS)}.")
         if self.optimizer not in OPTIMIZER_CATALOG:
@@ -265,6 +283,13 @@ class RunProfile:
         return OPTIMIZER_CATALOG[self.optimizer]
 
     @property
+    def effective_objective_profile(self) -> str | None:
+        """Selected publication objective profile, or ``None`` for non-publication systems."""
+        if self.system not in PUBLICATION_SYSTEM_KEYS:
+            return None
+        return self.objective_profile or REPOSITORY_OBJECTIVE_PROFILE
+
+    @property
     def effective_regularization(self) -> float:
         """L2 strength actually used.
 
@@ -281,6 +306,7 @@ class RunProfile:
             "backend": self.backend,
             "functional_form": self.functional_form,
             "starting_point": self.starting_point,
+            "objective_profile": self.effective_objective_profile,
             "workflow": self.workflow,
             "optimizer": self.optimizer,
             "maxiter": self.maxiter,
@@ -316,6 +342,46 @@ class RunProfile:
     def candidate_id(self) -> str:
         """Pre-resolution candidate ID: requested prefix + requested fingerprint suffix."""
         return f"{self.prefix()}__{_short(self.fingerprint())}"
+
+
+def recommended_publication_profile(
+    system: str,
+    *,
+    starting_point: str = "qfuerza",
+    objective_profile: str = REPOSITORY_OBJECTIVE_PROFILE,
+    **overrides: Any,
+) -> RunProfile:
+    """Build the documented publication-run policy without changing SDK defaults.
+
+    QFUERZA starts use the pre-flight ``ftol`` and fractional basin bounds.
+    Heck's tighter force-constant fraction is deliberately visible here rather
+    than inferred by the generic optimizer/application service.
+    """
+    publication_systems = {"rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate", "ferrocene"}
+    if system not in publication_systems:
+        raise ValueError(f"No canonical publication policy is defined for {system!r}.")
+    if system == "ferrocene" and starting_point != "published":
+        raise ValueError("Ferrocene has no QFUERZA policy; use the explicit published-start partial profile.")
+    settings: dict[str, Any] = {
+        "system": system,
+        "starting_point": starting_point,
+        "objective_profile": objective_profile,
+    }
+    if starting_point == "qfuerza":
+        settings.update(
+            {
+                "ftol": 1e-12,
+                "fc_fraction": 0.05 if system == "heck-relay" else 0.20,
+                "eq_fraction": 0.05,
+                "executor_ratio_tol": None,
+            }
+        )
+    elif starting_point == "published":
+        settings["ftol"] = 1e-8
+    else:
+        raise ValueError("starting_point must be 'qfuerza' or 'published'.")
+    settings.update(overrides)
+    return RunProfile(**settings)
 
 
 # ---------------------------------------------------------------------------
@@ -437,6 +503,7 @@ class ResolvedProfile:
     def _identity(self) -> dict[str, Any]:
         return {
             "profile": self.profile.canonical_dict(),
+            "objective_profile": self._objective_profile(),
             "static_descriptor": _jsonify(dict(self.static_descriptor)),
             "runtime_backend_key": self.runtime_backend_key,
             "backend_name": self.backend_name,
@@ -460,12 +527,34 @@ class ResolvedProfile:
             "n_full_params": self.n_full_params,
             "n_molecules": self.n_molecules,
             "data_provenance": _jsonify(dict(self.data_provenance)),
+            "reproduction_status": self._reproduction_status(),
+            "publication_metadata": self._publication_metadata(),
             "resolved_data_roots": dict(self.resolved_data_roots),
             "dependency_versions": dict(self.dependency_versions),
             "device": _jsonify(dict(self.device)),
             "seed": self.seed,
             "settings": _jsonify(dict(self.settings)),
         }
+
+    def _publication_metadata(self) -> Any:
+        value = self.data_provenance.get("publication_metadata")
+        return None if value is None else _jsonify(value)
+
+    def _objective_profile(self) -> str | None:
+        publication = self.data_provenance.get("publication_metadata")
+        if isinstance(publication, Mapping):
+            identity = publication.get("objective_profile")
+            if isinstance(identity, Mapping) and identity.get("identifier") is not None:
+                return str(identity["identifier"])
+        value = self.data_provenance.get("objective_profile")
+        return str(value) if value is not None else self.profile.effective_objective_profile
+
+    def _reproduction_status(self) -> str | None:
+        publication = self.data_provenance.get("publication_metadata")
+        if not isinstance(publication, Mapping):
+            return None
+        value = publication.get("status")
+        return str(value) if value is not None else None
 
     def fingerprint(self) -> str:
         """Deterministic identity over the full exact resolved provenance."""

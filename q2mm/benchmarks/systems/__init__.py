@@ -35,6 +35,7 @@ _REGISTRY: dict[str, str] = {
     "pd-allyl": "q2mm.benchmarks.systems.pd_allyl",
     "pd-conjugate": "q2mm.benchmarks.systems.pd_conjugate",
     "rh-conjugate": "q2mm.benchmarks.systems.rh_conjugate",
+    "ferrocene": "q2mm.benchmarks.systems.ferrocene",
 }
 
 SYSTEM_KEYS: tuple[str, ...] = tuple(_REGISTRY)
