@@ -48,7 +48,7 @@ References
 - Rosales, A. R. et al. J. Am. Chem. Soc. 2020, 142, 9700. (heck-relay)
 - Wahlers, J. et al. Nat. Commun. 2021, 12, 6508. (pd-allyl)
 - Wahlers, J. et al. J. Org. Chem. 2021, 86, 5660. (pd-conjugate)
-- Wahlers, J. Ph.D. Dissertation, Univ. of Notre Dame, 2022, Ch. 6. (rh-conjugate)
+- Wahlers, J. Ph.D. Dissertation, Univ. of Notre Dame, 2021, Ch. 6. (rh-conjugate)
 
 """
 
@@ -169,11 +169,11 @@ CHECK1_SPECS: dict[str, Check1Spec] = {
     ),
     "rh-conjugate": Check1Spec(
         key="rh-conjugate",
-        golden_name="rh_conjugate_wahlers2022.json",
+        golden_name="rh_conjugate_wahlers2021.json",
         n_molecules=10,
         metadata={
-            "paper": "Wahlers, J. Ph.D. Dissertation, University of Notre Dame, 2022, Ch. 6",
-            "doi": None,
+            "paper": "Wahlers, J. Ph.D. Dissertation, University of Notre Dame, 2021, Ch. 6",
+            "doi": "10.7274/k930bv76q4n",
             "system": "Rh-catalyzed 1,4-conjugate addition",
             "qm_level": "Wahlers dissertation Ch. 6 (Gaussian)",
         },

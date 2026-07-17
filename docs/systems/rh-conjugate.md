@@ -13,7 +13,7 @@ Rh 1,4-conjugate addition is the thesis-era Rh analogue of the Pd composed-force
 
 | Property | Value |
 |----------|-------|
-| **Thesis** | Wahlers, J. *Ph.D. Dissertation*, University of Notre Dame, 2022, Ch. 6 |
+| **Thesis** | Wahlers, J. *Ph.D. Dissertation*, University of Notre Dame, 2021, Ch. 6 ([record](https://doi.org/10.7274/k930bv76q4n)) |
 | **DOI** | — |
 | **System** | Rh-catalyzed 1,4-conjugate addition |
 | **Training set** | 10 transition-state structures |
@@ -169,4 +169,4 @@ q2mm-benchmark matrix --system rh-conjugate --backend jax --optimizer optax-adam
 Raw data:
 [`q2mm-data/benchmarks/rh-1,4-conjugate-addition/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-1,4-conjugate-addition).
 
-[^thesis]: Wahlers, J. *Ph.D. Dissertation*, University of Notre Dame, 2022, Ch. 6. The chapter-level ranges are also summarized in [Published FF Validation](../benchmarks/published-ff-validation.md).
+[^thesis]: Wahlers, J. *Ph.D. Dissertation*, University of Notre Dame, 2021, Ch. 6. The source and developmental claim boundary are summarized in [Publication Reproduction Coverage](../benchmarks/published-ff-validation.md).

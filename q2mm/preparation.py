@@ -23,7 +23,7 @@ from q2mm.backends.contracts import (
 )
 from q2mm.models.forcefield import ForceField, FunctionalForm
 from q2mm.models.molecule import Molecule
-from q2mm.models.observations import ObservationSet
+from q2mm.models.observations import ObservationSet, observation_payload
 from q2mm.models.parameters import (
     ActiveParameterSpace,
     ParameterLayout,
@@ -298,20 +298,7 @@ def _parameter_counts(
 
 
 def _observation_payload(observations: ObservationSet) -> list[dict[str, object]]:
-    return [
-        {
-            "kind": observation.kind,
-            "value": float(observation.value),
-            "weight": float(observation.weight),
-            "label": observation.label,
-            "case_id": observation.case_id,
-            "data_idx": int(observation.data_idx),
-            "atom_indices": None
-            if observation.atom_indices is None
-            else [int(index) for index in observation.atom_indices],
-        }
-        for observation in observations.values
-    ]
+    return [observation_payload(observation) for observation in observations.values]
 
 
 def _matched_observations(

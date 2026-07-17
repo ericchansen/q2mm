@@ -443,7 +443,7 @@ def test_benchmarks_is_the_composition_root() -> None:
 # ---------------------------------------------------------------------------
 
 _EXPECTED_SYSTEM_KEYS = frozenset(
-    {"ch3f", "ch3f-sn2", "rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate"}
+    {"ch3f", "ch3f-sn2", "rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate", "ferrocene"}
 )
 
 

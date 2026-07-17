@@ -101,6 +101,26 @@ class TestOpenMMBackend:
             EnergyRequest(parameters=param_vector(forcefield))
         ).energy == pytest.approx(expected)
 
+    def test_explicit_nonbonded_excluded_atom_type_has_zero_center(self) -> None:
+        molecule = Molecule(
+            symbols=("Ne", "He"),
+            geometry=np.array([[0.0, 0.0, 0.0], [3.5, 0.0, 0.0]]),
+            atom_types=("X", "He"),
+            bonds=(),
+            angles=(),
+            torsions=(),
+        )
+        forcefield = ForceField(
+            vdws=[VdwParam("X", radius=3.0, epsilon=1.0), VdwParam("He", radius=1.2, epsilon=0.02)],
+            functional_form=FunctionalForm.MM3,
+            nonbonded_excluded_atom_types=("X",),
+        )
+
+        result = prepare_case(self.backend, molecule, forcefield).energy(
+            EnergyRequest(parameters=param_vector(forcefield))
+        )
+        assert result.energy == pytest.approx(0.0)
+
     def test_prepared_session_reuses_native_state(self) -> None:
         molecule = make_diatomic(distance=1.00)
         initial_ff = ForceField(

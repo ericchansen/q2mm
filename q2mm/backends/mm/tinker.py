@@ -234,6 +234,11 @@ class TinkerBackend:
         """
         if request.force_field is None:
             raise PreparationError("Tinker requires a base ForceField in the PreparationRequest.")
+        if request.force_field.nonbonded_excluded_atom_types:
+            raise PreparationError(
+                "Tinker cannot represent ForceField.nonbonded_excluded_atom_types; "
+                "use a backend with explicit zero-center support."
+            )
         _validate_form(request.force_field, _TINKER_INFO)
         layout = ParameterLayout.from_force_field(request.force_field)
         return PreparedTinker(

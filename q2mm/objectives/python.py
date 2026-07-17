@@ -32,6 +32,7 @@ from q2mm.backends.contracts import (
     Backend,
     Capability,
     EnergyRequest,
+    EnergyUnit,
     FrequencyRequest,
     HessianJacobianRequest,
     HessianRequest,
@@ -42,16 +43,33 @@ from q2mm.backends.contracts import (
     UnsupportedCapabilityError,
 )
 from q2mm.models.forcefield import ForceField
-from q2mm.models.observations import Observation
+from q2mm.models.observations import (
+    Observation,
+    ParameterTetherObservation,
+    RelativeEnergyObservation,
+    ThermodynamicQuantity,
+    energy_conversion_from_kcal_per_mol,
+)
 from q2mm.objectives._base import BaseObjectiveExecutor
 from q2mm.objectives._observables import extract_calc_value, geometry_computed
 from q2mm.objectives.plan import KIND_TO_CATEGORY, ObjectivePlan
-from q2mm.objectives.protocols import GradientMode, ObjectiveGradientError
+from q2mm.objectives.protocols import (
+    GradientMode,
+    ObjectiveGradientError,
+    UnsupportedObservationError,
+)
 
 __all__ = ["PythonObjectiveExecutor"]
 
 _GEOMETRY_KINDS = frozenset({"bond_length", "bond_angle", "torsion_angle"})
 _EIGENMATRIX_KINDS = frozenset({"eig_diagonal", "eig_offdiagonal"})
+_UNSUPPORTED_KINDS = frozenset(
+    {
+        "atomic_partial_charge",
+        "direct_electrostatic_potential",
+        "scan_energy",
+    }
+)
 
 
 class PythonObjectiveExecutor(BaseObjectiveExecutor):
@@ -99,6 +117,7 @@ class PythonObjectiveExecutor(BaseObjectiveExecutor):
         self._prepared: dict[str, PreparedBackend] = {}
         self._qm_eigenvectors: dict[str, np.ndarray] = {}
 
+        self._validate_observation_support()
         if gradient_mode is GradientMode.ANALYTICAL:
             self._validate_analytical_support()
 
@@ -119,6 +138,25 @@ class PythonObjectiveExecutor(BaseObjectiveExecutor):
 
     # -- capability validation --------------------------------------------
 
+    def _validate_observation_support(self) -> None:
+        unsupported = {str(observation.kind) for observation in self._plan.observations.values} & _UNSUPPORTED_KINDS
+        if unsupported:
+            raise UnsupportedObservationError(
+                type(self).__name__,
+                unsupported,
+                "the MM backend contract exposes no calculated atomic-charge, direct-ESP, or constrained-scan result",
+            )
+        if any(
+            isinstance(observation, RelativeEnergyObservation)
+            and observation.quantity is ThermodynamicQuantity.ENTHALPY
+            for observation in self._plan.observations.values
+        ):
+            raise UnsupportedObservationError(
+                type(self).__name__,
+                {"relative_enthalpy"},
+                "the MM backend contract exposes potential energy, not thermochemical enthalpy",
+            )
+
     def _validate_analytical_support(self) -> None:
         categories = self._plan.categories
         info = self._backend.info
@@ -128,7 +166,7 @@ class PythonObjectiveExecutor(BaseObjectiveExecutor):
                 "(bond_length/bond_angle/torsion_angle) through the Python executor. "
                 "Use a JaxObjectiveExecutor for differentiable geometry, or request finite differences."
             )
-        if "energy" in categories and not info.supports(Capability.PARAMETER_GRADIENT):
+        if categories & {"energy", "relative_energy"} and not info.supports(Capability.PARAMETER_GRADIENT):
             raise ObjectiveGradientError(
                 f"Backend {info.name!r} does not declare PARAMETER_GRADIENT; "
                 "analytical energy gradients are unavailable."
@@ -212,15 +250,43 @@ class PythonObjectiveExecutor(BaseObjectiveExecutor):
     def _calculated(self, full_vector: np.ndarray) -> np.ndarray:
         observations = self._plan.observations.values
         by_case: dict[str, list[int]] = defaultdict(list)
+        relative_indices: list[int] = []
+        tether_indices: list[int] = []
         for gi, obs in enumerate(observations):
-            by_case[obs.case_id].append(gi)
+            if isinstance(obs, RelativeEnergyObservation):
+                relative_indices.append(gi)
+            elif isinstance(obs, ParameterTetherObservation):
+                tether_indices.append(gi)
+            else:
+                by_case[obs.case_id].append(gi)
 
         calc = np.empty(len(observations), dtype=float)
+        energy_cache: dict[str, float] = {}
+
+        def case_energy(case_id: str) -> float:
+            if case_id not in energy_cache:
+                result = self._prepared_for(case_id).energy(EnergyRequest(parameters=full_vector))
+                if result.unit is not EnergyUnit.KCAL_PER_MOL:
+                    raise ValueError("MM relative-energy evaluation requires canonical kcal/mol backend results.")
+                energy_cache[case_id] = float(result.energy)
+            return energy_cache[case_id]
+
+        for gi in relative_indices:
+            observation = observations[gi]
+            assert isinstance(observation, RelativeEnergyObservation)
+            delta_kcal = case_energy(observation.case_id) - case_energy(observation.reference_case_id)
+            calc[gi] = delta_kcal * energy_conversion_from_kcal_per_mol(observation.unit)
+        for gi in tether_indices:
+            observation = observations[gi]
+            assert isinstance(observation, ParameterTetherObservation)
+            calc[gi] = float(full_vector[self._plan.layout.index_of(observation.parameter_id)])
         for case_id, indices in by_case.items():
             needed: set[str] = {str(observations[gi].kind) for gi in indices}
             computed = self._compute_case(case_id, full_vector, needed)
             for gi in indices:
-                calc[gi] = extract_calc_value(computed, observations[gi])
+                observation = observations[gi]
+                assert isinstance(observation, Observation)
+                calc[gi] = extract_calc_value(computed, observation)
         return calc
 
     # -- analytical gradient ----------------------------------------------
@@ -230,9 +296,32 @@ class PythonObjectiveExecutor(BaseObjectiveExecutor):
         n_params = self._plan.n_params
         total = np.zeros(n_params, dtype=float)
 
+        gradient_cache: dict[str, tuple[float, np.ndarray]] = {}
+
+        def case_energy_gradient(case_id: str) -> tuple[float, np.ndarray]:
+            if case_id not in gradient_cache:
+                prepared = self._prepared_for(case_id)
+                if not prepared.info.supports(Capability.PARAMETER_GRADIENT):
+                    raise UnsupportedCapabilityError(prepared.info.name, Capability.PARAMETER_GRADIENT)
+                result = prepared.parameter_gradient(ParameterGradientRequest(parameters=full_vector))
+                gradient_cache[case_id] = (float(result.energy), np.asarray(result.gradient))
+            return gradient_cache[case_id]
+
         by_case_category: dict[str, dict[str, list[Observation]]] = defaultdict(lambda: defaultdict(list))
         for obs in observations:
-            by_case_category[obs.case_id][KIND_TO_CATEGORY[obs.kind]].append(obs)
+            if isinstance(obs, RelativeEnergyObservation):
+                case_energy, case_gradient = case_energy_gradient(obs.case_id)
+                reference_energy, reference_gradient = case_energy_gradient(obs.reference_case_id)
+                factor = energy_conversion_from_kcal_per_mol(obs.unit)
+                calculated = factor * (case_energy - reference_energy)
+                derivative = factor * (case_gradient - reference_gradient)
+                total += -2.0 * obs.weight**2 * (obs.value - calculated) * derivative
+            elif isinstance(obs, ParameterTetherObservation):
+                index = self._plan.layout.index_of(obs.parameter_id)
+                total[index] += -2.0 * obs.weight**2 * (obs.value - full_vector[index])
+            else:
+                assert isinstance(obs, Observation)
+                by_case_category[obs.case_id][KIND_TO_CATEGORY[obs.kind]].append(obs)
 
         for case_id, cats in by_case_category.items():
             prepared = self._prepared_for(case_id)

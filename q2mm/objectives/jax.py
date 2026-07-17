@@ -28,10 +28,17 @@ import numpy as np
 
 from q2mm.backends.contracts import PreparationRequest
 from q2mm.models.forcefield import ForceField
+from q2mm.models.observations import (
+    Observation,
+    ParameterTetherObservation,
+    RelativeEnergyObservation,
+    ThermodynamicQuantity,
+    energy_conversion_from_kcal_per_mol,
+)
 from q2mm.objectives._base import BaseObjectiveExecutor
 from q2mm.objectives._observables import extract_calc_value, geometry_computed
 from q2mm.objectives.plan import ObjectivePlan
-from q2mm.objectives.protocols import GradientMode
+from q2mm.objectives.protocols import GradientMode, UnsupportedObservationError
 
 if TYPE_CHECKING:
     from q2mm.backends.mm.jax_engine import JaxBackend, PreparedJax
@@ -46,6 +53,13 @@ _GEOM_INNER_MAXITER = 500
 
 _GEOMETRY_KINDS = frozenset({"bond_length", "bond_angle", "torsion_angle"})
 _EIG_KINDS = frozenset({"eig_diagonal", "eig_offdiagonal"})
+_UNSUPPORTED_KINDS = frozenset(
+    {
+        "atomic_partial_charge",
+        "direct_electrostatic_potential",
+        "scan_energy",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -226,6 +240,23 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
         self._compiled_reg_vag_fn: Callable | None = None
         self._case_meta: dict[str, dict[str, Any]] = {}
         self._hess_fns: dict[str, Callable] = {}
+        unsupported = {str(observation.kind) for observation in plan.observations.values} & _UNSUPPORTED_KINDS
+        if unsupported:
+            raise UnsupportedObservationError(
+                type(self).__name__,
+                unsupported,
+                "the JAX MM contract exposes no calculated atomic-charge, direct-ESP, or constrained-scan result",
+            )
+        if any(
+            isinstance(observation, RelativeEnergyObservation)
+            and observation.quantity is ThermodynamicQuantity.ENTHALPY
+            for observation in plan.observations.values
+        ):
+            raise UnsupportedObservationError(
+                type(self).__name__,
+                {"relative_enthalpy"},
+                "the JAX MM contract exposes potential energy, not thermochemical enthalpy",
+            )
         self._build()
 
     @property
@@ -273,8 +304,15 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
 
         # Group observations by case (case order).
         refs_by_case: dict[str, list] = {cid: [] for cid in plan.case_ids}
+        relative_refs: list[RelativeEnergyObservation] = []
+        tether_refs: list[ParameterTetherObservation] = []
         for obs in plan.observations.values:
-            refs_by_case[obs.case_id].append(obs)
+            if isinstance(obs, RelativeEnergyObservation):
+                relative_refs.append(obs)
+            elif isinstance(obs, ParameterTetherObservation):
+                tether_refs.append(obs)
+            else:
+                refs_by_case[obs.case_id].append(obs)
 
         entries: list[dict] = []
         for case_id in plan.case_ids:
@@ -457,6 +495,43 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
             if entry["has_geom"]:
                 loss_fns.append(_make_geom_loss(entry))
 
+        def _make_relative_loss(observation: RelativeEnergyObservation) -> Callable:
+            case_index = plan.case_index(observation.case_id)
+            reference_index = plan.case_index(observation.reference_case_id)
+            case_session = self._prepared_for(observation.case_id)
+            reference_session = self._prepared_for(observation.reference_case_id)
+            case_energy_fn = case_session._energy_kernel()
+            reference_energy_fn = reference_session._energy_kernel()
+            case_coords = jnp.array(plan.molecules[case_index].geometry, dtype=jnp.float64)
+            reference_coords = jnp.array(plan.molecules[reference_index].geometry, dtype=jnp.float64)
+            conversion = jnp.float64(energy_conversion_from_kcal_per_mol(observation.unit))
+            reference_value = jnp.float64(observation.value)
+            weight = jnp.float64(observation.weight)
+
+            def _loss(params):  # noqa: ANN001, ANN202
+                calculated = conversion * (
+                    case_energy_fn(params, case_coords) - reference_energy_fn(params, reference_coords)
+                )
+                residual = weight * (reference_value - calculated)
+                return residual**2
+
+            return _loss
+
+        loss_fns.extend(_make_relative_loss(observation) for observation in relative_refs)
+        if tether_refs:
+            tether_indices = jnp.array(
+                [plan.layout.index_of(observation.parameter_id) for observation in tether_refs],
+                dtype=jnp.int32,
+            )
+            tether_values = jnp.array([observation.value for observation in tether_refs], dtype=jnp.float64)
+            tether_weights = jnp.array([observation.weight for observation in tether_refs], dtype=jnp.float64)
+
+            def _tether_loss(params):  # noqa: ANN001, ANN202
+                residuals = tether_weights * (tether_values - params[tether_indices])
+                return jnp.sum(residuals**2)
+
+            loss_fns.append(_tether_loss)
+
         self._compiled_value_fns = [jax.jit(fn) for fn in loss_fns]
         self._compiled_vag_fns = [jax.jit(jax.value_and_grad(fn)) for fn in loss_fns]
 
@@ -528,11 +603,37 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
 
         observations = self._plan.observations.values
         by_case: dict[str, list[int]] = defaultdict(list)
+        relative_indices: list[int] = []
+        tether_indices: list[int] = []
         for gi, obs in enumerate(observations):
-            by_case[obs.case_id].append(gi)
+            if isinstance(obs, RelativeEnergyObservation):
+                relative_indices.append(gi)
+            elif isinstance(obs, ParameterTetherObservation):
+                tether_indices.append(gi)
+            else:
+                by_case[obs.case_id].append(gi)
 
         calc = np.empty(len(observations), dtype=float)
         p = jnp.array(full_vector, dtype=jnp.float64)
+        energy_cache: dict[str, float] = {}
+
+        def case_energy(case_id: str) -> float:
+            if case_id not in energy_cache:
+                index = self._plan.case_index(case_id)
+                session = self._prepared_for(case_id)
+                coordinates = jnp.array(self._plan.molecules[index].geometry, dtype=jnp.float64)
+                energy_cache[case_id] = float(session._energy_kernel()(p, coordinates))
+            return energy_cache[case_id]
+
+        for gi in relative_indices:
+            observation = observations[gi]
+            assert isinstance(observation, RelativeEnergyObservation)
+            delta_kcal = case_energy(observation.case_id) - case_energy(observation.reference_case_id)
+            calc[gi] = delta_kcal * energy_conversion_from_kcal_per_mol(observation.unit)
+        for gi in tether_indices:
+            observation = observations[gi]
+            assert isinstance(observation, ParameterTetherObservation)
+            calc[gi] = float(full_vector[self._plan.layout.index_of(observation.parameter_id)])
 
         for case_id, indices in by_case.items():
             needed: set[str] = {str(observations[gi].kind) for gi in indices}
@@ -565,5 +666,7 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
                 computed.update(geometry_computed(mol, relaxed, needed))
 
             for gi in indices:
-                calc[gi] = extract_calc_value(computed, observations[gi])
+                observation = observations[gi]
+                assert isinstance(observation, Observation)
+                calc[gi] = extract_calc_value(computed, observation)
         return calc

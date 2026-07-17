@@ -5,7 +5,9 @@ Heck relay is a strong negative reproduction case: the published Pd-catalyzed as
 ## Scope
 
 - Type: Transition state (Pd-catalyzed asymmetric Heck reaction)
-- Molecules: 23 TS structures (paper reports 24; one is excluded from our training set)
+- Molecules: 23 deposited TS structures; the 24-case source description is
+  missing only `prrts1` from the recovered archive
+  ([Rosales dissertation](https://doi.org/10.7274/rj430290902))
 - Parameters: 462 active OPT parameters (overlay on a standard MM3 base of ~2,500 frozen parameters; total ~3,000)
 - QM reference: M06-GD3/LANL2DZ/6-31+G*
 

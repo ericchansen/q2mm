@@ -43,12 +43,17 @@ validation/supporting-info/
 | Chapter | Reaction System | FF File | Gaussian Logs | Freq Data | Publication |
 |---------|----------------|---------|---------------|-----------|-------------|
 | Ch 3 | Pd-allyl amination | `mm3.Pd-allyl.fld` (OPT-only, 238 lines) | 21 | 21/21 | Wahlers et al. *Nat. Commun.* **2021**, 12, 6508. [DOI: 10.1038/s41467-021-27065-2](https://doi.org/10.1038/s41467-021-27065-2) |
-| Ch 4 | Ferrocene scaffold | `mm3.ferrocene.fld` (OPT-only, 71 lines) | 178 | 99/178 | Wahlers et al. *J. Org. Chem.* **2022**, 87, 12334. [DOI: 10.1021/acs.joc.2c01553](https://doi.org/10.1021/acs.joc.2c01553) |
+| Ch 4 | Ferrocene scaffold | `mm3.ferrocene.fld` (OPT-only, 71 lines) | 7 primary training logs (`TS1`-`TS7`) | 7/7 | Wahlers et al. *J. Org. Chem.* **2022**, 87, 12334. [DOI: 10.1021/acs.joc.2c01553](https://doi.org/10.1021/acs.joc.2c01553) |
 | Ch 5 | Pd 1,4-conjugate addition | `mm3.Pd-1,4.fld` (OPT-only, 157 lines) | 318 | 216/318 | Wahlers et al. *J. Org. Chem.* **2021**, 86, 5660. [DOI: 10.1021/acs.joc.1c00136](https://doi.org/10.1021/acs.joc.1c00136) |
 | Ch 6 | Rh 1,4-conjugate addition | `mm3.Rh-1,4.fld` (OPT-only, 209 lines) | 10 | 10/10 | Thesis only |
 | Ch 7 | Ir-imine hydrogenation | `mm3.Ir-imine.fld` (OPT-only, 174 lines) | 24 | 24/24 | Thesis only |
 
 **DFT method**: M06/gen pseudo=read empiricaldispersion=GD3 freq=noraman
+
+The Chapter 4 archive contains additional validation and supporting calculations
+that remain part of the archive-wide totals below. The authoritative Ferrocene
+training directory itself contains exactly the seven `TS1`-`TS7` logs; the four
+published scan data sets are not present as numerical files.
 
 **Note**: Wahlers FF files are standalone OPT-substructure-only files. They
 need to be composed with the standard MM3 base (`validation/published_ffs/mm3_base.fld`)
@@ -60,7 +65,7 @@ plus metal-specific vdW entries to create a complete force field.
 |---------|----------------|------------|---------------|-----------|-------------|
 | Ch 3 | Redox-relay Heck | `mm3.FF1.fld`, `mm3.FF2.fld` (full MM3) | 81 | 57/81 | Rosales et al. *JACS* **2020**, 142, 9700. [DOI: 10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979) |
 | Ch 4 | Asymmetric transfer hydrogenation | `mm3.gasphase.fld`, `mm3.solvent.fld` (full MM3) | 198 | 198/198 | Rosales thesis |
-| Ch 5 | Ferrocene scaffold | 3× `mm3.fld` (full MM3, 3 contexts) | 67 | 28/67 | Overlaps with Wahlers Ch 4 |
+| Ch 5 | Historical Ferrocene variants | 3× `mm3.fld` (full MM3, 3 contexts) | 67 archived logs | 28/67 | Overlaps with Wahlers Ch 4 but is not the canonical seven-structure SDK profile |
 | Ch 6 | Vinylcyclopropane | — | 38 | 28/38 | Rosales thesis |
 | Ch 7 | Boronic acid (BCH₃) | — | 61 | 15/61 | Rosales thesis |
 | Ch 8 | HMG-CoA reductase | — (no FF) | 0 | 0 | Biochemistry, not Q2MM |

@@ -27,6 +27,7 @@ from pathlib import Path
 
 from q2mm.benchmarks.acceptance import AcceptancePolicy, CandidateStatus
 from q2mm.benchmarks.profiles import FUNCTIONAL_FORMS, OPTIMIZER_CATALOG, RunProfile
+from q2mm.benchmarks.publications import KNOWN_OBJECTIVE_PROFILES
 from q2mm.benchmarks.runner import RunOutcome, load_candidates, run_profiles
 
 __all__ = ["main"]
@@ -69,6 +70,10 @@ def _cmd_list(_args: argparse.Namespace) -> int:
     print("\nFunctional forms:")
     for form in FUNCTIONAL_FORMS:
         print(f"  {form}")
+
+    print("\nPublication objective profiles:")
+    for profile in sorted(KNOWN_OBJECTIVE_PROFILES):
+        print(f"  {profile}")
 
     print("\nOptimizers:")
     print(f"  {'KEY':<20} {'LABEL':<28} METHOD (evaluator)")
@@ -207,6 +212,7 @@ def _cmd_single(args: argparse.Namespace) -> int:
         backend=args.backend,
         functional_form=args.form,
         starting_point=args.starting_point,
+        objective_profile=args.objective_profile,
         workflow=args.workflow,
         optimizer=args.optimizer,
         skip_optimization=args.skip_optimization,
@@ -241,6 +247,7 @@ def _cmd_batch(args: argparse.Namespace) -> int:
             backend=args.backend,
             functional_form=args.form,
             starting_point=args.starting_point,
+            objective_profile=args.objective_profile,
             workflow=args.workflow,
             optimizer=args.optimizer,
             skip_optimization=args.skip_optimization,
@@ -286,6 +293,7 @@ def _cmd_matrix(args: argparse.Namespace) -> int:
             backend=backend,
             functional_form=form,
             starting_point=args.starting_point,
+            objective_profile=args.objective_profile,
             workflow="single-stage",
             optimizer=optimizer,
             skip_optimization=args.skip_optimization,
@@ -406,6 +414,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     single.add_argument("--workflow", default="single-stage", choices=("single-stage", "method-e2"), help="Workflow.")
     single.add_argument("--starting-point", default="qfuerza", choices=("qfuerza", "published"), help="Starting FF.")
+    single.add_argument(
+        "--objective-profile",
+        default=None,
+        choices=sorted(KNOWN_OBJECTIVE_PROFILES),
+        help="Publication objective/completeness profile (default: repository compatibility for publication systems).",
+    )
     single.add_argument("--skip-optimization", action="store_true", help="Compute baseline metrics only.")
     single.add_argument("--platform", default=None, help="OpenMM platform override.")
     single.add_argument("--output", type=Path, default=Path("results"), help="Output directory (default: ./results).")
@@ -428,6 +442,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     batch.add_argument("--workflow", default="method-e2", choices=("single-stage", "method-e2"), help="Workflow.")
     batch.add_argument("--starting-point", default="qfuerza", choices=("qfuerza", "published"), help="Starting FF.")
+    batch.add_argument(
+        "--objective-profile",
+        default=None,
+        choices=sorted(KNOWN_OBJECTIVE_PROFILES),
+        help="Publication objective/completeness profile (default: repository compatibility for publication systems).",
+    )
     batch.add_argument("--skip-optimization", action="store_true", help="Compute baseline metrics only.")
     batch.add_argument("--platform", default=None, help="OpenMM platform override.")
     batch.add_argument("--output", type=Path, default=Path("results"), help="Output directory (default: ./results).")
@@ -444,6 +464,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "--optimizer", action="append", choices=sorted(OPTIMIZER_CATALOG), help="Optimizer key (repeatable)."
     )
     matrix.add_argument("--starting-point", default="qfuerza", choices=("qfuerza", "published"), help="Starting FF.")
+    matrix.add_argument(
+        "--objective-profile",
+        default=None,
+        choices=sorted(KNOWN_OBJECTIVE_PROFILES),
+        help="Publication objective/completeness profile (default: repository compatibility for publication systems).",
+    )
     matrix.add_argument("--skip-optimization", action="store_true", help="Compute baseline metrics only.")
     matrix.add_argument("--platform", default=None, help="OpenMM platform override.")
     matrix.add_argument("--output", type=Path, default=Path("results"), help="Output directory (default: ./results).")

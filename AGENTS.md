@@ -30,7 +30,7 @@ repeatedly cited the wrong reference here.
 | Limé & Norrby 2014 (vol. 36, 2015) — "Improving the Q2MM method for transition state force field modeling", *J. Comput. Chem.* **36**, 244–250. | [10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797) | TS Hessian inversion (`invert_ts_curvature=True`) and Method E2.  See the "TS Hessian Inversion" warning below. |
 | Donoghue, Helquist, Norrby & Wiest 2008 — *J. Chem. Theory Comput.* **4**, 1313. | [10.1021/ct800132a](https://doi.org/10.1021/ct800132a) | Rh-enamide TSFF reference paper.  Governs `examples/rh-enamide/`, `load_rh_enamide`, and the 9-molecule benchmark system. |
 | Rosales, Helquist, Norrby & Wiest 2020 — *J. Am. Chem. Soc.* **142**, 9700. | [10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979) | Heck-relay TSFF reference paper.  Governs `load_heck_relay` and the 23-molecule benchmark system. |
-| Wahlers, *Ph.D. Dissertation*, University of Notre Dame, 2022. | (dissertation, no DOI) | pd-allyl, pd 1,4-conjugate-addition, rh 1,4-conjugate-addition TSFFs.  Governs `load_pd_allyl`, `load_pd_conjugate`, `load_rh_conjugate`. |
+| Wahlers, *Ph.D. Dissertation*, University of Notre Dame, 2021. | [10.7274/k930bv76q4n](https://doi.org/10.7274/k930bv76q4n) | pd-allyl, pd 1,4-conjugate-addition, rh 1,4-conjugate-addition TSFFs, plus the Chapter 4 Ferrocene GSFF. |
 
 **If you propose changes to the parametrization or loader code without
 having consulted Farrugia 2025, stop and read it first.** Many of the
@@ -257,12 +257,14 @@ python -c "import jax; print(jax.devices())"
 
 ### Reference Data and Objective Function
 
-For **publication reproduction** benchmarks (TS systems from the Q2MM
-literature), use `ObservationSet.from_molecules()` (`q2mm.models.observations`)
-to build the objective. This auto-populates bond lengths, bond angles, and
-Hessian eigenmatrix references from the QM training structures — matching
-the multi-target penalty function used in the published papers (Donoghue
-2008, Rosales 2020, Wahlers 2021/2022).
+For the frozen **repository compatibility objective**, use
+`ObservationSet.from_molecules()` (`q2mm.models.observations`). This
+auto-populates bond lengths, bond angles, and Hessian eigenmatrix references
+under `repository-geometry-eigenmatrix-v1`. That objective is a partial
+repository reproduction: the governing sources additionally use
+electrostatic, torsional, relative-energy/enthalpy, scan, or parameter-tether
+targets depending on the system. See
+[`validation/published_ffs/README.md`](validation/published_ffs/README.md).
 
 `_build_frequency_reference()` builds frequency-only references. This is
 appropriate for the CH₃F full-matrix benchmark and ground-state force
@@ -503,13 +505,14 @@ file, ~2,000 lines) and do not need composition.
    skip gracefully when files are absent.
 6. Document in `validation/published_ffs/README.md`.
 
-### Published FF validation status
+### Publication reproduction status
 
-See `validation/published_ffs/README.md` for the full table. As of April 2026:
-- **1 system validated** (Rh-enamide)
-- **4 systems ready to implement** (Heck, Pd-allyl, Pd 1,4-conj, Ferrocene)
-  — QM data available from dissertation supporting info
-- **3 systems blocked** (OsO₄, Ru ketone, Sulfone) — no QM training data
+See `validation/published_ffs/README.md` for the canonical source-linked table.
+As of July 2026, no row is an exact publication reproduction. Five existing
+publication systems retain their frozen partial objectives, the canonical
+Wahlers Chapter 4 Ferrocene seven-ground-state-structure profile is
+provisionable, and missing source categories/cases remain explicit blockers.
+OsO₄, Ru ketone, and sulfone remain blocked historical records.
 
 ---
 

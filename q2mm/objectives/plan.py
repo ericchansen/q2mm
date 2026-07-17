@@ -21,8 +21,15 @@ from types import MappingProxyType
 import numpy as np
 
 from q2mm.models.molecule import Molecule
-from q2mm.models.observations import Observation, ObservationSet
-from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.observations import (
+    AtomicPartialChargeObservation,
+    ObservationSet,
+    ObservationValue,
+    ParameterTetherObservation,
+    RelativeEnergyObservation,
+    ScanEnergyObservation,
+)
+from q2mm.models.parameters import ActiveParameterSpace, ParameterKind, ParameterLayout
 from q2mm.models.problem import OptimizationProblem, StationaryPointKind
 
 __all__ = ["ObjectivePlan", "KIND_TO_CATEGORY"]
@@ -41,6 +48,11 @@ KIND_TO_CATEGORY: MappingProxyType[str, str] = MappingProxyType(
         "eig_diagonal": "eigenmatrix",
         "eig_offdiagonal": "eigenmatrix",
         "hessian_element": "hessian",
+        "atomic_partial_charge": "electrostatics",
+        "direct_electrostatic_potential": "electrostatics",
+        "relative_energy": "relative_energy",
+        "scan_energy": "scan_energy",
+        "parameter_tether": "parameter_tether",
     }
 )
 
@@ -109,6 +121,21 @@ class ObjectivePlan:
                     f"Observation {obs.label!r} (kind={obs.kind!r}) references case_id={obs.case_id!r}, "
                     f"which is not among this plan's case IDs: {sorted(known)}."
                 )
+            if isinstance(obs, (RelativeEnergyObservation, ScanEnergyObservation)):
+                if obs.reference_case_id not in known:
+                    raise ValueError(
+                        f"Observation {obs.label!r} references unknown zero/reference case {obs.reference_case_id!r}."
+                    )
+            if isinstance(obs, AtomicPartialChargeObservation):
+                molecule = molecules[case_ids.index(obs.case_id)]
+                if obs.atom_index >= molecule.n_atoms:
+                    raise ValueError(
+                        f"Atomic charge atom_index={obs.atom_index} is out of range for case {obs.case_id!r}."
+                    )
+            if isinstance(obs, ScanEnergyObservation):
+                molecule = molecules[case_ids.index(obs.case_id)]
+                if any(index >= molecule.n_atoms for index in obs.coordinate.atom_indices):
+                    raise ValueError(f"Scan coordinate atom index is out of range for case {obs.case_id!r}.")
 
         n_full = len(self.layout)
         if self.active_space.layout != self.layout:
@@ -117,6 +144,25 @@ class ObjectivePlan:
             raise ValueError(
                 f"active_space baseline length ({self.active_space.n_full}) does not match layout length ({n_full})."
             )
+        equilibrium_kinds = {
+            ParameterKind.BOND_EQUILIBRIUM,
+            ParameterKind.ANGLE_EQUILIBRIUM,
+            ParameterKind.UREY_BRADLEY_EQUILIBRIUM,
+        }
+        for obs in self.observations.values:
+            if not isinstance(obs, ParameterTetherObservation):
+                continue
+            try:
+                index = self.layout.index_of(obs.parameter_id)
+            except KeyError as exc:
+                raise ValueError(f"Parameter tether {obs.label!r} references an unknown parameter slot.") from exc
+            slot = self.layout[index]
+            if slot.kind not in equilibrium_kinds:
+                raise ValueError("Parameter tethers are restricted to bond/angle/Urey-Bradley equilibrium slots.")
+            if slot.unit is not obs.unit:
+                raise ValueError(
+                    f"Parameter tether unit {obs.unit.value!r} does not match slot unit {slot.unit.value!r}."
+                )
 
         reg = float(self.regularization)
         if not np.isfinite(reg) or reg < 0:
@@ -161,7 +207,7 @@ class ObjectivePlan:
         """Set of evaluator categories present among the observations."""
         return frozenset(KIND_TO_CATEGORY[obs.kind] for obs in self.observations.values)
 
-    def observations_for_case(self, case_id: str) -> tuple[Observation, ...]:
+    def observations_for_case(self, case_id: str) -> tuple[ObservationValue, ...]:
         """Return the observations bound to *case_id*, in order."""
         return tuple(obs for obs in self.observations.values if obs.case_id == case_id)
 

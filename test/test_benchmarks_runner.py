@@ -10,6 +10,7 @@ including a deterministic rejection that still preserves its full result.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -292,6 +293,35 @@ class TestPersistence:
         assert loaded.status is CandidateStatus.ERROR
         assert loaded.summary["error"] == "boom"
 
+    def test_candidate_record_surfaces_publication_status_and_profile(self) -> None:
+        profile = RunProfile(system="rh-enamide", functional_form="harmonic", starting_point="published")
+        objective_profile = profile.effective_objective_profile
+        assert objective_profile is not None
+        publication = {
+            "status": "partial_repository_reproduction",
+            "objective_profile": {
+                "identifier": objective_profile,
+                "name": "repository-geometry-eigenmatrix",
+                "version": 1,
+            },
+        }
+        resolved = dataclasses.replace(
+            _resolved(profile),
+            data_provenance={"publication_metadata": publication},
+        )
+        candidate = CandidateResult(
+            candidate_id=resolved.candidate_id(),
+            status=CandidateStatus.SKIPPED,
+            reason="provenance-only",
+            profile=profile,
+            resolved=resolved,
+        )
+
+        record = candidate.record()
+        assert record["resolved"]["reproduction_status"] == "partial_repository_reproduction"  # type: ignore[index]
+        assert record["resolved"]["objective_profile"] == objective_profile  # type: ignore[index]
+        assert record["resolved"]["publication_metadata"] == publication  # type: ignore[index]
+
 
 class TestPromotion:
     def test_refuses_non_accepted(self, tmp_path: Path) -> None:
@@ -510,6 +540,33 @@ class TestRunProfileClassification:
         assert cand.status is CandidateStatus.SKIPPED
         assert "does not support" in cand.reason
 
+    def test_known_blocked_publication_profile_is_error_not_skip_success(self) -> None:
+        from q2mm.backends.contracts import BackendInfo, BackendProvenance, BackendRole
+        from q2mm.benchmarks.publications import FERROCENE_EXACT_SCAN_PROFILE
+
+        class _FakeBackend:
+            info = BackendInfo(
+                name="fake",
+                role=BackendRole.MM,
+                functional_forms=frozenset({"mm3"}),
+                provenance=BackendProvenance(backend="fake", role=BackendRole.MM),
+            )
+
+        profile = RunProfile(
+            system="ferrocene",
+            backend="fake",
+            functional_form="mm3",
+            starting_point="published",
+            objective_profile=FERROCENE_EXACT_SCAN_PROFILE,
+            optimizer="scipy-lbfgsb",
+        )
+        candidate = run_profile(profile, backend=_FakeBackend(), analyze=False)  # type: ignore[arg-type]
+
+        assert candidate.status is CandidateStatus.ERROR
+        assert candidate.summary["blocked"] is True
+        assert candidate.summary["reproduction_status"] == "blocked_historical_record"
+        assert candidate.summary["objective_profile"] == FERROCENE_EXACT_SCAN_PROFILE
+
 
 class TestRunOutcomeOk:
     def test_skips_only_is_ok(self) -> None:
@@ -609,6 +666,7 @@ class TestRunProfilePipeline:
         roots = cand.resolved.resolved_data_roots
         assert roots.get("ch3f")
         assert _Path(roots["ch3f"]).resolve() == sn2_reference_dir().expanduser().resolve()
+        assert cand.resolved.to_dict()["objective_profile"] == "matched-frequency-v1"
 
     def test_single_batch_matrix_share_result_model(self) -> None:
         single = run_profiles(
