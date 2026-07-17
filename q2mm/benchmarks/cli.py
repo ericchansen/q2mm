@@ -52,7 +52,7 @@ def _cmd_list(_args: argparse.Namespace) -> int:
     print("\nBackends (cheap probe, no device init):")
     for status in catalog(role=BackendRole.MM):
         desc = status.descriptor
-        forms = ", ".join(sorted(desc.info.functional_forms)) or "n/a"
+        forms = ", ".join(sorted(desc.functional_form_ceiling)) or "n/a"
         health = "available" if status.healthy else f"unavailable ({status.reason})"
         print(f"  {desc.name:<14} {health}  [forms: {forms}]")
 

@@ -814,7 +814,13 @@ class JaxBackend:
         """Immutable capability declaration for this backend."""
         device = jax.default_backend()
         provenance = BackendProvenance(
-            backend="jax", role=BackendRole.MM, version=getattr(jax, "__version__", ""), detail=device
+            backend="jax",
+            role=BackendRole.MM,
+            version=getattr(jax, "__version__", ""),
+            details={
+                "implementation": {"name": "JAX", "version": getattr(jax, "__version__", "")},
+                "platform": {"backend": device},
+            },
         )
         return BackendInfo(
             name=f"JAX ({device})",

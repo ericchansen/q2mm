@@ -11,7 +11,7 @@ from q2mm.backends.registry import (
     BackendNotRegistered,
     available_backends,
     available_mm_backends,
-    available_qm_backends,
+    available_reference_backends,
     catalog,
     descriptors,
     get_descriptor,
@@ -27,8 +27,8 @@ class TestRegisteredDescriptors:
         names = set(registered_backends(role=BackendRole.MM))
         assert {"openmm", "tinker", "jax", "jax-md"} <= names
 
-    def test_qm_backend_registered(self) -> None:
-        assert "psi4" in registered_backends(role=BackendRole.QM)
+    def test_reference_backend_registered(self) -> None:
+        assert "psi4" in registered_backends(role=BackendRole.REFERENCE)
 
     def test_registered_backends_has_all(self) -> None:
         names = set(registered_backends())
@@ -43,9 +43,49 @@ class TestRegisteredDescriptors:
         from q2mm.backends.contracts import Capability
 
         descs = descriptors()
-        assert Capability.BATCHED_HESSIAN in descs["jax"].info.capabilities
+        assert Capability.BATCHED_HESSIAN in descs["jax"].capability_ceiling
         for name in ("jax-md", "openmm", "tinker", "psi4"):
-            assert Capability.BATCHED_HESSIAN not in descs[name].info.capabilities, name
+            assert Capability.BATCHED_HESSIAN not in descs[name].capability_ceiling, name
+
+    def test_builtin_capability_ceilings_preserve_scientific_declarations(self) -> None:
+        expected = {
+            "openmm": {
+                "energy",
+                "minimize",
+                "hessian",
+                "frequencies",
+                "parameter_gradient",
+                "reusable_state",
+            },
+            "tinker": {"energy", "minimize", "hessian", "frequencies"},
+            "jax": {
+                "energy",
+                "minimize",
+                "hessian",
+                "frequencies",
+                "parameter_gradient",
+                "hessian_parameter_jacobian",
+                "batched_energy",
+                "batched_hessian",
+                "reusable_state",
+            },
+            "jax-md": {
+                "energy",
+                "minimize",
+                "hessian",
+                "frequencies",
+                "parameter_gradient",
+                "batched_energy",
+                "reusable_state",
+            },
+            "psi4": {"energy", "hessian", "frequencies", "geometry_optimization"},
+        }
+        actual = {
+            name: {capability.value for capability in descriptor.capability_ceiling}
+            for name, descriptor in descriptors().items()
+            if name in expected
+        }
+        assert actual == expected
 
 
 class TestAvailability:
@@ -57,8 +97,13 @@ class TestAvailability:
     def test_available_mm_subset(self) -> None:
         assert set(available_mm_backends()) <= set(available_backends())
 
-    def test_available_qm_subset(self) -> None:
-        assert set(available_qm_backends()) <= set(available_backends())
+    def test_available_reference_subset(self) -> None:
+        assert set(available_reference_backends()) <= set(available_backends())
+
+    def test_no_pre_v1_available_qm_alias(self) -> None:
+        import q2mm.backends.registry as registry
+
+        assert not hasattr(registry, "available_qm_backends")
 
     def test_available_sorted(self) -> None:
         result = available_backends()
@@ -114,40 +159,42 @@ class TestDescriptorValidation:
         assert ":" in desc.factory
 
     def test_descriptor_rejects_bad_factory(self) -> None:
-        from q2mm.backends.contracts import BackendDescriptor, BackendInfo, BackendProvenance
+        from q2mm.backends.contracts import BackendDescriptor
 
-        info = BackendInfo(
-            name="x", role=BackendRole.MM, provenance=BackendProvenance(backend="x", role=BackendRole.MM)
-        )
         with pytest.raises(ValueError):
-            BackendDescriptor(name="x", info=info, factory="missing_colon")
+            BackendDescriptor(
+                name="x",
+                role=BackendRole.MM,
+                capability_ceiling=frozenset(),
+                functional_form_ceiling=frozenset(),
+                factory="missing_colon",
+            )
 
     def test_descriptor_rejects_empty_name(self) -> None:
-        from q2mm.backends.contracts import BackendDescriptor, BackendInfo, BackendProvenance
+        from q2mm.backends.contracts import BackendDescriptor
 
-        info = BackendInfo(
-            name="x", role=BackendRole.MM, provenance=BackendProvenance(backend="x", role=BackendRole.MM)
-        )
-        # An empty descriptor name is rejected before the provenance-match check.
         with pytest.raises(ValueError):
-            BackendDescriptor(name="", info=info, factory="a:b")
+            BackendDescriptor(
+                name="",
+                role=BackendRole.MM,
+                capability_ceiling=frozenset(),
+                functional_form_ceiling=frozenset(),
+                factory="a:b",
+            )
 
     def test_descriptor_load_bad_attr_raises_config_error(self) -> None:
         from q2mm.backends.contracts import (
             BackendDescriptor,
-            BackendInfo,
-            BackendProvenance,
             DependencyProbe,
         )
 
         # Point at a real module but a missing attribute; probe passes (numpy
         # is installed) so load() reaches the attribute lookup.
-        info = BackendInfo(
-            name="fake", role=BackendRole.MM, provenance=BackendProvenance(backend="fake", role=BackendRole.MM)
-        )
         desc = BackendDescriptor(
             name="fake",
-            info=info,
+            role=BackendRole.MM,
+            capability_ceiling=frozenset(),
+            functional_form_ceiling=frozenset(),
             factory="numpy:ThisAttrDoesNotExist",
             probe=DependencyProbe(modules=("numpy",)),
         )
@@ -194,7 +241,7 @@ class GoodFakeBackend:
 
 
 class MismatchedCapsBackend:
-    """Runtime info declares different capabilities than its descriptor."""
+    """Runtime info overclaims capabilities beyond its descriptor."""
 
     def __init__(self, **kwargs: object) -> None:
         pass
@@ -220,6 +267,21 @@ class WrongProvenanceBackend:
             frozenset({Capability.ENERGY}),
             frozenset({"harmonic"}),
             prov_backend="something-else",
+        )
+
+    def prepare(self, request: object) -> _PreparedNoop:
+        return _PreparedNoop()
+
+
+class WrongRoleBackend:
+    """Runtime role differs from its MM descriptor."""
+
+    @property
+    def info(self) -> BackendInfo:
+        return BackendInfo(
+            name="wrong-role",
+            role=BackendRole.REFERENCE,
+            provenance=BackendProvenance(backend="wrong-role", role=BackendRole.REFERENCE),
         )
 
     def prepare(self, request: object) -> _PreparedNoop:
@@ -252,7 +314,9 @@ def _descriptor(
     info = _mk_info(name, caps, forms)
     return BackendDescriptor(
         name=name,
-        info=info,
+        role=info.role,
+        capability_ceiling=info.capabilities,
+        functional_form_ceiling=info.functional_forms,
         factory=factory,
         probe=probe if probe is not None else DependencyProbe(),
     )
@@ -266,7 +330,18 @@ class TestFactoryValidation:
         backend = desc.load()
         assert backend.info.provenance.backend == "good-fake"
 
-    def test_capabilities_mismatch_raises(self) -> None:
+    def test_runtime_exact_subset_of_ceilings_loads(self) -> None:
+        desc = _descriptor(
+            "good-fake",
+            "test.test_registry:GoodFakeBackend",
+            caps=frozenset({Capability.ENERGY, Capability.HESSIAN}),
+            forms=frozenset({"harmonic", "mm3"}),
+        )
+        backend = desc.load()
+        assert backend.info.capabilities == frozenset({Capability.ENERGY})
+        assert backend.info.functional_forms == frozenset({"harmonic"})
+
+    def test_capability_overclaim_raises(self) -> None:
         # Descriptor declares only ENERGY; runtime declares ENERGY+HESSIAN.
         desc = _descriptor("mismatch", "test.test_registry:MismatchedCapsBackend")
         with pytest.raises(BackendConfigurationError):
@@ -274,6 +349,16 @@ class TestFactoryValidation:
 
     def test_provenance_backend_mismatch_raises(self) -> None:
         desc = _descriptor("provwrong", "test.test_registry:WrongProvenanceBackend")
+        with pytest.raises(BackendConfigurationError):
+            desc.load()
+
+    def test_runtime_role_mismatch_raises(self) -> None:
+        desc = _descriptor(
+            "wrong-role",
+            "test.test_registry:WrongRoleBackend",
+            caps=frozenset(),
+            forms=frozenset(),
+        )
         with pytest.raises(BackendConfigurationError):
             desc.load()
 
@@ -288,7 +373,12 @@ class TestFactoryValidation:
         info = _mk_info("good-fake")
         with pytest.raises(ValueError):
             BackendDescriptor(
-                name="good-fake", info=info, factory="test.test_registry:GoodFakeBackend", api_version=999
+                name="good-fake",
+                role=info.role,
+                capability_ceiling=info.capabilities,
+                functional_form_ceiling=info.functional_forms,
+                factory="test.test_registry:GoodFakeBackend",
+                backend_api_version=999,
             )
 
 

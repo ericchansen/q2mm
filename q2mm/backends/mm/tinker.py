@@ -62,7 +62,11 @@ from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
 
 logger = logging.getLogger(__name__)
 
-_TINKER_PROVENANCE = BackendProvenance(backend="tinker", role=BackendRole.MM, detail="MM3")
+_TINKER_PROVENANCE = BackendProvenance(
+    backend="tinker",
+    role=BackendRole.MM,
+    details={"implementation": {"name": "Tinker"}, "model": {"functional_form": "MM3"}},
+)
 _TINKER_INFO = BackendInfo(
     name="Tinker",
     role=BackendRole.MM,

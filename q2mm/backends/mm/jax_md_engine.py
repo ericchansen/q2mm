@@ -618,7 +618,11 @@ class JaxMdBackend:
             backend="jax-md",
             role=BackendRole.MM,
             version=getattr(jax, "__version__", ""),
-            detail=f"OPLSAA, {device}",
+            details={
+                "implementation": {"name": "JAX-MD", "jax_version": getattr(jax, "__version__", "")},
+                "model": {"identity": "OPLSAA"},
+                "platform": {"backend": device},
+            },
         )
         return BackendInfo(
             name=f"JAX-MD (OPLSAA, {device})",

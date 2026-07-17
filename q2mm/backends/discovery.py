@@ -47,10 +47,8 @@ from types import MappingProxyType
 from typing import Protocol, runtime_checkable
 
 from q2mm.backends.contracts import (
-    DESCRIPTOR_API_VERSION,
+    BACKEND_API_VERSION,
     BackendDescriptor,
-    BackendInfo,
-    BackendProvenance,
     BackendRole,
     Capability,
     DependencyProbe,
@@ -63,8 +61,18 @@ ENTRY_POINT_GROUP = "q2mm.backends"
 #: compatibility promise**: an unknown key is rejected as an invalid descriptor
 #: (see :func:`validate_manifest`) rather than silently ignored, so a typo or a
 #: forward-incompatible extension fails loudly instead of being misinterpreted.
-#: Genuinely newer descriptors are gated first by ``api_version``.
-MANIFEST_KEYS = frozenset({"api_version", "name", "role", "capabilities", "forms", "factory", "probe"})
+#: Genuinely newer descriptors are gated first by ``backend_api_version``.
+MANIFEST_KEYS = frozenset(
+    {
+        "backend_api_version",
+        "name",
+        "role",
+        "capability_ceiling",
+        "functional_form_ceiling",
+        "factory",
+        "probe",
+    }
+)
 
 #: Registry-key / entry-point-name grammar: ASCII alphanumeric start, then
 #: alphanumerics and ``.`` / ``_`` / ``-``.  Forbids slashes, whitespace, and
@@ -419,9 +427,10 @@ def validate_manifest(manifest: object, *, entry_point_name: str | None = None) 
     :class:`DiscoveryRecord` and keep every other descriptor intact.
 
     Args:
-        manifest: A JSON-safe mapping with keys ``api_version``, ``name``,
-            ``role``, ``capabilities``, ``forms``, ``factory``, and optional
-            ``probe``.  ``capabilities``/``forms`` default to empty.
+        manifest: A JSON-safe mapping with keys ``backend_api_version``,
+            ``name``, ``role``, ``capability_ceiling``,
+            ``functional_form_ceiling``, ``factory``, and optional ``probe``.
+            Both ceilings default to empty.
         entry_point_name: When the manifest is advertised by an entry point,
             the entry-point name it must agree with (both must be non-empty).
             ``None`` for built-ins (which supply their own name).
@@ -439,16 +448,16 @@ def validate_manifest(manifest: object, *, entry_point_name: str | None = None) 
 
     # 1. API-version gate first, so an incompatible plugin is classified before
     #    any other claim is inspected.
-    api_version = manifest.get("api_version")
-    if not isinstance(api_version, int) or isinstance(api_version, bool):
+    backend_api_version = manifest.get("backend_api_version")
+    if not isinstance(backend_api_version, int) or isinstance(backend_api_version, bool):
         return ManifestFailure(
             DiscoveryIssueKind.INVALID_DESCRIPTOR,
-            f"manifest 'api_version' must be an int; got {api_version!r}.",
+            f"manifest 'backend_api_version' must be an int; got {backend_api_version!r}.",
         )
-    if api_version != DESCRIPTOR_API_VERSION:
+    if backend_api_version != BACKEND_API_VERSION:
         return ManifestFailure(
             DiscoveryIssueKind.INCOMPATIBLE_API_VERSION,
-            f"manifest targets descriptor api_version {api_version}, this runtime is {DESCRIPTOR_API_VERSION}.",
+            f"manifest targets backend_api_version {backend_api_version}, this runtime is {BACKEND_API_VERSION}.",
         )
 
     # 1b. Unknown keys are rejected (this is an internal API with no
@@ -499,11 +508,11 @@ def validate_manifest(manifest: object, *, entry_point_name: str | None = None) 
         )
 
     # 4. Capabilities (empty by default; every value must be a Capability).
-    capability_strings = _as_str_sequence(manifest.get("capabilities", ()))
+    capability_strings = _as_str_sequence(manifest.get("capability_ceiling", ()))
     if capability_strings is None:
         return ManifestFailure(
             DiscoveryIssueKind.INVALID_CAPABILITY_CLAIM,
-            "manifest 'capabilities' must be a sequence of non-empty strings.",
+            "manifest 'capability_ceiling' must be a sequence of non-empty strings.",
         )
     capabilities: set[Capability] = set()
     valid_capabilities = {c.value for c in Capability}
@@ -514,13 +523,18 @@ def validate_manifest(manifest: object, *, entry_point_name: str | None = None) 
                 f"manifest declares unknown capability {value!r}; valid capabilities: {sorted(valid_capabilities)}.",
             )
         capabilities.add(Capability(value))
+    if role is BackendRole.MM and Capability.COORDINATE_GRADIENT in capabilities:
+        return ManifestFailure(
+            DiscoveryIssueKind.INVALID_CAPABILITY_CLAIM,
+            "manifest declares coordinate_gradient for an MM backend; coordinate gradients are reference-only.",
+        )
 
-    # 5. Functional forms (restricted to supported values; QM must be empty).
-    form_strings = _as_str_sequence(manifest.get("forms", ()))
+    # 5. Functional forms (restricted to supported values; reference must be empty).
+    form_strings = _as_str_sequence(manifest.get("functional_form_ceiling", ()))
     if form_strings is None:
         return ManifestFailure(
             DiscoveryIssueKind.INVALID_FUNCTIONAL_FORM_CLAIM,
-            "manifest 'forms' must be a sequence of non-empty strings.",
+            "manifest 'functional_form_ceiling' must be a sequence of non-empty strings.",
         )
     valid_forms = _functional_form_values()
     for value in form_strings:
@@ -529,10 +543,10 @@ def validate_manifest(manifest: object, *, entry_point_name: str | None = None) 
                 DiscoveryIssueKind.INVALID_FUNCTIONAL_FORM_CLAIM,
                 f"manifest declares unsupported functional form {value!r}; valid forms: {sorted(valid_forms)}.",
             )
-    if role is BackendRole.QM and form_strings:
+    if role is BackendRole.REFERENCE and form_strings:
         return ManifestFailure(
             DiscoveryIssueKind.INVALID_FUNCTIONAL_FORM_CLAIM,
-            "manifest declares functional forms for a QM backend (QM must declare none).",
+            "manifest declares a functional-form ceiling for a reference backend (reference must declare none).",
         )
 
     # 6. Factory import string (module:attr, resolvable by BackendDescriptor.load).
@@ -547,16 +561,17 @@ def validate_manifest(manifest: object, *, entry_point_name: str | None = None) 
     if isinstance(probe, ManifestFailure):
         return probe
 
-    # 8. Construct the descriptor (static provenance synthesized from name+role).
+    # 8. Construct the descriptor.
     try:
-        info = BackendInfo(
+        return BackendDescriptor(
             name=name,
             role=role,
-            capabilities=frozenset(capabilities),
-            functional_forms=frozenset(form_strings),
-            provenance=BackendProvenance(backend=name, role=role),
+            capability_ceiling=frozenset(capabilities),
+            functional_form_ceiling=frozenset(form_strings),
+            factory=factory,
+            probe=probe,
+            backend_api_version=backend_api_version,
         )
-        return BackendDescriptor(name=name, info=info, factory=factory, probe=probe, api_version=api_version)
     except ValueError as exc:  # defensive: any residual invariant violation
         return ManifestFailure(DiscoveryIssueKind.INVALID_DESCRIPTOR, f"invalid manifest: {exc}")
 

@@ -432,9 +432,12 @@ class TestRunProfileClassification:
 
         class _Desc:
             name = real.name
-            api_version = real.api_version
+            backend_api_version = real.backend_api_version
             factory = real.factory
-            info = real.info
+            role = real.role
+            capability_ceiling = real.capability_ceiling
+            functional_form_ceiling = real.functional_form_ceiling
+            probe = real.probe
 
             def is_available(self) -> tuple[bool, str]:
                 return False, "synthetic missing dependency"

@@ -438,8 +438,8 @@ assert "q2mm_fixture_backend.backend" not in sys.modules, "catalog imported impl
 # Descriptor fields / capabilities / forms are exactly what the manifest declared.
 desc = reg.get_descriptor("harmonic-fixture")
 assert desc.role.value == "mm", desc.role
-assert {c.value for c in desc.info.capabilities} == {"energy"}, desc.info.capabilities
-assert set(desc.info.functional_forms) == {"harmonic"}, desc.info.functional_forms
+assert {c.value for c in desc.capability_ceiling} == {"energy"}, desc.capability_ceiling
+assert set(desc.functional_form_ceiling) == {"harmonic"}, desc.functional_form_ceiling
 assert desc.factory == "q2mm_fixture_backend.backend:HarmonicFixtureBackend", desc.factory
 
 # Explicit load imports the implementation module.
