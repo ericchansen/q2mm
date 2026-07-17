@@ -157,6 +157,15 @@ _BUILTIN_MANIFESTS: tuple[dict[str, object], ...] = (
         "factory": "q2mm.backends.reference.qcengine:QCEngineBackend",
         "probe": {"modules": ["qcengine", "qcelemental"]},
     },
+    {
+        "backend_api_version": BACKEND_API_VERSION,
+        "name": "ase",
+        "role": "reference",
+        "capability_ceiling": ["energy", "coordinate_gradient"],
+        "functional_form_ceiling": [],
+        "factory": "q2mm.backends.reference.ase:ASEBackend",
+        "probe": {"modules": ["ase"]},
+    },
 )
 
 
