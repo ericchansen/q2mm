@@ -42,12 +42,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from q2mm.benchmarks.acceptance import AcceptanceDecision, AcceptancePolicy, CandidateStatus, improvement_percent
 from q2mm.benchmarks.profiles import RunProfile
+from q2mm._canonical import json_value
 from q2mm.constants import REAL_FREQUENCY_THRESHOLD
 from q2mm.models.results import deep_freeze
 from q2mm.objectives.metrics import category_metrics, category_stats
@@ -104,25 +105,7 @@ def sanitize_for_json(value: Any) -> Any:
     NumPy scalars/arrays become Python scalars/lists, and read-only
     mappings become plain dicts.
     """
-    if isinstance(value, Mapping):
-        return {str(k): sanitize_for_json(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [sanitize_for_json(v) for v in value]
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, float):
-        if math.isnan(value):
-            return "NaN"
-        if math.isinf(value):
-            return "Infinity" if value > 0 else "-Infinity"
-        return value
-    if isinstance(value, np.floating):
-        return sanitize_for_json(float(value))
-    if isinstance(value, np.integer):
-        return int(value)
-    if isinstance(value, np.ndarray):
-        return sanitize_for_json(value.tolist())
-    return value
+    return json_value(value, strict=False, coerce_keys=True)
 
 
 def _write_json_atomic(path: Path, payload: Mapping[str, Any]) -> None:
@@ -466,136 +449,23 @@ def result_to_dict(result: OptimizationResult) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-class _CyclingOptimizer:
-    """Adapter exposing ``optimize(evaluator, space)`` for the cycling loop."""
-
-    def __init__(self, **kwargs: Any) -> None:
-        self._kwargs = kwargs
-
-    def optimize(self, evaluator: Any, space: Any) -> OptimizationResult:
-        from q2mm.optimizers.cycling import OptimizationLoop
-
-        loop = OptimizationLoop(evaluator, space, verbose=False, **self._kwargs)
-        return loop.run()
-
-
 def resolve_optimizer(profile: RunProfile) -> tuple[Any, dict[str, Any]]:
-    """Build the optimizer and return it with the exact effective settings.
+    """Compatibility adapter over :mod:`q2mm.optimizers.catalog`."""
+    from q2mm.optimizers.catalog import optimizer_option_names, resolve_optimizer as _resolve
 
-    The settings dict records every value the optimizer was actually
-    constructed with (resolved defaults included), so provenance and the
-    running optimizer come from this one helper and can never disagree.
-    """
-    spec = profile.optimizer_spec
-    method = spec.method
-    extra = spec.extra
-    maxiter = profile.maxiter
-
-    if method in ("L-BFGS-B", "Nelder-Mead", "Powell"):
-        from q2mm.optimizers.scipy_opt import ScipyOptimizer
-
-        eff_maxiter = maxiter if maxiter is not None else 500
-        opt: Any = ScipyOptimizer(
-            method=method,
-            maxiter=eff_maxiter,
-            ftol=profile.ftol,
-            verbose=False,
-            fc_fraction=profile.fc_fraction,
-            eq_fraction=profile.eq_fraction,
-        )
-        settings = {
-            "kind": "scipy",
-            "method": method,
-            "maxiter": eff_maxiter,
-            "ftol": profile.ftol,
-            "eps": opt.eps,
-            "fc_fraction": profile.fc_fraction,
-            "eq_fraction": profile.eq_fraction,
-            "use_bounds": opt.use_bounds,
-        }
-        return opt, settings
-
-    if method == "cycling":
-        eff: dict[str, Any] = {
-            "max_params": profile.max_params,
-            "convergence": profile.convergence,
-            "max_cycles": profile.max_cycles,
-        }
-        # A profile-level maxiter caps both the full and simplex passes.
-        if maxiter is not None:
-            eff["full_maxiter"] = maxiter
-            eff["simp_maxiter"] = maxiter
-        if "full_method" in extra:
-            eff["full_method"] = extra["full_method"]
-        opt = _CyclingOptimizer(**eff)
-        return opt, {"kind": "cycling", **eff}
-
-    if method.startswith("optax:"):
-        from q2mm.optimizers.optax import OptaxOptimizer
-
-        eff_steps = maxiter if maxiter is not None else 2000
-        kw: dict[str, Any] = {
-            "optimizer": method.split(":", 1)[1],
-            "max_steps": eff_steps,
-            "learning_rate": profile.learning_rate,
-            "verbose": False,
-        }
-        if "schedule" in extra:
-            kw["schedule"] = extra["schedule"]
-        opt = OptaxOptimizer(**kw)
-        settings = {
-            "kind": "optax",
-            "optimizer": kw["optimizer"],
-            "max_steps": eff_steps,
-            "schedule": extra.get("schedule"),
-            "learning_rate": profile.learning_rate,
-        }
-        return opt, settings
-
-    if method.startswith("jaxopt:"):
-        from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-
-        eff_maxiter = maxiter if maxiter is not None else 200
-        opt = JaxOptOptimizer(method=method.split(":", 1)[1], maxiter=eff_maxiter, verbose=False)
-        return opt, {"kind": "jaxopt", "method": method.split(":", 1)[1], "maxiter": eff_maxiter}
-
-    if method.startswith("basinhopping"):
-        from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
-
-        eff_local = maxiter if maxiter is not None else 200
-        kw = {"verbose": False, "local_maxiter": eff_local, "seed": int(profile.seed)}
-        if "niter" in extra:
-            kw["niter"] = int(extra["niter"])
-        if "T" in extra:
-            kw["T"] = float(extra["T"])
-        opt = BasinHoppingOptimizer(**kw)
-        return opt, {
-            "kind": "basinhopping",
-            "local_maxiter": eff_local,
-            "niter": extra.get("niter"),
-            "T": extra.get("T"),
-            "seed": int(profile.seed),
-        }
-
-    if method.startswith("multi:"):
-        from q2mm.optimizers.multistart import MultiStartOptimizer
-        from q2mm.optimizers.scipy_opt import ScipyOptimizer
-
-        eff_inner = maxiter if maxiter is not None else 500
-        inner = ScipyOptimizer(method=method.split(":", 1)[1], maxiter=eff_inner, verbose=False)
-        kw = {"optimizer": inner, "verbose": False, "seed": int(profile.seed)}
-        if "n_starts" in extra:
-            kw["n_starts"] = int(extra["n_starts"])
-        opt = MultiStartOptimizer(**kw)
-        return opt, {
-            "kind": "multistart",
-            "inner_method": method.split(":", 1)[1],
-            "inner_maxiter": eff_inner,
-            "n_starts": extra.get("n_starts"),
-            "seed": int(profile.seed),
-        }
-
-    raise ValueError(f"Unknown optimizer method {method!r}.")
+    options = {
+        "maxiter": profile.maxiter,
+        "ftol": profile.ftol,
+        "fc_fraction": profile.fc_fraction,
+        "eq_fraction": profile.eq_fraction,
+        "learning_rate": profile.learning_rate,
+        "max_params": profile.max_params,
+        "max_cycles": profile.max_cycles,
+        "convergence": profile.convergence,
+        "seed": profile.seed,
+    }
+    allowed = optimizer_option_names(profile.optimizer_spec)
+    return _resolve(profile.optimizer_spec, {key: value for key, value in options.items() if key in allowed})
 
 
 def _build_evaluator_factory(backend: Backend, base_ff: ForceField, spec: Any) -> Any:
@@ -1076,13 +946,9 @@ def _expected_result_gradient(spec: Any) -> str:
       basinhopping) -> ``finite_difference`` (SciPy internal FD).
     - Derivative-free (Nelder-Mead / Powell) -> ``none``.
     """
-    if spec.evaluator == "jax":
-        return "analytical"
-    if spec.gradient_mode == "finite_difference":
-        return "finite_difference"
-    if spec.method in ("Nelder-Mead", "Powell"):
-        return "none"
-    return "finite_difference"
+    from q2mm.optimizers.catalog import expected_result_gradient
+
+    return expected_result_gradient(spec)
 
 
 def _execute(
@@ -1145,14 +1011,32 @@ def _execute(
         summary["skipped"] = True
         return _terminal(candidate_id, AcceptancePolicy.skipped(reason), profile, resolved, summary)
 
-    # ---- run the workflow (using the exact objects built at resolution) --
-    make_evaluator = _build_evaluator_factory(backend, initial_ff, spec)
+    # ---- run the workflow through the generic application boundary --------
+    from q2mm.application.optimization import execute_optimization
+    from q2mm.objectives.protocols import GradientMode
 
+    executor_kind: Literal["python", "jax"] = "jax" if spec.evaluator == "jax" else "python"
+    executor_gradient = (
+        GradientMode.ANALYTICAL
+        if executor_kind == "jax"
+        else GradientMode.FINITE_DIFFERENCE
+        if spec.gradient_mode == "finite_difference"
+        else GradientMode.NONE
+    )
     t0 = time.perf_counter()
-    result = workflow.run(problem, make_evaluator, optimizer, n_evals=profile.n_evals, regularization=regularization)
+    result, final_ff = execute_optimization(
+        problem,
+        backend,
+        optimizer,
+        workflow,
+        executor=executor_kind,
+        gradient_mode=executor_gradient,
+        fd_step=spec.fd_step,
+        n_evals=profile.n_evals,
+        regularization=regularization,
+    )
     elapsed = time.perf_counter() - t0
 
-    final_ff = layout.replace(initial_ff, result.final_params)
     final_vector = np.asarray(result.final_params, dtype=float)
 
     obj_final = PythonObjectiveExecutor(record_plan, backend, final_ff)
@@ -1244,15 +1128,12 @@ def _ff_extension(ff: ForceField) -> str:
 
 def _serialize_ff(ff: ForceField, path: Path) -> None:
     from q2mm.models.forcefield import FunctionalForm
+    from q2mm.application.persistence import save
 
     if ff.functional_form is FunctionalForm.MM3:
-        from q2mm.io.mm3 import save_mm3_fld
-
-        save_mm3_fld(ff, path)
+        save(ff, path, format="mm3_fld")
     elif ff.functional_form is FunctionalForm.HARMONIC:
-        from q2mm.io.amber import save_amber_frcmod
-
-        save_amber_frcmod(ff, path)
+        save(ff, path, format="amber_frcmod")
     else:
         raise ValueError(f"no force-field serializer for functional form {ff.functional_form!r}.")
 
