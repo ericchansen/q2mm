@@ -31,6 +31,14 @@ import logging
 from typing import Any
 
 from q2mm.models.results import CandidateRecord, OptimizationResult, StageRecord
+from q2mm.optimizers.catalog import (
+    OPTIMIZER_CATALOG,
+    OptimizerSpec,
+    expected_result_gradient,
+    optimizer_option_names,
+    optimizer_spec,
+    resolve_optimizer,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +46,12 @@ __all__ = [
     "OptimizationResult",
     "CandidateRecord",
     "StageRecord",
+    "OptimizerSpec",
+    "OPTIMIZER_CATALOG",
+    "expected_result_gradient",
+    "optimizer_option_names",
+    "optimizer_spec",
+    "resolve_optimizer",
     "available_optimizers",
     "get_optimizer",
 ]

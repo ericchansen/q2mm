@@ -215,7 +215,13 @@ q2mm/
 ├── resources.py          # Installed scientific-resource lookup and integrity checks
 ├── _jax_support.py       # Foundational lazy JAX import guard (has_jax/load_jax); shared by models.hessian and backends.mm._jax_common
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
-├── benchmarks/           # Benchmark systems, run profiles, acceptance, and the runner (composition root)
+├── application/          # Data-independent evaluate, optimize, and atomic save services
+│   ├── models.py        # Immutable resolved configuration + OptimizationRun/SavedOutput
+│   ├── evaluation.py    # Typed OptimizationProblem and reference-property evaluation
+│   ├── optimization.py  # Strict recipe/component resolution and generic execution
+│   └── persistence.py   # Semantic FF formats + deterministic run manifests
+│
+├── benchmarks/           # Benchmark systems, explicit profiles, acceptance, and publication persistence
 │   ├── cases.py         # BenchmarkCase wrapper around OptimizationProblem
 │   ├── profiles.py      # Immutable RunProfile + deterministic ResolvedProfile/provenance/fingerprint
 │   ├── acceptance.py    # Closed candidate-status vocabulary + the single no-progress decision
@@ -263,6 +269,7 @@ q2mm/
 │   └── metrics.py        # Shared residual, regularization, and category metric helpers
 │
 ├── optimizers/           # Parameter fitting machinery
+│   ├── catalog.py        # Generic optimizer specifications and strict construction
 │   ├── protocols.py      # Shared _Optimizer structural protocol
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
@@ -294,6 +301,12 @@ q2mm/
     ├── single_stage.py   # SingleStageWorkflow
     └── method_e2.py      # MethodE2Workflow (two-stage)
 ```
+
+`q2mm.application` depends on canonical models, backend contracts, objectives,
+optimizers, workflows, and format savers. It never imports benchmark systems or
+preparation code. Benchmark orchestration delegates generic execution and
+force-field serialization to the application layer, while retaining benchmark-
+specific profiles, acceptance decisions, candidate retention, and promotion.
 
 ### Release and scientific-data boundary
 
@@ -359,6 +372,11 @@ flowchart TD
         savers[Savers]
     end
 
+    subgraph Services["Services"]
+        app[q2mm.application]
+        bench[q2mm.benchmarks]
+    end
+
     constants --> units
     units --> IO
     units --> sem
@@ -387,6 +405,10 @@ flowchart TD
     IO --> mol
     IO --> obs
     IO --> ff
+    app --> plan
+    app --> scipy
+    app --> IO
+    bench --> app
 ```
 
 ---

@@ -32,15 +32,16 @@ Python's salted ``hash`` or dict iteration order.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
+from q2mm._canonical import canonical_fingerprint as _canonical_fingerprint
+from q2mm._canonical import canonical_json as _canonical_json
+from q2mm._canonical import json_value
 from q2mm.models.results import deep_freeze
+from q2mm.optimizers.catalog import OPTIMIZER_CATALOG, OptimizerSpec
 
 if TYPE_CHECKING:
     from q2mm.backends.contracts import BackendDescriptor, BackendInfo
@@ -70,29 +71,8 @@ __all__ = [
 
 
 def _jsonify(value: Any) -> Any:
-    """Coerce mappings/sequences/scalars to plain JSON-safe values.
-
-    Read-only mapping views become plain dicts; tuples/lists become lists;
-    non JSON-native scalars fall back to ``str``.  Used to render frozen
-    provenance structures for canonical serialization and on-disk output.
-    """
-    if isinstance(value, Mapping):
-        return {str(k): _jsonify(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [_jsonify(v) for v in value]
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, (str, int)):
-        return value
-    if isinstance(value, float):
-        # Encode non-finite floats as sentinels so JSON stays strict and the
-        # fingerprint is stable regardless of the platform's NaN payload.
-        if math.isnan(value):
-            return "NaN"
-        if math.isinf(value):
-            return "Infinity" if value > 0 else "-Infinity"
-        return value
-    return str(value)
+    """Render the benchmark's legacy permissive canonical JSON value."""
+    return json_value(value, strict=False, stringify_unknown=True, coerce_keys=True)
 
 
 def canonical_json(payload: Any) -> str:
@@ -101,13 +81,12 @@ def canonical_json(payload: Any) -> str:
     ASCII output, sorted object keys, fixed separators, ``allow_nan=False``
     — identical bytes across processes and ``PYTHONHASHSEED`` values.
     """
-    return json.dumps(_jsonify(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+    return _canonical_json(payload, strict=False, stringify_unknown=True, coerce_keys=True)
 
 
 def canonical_fingerprint(payload: Any) -> str:
     """Return ``sha256:<hex>`` over :func:`canonical_json` of *payload*."""
-    digest = hashlib.sha256(canonical_json(payload).encode("ascii")).hexdigest()
-    return f"sha256:{digest}"
+    return _canonical_fingerprint(payload, strict=False, stringify_unknown=True, coerce_keys=True)
 
 
 def _short(fingerprint: str) -> str:
@@ -149,133 +128,6 @@ WORKFLOWS: frozenset[str] = frozenset({"single-stage", "method-e2"})
 #: packaged-resource ``data_dir`` override; the others map to
 #: :class:`~q2mm.benchmarks.systems._paths.ExternalDataRoots` fields.
 DATA_ROOT_KEYS: frozenset[str] = frozenset({"ch3f", "rh_enamide", "supporting_info", "mm3_base"})
-
-
-# ---------------------------------------------------------------------------
-# Optimizer catalog
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True, eq=False)
-class OptimizerSpec:
-    """One entry in the optimizer catalog.
-
-    Attributes:
-        key: Stable CLI/profile slug (e.g. ``"scipy-lbfgsb-jax"``).
-        label: Human-readable leaderboard label.
-        method: Method string consumed by the runner's optimizer resolver
-            (e.g. ``"L-BFGS-B"``, ``"optax:adam"``, ``"cycling"``).
-        evaluator: ``"python"`` or ``"jax"`` — the objective executor kind.
-        gradient_mode: The evaluator's declared gradient mode
-            (``"analytical"`` for JAX, ``"none"`` for a Python executor that
-            leaves finite differences to the optimizer, or
-            ``"finite_difference"`` for a Python executor that computes its
-            own finite differences).
-        fd_step: Central finite-difference step for a
-            ``finite_difference`` Python executor (ignored otherwise).
-        extra: Deeply-frozen method-specific keyword arguments (e.g.
-            ``schedule``, ``n_starts``, ``regularization``).
-
-    """
-
-    key: str
-    label: str
-    method: str
-    evaluator: str
-    gradient_mode: str = "none"
-    fd_step: float = 1e-4
-    extra: Mapping[str, Any] = field(default_factory=dict)
-
-    def __post_init__(self) -> None:
-        if self.evaluator not in EVALUATORS:
-            raise ValueError(f"OptimizerSpec.evaluator must be one of {sorted(EVALUATORS)}, got {self.evaluator!r}.")
-        if self.gradient_mode not in GRADIENT_MODES:
-            raise ValueError(f"OptimizerSpec.gradient_mode must be one of {sorted(GRADIENT_MODES)}.")
-        if self.evaluator == "jax" and self.gradient_mode != "analytical":
-            raise ValueError("A JAX-executor optimizer must declare gradient_mode='analytical'.")
-        if not (math.isfinite(self.fd_step) and self.fd_step > 0.0):
-            raise ValueError(f"OptimizerSpec.fd_step must be positive and finite, got {self.fd_step!r}.")
-        object.__setattr__(self, "extra", deep_freeze(dict(self.extra)))
-
-    @property
-    def regularization(self) -> float:
-        """L2 regularization strength this optimizer requests (0 if none)."""
-        return float(self.extra.get("regularization", 0.0))
-
-
-def _spec(key: str, label: str, method: str, evaluator: str, *, gradient_mode: str, **extra: Any) -> OptimizerSpec:
-    return OptimizerSpec(
-        key=key, label=label, method=method, evaluator=evaluator, gradient_mode=gradient_mode, extra=extra
-    )
-
-
-#: The one catalog of optimizer configurations shared by runner and CLI.
-OPTIMIZER_CATALOG: Mapping[str, OptimizerSpec] = MappingProxyType(
-    {
-        spec.key: spec
-        for spec in (
-            _spec("scipy-lbfgsb", "SciPy L-BFGS-B (SciPy FD)", "L-BFGS-B", "python", gradient_mode="none"),
-            _spec("scipy-lbfgsb-jax", "SciPy L-BFGS-B (JAX grad)", "L-BFGS-B", "jax", gradient_mode="analytical"),
-            _spec(
-                "scipy-lbfgsb-fd",
-                "SciPy L-BFGS-B (executor FD)",
-                "L-BFGS-B",
-                "python",
-                gradient_mode="finite_difference",
-            ),
-            _spec("scipy-nm", "Nelder-Mead", "Nelder-Mead", "python", gradient_mode="none"),
-            _spec("scipy-powell", "Powell", "Powell", "python", gradient_mode="none"),
-            _spec("grad-simp", "Grad-Simp", "cycling", "python", gradient_mode="none"),
-            _spec("grad-simp-auto", "Grad-Simp (JAX grad)", "cycling", "jax", gradient_mode="analytical"),
-            _spec("optax-adam", "Optax Adam", "optax:adam", "jax", gradient_mode="analytical"),
-            _spec(
-                "optax-adam-cosine",
-                "Optax Adam+cosine",
-                "optax:adam",
-                "jax",
-                gradient_mode="analytical",
-                schedule="cosine",
-            ),
-            _spec("optax-adagrad", "Optax AdaGrad", "optax:adagrad", "jax", gradient_mode="analytical"),
-            _spec("optax-sgd", "Optax SGD", "optax:sgd", "jax", gradient_mode="analytical"),
-            _spec("basinhopping", "Basin-hopping (T=1.0)", "basinhopping", "python", gradient_mode="none", niter=25),
-            _spec(
-                "basinhopping-cold",
-                "Basin-hopping (T=0.5)",
-                "basinhopping",
-                "python",
-                gradient_mode="none",
-                niter=25,
-                T=0.5,
-            ),
-            _spec("multi-lbfgsb-5", "Multi-start n=5", "multi:L-BFGS-B", "python", gradient_mode="none", n_starts=5),
-            _spec("multi-lbfgsb-10", "Multi-start n=10", "multi:L-BFGS-B", "python", gradient_mode="none", n_starts=10),
-            _spec(
-                "scipy-lbfgsb-l2",
-                "SciPy L-BFGS-B+L2 (SciPy FD)",
-                "L-BFGS-B",
-                "python",
-                gradient_mode="none",
-                regularization=0.01,
-            ),
-            _spec(
-                "optax-adam-l2", "Optax Adam+L2", "optax:adam", "jax", gradient_mode="analytical", regularization=0.01
-            ),
-            _spec(
-                "jaxopt-lbfgs", "JaxOpt L-BFGS", "jaxopt:lbfgs", "jax", gradient_mode="analytical", regularization=0.01
-            ),
-            _spec("jaxopt-lbfgsb", "JaxOpt L-BFGS-B", "jaxopt:lbfgsb", "jax", gradient_mode="analytical"),
-            _spec(
-                "grad-simp-multi",
-                "Grad-Simp (multi inner)",
-                "cycling",
-                "python",
-                gradient_mode="none",
-                full_method="multi:L-BFGS-B",
-            ),
-        )
-    }
-)
 
 
 # ---------------------------------------------------------------------------
