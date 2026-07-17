@@ -26,13 +26,9 @@ static descriptor.  A load that fails is recorded as a typed discovery record;
 the catalog then reports that descriptor as unhealthy while healthy descriptors
 stay visible.
 
-.. warning::
-
-   This is an internal, unstable API and is documented as such until Milestone
-   PR 3.  The descriptor/manifest contract, the ``q2mm.backends`` entry-point
-   group, and the discovery-record vocabulary are not covered by semantic
-   versioning and carry no compatibility promise; they may change without
-   notice between Q2MM releases.
+The descriptor/manifest contract and ``q2mm.backends`` entry-point group are
+the stable public authoring surface for ``BACKEND_API_VERSION == 1``.
+Discovery records remain an advanced diagnostic surface.
 """
 
 from __future__ import annotations
@@ -192,7 +188,7 @@ def _ensure_snapshot() -> DiscoverySnapshot:
 
 
 def refresh() -> None:
-    """Discard the cached snapshot and load-failure overlay (internal).
+    """Discard the cached snapshot and load-failure overlay.
 
     Forces the next registry access to run a fresh discovery pass.  Use after
     installing a new plugin distribution, or in tests that inject entry points.
@@ -270,7 +266,7 @@ def registered_backends(*, role: BackendRole | None = None) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# Discovery records / report (internal, unstable accessors)
+# Advanced discovery diagnostics
 # ---------------------------------------------------------------------------
 
 
@@ -279,7 +275,7 @@ def discovery_records() -> tuple[DiscoveryRecord, ...]:
 
     The base snapshot records (built-in + entry-point outcomes) are merged with
     the load-failure overlay and returned in a deterministic order.  This is an
-    internal, unstable accessor for diagnostics and tests.
+    advanced accessor for diagnostics and tests.
     """
     snapshot = _ensure_snapshot()
     with _lock:
@@ -292,8 +288,8 @@ def discovery_records() -> tuple[DiscoveryRecord, ...]:
 def discovery_report() -> DiscoveryReport:
     """Return a :class:`~q2mm.backends.discovery.DiscoveryReport` over all records.
 
-    Internal, unstable accessor: exposes registered names and typed issues
-    (rejections, unavailability, load failures) for diagnostics and tests.
+    Exposes registered names and typed issues (rejections, unavailability,
+    load failures) for advanced diagnostics and tests.
     """
     return DiscoveryReport(records=discovery_records())
 

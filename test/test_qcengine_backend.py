@@ -32,13 +32,13 @@ from q2mm.backends.contracts import (
     ReferenceHessianRequest,
     UnsupportedCapabilityError,
 )
+from q2mm.backends.conformance import ReferenceConformanceCase, run_reference_conformance
 from q2mm.backends.reference.qcengine import (
     QCEngineBackend,
     QCEngineEvaluationError,
 )
 from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.molecule import Molecule
-from test._conformance import assert_reference_capability_conformance
 
 _PROGRAM = "q2mm-deterministic"
 _ENERGY = -1.25
@@ -401,11 +401,23 @@ def test_descriptor_runtime_and_reference_conformance(
         basis="deterministic-basis",
     )
     assert backend.info.capabilities == expected
-    outcome = assert_reference_capability_conformance(backend, molecule=charged_doublet)
+    outcome = run_reference_conformance(
+        ReferenceConformanceCase(
+            descriptor=descriptor,
+            backend=backend,
+            molecule=charged_doublet,
+            capabilities=expected,
+        )
+    )
     assert set(outcome.executed) == expected
     assert set(outcome.unsupported_verified) == {
+        Capability.MINIMIZE,
         Capability.FREQUENCIES,
         Capability.GEOMETRY_OPTIMIZATION,
+        Capability.PARAMETER_GRADIENT,
+        Capability.HESSIAN_PARAMETER_JACOBIAN,
+        Capability.BATCHED_ENERGY,
+        Capability.BATCHED_HESSIAN,
     }
 
 

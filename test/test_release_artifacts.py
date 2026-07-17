@@ -10,7 +10,7 @@ import zipfile
 import pytest
 
 from scripts.check_release_artifacts import (
-    FIXTURE_PLUGIN_DIR,
+    REFERENCE_PLUGIN_DIR,
     ArtifactContractError,
     _sdist_member_allowed,
     _validate_resource_manifest,
@@ -118,35 +118,35 @@ def test_resource_manifest_requires_exact_approved_coverage() -> None:
         _validate_resource_manifest(incomplete, artifact="test artifact")
 
 
-def test_backend_plugin_fixture_present_in_repo() -> None:
-    # The out-of-tree plugin fixture must exist in the repository (it is what the
+def test_backend_reference_plugin_present_in_repo() -> None:
+    # The out-of-tree reference plugin must exist in the repository (it is what the
     # release checker installs to prove entry-point discovery).
-    assert (FIXTURE_PLUGIN_DIR / "pyproject.toml").is_file()
-    assert (FIXTURE_PLUGIN_DIR / "q2mm_fixture_backend" / "descriptor.py").is_file()
-    assert (FIXTURE_PLUGIN_DIR / "q2mm_fixture_backend" / "backend.py").is_file()
+    assert (REFERENCE_PLUGIN_DIR / "pyproject.toml").is_file()
+    assert (REFERENCE_PLUGIN_DIR / "q2mm_reference_backend" / "descriptor.py").is_file()
+    assert (REFERENCE_PLUGIN_DIR / "q2mm_reference_backend" / "backend.py").is_file()
 
 
-def test_wheel_allowlist_excludes_plugin_fixture() -> None:
-    # The plugin fixture package must never be an allowed wheel member, while a
+def test_wheel_allowlist_excludes_reference_plugin() -> None:
+    # The reference plugin package must never be an allowed wheel member, while a
     # genuine q2mm package module is.
     assert _wheel_member_allowed("q2mm/backends/discovery.py") is True
-    assert _wheel_member_allowed("q2mm_fixture_backend/backend.py") is False
-    assert _wheel_member_allowed("q2mm_fixture_backend/descriptor.py") is False
+    assert _wheel_member_allowed("q2mm_reference_backend/backend.py") is False
+    assert _wheel_member_allowed("q2mm_reference_backend/descriptor.py") is False
 
 
-def test_sdist_allowlist_excludes_test_fixture() -> None:
-    # test/ (including test/fixtures/backend_plugin) is pruned from the sdist.
+def test_sdist_allowlist_excludes_reference_plugin_example() -> None:
+    # examples/ (including the independently installable plugin) is pruned.
     assert _sdist_member_allowed("q2mm-5.0.0/q2mm/backends/discovery.py") is True
-    assert _sdist_member_allowed("q2mm-5.0.0/test/fixtures/backend_plugin/pyproject.toml") is False
-    assert _sdist_member_allowed("q2mm-5.0.0/test/fixtures/backend_plugin/q2mm_fixture_backend/backend.py") is False
+    assert _sdist_member_allowed("q2mm-5.0.0/examples/backend-plugin/pyproject.toml") is False
+    assert _sdist_member_allowed("q2mm-5.0.0/examples/backend-plugin/q2mm_reference_backend/backend.py") is False
 
 
-def test_wheel_manifest_rejects_plugin_fixture_package(tmp_path: Path) -> None:
+def test_wheel_manifest_rejects_reference_plugin_package(tmp_path: Path) -> None:
     wheel = tmp_path / "q2mm-test.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("q2mm/__init__.py", "")
         archive.writestr("q2mm/py.typed", "")
-        archive.writestr("q2mm_fixture_backend/backend.py", "should never ship")
+        archive.writestr("q2mm_reference_backend/backend.py", "should never ship")
 
     with pytest.raises(ArtifactContractError, match="outside the release contract"):
         inspect_wheel(wheel)

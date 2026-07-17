@@ -37,10 +37,8 @@ backend (MM or reference).  It defines:
 * Frequency: **cm⁻¹** (:attr:`FrequencyUnit.INVERSE_CM`).
 * Parameter gradients have length exactly ``len(ParameterLayout)``.
 
-.. warning::
-
-   This is an internal, unstable API.  It is *not* covered by semantic
-   versioning and may change without notice between Q2MM releases.
+These contracts are the stable public authoring surface for
+``BACKEND_API_VERSION == 1``.
 """
 
 from __future__ import annotations
@@ -50,7 +48,7 @@ import importlib
 import importlib.util
 import shutil
 from abc import ABC
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
@@ -103,6 +101,41 @@ class Capability(str, enum.Enum):
     BATCHED_HESSIAN = "batched_hessian"
     GEOMETRY_OPTIMIZATION = "geometry_optimization"
     REUSABLE_STATE = "reusable_state"
+
+
+_ROLE_CAPABILITIES = {
+    BackendRole.MM: frozenset(
+        {
+            Capability.ENERGY,
+            Capability.MINIMIZE,
+            Capability.HESSIAN,
+            Capability.FREQUENCIES,
+            Capability.PARAMETER_GRADIENT,
+            Capability.HESSIAN_PARAMETER_JACOBIAN,
+            Capability.BATCHED_ENERGY,
+            Capability.BATCHED_HESSIAN,
+            Capability.REUSABLE_STATE,
+        }
+    ),
+    BackendRole.REFERENCE: frozenset(
+        {
+            Capability.ENERGY,
+            Capability.HESSIAN,
+            Capability.FREQUENCIES,
+            Capability.COORDINATE_GRADIENT,
+            Capability.GEOMETRY_OPTIMIZATION,
+            Capability.REUSABLE_STATE,
+        }
+    ),
+}
+
+
+def _role_capability_conflicts(
+    role: BackendRole,
+    capabilities: Collection[Capability],
+) -> frozenset[Capability]:
+    """Return capabilities that have no request family for *role*."""
+    return frozenset(capabilities) - _ROLE_CAPABILITIES[role]
 
 
 class EnergyUnit(str, enum.Enum):
@@ -210,8 +243,10 @@ class BackendInfo:
         caps = frozenset(self.capabilities)
         if not all(isinstance(c, Capability) for c in caps):
             raise ValueError("BackendInfo.capabilities must all be Capability members.")
-        if self.role is BackendRole.MM and Capability.COORDINATE_GRADIENT in caps:
-            raise ValueError("BackendInfo: MM backends cannot declare COORDINATE_GRADIENT.")
+        conflicts = _role_capability_conflicts(self.role, caps)
+        if conflicts:
+            values = sorted(capability.value for capability in conflicts)
+            raise ValueError(f"BackendInfo: role {self.role.value!r} cannot declare capabilities {values}.")
         forms = frozenset(self.functional_forms)
         if not all(isinstance(f, str) for f in forms):
             raise ValueError("BackendInfo.functional_forms must all be strings.")
@@ -1538,8 +1573,12 @@ class BackendDescriptor:
             raise ValueError("BackendDescriptor.functional_form_ceiling must contain only strings.")
         if self.role is BackendRole.REFERENCE and forms:
             raise ValueError("BackendDescriptor reference backends must have an empty functional_form_ceiling.")
-        if self.role is BackendRole.MM and Capability.COORDINATE_GRADIENT in capabilities:
-            raise ValueError("BackendDescriptor MM backends cannot include COORDINATE_GRADIENT in their ceiling.")
+        conflicts = _role_capability_conflicts(self.role, capabilities)
+        if conflicts:
+            values = sorted(capability.value for capability in conflicts)
+            raise ValueError(
+                f"BackendDescriptor role {self.role.value!r} cannot include capabilities {values} in its ceiling."
+            )
         object.__setattr__(self, "capability_ceiling", capabilities)
         object.__setattr__(self, "functional_form_ceiling", forms)
         if not isinstance(self.factory, str) or ":" not in self.factory:

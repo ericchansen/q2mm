@@ -722,12 +722,25 @@ def test_backend_info_and_provenance_validation() -> None:
     # Reference info must declare no functional forms.
     with pytest.raises(ValueError):
         BackendInfo(name="x", role=BackendRole.REFERENCE, functional_forms=frozenset({"mm3"}))
-    with pytest.raises(ValueError, match="COORDINATE_GRADIENT"):
-        BackendInfo(
-            name="x",
-            role=BackendRole.MM,
-            capabilities=frozenset({Capability.COORDINATE_GRADIENT}),
-        )
+    for role, capability in (
+        (BackendRole.MM, Capability.COORDINATE_GRADIENT),
+        (BackendRole.MM, Capability.GEOMETRY_OPTIMIZATION),
+        (BackendRole.REFERENCE, Capability.MINIMIZE),
+        (BackendRole.REFERENCE, Capability.PARAMETER_GRADIENT),
+        (BackendRole.REFERENCE, Capability.HESSIAN_PARAMETER_JACOBIAN),
+        (BackendRole.REFERENCE, Capability.BATCHED_ENERGY),
+        (BackendRole.REFERENCE, Capability.BATCHED_HESSIAN),
+    ):
+        with pytest.raises(ValueError, match="cannot declare capabilities"):
+            BackendInfo(name="x", role=role, capabilities=frozenset({capability}))
+        with pytest.raises(ValueError, match="cannot include capabilities"):
+            BackendDescriptor(
+                name="x",
+                role=role,
+                capability_ceiling=frozenset({capability}),
+                functional_form_ceiling=frozenset(),
+                factory="module:Factory",
+            )
     # info provenance role must agree with info role.
     with pytest.raises(ValueError):
         BackendInfo(

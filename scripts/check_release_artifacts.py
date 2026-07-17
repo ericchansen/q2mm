@@ -9,20 +9,19 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import posixpath
+import shutil
 import subprocess
 import sys
 import tarfile
-from tempfile import TemporaryDirectory
 import venv
 import zipfile
 from collections import Counter
 from collections.abc import Callable
 
 
-#: Out-of-tree backend plugin fixture (repository test code — never shipped in a
-#: q2mm artifact).  Installed with ``--no-deps`` into the smoke venv to prove
-#: pure entry-point discovery against an installed q2mm wheel.
-FIXTURE_PLUGIN_DIR = Path(__file__).resolve().parent.parent / "test" / "fixtures" / "backend_plugin"
+#: Canonical external reference plugin. It is independently installable from the
+#: source checkout but excluded from both Q2MM release artifacts.
+REFERENCE_PLUGIN_DIR = Path(__file__).resolve().parent.parent / "examples" / "backend-plugin"
 
 
 APPROVED_RESOURCE_FILES = frozenset(
@@ -424,7 +423,7 @@ import q2mm.backends.registry as reg
 
 # The plugin is discovered purely from its installed entry point (no injection).
 registered = reg.registered_backends()
-assert "harmonic-fixture" in registered, registered
+assert "harmonic-reference" in registered, registered
 
 # Built-ins remain visible alongside the external plugin.
 assert "openmm" in registered and "psi4" in registered, registered
@@ -432,55 +431,54 @@ assert "openmm" in registered and "psi4" in registered, registered
 # Cataloging/listing must NOT import the backend implementation module.
 reg.catalog()
 reg.available_backends()
-assert "q2mm_fixture_backend.descriptor" in sys.modules
-assert "q2mm_fixture_backend.backend" not in sys.modules, "catalog imported implementation!"
+assert "q2mm_reference_backend.descriptor" in sys.modules
+assert "q2mm_reference_backend.backend" not in sys.modules, "catalog imported implementation!"
 
 # Descriptor fields / capabilities / forms are exactly what the manifest declared.
-desc = reg.get_descriptor("harmonic-fixture")
+desc = reg.get_descriptor("harmonic-reference")
+assert desc.backend_api_version == 1
+assert desc.name == "harmonic-reference"
 assert desc.role.value == "mm", desc.role
 assert {c.value for c in desc.capability_ceiling} == {"energy"}, desc.capability_ceiling
 assert set(desc.functional_form_ceiling) == {"harmonic"}, desc.functional_form_ceiling
-assert desc.factory == "q2mm_fixture_backend.backend:HarmonicFixtureBackend", desc.factory
+assert desc.factory == "q2mm_reference_backend.backend:HarmonicReferenceBackend", desc.factory
 
 # Explicit load imports the implementation module.
-backend = reg.load_backend("harmonic-fixture")
-assert "q2mm_fixture_backend.backend" in sys.modules, "load did not import implementation!"
-assert backend.info.provenance.backend == "harmonic-fixture"
+backend = reg.load_backend("harmonic-reference")
+assert "q2mm_reference_backend.backend" in sys.modules, "load did not import implementation!"
+assert backend.info.provenance.backend == "harmonic-reference"
+assert backend.info.role is desc.role
+assert backend.info.capabilities <= desc.capability_ceiling
+assert backend.info.functional_forms <= desc.functional_form_ceiling
 
-# ENERGY conformance (declared) and a typed-unsupported check (undeclared).
-from q2mm.backends.contracts import (
-    EnergyRequest,
-    EnergyResult,
-    HessianRequest,
-    PreparationRequest,
-    UnsupportedCapabilityError,
-)
+# Public ENERGY conformance also proves every undeclared public operation is
+# gated by UnsupportedCapabilityError.
+from q2mm.backends.conformance import MMConformanceCase, run_mm_conformance
 from q2mm.benchmarks.systems.ch3f import load_molecule
 from q2mm.models.forcefield import FunctionalForm
-from q2mm.models.parameters import ParameterLayout
 from q2mm.models.seminario import qfuerza_fresh
 
 molecule = load_molecule()
 force_field = qfuerza_fresh(molecule, functional_form=FunctionalForm.HARMONIC, invert_ts_curvature=False)
-prepared = backend.prepare(PreparationRequest(case_id="release", molecule=molecule, force_field=force_field))
-vector = ParameterLayout.from_force_field(force_field).vector(force_field)
-energy = prepared.energy(EnergyRequest(parameters=vector))
-assert isinstance(energy, EnergyResult) and math.isfinite(energy.energy), energy
-try:
-    prepared.hessian(HessianRequest(parameters=vector))
-except UnsupportedCapabilityError:
-    pass
-else:
-    raise SystemExit("undeclared HESSIAN did not raise UnsupportedCapabilityError")
+outcome = run_mm_conformance(
+    MMConformanceCase(
+        descriptor=desc,
+        backend=backend,
+        molecule=molecule,
+        force_field=force_field,
+    )
+)
+assert [cap.value for cap in outcome.executed] == ["energy"], outcome
+assert "hessian" in {cap.value for cap in outcome.unsupported_verified}, outcome
 
 print("external-plugin=ok")
 """
 
 
 def smoke_test_external_plugin(python: Path, cli: Path, destination: Path, environment: dict[str, str]) -> str:
-    """Install the out-of-tree plugin fixture and prove entry-point discovery.
+    """Install the canonical reference plugin and prove entry-point discovery.
 
-    Installs ``test/fixtures/backend_plugin`` (``--no-deps``) into the same
+    Installs ``examples/backend-plugin`` (``--no-deps``) into the same
     fresh venv the q2mm wheel was installed in, then proves: the plugin is
     discovered from its entry point; catalog/list does not import the
     implementation; descriptor fields/capabilities/forms are correct; explicit
@@ -488,10 +486,10 @@ def smoke_test_external_plugin(python: Path, cli: Path, destination: Path, envir
     capability stays typed-unsupported; the built-ins remain; and
     ``q2mm-benchmark list`` includes the plugin.  Returns ``external-plugin=ok``.
     """
-    if not (FIXTURE_PLUGIN_DIR / "pyproject.toml").is_file():
-        raise ArtifactContractError(f"backend plugin fixture is missing at {FIXTURE_PLUGIN_DIR}")
+    if not (REFERENCE_PLUGIN_DIR / "pyproject.toml").is_file():
+        raise ArtifactContractError(f"backend reference plugin is missing at {REFERENCE_PLUGIN_DIR}")
     subprocess.run(
-        [str(python), "-m", "pip", "install", "--disable-pip-version-check", "--no-deps", str(FIXTURE_PLUGIN_DIR)],
+        [str(python), "-m", "pip", "install", "--disable-pip-version-check", "--no-deps", str(REFERENCE_PLUGIN_DIR)],
         check=True,
         cwd=destination,
         env=environment,
@@ -517,7 +515,7 @@ def smoke_test_external_plugin(python: Path, cli: Path, destination: Path, envir
         text=True,
         encoding="utf-8",
     )
-    if "harmonic-fixture" not in listing.stdout:
+    if "harmonic-reference" not in listing.stdout:
         raise ArtifactContractError("`q2mm-benchmark list` did not include the discovered plugin")
     return marker
 
@@ -540,13 +538,18 @@ def main() -> int:
     print(f"wheel: {wheel_count} files, {wheel_size} uncompressed bytes")
     print(f"sdist: {sdist_count} files, {sdist_size} uncompressed bytes")
 
-    with TemporaryDirectory(prefix="q2mm-release-") as temp_dir:
-        temp = Path(temp_dir)
+    temp = (args.dist_dir.parent / "build" / "release-check").resolve()
+    if temp.exists():
+        shutil.rmtree(temp)
+    temp.mkdir(parents=True)
+    try:
         rebuilt_wheel = build_wheel_from_sdist(sdists[0], temp)
         rebuilt_count, rebuilt_size, _ = inspect_wheel(rebuilt_wheel)
         compare_wheel_payload(wheels[0], rebuilt_wheel)
         print(f"sdist-wheel: {rebuilt_count} files, {rebuilt_size} uncompressed bytes, payload matches")
         print(smoke_test_wheel(rebuilt_wheel, temp / "smoke"))
+    finally:
+        shutil.rmtree(temp, ignore_errors=True)
     return 0
 
 

@@ -1,10 +1,9 @@
 # Psi4 Backend
 
-The `Psi4Backend` wraps the [Psi4](https://psicode.org/) Python API for
-quantum mechanical calculations: single-point energy, Hessian, geometry
-optimization, and vibrational frequencies. It is the only QM backend and
-is used to generate the reference data that drives force field
-optimization.
+The `Psi4Backend` wraps the [Psi4](https://psicode.org/) Python API as a
+`BackendRole.REFERENCE` backend for single-point energy, Hessian, geometry
+optimization, and vibrational frequencies. It generates reference data that
+drives force-field optimization.
 
 ---
 
@@ -68,10 +67,10 @@ backend = Psi4Backend(
 
 | Prepared-session operation | Supported | Notes |
 |--------|:---------:|-------|
-| `energy(QMEnergyRequest)` | ✅ | Returns Hartrees |
-| `optimize_geometry(QMGeometryOptimizationRequest)` | ✅ | Minimization or TS search (`opt_type="ts"`) |
-| `hessian(QMHessianRequest)` | ✅ | Returns Hartree/Bohr², shape (3N, 3N) |
-| `frequencies(QMFrequencyRequest)` | ✅ | Returns cm⁻¹ |
+| `energy(ReferenceEnergyRequest)` | ✅ | Returns Hartrees |
+| `optimize_geometry(ReferenceGeometryOptimizationRequest)` | ✅ | Minimization or TS search (`opt_type="ts"`) |
+| `hessian(ReferenceHessianRequest)` | ✅ | Returns Hartree/Bohr², shape (3N, 3N) |
+| `frequencies(ReferenceFrequencyRequest)` | ✅ | Returns cm⁻¹ |
 | Context manager | ✅ | Auto-cleans temp files on exit |
 
 ### Input model
@@ -90,8 +89,9 @@ settings, construct a second `Psi4Backend`.
 - **CPU only** — Psi4 does not use GPU acceleration.
 - **No MM minimization method** — uses `optimize_geometry()` instead (Psi4's own
   geometry optimizer with geom_maxiter=100).
-- **No analytical MM gradients** — this is a QM backend, not an MM
-  backend. It generates reference data, not force field evaluations.
+- **No analytical MM gradients** — this is a reference backend, not an MM
+  backend. It generates quantum-mechanical reference data, not force-field
+  evaluations.
 - **Conda required** — `pip install psi4` does not work; must use
   conda-forge.
 - **Temporary files** — each backend instance creates a temp directory
@@ -104,10 +104,10 @@ settings, construct a second `Psi4Backend`.
 ```python
 from q2mm.backends.contracts import (
     PreparationRequest,
-    QMEnergyRequest,
-    QMFrequencyRequest,
-    QMGeometryOptimizationRequest,
-    QMHessianRequest,
+    ReferenceEnergyRequest,
+    ReferenceFrequencyRequest,
+    ReferenceGeometryOptimizationRequest,
+    ReferenceHessianRequest,
 )
 from q2mm.backends.qm.psi4 import Psi4Backend
 from q2mm.io.xyz import load_xyz
@@ -118,19 +118,19 @@ with Psi4Backend(method="b3lyp", basis="6-31+G(d)") as backend:
     session = backend.prepare(PreparationRequest(case_id="example", molecule=mol))
 
     # Single-point energy
-    e = session.energy(QMEnergyRequest()).energy
+    e = session.energy(ReferenceEnergyRequest()).energy
     print(f"Energy: {e:.6f} Hartree")
 
     # Geometry optimization (transition state)
-    ts = session.optimize_geometry(QMGeometryOptimizationRequest(opt_type="ts"))
+    ts = session.optimize_geometry(ReferenceGeometryOptimizationRequest(opt_type="ts"))
     print(f"TS energy: {ts.energy:.6f} Hartree")
 
     # Hessian for QFUERZA estimation
-    hess = session.hessian(QMHessianRequest()).hessian
+    hess = session.hessian(ReferenceHessianRequest()).hessian
     print(f"Hessian shape: {hess.shape}")
 
     # Vibrational frequencies
-    freqs = session.frequencies(QMFrequencyRequest()).frequencies
+    freqs = session.frequencies(ReferenceFrequencyRequest()).frequencies
     print(f"Frequencies: {freqs[:5]} cm⁻¹")
 ```
 
@@ -139,7 +139,7 @@ with Psi4Backend(method="b3lyp", basis="6-31+G(d)") as backend:
 ## Role in the Q2MM pipeline
 
 Psi4 is typically used in **Stage 0** of the Q2MM workflow — generating
-QM reference data before any force field optimization begins:
+quantum-mechanical reference data before any force field optimization begins:
 
 1. **Optimize** the transition state geometry (`opt_type="ts"`)
 2. **Compute the Hessian** at the optimized geometry
@@ -147,8 +147,8 @@ QM reference data before any force field optimization begins:
 4. Feed the Hessian into [QFUERZA estimation](../how-it-works/theory.md)
    for initial force constant estimation
 
-The MM backends (OpenMM, JAX, Tinker, JAX-MD) then handle the iterative
-force field optimization against this QM reference data.
+The MM backends (OpenMM, JAX, Tinker, JAX-MD) then handle iterative
+force-field optimization against this reference data.
 
 ---
 
