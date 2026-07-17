@@ -295,7 +295,7 @@ class TestStationaryPointRoutesInversion:
     spurious negative eigenvalues from numerical noise) with a physically
     huge (1.0 Hartree/Bohr²) replacement value. Both CH3F (ground state)
     and CH3F-SN2 (transition state) are packaged with the repo, so this
-    spies on the real ``load_qfuerza_fresh`` call (via ``wraps=``, so the
+    spies on the real generic ``qfuerza_fresh`` call (via ``wraps=``, so the
     real computation still runs) without needing any external dataset.
     """
 
@@ -304,10 +304,11 @@ class TestStationaryPointRoutesInversion:
         """CH3F (StationaryPointKind.GROUND_STATE) must call with invert_ts_curvature=False."""
         from unittest.mock import patch
 
-        from q2mm.benchmarks.systems import _assembly, load_system
+        from q2mm import preparation
+        from q2mm.benchmarks.systems import load_system
 
-        real_load_qfuerza_fresh = _assembly.load_qfuerza_fresh
-        with patch.object(_assembly, "load_qfuerza_fresh", wraps=real_load_qfuerza_fresh) as spy:
+        real_qfuerza_fresh = preparation.qfuerza_fresh
+        with patch.object(preparation, "qfuerza_fresh", wraps=real_qfuerza_fresh) as spy:
             load_system("ch3f", backend=load_backend("jax"), functional_form="harmonic")
 
         assert spy.call_count == 1
@@ -318,10 +319,11 @@ class TestStationaryPointRoutesInversion:
         """CH3F-SN2 (StationaryPointKind.TRANSITION_STATE) must call with invert_ts_curvature=True."""
         from unittest.mock import patch
 
-        from q2mm.benchmarks.systems import _assembly, load_system
+        from q2mm import preparation
+        from q2mm.benchmarks.systems import load_system
 
-        real_load_qfuerza_fresh = _assembly.load_qfuerza_fresh
-        with patch.object(_assembly, "load_qfuerza_fresh", wraps=real_load_qfuerza_fresh) as spy:
+        real_qfuerza_fresh = preparation.qfuerza_fresh
+        with patch.object(preparation, "qfuerza_fresh", wraps=real_qfuerza_fresh) as spy:
             load_system("ch3f-sn2", backend=load_backend("jax"), functional_form="harmonic")
 
         assert spy.call_count == 1

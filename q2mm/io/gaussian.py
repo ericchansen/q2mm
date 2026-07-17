@@ -108,6 +108,75 @@ def _molecule_from_gaussian_record(record: _GaussianRecord) -> Molecule:
     )
 
 
+def _gaussian_archive_records(path: str, filename: str, *, au_hessian: bool) -> list[_GaussianRecord]:
+    """Parse every complete Gaussian archive record in file order."""
+    with open(path) as handle:
+        archives = re.findall("(?s)(\\s1\\\\1\\\\.*?[\\\\\n\\s]+@)", handle.read())
+    if not archives:
+        raise IndexError(f"No Gaussian archive found in {filename}.")
+
+    records: list[_GaussianRecord] = []
+    for archive in archives:
+        record = _GaussianRecord(filename, path)
+        sections = archive.replace("\n ", "").split("\\\\")
+        section_index = 0
+
+        general = sections[section_index]
+        section_index += 1
+        general_match = re.search(
+            "\\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)\\\\(?P<date>.*?)\\\\.*?",
+            general,
+        )
+        if general_match is None:
+            raise ValueError(f"Malformed Gaussian archive general section in {filename}.")
+        record.props["user"] = general_match.group("user")
+        record.props["date"] = general_match.group("date")
+
+        section_index += 2  # route/commands and title/comment
+        coordinate_match = re.search(
+            "(?P<charge>.*?),(?P<multiplicity>.*?)\\\\(?P<atoms>.*)",
+            sections[section_index],
+        )
+        section_index += 1
+        if coordinate_match is None:
+            raise ValueError(f"Malformed Gaussian archive coordinate section in {filename}.")
+        record.props["charge"] = coordinate_match.group("charge")
+        record.props["multiplicity"] = coordinate_match.group("multiplicity")
+        atom_rows = coordinate_match.group("atoms").split("\\")
+        for atom_row in atom_rows:
+            columns = atom_row.split(",")
+            if len(columns) == 4:
+                element, x, y, z = columns
+            elif len(columns) == 5:
+                element, x, y, z = columns[0], columns[2], columns[3], columns[4]
+            else:
+                raise ValueError(f"Unsupported Gaussian archive coordinate row {atom_row!r} in {filename}.")
+            record.atoms.append(_GaussianAtom(element=element, x=float(x), y=float(y), z=float(z)))
+
+        for item in sections[section_index].split("\\"):
+            property_name, property_value = item.split("=", maxsplit=1)
+            record.props[property_name] = property_value
+        section_index += 1
+
+        if sections[section_index] != "@":
+            triangle = sections[section_index].split(",")
+            dimension = len(record.atoms) * 3
+            expected = dimension * (dimension + 1) // 2
+            if len(triangle) != expected:
+                raise ValueError(
+                    f"Gaussian archive Hessian in {filename} has {len(triangle)} elements; expected {expected}."
+                )
+            hessian = np.zeros((dimension, dimension), dtype=float)
+            hessian[np.tril_indices_from(hessian)] = triangle
+            hessian += np.tril(hessian, -1).T
+            if not au_hessian:
+                hessian *= co.HESSIAN_AU_TO_KJMOLA2
+            record.hess = hessian
+            record.hessian_units = HessianUnits.ATOMIC if au_hessian else HessianUnits.KJ_MOL_ANGSTROM2
+        records.append(record)
+    return records
+
+
 class GaussLog:
     """Retrieves data from Gaussian log files.
 
@@ -476,136 +545,24 @@ class GaussLog:
     # May want to move some attributes assigned to the structure class onto
     # this filetype class.
     def read_archive(self) -> None:
-        r"""Read the last archive section from the Gaussian log file.
-
-        Extracts atoms, coordinates, properties, and the Hessian (converted
-        to kJ/(mol·Å²) unless ``au_hessian`` is True) from the archive block.
-
-        The Gaussian archive format uses ``\\\\`` as section separators and
-        ``\\`` within sections.  The fields always present are: user, date,
-        route/command, title, charge/multiplicity, and atom coordinates
-        (``element,x,y,z`` entries separated by ``\\``).  Optional fields
-        that may follow include ``HF``, ``ZeroPoint``, ``Thermal``,
-        ``NImag``, the Hessian (lower-triangular, comma-separated), and
-        eigenvalues.
-
-        Raises:
-            IndexError: If no archive section is found in the log file.
-
-        """
+        """Read the last complete archive section, preserving legacy behavior."""
         logger.log(5, f"READING: {self.filename}")
-        struct = _GaussianRecord(self.filename, self.path)
-        self._records = [struct]
-        # Matches everything in between the start and end.
-        # (?s)  - Flag for re.compile which says that . matches all.
-        # \\\\  - One single \
-        # Start - " 1\1\".
-        # End   - Some number of \ followed by @. Not sure how many \ there
-        #         are, so this matches as many as possible. Also, this could
-        #         get separated by a line break (which would also include
-        #         adding in a space since that's how Gaussian starts new lines
-        #         in the archive).
-        # We pull out the last one [-1] in case there are multiple archives
-        # in a file.
         try:
-            with open(self.path) as fh:
-                arch = re.findall("(?s)(\\s1\\\\1\\\\.*?[\\\\\n\\s]+@)", fh.read())[-1]
-            logger.log(5, "  -- Located last archive.")
+            self._records = [_gaussian_archive_records(self.path, self.filename, au_hessian=self._au_hessian)[-1]]
         except IndexError:
             logger.warning("  -- Couldn't locate archive.")
             raise
-        # Make it into one string.
-        arch = arch.replace("\n ", "")
-        # Separate it by Gaussian's section divider.
-        arch = arch.split("\\\\")
-        # Helps us iterate over sections of the archive.
-        section_counter = 0
-        # SECTION 0
-        # General job information.
-        arch_general = arch[section_counter]
-        section_counter += 1
-        stuff = re.search(
-            "\\s1\\\\1\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\.*?\\\\(?P<user>.*?)\\\\(?P<date>.*?)\\\\.*?",
-            arch_general,
-        )
-        struct.props["user"] = stuff.group("user")
-        struct.props["date"] = stuff.group("date")
-        # SECTION 1
-        # The commands you wrote.
-        _arch_commands = arch[section_counter]
-        section_counter += 1
-        # SECTION 2
-        # The comment line.
-        _arch_comment = arch[section_counter]
-        section_counter += 1
-        # SECTION 3
-        # Actually has charge, multiplicity and coords.
-        arch_coords = arch[section_counter]
-        section_counter += 1
-        stuff = re.search("(?P<charge>.*?),(?P<multiplicity>.*?)\\\\(?P<atoms>.*)", arch_coords)
-        struct.props["charge"] = stuff.group("charge")
-        struct.props["multiplicity"] = stuff.group("multiplicity")
-        # We want to do more fancy stuff with the atoms than simply add to
-        # the properties dictionary.
-        atoms = stuff.group("atoms")
-        atoms = atoms.split("\\")
-        # Z-matrix coordinates adds another section. We need to be aware of
-        # this.
-        struct.atoms = []
-        for atom in atoms:
-            stuff = atom.split(",")
-            # An atom typically looks like this:
-            #    C,0.1135,0.13135,0.63463
-            if len(stuff) == 4:
-                ele, x, y, z = stuff
-            # But sometimes they look like this (notice the extra zero):
-            #    C,0,0.1135,0.13135,0.63463
-            # I'm not sure what that extra zero is for. Anyway, ignore
-            # that extra whatever if it's there.
-            elif len(stuff) == 5:
-                ele, x, y, z = stuff[0], stuff[2], stuff[3], stuff[4]
-            # And this would be really bad. Haven't seen anything else like
-            # this yet.
-            # 160613 - So, not sure when I wrote that comment, but something
-            # like this definitely happens when using scans and z-matrices.
-            # I'm going to ignore grabbing any atoms in this case.
-            else:
-                logger.warning("Not sure how to read coordinates from Gaussian acrhive!")
-                section_counter += 1
-                # Let's have it stop looping over atoms, but not fail anymore.
-                break
-                # raise Exception(
-                #     'Not sure how to read coordinates from Gaussian archive!')
-            struct.atoms.append(_GaussianAtom(element=ele, x=float(x), y=float(y), z=float(z)))
-        logger.log(20, f"  -- Read {len(struct.atoms)} atoms.")
-        # SECTION 4
-        # All sorts of information here. This area looks like:
-        #     prop1=value1\prop2=value2\prop3=value3
-        arch_info = arch[section_counter]
-        section_counter += 1
-        arch_info = arch_info.split("\\")
-        for thing in arch_info:
-            prop_name, prop_value = thing.split("=")
-            struct.props[prop_name] = prop_value
-        # SECTION 5
-        # The Hessian. Only exists if you did a frequency calculation.
-        # Appears in lower triangular form, not mass-weighted.
-        if arch[section_counter] != "@":
-            hess_tri = arch[section_counter]
-            hess_tri = hess_tri.split(",")
-            logger.log(
-                5,
-                f"  -- Read {len(hess_tri)} Hessian elements in lower triangular form.",
-            )
-            hess = np.zeros([len(atoms) * 3, len(atoms) * 3], dtype=float)
-            logger.log(5, f"  -- Created {hess.shape} Hessian matrix.")
-            # Hessian is stored as lower triangle in the archive.
-            hess[np.tril_indices_from(hess)] = hess_tri
-            hess += np.tril(hess, -1).T
-            if not self._au_hessian:
-                hess *= co.HESSIAN_AU_TO_KJMOLA2
-            struct.hess = hess
-            struct.hessian_units = HessianUnits.ATOMIC if self._au_hessian else HessianUnits.KJ_MOL_ANGSTROM2
+        logger.log(5, "  -- Located last archive.")
+
+    def read_archives(self) -> None:
+        """Read every complete archive section in file order."""
+        logger.log(5, f"READING ALL ARCHIVES: {self.filename}")
+        try:
+            self._records = _gaussian_archive_records(self.path, self.filename, au_hessian=self._au_hessian)
+        except IndexError:
+            logger.warning("  -- Couldn't locate an archive.")
+            raise
+        logger.log(5, "  -- Located %d archive(s).", len(self._records))
 
 
 def load_gaussian_reference(

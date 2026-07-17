@@ -14,8 +14,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from q2mm.models.forcefield import ForceField, FunctionalForm, VdwParam
-from q2mm.models.molecule import Molecule
-from q2mm.models.seminario import qfuerza_fresh
 
 # Published metal vdW parameters for systems whose MM3 base file lacks them.
 # Today only PD (sourced from Rosales 2020 Heck FF mm3.FF1.fld:1063); promote
@@ -56,62 +54,6 @@ def load_published_opt(ff_path: str | Path) -> tuple[ForceField, ForceField]:
     opt_only = load_mm3_fld(str(ff_path), include_standard=False)
     composed = dataclasses.replace(composed, functional_form=FunctionalForm.MM3)
     return composed, opt_only
-
-
-def load_qfuerza_fresh(
-    molecule: Molecule,
-    *,
-    functional_form: FunctionalForm,
-    invert_ts_curvature: bool = False,
-    replace_with: float = 1.0,
-) -> ForceField:
-    """Build a brand-new FF from one molecule's QM Hessian via QFUERZA.
-
-    For small single-molecule benchmarks (CH3F-style) where there is no
-    published OPT block to start from.  Every parameter in the returned
-    FF comes from the QFUERZA projection.
-
-    Args:
-        molecule: One molecule with a QM Hessian attached.
-        functional_form: Required — every :class:`ForceField` must carry
-            an explicit form (see :func:`q2mm.models.seminario.qfuerza_fresh`).
-            CH3F/CH3F-SN2 genuinely support both ``FunctionalForm.HARMONIC``
-            (JAX/JAX-MD) and ``FunctionalForm.MM3`` (OpenMM/Tinker); there
-            is no scientifically-correct single default across engines,
-            so the caller must decide.
-        invert_ts_curvature: Whether to invert the TS reaction
-            coordinate before projection (Limé & Norrby 2015). Callers
-            must pass ``True`` only for genuine transition states (one
-            real imaginary mode to invert) and ``False`` for ground
-            states. This is *not* a harmless default-True no-op for
-            ground states: a real, imperfectly-converged ground-state
-            Hessian routinely carries one or more tiny *spurious*
-            negative eigenvalues (numerical noise on otherwise
-            near-zero rigid-body modes, typically ~1e-5-1e-6
-            Hartree/Bohr²) alongside its genuine positive spectrum —
-            ``invert_ts_curvature=True`` would silently replace that
-            noise eigenvalue with *replace_with* (default 1.0
-            Hartree/Bohr², many orders of magnitude larger), corrupting
-            an otherwise-real vibrational mode. See
-            :class:`~q2mm.models.problem.StationaryPointKind` — the
-            caller must route this from the training case's actual
-            stationary-point kind, never hardcode it.
-        replace_with: Replacement value (Hartree/Bohr²) for the most
-            negative eigenvalue when ``invert_ts_curvature=True``.
-            Default ``1.0`` matches Limé & Norrby Method C.  Ignored
-            when ``invert_ts_curvature=False``.
-
-    Returns:
-        Fresh force field; every parameter is QFUERZA-derived, tagged
-        with the caller-supplied *functional_form*.
-
-    """
-    return qfuerza_fresh(
-        molecule,
-        functional_form=functional_form,
-        invert_ts_curvature=invert_ts_curvature,
-        replace_with=replace_with,
-    )
 
 
 def compose_opt_with_mm3_base(

@@ -213,6 +213,7 @@ q2mm/
 ├── elements.py           # Periodic table data
 ├── geometry.py           # Geometry helpers (distances, angles, alignment)
 ├── resources.py          # Installed scientific-resource lookup and integrity checks
+├── preparation.py        # Generic immutable prepare() + closed observation recipes
 ├── _jax_support.py       # Foundational lazy JAX import guard (has_jax/load_jax); shared by models.hessian and backends.mm._jax_common
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
 ├── application/          # Data-independent evaluate, optimize, and atomic save services
@@ -234,7 +235,7 @@ q2mm/
 │   ├── molecule.py       # Molecule, Bond, Angle, Torsion
 │   ├── observations.py   # Observation + ObservationSet
 │   ├── parameters.py     # ParameterLayout + ActiveParameterSpace
-│   ├── problem.py        # TrainingCase + OptimizationProblem
+│   ├── problem.py        # TrainingCase + OptimizationProblem + path-free PreparationProvenance
 │   ├── results.py        # Canonical OptimizationResult, CandidateRecord, StageRecord
 │   ├── seminario.py      # Hessian → initial force constants (QFUERZA)
 │   ├── hessian.py        # Hessian manipulation, eigenvalue analysis
@@ -290,6 +291,7 @@ q2mm/
 │   ├── fchk.py           # load_fchk, load_fchk_reference
 │   ├── jaguar.py         # JaguarIn, JaguarOut
 │   ├── macromodel.py     # MacroModel, MacroModelLog
+│   ├── molecules.py      # Explicit FCHK/Gaussian/Jaguar/MacroModel Molecule bridges
 │   ├── mol2.py           # Mol2
 │   ├── xyz.py            # load_xyz
 │   ├── qcelemental.py    # molecule_from_qcel, molecule_to_qcel
@@ -304,9 +306,18 @@ q2mm/
 
 `q2mm.application` depends on canonical models, backend contracts, objectives,
 optimizers, workflows, and format savers. It never imports benchmark systems or
-preparation code. Benchmark orchestration delegates generic execution and
-force-field serialization to the application layer, while retaining benchmark-
-specific profiles, acceptance decisions, candidate retention, and promotion.
+preparation code. `q2mm.preparation` depends only on canonical models and
+dependency-light backend contracts; a matched-frequency recipe loads a named
+backend only when `prepare()` is called. Benchmark orchestration delegates
+problem construction to preparation and generic execution/serialization to the
+application layer, while retaining benchmark-specific metadata, profiles,
+acceptance decisions, candidate retention, and promotion.
+
+The package root exposes only the workflow facade and its canonical return
+types: `prepare`, `evaluate`, `optimize`, and `save`. Importing `q2mm` does not
+load an optional backend, SciPy, JAX, ASE, QCEngine, OpenMM, or backend
+discovery. Advanced constructors and contracts remain in their existing
+namespaces.
 
 ### Release and scientific-data boundary
 
@@ -330,7 +341,8 @@ Q2MM's release artifacts use an explicit data contract:
 The publish workflow runs `scripts/check_release_artifacts.py` before upload.
 It validates both manifests, rebuilds the wheel from the sdist, compares wheel
 payloads, installs the rebuilt wheel into a clean environment, and exercises
-the import, CLI, resource integrity, and built-in CH3F system.
+the lazy facade import, CLI, resource integrity, built-in CH3F system, and a
+synthetic prepare/evaluate/optimizer-entry/save workflow.
 
 ### Dependency flow
 
@@ -373,6 +385,7 @@ flowchart TD
     end
 
     subgraph Services["Services"]
+        prep[q2mm.preparation]
         app[q2mm.application]
         bench[q2mm.benchmarks]
     end
@@ -408,6 +421,11 @@ flowchart TD
     app --> plan
     app --> scipy
     app --> IO
+    prep --> mol
+    prep --> ff
+    prep --> obs
+    prep --> sem
+    bench --> prep
     bench --> app
 ```
 

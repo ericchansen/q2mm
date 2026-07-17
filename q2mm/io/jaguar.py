@@ -86,6 +86,8 @@ class _JaguarRecord:
 
     origin_name: str
     atoms: list[_JaguarAtom] = field(default_factory=list)
+    charge: int = 0
+    multiplicity: int = 1
 
 
 def _molecule_from_jaguar_record(record: _JaguarRecord) -> Molecule:
@@ -102,6 +104,8 @@ def _molecule_from_jaguar_record(record: _JaguarRecord) -> Molecule:
     return Molecule(
         symbols=tuple(symbols),
         geometry=np.array(coords, dtype=float),
+        charge=record.charge,
+        multiplicity=record.multiplicity,
         name=record.origin_name,
     )
 
@@ -130,6 +134,7 @@ class JaguarIn:
         self.filename = os.path.basename(self.path)
         self._hessian = None
         self._empty_atoms = None
+        self._molecules = None
 
     @property
     def lines(self) -> list[str]:
@@ -185,23 +190,46 @@ class JaguarIn:
 
             assert num != 0, f"Zero atoms found when loading Hessian from {self.path}!"
             hessian = np.zeros([num * 3, num * 3], dtype=float)
+            seen = np.zeros(hessian.shape, dtype=bool)
+            found_section = False
             logger.log(5, f"  -- Created {hessian.shape} Hessian matrix (including dummy atoms).")
             with open(self.path) as f:
                 section_hess = False
+                hess_col: int | None = None
                 for line in f:
                     if section_hess and line.startswith("&"):
                         section_hess = False
-                        hessian += np.tril(hessian, -1).T
                     if section_hess:
                         cols = line.split()
                         if len(cols) == 1:
                             hess_col = int(cols[0])
                         elif len(cols) > 1:
+                            if hess_col is None:
+                                raise ValueError(
+                                    f"Malformed Jaguar &hess section in {self.path}: missing column header."
+                                )
                             hess_row = int(cols[0])
                             for i, hess_ele in enumerate(cols[1:]):
-                                hessian[hess_row - 1, i + hess_col - 1] = float(hess_ele)
+                                row = hess_row - 1
+                                column = i + hess_col - 1
+                                if not (0 <= row < hessian.shape[0] and 0 <= column <= row):
+                                    raise ValueError(
+                                        f"Malformed Jaguar &hess index ({hess_row}, {column + 1}) in {self.path}."
+                                    )
+                                hessian[row, column] = float(hess_ele)
+                                seen[row, column] = True
                     if "&hess" in line:
                         section_hess = True
+                        found_section = True
+                        hess_col = None
+
+            if not found_section:
+                raise ValueError(f"No Jaguar &hess section found in {self.path}.")
+            lower_triangle = np.tril_indices(hessian.shape[0])
+            if not np.all(seen[lower_triangle]):
+                missing = int(np.count_nonzero(~seen[lower_triangle]))
+                raise ValueError(f"Incomplete Jaguar &hess section in {self.path}: {missing} values are missing.")
+            hessian += np.tril(hessian, -1).T
 
             logger.log(1, f">>> hessian:\n{hessian}")
             logger.log(5, f"  -- Created {hessian.shape} Hessian matrix (w/o dummy atoms).")
@@ -211,12 +239,72 @@ class JaguarIn:
             # computation) expects AU when au_hessian=True / au_units=True.
             self._hessian = hessian
             logger.log(1, f">>> hessian.shape: {hessian.shape}")
+        elif self._hessian.shape != (num_atoms * 3, num_atoms * 3):
+            raise ValueError(f"Cached Jaguar Hessian shape {self._hessian.shape} does not match num_atoms={num_atoms}.")
         # Cold-path unit tagging: wrap in pint.Quantity when requested.
         if tag_units:
             ureg = _get_pint_ureg()
             if ureg is not None:
                 return ureg.Quantity(self._hessian, "hartree/bohr**2")
         return self._hessian
+
+    @property
+    def molecules(self) -> list[Molecule]:
+        """Cartesian structures parsed from explicit ``&zmat`` sections."""
+        if self._molecules is None:
+            charge_match = re.search(r"\bmolchg\s*=\s*(-?\d+)", "".join(self.lines), re.IGNORECASE)
+            multiplicity_match = re.search(r"\bmultip\s*=\s*(\d+)", "".join(self.lines), re.IGNORECASE)
+            charge = int(charge_match.group(1)) if charge_match is not None else 0
+            multiplicity = int(multiplicity_match.group(1)) if multiplicity_match is not None else 1
+            records: list[_JaguarRecord] = []
+            current: _JaguarRecord | None = None
+            in_zmat = False
+            for line in self.lines:
+                stripped = line.strip()
+                if stripped.lower().startswith("&zmat"):
+                    if in_zmat:
+                        raise ValueError(f"Nested Jaguar &zmat section in {self.filename}.")
+                    current = _JaguarRecord(
+                        origin_name=self.filename,
+                        charge=charge,
+                        multiplicity=multiplicity,
+                    )
+                    in_zmat = True
+                    continue
+                if in_zmat and stripped.startswith("&"):
+                    assert current is not None
+                    if not current.atoms:
+                        raise ValueError(f"Empty Jaguar &zmat section in {self.filename}.")
+                    records.append(current)
+                    current = None
+                    in_zmat = False
+                    continue
+                if not in_zmat or not stripped:
+                    continue
+                columns = stripped.split()
+                if len(columns) != 4:
+                    raise ValueError(
+                        f"Jaguar &zmat bridge supports explicit Cartesian rows; got {stripped!r} in {self.filename}."
+                    )
+                try:
+                    coordinates = tuple(float(value) for value in columns[1:])
+                except ValueError as exc:
+                    raise ValueError(f"Invalid Jaguar Cartesian row {stripped!r} in {self.filename}.") from exc
+                assert current is not None
+                current.atoms.append(
+                    _JaguarAtom(
+                        element=columns[0].translate(str.maketrans("", "", digits)),
+                        x=coordinates[0],
+                        y=coordinates[1],
+                        z=coordinates[2],
+                    )
+                )
+            if in_zmat:
+                raise ValueError(f"Unterminated Jaguar &zmat section in {self.filename}.")
+            if not records:
+                raise ValueError(f"No explicit Cartesian &zmat structure found in {self.filename}.")
+            self._molecules = [_molecule_from_jaguar_record(record) for record in records]
+        return list(self._molecules)
 
     def attach_hessian(self, molecule: Molecule) -> Molecule:
         """Return *molecule* with this Jaguar input's Hessian and provenance."""
@@ -341,8 +429,16 @@ class JaguarOut:
             section_eigenvalues = False
             section_eigenvectors = False
             current_record: _JaguarRecord | None = None
+            charge = 0
+            multiplicity = 1
             temp_eigenvectors = []
             for i, line in enumerate(f):
+                charge_match = re.search(r"net molecular charge:\s*(-?\d+)", line, re.IGNORECASE)
+                if charge_match is not None:
+                    charge = int(charge_match.group(1))
+                multiplicity_match = re.search(r"multiplicity:\s*(\d+)", line, re.IGNORECASE)
+                if multiplicity_match is not None:
+                    multiplicity = int(multiplicity_match.group(1))
                 if section_geometry:
                     cols = line.split()
                     if len(cols) == 0:
@@ -367,7 +463,11 @@ class JaguarOut:
                             )
                 if "geometry:" in line:
                     section_geometry = True
-                    current_record = _JaguarRecord(self.filename)
+                    current_record = _JaguarRecord(
+                        self.filename,
+                        charge=charge,
+                        multiplicity=multiplicity,
+                    )
                     logger.log(5, f"[L{i + 1}] Located geometry.")
                 if (
                     "Number of imaginary frequencies" in line

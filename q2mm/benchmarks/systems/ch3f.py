@@ -1,8 +1,7 @@
 """CH3F: single ground-state molecule, QFUERZA-fresh force field.
 
 Frequency-only benchmark against a fresh QFUERZA-derived force field —
-no published OPT block to start from (see
-:func:`~q2mm.benchmarks.systems._forcefield.load_qfuerza_fresh`).
+no published OPT block to start from (see :func:`q2mm.preparation.prepare`).
 """
 
 from __future__ import annotations
