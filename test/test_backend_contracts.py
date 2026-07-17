@@ -127,7 +127,7 @@ def test_abstract_prepared_backend_raises_unsupported() -> None:
 def test_catalog_reports_all_descriptors() -> None:
     names = {s.name for s in catalog()}
     assert names == set(descriptors())
-    assert {"openmm", "tinker", "jax", "jax-md", "psi4"} <= names
+    assert {"openmm", "tinker", "jax", "jax-md", "psi4", "qcengine"} <= names
 
 
 def test_catalog_reports_status_and_reason() -> None:
@@ -901,10 +901,11 @@ def test_catalog_is_lazy_in_fresh_interpreter() -> None:
         "import q2mm.backends.registry as r\n"
         "statuses = r.catalog()\n"
         "assert statuses\n"
-        "for m in ('jax', 'jaxlib', 'openmm',\n"
+        "for m in ('jax', 'jaxlib', 'openmm', 'qcengine', 'qcelemental',\n"
         "          'q2mm.backends.mm.jax_engine', 'q2mm.backends.mm.openmm',\n"
         "          'q2mm.backends.mm.jax_md_engine', 'q2mm.backends.mm.tinker',\n"
-        "          'q2mm.backends.qm.psi4'):\n"
+        "          'q2mm.backends.qm.psi4',\n"
+        "          'q2mm.backends.reference.qcengine'):\n"
         "    assert m not in sys.modules, f'{m} was imported during catalog()'\n"
         "print('LAZY_OK')\n"
     )

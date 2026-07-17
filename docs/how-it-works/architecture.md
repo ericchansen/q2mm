@@ -227,7 +227,7 @@ q2mm/
 │   ├── units.py          # Conversion constants and helpers
 │   └── identifiers.py    # Atom type matching utilities
 │
-├── backends/             # MM and QM backend integrations
+├── backends/             # MM and reference backend integrations
 │   ├── contracts.py      # Capability contracts, prepared-session protocols, typed requests/results, descriptors
 │   ├── registry.py       # Lazy, cached descriptor registry (built-in + entry-point manifests; cheap probes)
 │   ├── discovery.py      # Internal, unstable manifest validator + lazy entry-point discovery/isolation records
@@ -240,8 +240,10 @@ q2mm/
 │   │   ├── jax_md_engine.py # JAX-MD backend (periodic, neighbor lists)
 │   │   ├── batched.py       # Batched multi-molecule energy helpers
 │   │   └── _jax_common.py   # Backend jax/jnp/jaxopt globals + ForceField match/offset helpers (JAX import guard itself lives in q2mm/_jax_support.py)
-│   └── qm/
-│       └── psi4.py       # Psi4 backend (QM single-points, Hessians)
+│   ├── qm/
+│   │   └── psi4.py       # Direct Psi4 reference backend
+│   └── reference/
+│       └── qcengine.py   # QCEngine atomic energy, coordinate-gradient, and Hessian adapter
 │
 ├── objectives/           # Objective planning, executor protocol, and residual semantics
 │   ├── plan.py           # ObjectivePlan: backend-neutral cases, observations, layout, active space

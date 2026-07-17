@@ -81,6 +81,9 @@ gpu = [
 qcel = [
     "qcelemental",
 ]
+qcengine = [
+    "qcengine",
+]
 dev = [
     "pytest",
     "pytest-benchmark",
@@ -90,6 +93,7 @@ dev = [
     "scipy",
     "parmed",
     "qcelemental",
+    "qcengine",
     "openmm",
     "build",
     "tomli; python_version < '3.11'",
@@ -108,6 +112,7 @@ all = [
     "pint",
     "scipy",
     "qcelemental",
+    "qcengine",
     "jax",
     "jaxlib",
     "jax-md; sys_platform != 'win32'",
