@@ -140,7 +140,7 @@ def _generate_sn2_fixture(modules: dict[str, Any], upstream_commit: str) -> dict
 
     return {
         "metadata": {
-            "system": "sn2-test",
+            "system": "ch3f-sn2",
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "generator": "scripts/regenerate_parity_fixtures.py",
             "upstream_commit": upstream_commit,
@@ -157,7 +157,7 @@ def _generate_rh_fixture(modules: dict[str, Any], upstream_commit: str) -> dict[
     seminario = modules["seminario"]
     constants = modules["constants"]
 
-    rh_dir = REPO_ROOT / "examples" / "rh-enamide"
+    rh_dir = REPO_ROOT / "examples" / "publication" / "rh-enamide"
     training_dir = rh_dir / "rh_enamide_training_set"
     mm3_path = rh_dir / "mm3.fld"
     mmo_path = training_dir / "rh_enamide_training_set.mmo"

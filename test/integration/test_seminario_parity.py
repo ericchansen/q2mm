@@ -56,7 +56,7 @@ CISPLATIN_GAUSSIAN_LOG = FIXTURE_DIR / "cisplatin_opt_freq_m06.log"
 RH_FIXTURE_PATH = FIXTURE_DIR / "rh_enamide_reference.json"
 SN2_FIXTURE_PATH = FIXTURE_DIR / "sn2_reference.json"
 
-RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
+RH_DIR = REPO_ROOT / "examples" / "publication" / "rh-enamide"
 TRAINING_SET_DIR = RH_DIR / "rh_enamide_training_set"
 MM3_PATH = RH_DIR / "mm3.fld"
 MMO_PATH = TRAINING_SET_DIR / "rh_enamide_training_set.mmo"

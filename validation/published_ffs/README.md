@@ -89,11 +89,12 @@ It defines nine transition-state structures and an objective that also uses
 ESP charges and relative enthalpies. The repository profile currently includes
 all-nine geometry and full-eigenmatrix targets only.
 
-The source tree contains a complete MM3 file with two OPT blocks. Those inputs
-are tracked in the source checkout but excluded from installed package data,
-while older prose describes them as non-distributed. This factual policy
-conflict is preserved; no redistribution right is claimed and no file is moved
-or relicensed here.
+The canonical source tree at
+[`examples/publication/rh-enamide`](../../examples/publication/rh-enamide)
+contains a complete MM3 file with two OPT blocks. Those inputs are tracked in
+the source repository and excluded from wheel and sdist artifacts.
+Redistribution/licensing is not established; no broader rights statement is
+made.
 
 ### Heck relay
 
@@ -204,7 +205,7 @@ Configure external roots explicitly:
 ```text
 Q2MM_SUPPORTING_INFO=<extracted authoritative supporting archives>
 Q2MM_MM3_BASE=<licensed mm3_base.fld>
-Q2MM_RH_ENAMIDE=<source-tree Rh-enamide root>
+Q2MM_RH_ENAMIDE=<source-tree examples/publication/rh-enamide root>
 ```
 
 No loader downloads scientific data implicitly.

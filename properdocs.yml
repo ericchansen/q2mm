@@ -59,6 +59,7 @@ nav:
     - Pd-Allyl: systems/pd-allyl.md
     - Pd 1,4-Conjugate: systems/pd-conjugate.md
     - Rh 1,4-Conjugate: systems/rh-conjugate.md
+    - Ferrocene: systems/ferrocene.md
   - API Reference: reference/
   - References: references.md
 

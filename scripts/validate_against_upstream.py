@@ -62,7 +62,7 @@ SN2_FIXTURE_PATH = FIXTURE_DIR / "sn2_reference.json"
 OPTIMIZATION_FIXTURE_DIR = REPO_ROOT / "test" / "fixtures"
 OPTIMIZATION_GOLDEN_PATH = OPTIMIZATION_FIXTURE_DIR / "optimization_golden.json"
 
-RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
+RH_DIR = REPO_ROOT / "examples" / "publication" / "rh-enamide"
 TRAINING_SET_DIR = RH_DIR / "rh_enamide_training_set"
 MM3_PATH = RH_DIR / "mm3.fld"
 MMO_PATH = TRAINING_SET_DIR / "rh_enamide_training_set.mmo"

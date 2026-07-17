@@ -3,7 +3,7 @@
   "resource_id": "q2mm.sn2-reference.b3lyp-6-31+g(d)",
   "description": "Pre-computed CH3F and identity-SN2 reference outputs used by the built-in q2mm systems.",
   "provenance": {
-    "generator": "examples/sn2-test/generate_qm_data.py",
+    "generator": "scripts/generate_sn2_reference.py",
     "software": "Psi4",
     "method": "B3LYP",
     "basis": "6-31+G(d)",

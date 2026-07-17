@@ -5,7 +5,8 @@
             "name": "Run SN2 Pipeline",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/examples/sn2-test/run_tsff_pipeline.py",
+            "program": "${workspaceFolder}/examples/ch3f-sn2/run.py",
+            "args": ["--bounded-ci", "--output-root", "${workspaceFolder}/results/ch3f-sn2"],
             "console": "integratedTerminal",
             "cwd": "${workspaceFolder}",
             "justMyCode": false

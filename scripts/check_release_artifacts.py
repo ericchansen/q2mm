@@ -23,6 +23,7 @@ from collections.abc import Callable
 #: source checkout but excluded from both Q2MM release artifacts.
 REFERENCE_PLUGIN_DIR = Path(__file__).resolve().parent.parent / "examples" / "backend-plugin"
 INSTALLED_PUBLICATION_CHECK = Path(__file__).resolve().parent / "check_installed_publication_sdk.py"
+INSTALLED_EXAMPLE_CHECK = Path(__file__).resolve().parent / "check_installed_examples.py"
 
 
 APPROVED_RESOURCE_FILES = frozenset(
@@ -468,8 +469,9 @@ print("installed-import=ok cli-help=ok cli-list=ok cli-single-skip=ok sn2-resour
         encoding="utf-8",
     )
     external = smoke_test_external_plugin(python, cli, destination, environment)
+    examples = smoke_test_installed_examples(python, destination, environment)
     publication = smoke_test_installed_publications(python, destination, environment)
-    return f"{completed.stdout.strip()} {external} {publication}"
+    return f"{completed.stdout.strip()} {external} {examples} {publication}"
 
 
 _EXTERNAL_PLUGIN_PROOF = """
@@ -545,8 +547,14 @@ def smoke_test_external_plugin(python: Path, cli: Path, destination: Path, envir
     """
     if not (REFERENCE_PLUGIN_DIR / "pyproject.toml").is_file():
         raise ArtifactContractError(f"backend reference plugin is missing at {REFERENCE_PLUGIN_DIR}")
+    plugin_source = destination / "external-plugin-source"
+    shutil.copytree(
+        REFERENCE_PLUGIN_DIR,
+        plugin_source,
+        ignore=shutil.ignore_patterns("build", "*.egg-info", "__pycache__", "*.pyc"),
+    )
     subprocess.run(
-        [str(python), "-m", "pip", "install", "--disable-pip-version-check", "--no-deps", str(REFERENCE_PLUGIN_DIR)],
+        [str(python), "-m", "pip", "install", "--disable-pip-version-check", "--no-deps", str(plugin_source)],
         check=True,
         cwd=destination,
         env=environment,
@@ -618,6 +626,63 @@ def smoke_test_installed_publications(python: Path, destination: Path, environme
     if marker != "installed-publication-sdk=ok":
         raise ArtifactContractError(f"installed publication proof produced unexpected output: {marker!r}")
     return marker
+
+
+def smoke_test_installed_examples(python: Path, destination: Path, environment: dict[str, str]) -> str:
+    """Run source-only examples against the installed wheel, with explicit root status."""
+    if not INSTALLED_EXAMPLE_CHECK.is_file():
+        raise ArtifactContractError(f"installed example checker is missing: {INSTALLED_EXAMPLE_CHECK}")
+    required = {
+        "Q2MM_SUPPORTING_INFO": environment.get("Q2MM_SUPPORTING_INFO"),
+        "Q2MM_MM3_BASE": environment.get("Q2MM_MM3_BASE"),
+        "Q2MM_RH_ENAMIDE": environment.get("Q2MM_RH_ENAMIDE"),
+    }
+    command = [
+        str(python),
+        "-I",
+        str(INSTALLED_EXAMPLE_CHECK),
+        "--python",
+        str(python),
+        "--examples-root",
+        str(REFERENCE_PLUGIN_DIR.parent),
+        "--output",
+        str(destination / "examples"),
+    ]
+    if all(required.values()):
+        command.extend(
+            [
+                "--supporting-info",
+                str(required["Q2MM_SUPPORTING_INFO"]),
+                "--mm3-base",
+                str(required["Q2MM_MM3_BASE"]),
+                "--rh-enamide",
+                str(required["Q2MM_RH_ENAMIDE"]),
+            ]
+        )
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            cwd=destination,
+            env=environment,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+    except subprocess.CalledProcessError as exc:
+        raise ArtifactContractError(
+            f"installed example proof failed:\nstdout:\n{exc.stdout or ''}\nstderr:\n{exc.stderr or ''}"
+        ) from exc
+    markers = completed.stdout.strip().splitlines()
+    expected_publication = (
+        "installed-examples-publication=ok"
+        if all(required.values())
+        else "installed-examples-publication=not-configured"
+    )
+    expected = ["installed-examples-small=ok", expected_publication]
+    if markers != expected:
+        raise ArtifactContractError(f"installed example proof produced unexpected markers: {markers!r}")
+    return " ".join(markers)
 
 
 def main() -> int:

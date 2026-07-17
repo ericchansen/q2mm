@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "system": "sn2-test",
+    "system": "ch3f-sn2",
     "generated_at": "2026-03-18T17:01:08.436990+00:00",
     "generator": "scripts/regenerate_parity_fixtures.py",
     "upstream_commit": "b26404b8cc4a8cc9442b0094d8f326a99bf3eec5",

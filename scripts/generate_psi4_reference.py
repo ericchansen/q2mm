@@ -12,7 +12,7 @@ Usage (inside Psi4 Docker container)::
         ghcr.io/ericchansen/q2mm/ci-psi4:latest \\
         python scripts/generate_psi4_reference.py
 
-Outputs saved to ``examples/rh-enamide/psi4_reference/``.
+Outputs saved to ``examples/publication/rh-enamide/psi4_reference/``.
 """
 
 import json
@@ -42,7 +42,7 @@ from q2mm.constants import (
 )
 from q2mm.io import JaguarIn, MacroModel
 
-RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
+RH_DIR = REPO_ROOT / "examples" / "publication" / "rh-enamide"
 TRAINING = RH_DIR / "rh_enamide_training_set"
 MMO = TRAINING / "rh_enamide_training_set.mmo"
 JAG_DIR = TRAINING / "jaguar_spe_freq_in_out"

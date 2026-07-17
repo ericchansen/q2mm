@@ -34,7 +34,7 @@ from q2mm.io.tinker import _tinker_import_ff, load_tinker_prm, save_tinker_prm
 from q2mm.io.xyz import load_xyz
 
 # Fixture paths (test-specific, not shared)
-RH_MM3 = Path(__file__).resolve().parent.parent / "examples" / "rh-enamide" / "mm3.fld"
+RH_MM3 = Path(__file__).resolve().parent.parent / "examples" / "publication" / "rh-enamide" / "mm3.fld"
 
 
 # ---- _extract_element helper ----

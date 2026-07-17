@@ -1,198 +1,45 @@
-# Rh-Enamide
+# Rh-enamide
 
-Rh-enamide is the clearest literature-reproduction case in the repo: a complete Rh(I)-diphosphine asymmetric hydrogenation TSFF with 9 training structures.
+Rh-enamide is the first full bring-your-own-system case because it combines
+nine QM transition-state structures, a complete MM3 field, two custom OPT
+regions, a frozen base, QFUERZA initialization, objective evaluation, optimizer
+entry, and persistence.
 
-## Scope
+## Source and membership
 
-- Type: Transition state (Rh-catalyzed asymmetric hydrogenation)
-- Molecules: 9 TS structures
-- Parameters: 182 (OPT substructure: 8 bonds, 23 angles, 48 torsions)
-- QM reference: B3LYP/LACVP**
+- Governing article: Donoghue, Helquist, Norrby, and Wiest,
+  [*J. Chem. Theory Comput.* **2008**, 4, 1313–1323](https://doi.org/10.1021/ct800132a)
+  (Zotero `JXH5HHS6`).
+- Authoritative membership: nine transition-state structures in the source
+  sequence preserved by the loader.
+- Force field: one complete source MM3 file with the RhH3-E core and RH-PX OPT
+  regions.
 
-## Publication
+The inputs are tracked at `examples/publication/rh-enamide`, but wheel and sdist
+artifacts exclude the complete examples tree. Redistribution/licensing is not
+established; no broader rights statement is made.
 
-| Property | Value |
-|----------|-------|
-| **Paper** | Donoghue, P. J. et al. *J. Chem. Theory Comput.* **2008**, *4*, 1313–1323 |
-| **DOI** | [10.1021/ct800132a](https://doi.org/10.1021/ct800132a) |
-| **System** | Rh(I)-diphosphine asymmetric hydrogenation of enamides |
-| **Training set** | 9 transition-state structures |
-| **Engine** | MacroModel MM3* |
+## Current claim
 
-## What the paper fitted and reports
+| Row | Status | Substantiation |
+|---|---|---|
+| `repository-geometry-eigenmatrix-v1`, published or QFUERZA start | `partial_repository_reproduction` | [Canonical Rh-enamide evidence and objective gaps](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide) |
 
-### What the original Q2MM workflow fitted
+The repository profile includes all-nine bond, angle, and full-eigenmatrix
+targets. The article also used ESP charges and relative enthalpies; those are
+not silently approximated. Relative enthalpy remains typed but blocked until an
+MM backend exposes thermochemical enthalpy.
 
-The original Q2MM workflow fit a multi-target penalty function, not just Hessian eigenvalues.[^donoghue]
-
-- Bond lengths
-- Bond angles
-- Torsions
-- The full Hessian matrix
-- Partial charges
-- Relative energies
-
-The paper reports penalty-function tolerances of **0.01 Å** for bonds, **0.5°** for angles, **1°** for torsions, and **0.02 e** for charges, with Newton-Raphson plus Simplex refinement inside MacroModel MM3*.[^donoghue]
-
-The authors also describe two fitted variants:
-
-- **RhH** — the standard fit
-- **RhH-E** — an energy-emphasized fit
-
-### What the paper reports
-
-Donoghue et al. report strong structural and energetic agreement between QM and MM for the fitted force field.[^donoghue]
-
-- **Bond RMSD:** ≤ 0.03 Å (Table 5)
-- **Angle RMSD:** < 2° (Table 6)
-- **Relative-energy RMSD:** 0.3–0.5 kcal/mol (Table 7)
-- **External selectivity validation:** MUE = 0.6 kcal/mol across 18 test points
-
-The 2008 paper does **not** report an eigenvalue R² directly. It
-reports structural and energetic agreement (bond RMSD, angle RMSD,
-relative-energy RMSD).
-
-## Our reproduction
-
-| Metric | Value |
-|--------|:-----:|
-| Overall eigenvalue R² | 0.991 |
-| Overall slope | 0.986 |
-| Aggregate frequency RMSD | 259.9 cm⁻¹ (per-molecule avg: 85.5) |
-
-Our analytical QFUERZA starting point reproduces 99.1% of the
-variance in the QM eigenspectrum (R² = 0.991) with slopes near 1.0
-across all 9 transition states, without any iterative optimization.
-
-| TS | Atoms | Eig R² | Slope | Freq RMSD |
-|----|:-----:|:------:|:-----:|:---------:|
-| 1 | 36 | 0.990 | 1.000 | 93.9 |
-| 2 | 38 | 0.995 | 0.986 | 86.0 |
-| 3 | 38 | 0.993 | 0.987 | 87.1 |
-| 4 | 62 | 0.985 | 0.975 | 97.5 |
-| 5 | 62 | 0.985 | 0.975 | 98.2 |
-| 6 | 58 | 0.994 | 0.989 | 76.6 |
-| 7 | 58 | 0.993 | 0.989 | 76.3 |
-| 8 | 58 | 0.994 | 0.990 | 77.2 |
-| 9 | 58 | 0.993 | 0.989 | 76.9 |
-
-## Benchmark results
-
-### Multi-target objective
-
-Eigenmatrix-diagonal + geometry refs, 182 frozen-scoped active params,
-`invert_ts_curvature=True`, SciPy L-BFGS-B with JAX analytical executor
-gradients on RTX 5090 GPU:
-
-| Metric | Value |
-|--------|:-----:|
-| Ratio check | 1.07 (pass) |
-| Initial score | 4.86 × 10⁵ |
-| Final score | 2.71 × 10⁵ |
-| Reduction | **44.66 %** (vs ~0.6 % per-call Python objective noise floor — 77× above noise) |
-| Iterations (L-BFGS-B `nit`) | 15 |
-| Python objective evaluations | 2 |
-| Gradient source | `JaxObjectiveExecutor` analytical gradients |
-| Wall time | 739 s (12 min) |
-
-Per-category fit of the optimized force field (post-L-BFGS-B):
-
-| Category | n_refs | R² |
-|----------|-------:|----:|
-| bond_length | 500 | 0.989 |
-| bond_angle | 1,050 | 0.954 |
-| eig_diagonal | 1,395 | 0.968 |
-
-These numbers are from the published-start baseline. Reproduce with
-`q2mm-benchmark single --starting-point published --system rh-enamide`;
-raw JSON output with provenance lives at
-[`q2mm-data/benchmarks/rh-enamide/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-enamide/from-published).
-The canonical QFUERZA-start results (current default since q2mm#290)
-live at [`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/rh-enamide/convergence)
-and are summarized in the
-[QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
-
-The ratio check confirms the JAX executor is a reliable surrogate for this
-system — the published Donoghue OPT values reproduce QM geometry well
-so unconstrained geometry relaxation finds the correct local minima.
-A 44.66 % real-objective improvement against the published starting
-point — a 77× ratio over the per-call Python objective noise floor
-of ~0.6 % (see "Noise floor caveat" below) — is the largest reduction
-of any published-FF system in the suite (the published values are good
-but leave meaningful headroom under the q2mm JAX backend's
-eigenmatrix-diagonal objective).
-
-!!! warning "Noise floor caveat"
-    Repeated GPU Python objective calls on rh-enamide vary by
-    ~0.6 % across calls (5-call IQR / median).  Root cause traced to a
-    combination of scipy `L-BFGS-B` Fortran internal state and MM3
-    non-smooth points; see
-    [#284](https://github.com/ericchansen/q2mm/issues/284)
-    for the full diagnosis.  The 44.66 % reduction reported here is
-    77× the per-call noise band and therefore robust — single-call
-    measurements at this magnitude are scientifically reliable.
-
-### Historical frequency-only results
-
-!!! note "Different objective"
-    Earlier benchmarks used a **frequency-only** objective with all
-    ~2,742 FF parameters (not the paper's multi-target penalty with
-    182 OPT-substructure params). These numbers remain useful for
-    optimizer comparison on that specific task, but do not represent
-    literature reproduction.
-
-Under the frequency-only objective, JaxOpt L-BFGS lowered frequency
-RMSD from 259.9 to **187.7 cm⁻¹** and Optax Adam+cosine reached
-**199.5 cm⁻¹** — but optimizer improvement on frequency RMSD can
-trade away eigenspectrum quality (Adam+cosine dropped to R² = 0.843
-even as RMSD improved).[^later]
-
-## Comparison and gap analysis
-
-### Comparison
-
-- QFUERZA reaches R² = 0.991 with slopes near 1.0 across all 9 TS structures.
-- The 2008 paper does not report eigenvalue R², so a direct comparison is not possible.
-- The original force field was optimized for MacroModel MM3*; our reproduction uses a different engine (JAX). Cross-engine functional-form differences account for any remaining gap.
-
-### What q2mm demonstrates
-
-QFUERZA reaches R² = 0.991 in seconds without iteration. The
-original Q2MM workflow required hours of gradient optimization in
-MacroModel to reach its final fit.[^qfuerza]
-
-The multi-target optimization pipeline runs end-to-end on this
-9-molecule system (per-case JIT compilation, scipy L-BFGS-B with
-JAX analytical executor gradients) and lowers the real Python objective
-by 44.66 % against the published Donoghue OPT starting point
-(4.86 × 10⁵ → 2.71 × 10⁵ in 15 L-BFGS-B iterations).  An earlier
-baseline reported a 28.68 % reduction; that result depended on an FF
-whose Donoghue OPT values had been overwritten by QFUERZA.  The
-current loader API preserves the published OPT values, so the
-optimizer starts from a better point and still finds meaningful
-headroom.
-
-### Gap analysis
-
-To improve further:
-
-1. **Type-normalized penalties** — divide each data type's contribution by its count, matching the upstream Q2MM weighting. This is the most impactful change for convergence.
-2. **Closer MacroModel MM3* parity** — especially any remaining metal-center functional details that do not transfer cleanly to our engine.
-3. **Off-diagonal eigenmatrix elements** — the current objective uses diagonal-only; the papers use the full lower triangle (weight 0.05).
-
-## Reproduce
-
-Configure `Q2MM_RH_ENAMIDE` as described in
-[External data for published systems](../getting-started.md#external-data-for-published-systems)
-before running this command.
+## Run
 
 ```bash
-# Multi-target (correct methodology)
-q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb
+python examples/publication/rh-enamide/run.py \
+  --rh-enamide /path/to/q2mm/examples/publication/rh-enamide \
+  --output-root /path/to/output \
+  --bounded-ci
 ```
 
-Raw data: [`q2mm-data/benchmarks/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks) → `rh-enamide/`.
-
-[^donoghue]: Donoghue, P. J. et al. *J. Chem. Theory Comput.* **2008**, *4*, 1313–1323. [DOI: 10.1021/ct800132a](https://doi.org/10.1021/ct800132a)
-[^later]: See the later Q2MM/QFUERZA literature discussion in [QFUERZA Validation](../benchmarks/qfuerza-validation.md).
-[^qfuerza]: [QFUERZA Validation](../benchmarks/qfuerza-validation.md) summarizes why the analytical start is valuable even before iterative optimization.
+The JSON result reports citation/source status, exact order, active/frozen
+counts, QFUERZA audit, objectives/categories, execution policy, and saved paths.
+Remove `--bounded-ci` only when you intend to run the documented scientific
+optimizer. See the [tutorial](../tutorial.md#first-full-case-rh-enamide).

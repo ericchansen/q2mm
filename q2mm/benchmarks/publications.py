@@ -377,12 +377,15 @@ _RH_BASE = PublicationMetadata(
     source_artifacts=(
         SourceArtifactIdentity(
             identity="Rh-enamide tracked source tree",
-            role="repository-tracked scientific inputs excluded from installed package data",
-            fingerprint="git:b26404b8",
+            role="repository-tracked scientific-input content manifest excluded from installed package data",
+            fingerprint="sha256:8453fa0d81f58a56278c187d23e18adf9812a7594977f713a23938c5cd9d43fe",
         ),
     ),
     force_field_blocks=("RhH3-E core OPT", "RH-PX OPT"),
-    blockers=("Redistribution and installed-package policy for the tracked scientific inputs remains unresolved.",),
+    blockers=(
+        "Inputs are tracked in the source repository and excluded from distribution artifacts; "
+        "redistribution/licensing is not established.",
+    ),
     notes=("The published objective also used ESP charges and relative enthalpies.",),
 )
 _HECK_BASE = PublicationMetadata(

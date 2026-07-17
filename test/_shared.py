@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EXAMPLES_DIR = REPO_ROOT / "examples"
 SN2_QM_REF = sn2_reference_dir()
-ETHANE_DIR = EXAMPLES_DIR / "ethane"
+ETHANE_DIR = REPO_ROOT / "test" / "fixtures" / "ethane"
 
 # SN2 test data paths
 SN2_XYZ = SN2_QM_REF / "sn2-ts-optimized.xyz"
