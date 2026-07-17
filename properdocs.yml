@@ -38,11 +38,12 @@ nav:
     - Differences from v4: how-it-works/comparison.md
   - Backend Engines:
     - Overview: backends/index.md
+    - Authoring a Plugin: backends/authoring.md
     - OpenMM: backends/openmm.md
     - Tinker: backends/tinker.md
     - JAX: backends/jax-engine.md
     - JAX-MD: backends/jax-md.md
-    - Psi4 (QM): backends/psi4.md
+    - Psi4 (Reference): backends/psi4.md
   - Benchmarks:
     - Overview: benchmarks/index.md
     - Optimizer Comparison: benchmarks/optimizer-comparison.md

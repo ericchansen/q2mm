@@ -1,7 +1,7 @@
-"""Quick demonstration of the prepared-session backend API for MM and QM."""
+"""Quick demonstration of the prepared-session backend API for MM and reference engines."""
 
 if __name__ == "__main__":
-    from q2mm.backends.contracts import EnergyRequest, PreparationRequest, QMEnergyRequest
+    from q2mm.backends.contracts import EnergyRequest, PreparationRequest, ReferenceEnergyRequest
     from q2mm.backends.registry import available_backends, load_backend
     from q2mm.io.xyz import load_xyz
     from q2mm.models.forcefield import FunctionalForm
@@ -24,11 +24,11 @@ if __name__ == "__main__":
     else:
         print("Tinker not available on PATH - skipping MM demo.")
 
-    # QM: Psi4.
+    # Reference: Psi4.
     if "psi4" in available_backends():
         qm = load_backend("psi4", charge=0)  # CH3F is neutral
         prepared_qm = qm.prepare(PreparationRequest(case_id="ch3f", molecule=molecule))
-        e = prepared_qm.energy(QMEnergyRequest())
+        e = prepared_qm.energy(ReferenceEnergyRequest())
         print(f"Psi4: {qm.info.name}")
         print(f"  CH3F energy: {e.energy:.10f} {e.unit.value}")
     else:

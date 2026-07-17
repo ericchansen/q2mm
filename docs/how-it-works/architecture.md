@@ -192,8 +192,16 @@ explicit `load_backend`. Out-of-tree plugins advertise one entry point in the
 `q2mm.backends` group targeting a lightweight descriptor module; a missing
 dependency, import error, incompatible API version, duplicate name, invalid
 claim, or broken factory is isolated into a typed discovery record and never
-hides a healthy backend. This discovery layer is **internal and unstable**
-(documented as such until Milestone PR 3) with no compatibility promise.
+hides a healthy backend.
+
+This is the stable public `BACKEND_API_VERSION == 1` authoring boundary.
+Manifests use exactly `backend_api_version`, `name`, `role`,
+`capability_ceiling`, `functional_form_ceiling`, `factory`, and optional
+`probe`. Static ceilings describe possible support; loaded `BackendInfo`
+declares authoritative runtime subsets, with exact role equality and no
+overclaims. Pre-v1 names have no aliases. See
+[Authoring a backend plugin](../backends/authoring.md) for validation,
+conflict-priority, conformance, and packaging details.
 
 ---
 
@@ -229,8 +237,9 @@ q2mm/
 │
 ├── backends/             # MM and reference backend integrations
 │   ├── contracts.py      # Capability contracts, prepared-session protocols, typed requests/results, descriptors
-│   ├── registry.py       # Lazy, cached descriptor registry (built-in + entry-point manifests; cheap probes)
-│   ├── discovery.py      # Internal, unstable manifest validator + lazy entry-point discovery/isolation records
+│   ├── registry.py       # Public lazy, cached descriptor registry (built-in + entry-point manifests; cheap probes)
+│   ├── discovery.py      # API-v1 manifest validator + lazy entry-point discovery/isolation records
+│   ├── conformance.py    # Dependency-light public MM/reference backend conformance
 │   ├── mm/
 │   │   ├── openmm.py        # OpenMM backend (harmonic + MM3 dual-mode)
 │   │   ├── _openmm_terms.py # OpenMM internal term records

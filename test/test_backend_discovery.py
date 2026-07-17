@@ -1,7 +1,7 @@
 """Discovery, isolation, and capability-conformance tests for the backend registry.
 
 These tests never ``pip install`` anything into the developer environment.  The
-out-of-tree fixture package (``test/fixtures/backend_plugin``) is exposed on an
+out-of-tree reference package (``examples/backend-plugin``) is exposed on an
 isolated ``sys.path`` and advertised either via realistic fake ``EntryPoint``
 objects or a temporary ``.dist-info`` directory.  The registry's real install
 smoke lives in ``scripts/check_release_artifacts.py``.
@@ -22,6 +22,7 @@ from q2mm.backends import discovery, registry
 from q2mm.backends.contracts import (
     AbstractPreparedBackend,
     BackendConfigurationError,
+    BackendDescriptor,
     BackendInfo,
     BackendProvenance,
     BackendRole,
@@ -33,6 +34,11 @@ from q2mm.backends.contracts import (
     HessianUnit,
     PreparationRequest,
     UnsupportedCapabilityError,
+)
+from q2mm.backends.conformance import (
+    ConformanceError,
+    MMConformanceCase,
+    run_mm_conformance,
 )
 from q2mm.backends.discovery import (
     BACKEND_API_VERSION,
@@ -47,12 +53,10 @@ from q2mm.backends.discovery import (
     validate_manifest,
 )
 from q2mm.models.parameters import ParameterLayout
-from test._conformance import ConformanceError, assert_capability_conformance
 from test._shared import REPO_ROOT
 
-FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "backend_plugin"
-FIXTURE_VALUE = "q2mm_fixture_backend.descriptor:MANIFEST"
-FIXTURE_PROVIDER_VALUE = "q2mm_fixture_backend.descriptor:provider"
+FIXTURE_DIR = REPO_ROOT / "examples" / "backend-plugin"
+FIXTURE_VALUE = "q2mm_reference_backend.descriptor:MANIFEST"
 
 _UNSET = object()
 
@@ -116,7 +120,7 @@ def _manifest(**overrides: object) -> dict[str, object]:
         "role": "mm",
         "capability_ceiling": ["energy"],
         "functional_form_ceiling": ["harmonic"],
-        "factory": "q2mm_fixture_backend.backend:HarmonicFixtureBackend",
+        "factory": "q2mm_reference_backend.backend:HarmonicReferenceBackend",
         "probe": {"modules": ["numpy"]},
     }
     manifest.update(overrides)
@@ -124,7 +128,7 @@ def _manifest(**overrides: object) -> dict[str, object]:
 
 
 def _fixture_entry_point(
-    name: str = "harmonic-fixture", *, dist_name: str = "q2mm-backend-plugin-fixture"
+    name: str = "harmonic-reference", *, dist_name: str = "q2mm-backend-reference"
 ) -> FakeEntryPoint:
     """Return a fake entry point pointing at the real fixture descriptor manifest."""
     return FakeEntryPoint(name, FIXTURE_VALUE, dist_name=dist_name)
@@ -137,7 +141,7 @@ def fixture_on_path() -> Iterator[None]:
     inserted = path not in sys.path
     if inserted:
         sys.path.insert(0, path)
-    purged = {name: mod for name, mod in list(sys.modules.items()) if name.startswith("q2mm_fixture_backend")}
+    purged = {name: mod for name, mod in list(sys.modules.items()) if name.startswith("q2mm_reference_backend")}
     for name in purged:
         del sys.modules[name]
     try:
@@ -145,7 +149,7 @@ def fixture_on_path() -> Iterator[None]:
     finally:
         if inserted and path in sys.path:
             sys.path.remove(path)
-        for name in [n for n in list(sys.modules) if n.startswith("q2mm_fixture_backend")]:
+        for name in [n for n in list(sys.modules) if n.startswith("q2mm_reference_backend")]:
             del sys.modules[name]
 
 
@@ -174,6 +178,21 @@ def _harmonic_case() -> tuple[Any, Any]:
     molecule = load_molecule()
     force_field = qfuerza_fresh(molecule, functional_form=FunctionalForm.HARMONIC, invert_ts_curvature=False)
     return molecule, force_field
+
+
+def _descriptor_for_backend(backend: Any, *, role: BackendRole | None = None) -> BackendDescriptor:
+    """Build a static test descriptor whose ceilings cover a fake runtime."""
+    info = backend.info
+    descriptor_role = role or info.role
+    name = info.provenance.backend
+    forms = info.functional_forms if descriptor_role is BackendRole.MM else frozenset()
+    return BackendDescriptor(
+        name=name,
+        role=descriptor_role,
+        capability_ceiling=info.capabilities,
+        functional_form_ceiling=forms,
+        factory="test.test_backend_discovery:_ReferenceLikeBackend",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -393,8 +412,20 @@ class TestManifestValidation:
         assert isinstance(result, ManifestFailure)
         assert result.kind is DiscoveryIssueKind.INVALID_CAPABILITY_CLAIM
 
-    def test_mm_coordinate_gradient_claim_rejected(self) -> None:
-        result = validate_manifest(_manifest(capability_ceiling=["coordinate_gradient"]))
+    @pytest.mark.parametrize(
+        ("role", "capability"),
+        [
+            ("mm", "coordinate_gradient"),
+            ("mm", "geometry_optimization"),
+            ("reference", "minimize"),
+            ("reference", "parameter_gradient"),
+            ("reference", "hessian_parameter_jacobian"),
+            ("reference", "batched_energy"),
+            ("reference", "batched_hessian"),
+        ],
+    )
+    def test_role_incompatible_capability_claim_rejected(self, role: str, capability: str) -> None:
+        result = validate_manifest(_manifest(role=role, capability_ceiling=[capability], functional_form_ceiling=[]))
         assert isinstance(result, ManifestFailure)
         assert result.kind is DiscoveryIssueKind.INVALID_CAPABILITY_CLAIM
 
@@ -465,6 +496,12 @@ class TestManifestValidation:
         assert result.kind is DiscoveryIssueKind.INVALID_DESCRIPTOR
         assert "surprise" in result.message
 
+    def test_non_json_safe_manifest_rejected(self) -> None:
+        result = validate_manifest(_manifest(probe={"modules": [object()]}))
+        assert isinstance(result, ManifestFailure)
+        assert result.kind is DiscoveryIssueKind.INVALID_DESCRIPTOR
+        assert "JSON-safe" in result.message
+
     @pytest.mark.parametrize(
         ("old_key", "value"),
         [
@@ -495,7 +532,7 @@ class TestManifestValidation:
         assert isinstance(result, ManifestFailure), bad_name
         assert result.kind is DiscoveryIssueKind.INVALID_DESCRIPTOR
 
-    @pytest.mark.parametrize("good_name", ["openmm", "jax-md", "harmonic-fixture", "a.b_c-1", "A0", "x"])
+    @pytest.mark.parametrize("good_name", ["openmm", "jax-md", "harmonic-reference", "a.b_c-1", "A0", "x"])
     def test_valid_registry_keys_accepted(self, good_name: str) -> None:
         result = validate_manifest(_manifest(name=good_name))
         assert not isinstance(result, ManifestFailure), good_name
@@ -539,11 +576,11 @@ class TestManifestValidation:
             assert manifest["backend_api_version"] == BACKEND_API_VERSION, manifest["name"]
 
     def test_fixture_manifest_uses_runtime_backend_api_version(self, fixture_on_path: None) -> None:
-        import q2mm_fixture_backend.descriptor as descriptor_module
+        import q2mm_reference_backend.descriptor as descriptor_module
 
         assert descriptor_module.MANIFEST["backend_api_version"] == BACKEND_API_VERSION
         # Importing the descriptor must not import the implementation module.
-        assert "q2mm_fixture_backend.backend" not in sys.modules
+        assert "q2mm_reference_backend.backend" not in sys.modules
 
 
 # ---------------------------------------------------------------------------
@@ -554,31 +591,31 @@ class TestManifestValidation:
 class TestSnapshotComposition:
     def test_healthy_external_discovered(self, fixture_on_path: None) -> None:
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=[_fixture_entry_point()])
-        assert "harmonic-fixture" in snapshot.descriptors
-        desc = snapshot.descriptors["harmonic-fixture"]
+        assert "harmonic-reference" in snapshot.descriptors
+        desc = snapshot.descriptors["harmonic-reference"]
         assert desc.role is BackendRole.MM
         assert desc.capability_ceiling == frozenset({Capability.ENERGY})
         assert desc.functional_form_ceiling == frozenset({"harmonic"})
-        record = next(r for r in snapshot.records if r.name == "harmonic-fixture")
+        record = next(r for r in snapshot.records if r.name == "harmonic-reference")
         assert record.source is DiscoverySource.ENTRY_POINT
         assert record.state is DiscoveryState.REGISTERED
         assert record.issue is None
-        assert record.distribution == "q2mm-backend-plugin-fixture"
+        assert record.distribution == "q2mm-backend-reference"
 
-    def test_callable_provider_entry_point(self, fixture_on_path: None) -> None:
-        ep = FakeEntryPoint("harmonic-fixture", FIXTURE_PROVIDER_VALUE, dist_name="q2mm-backend-plugin-fixture")
+    def test_callable_provider_entry_point(self) -> None:
+        ep = FakeEntryPoint("provider", load_result=lambda: _manifest(name="provider"))
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=[ep])
-        assert "harmonic-fixture" in snapshot.descriptors
+        assert "provider" in snapshot.descriptors
 
     def test_no_implementation_import_during_discovery(self, fixture_on_path: None) -> None:
         # Importing the descriptor manifest must not import the implementation.
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=[_fixture_entry_point()])
-        assert "q2mm_fixture_backend.descriptor" in sys.modules
-        assert "q2mm_fixture_backend.backend" not in sys.modules
+        assert "q2mm_reference_backend.descriptor" in sys.modules
+        assert "q2mm_reference_backend.backend" not in sys.modules
         # Only an explicit load imports it.
-        backend = snapshot.descriptors["harmonic-fixture"].load()
-        assert "q2mm_fixture_backend.backend" in sys.modules
-        assert backend.info.provenance.backend == "harmonic-fixture"
+        backend = snapshot.descriptors["harmonic-reference"].load()
+        assert "q2mm_reference_backend.backend" in sys.modules
+        assert backend.info.provenance.backend == "harmonic-reference"
 
     def test_builtins_always_present_and_win_conflicts(self, fixture_on_path: None) -> None:
         # An external plugin claiming a built-in name is rejected; built-in survives.
@@ -591,7 +628,7 @@ class TestSnapshotComposition:
         assert rogue.state is DiscoveryState.REJECTED
         assert rogue.issue is DiscoveryIssueKind.DUPLICATE_NAME
         # The healthy fixture is unaffected.
-        assert "harmonic-fixture" in snapshot.descriptors
+        assert "harmonic-reference" in snapshot.descriptors
 
     def test_duplicate_external_names_all_rejected(self) -> None:
         one = FakeEntryPoint("dup", load_result=_manifest(name="dup"), dist_name="dist-a")
@@ -634,8 +671,8 @@ class TestSnapshotComposition:
     def test_descriptor_import_error(self) -> None:
         ep = FakeEntryPoint(
             "boom",
-            value="q2mm_fixture_backend._does_not_exist:MANIFEST",
-            load_error=ModuleNotFoundError("no module named q2mm_fixture_backend._does_not_exist"),
+            value="q2mm_reference_backend._does_not_exist:MANIFEST",
+            load_error=ModuleNotFoundError("no module named q2mm_reference_backend._does_not_exist"),
         )
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=[ep])
         assert "boom" not in snapshot.descriptors
@@ -717,7 +754,7 @@ class TestSnapshotComposition:
         ]
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=eps)
         # Healthy external available; all built-ins registered; dep-fail registered-unavailable.
-        assert "harmonic-fixture" in snapshot.descriptors
+        assert "harmonic-reference" in snapshot.descriptors
         assert {"openmm", "tinker", "jax", "jax-md", "psi4"} <= set(snapshot.descriptors)
         assert snapshot.descriptors["openmm"].factory == "q2mm.backends.mm.openmm:OpenMMBackend"
         assert "dep-fail" in snapshot.descriptors  # registered but unhealthy
@@ -983,20 +1020,20 @@ class TestEntryPointEnumeration:
     ) -> None:
         _write_dist_info(
             tmp_path,
-            "q2mm-backend-plugin-fixture",
-            "0.0.0",
-            f"[{discovery.ENTRY_POINT_GROUP}]\nharmonic-fixture = {FIXTURE_VALUE}\n",
+            "q2mm-backend-reference",
+            "1.0.0",
+            f"[{discovery.ENTRY_POINT_GROUP}]\nharmonic-reference = {FIXTURE_VALUE}\n",
         )
         monkeypatch.syspath_prepend(str(tmp_path))
         importlib.invalidate_caches()
         entry_points = discovery.iter_backend_entry_points()
-        matches = [ep for ep in entry_points if getattr(ep, "name", "") == "harmonic-fixture"]
+        matches = [ep for ep in entry_points if getattr(ep, "name", "") == "harmonic-reference"]
         assert matches, "temporary dist-info entry point was not discovered"
         ep = matches[0]
         assert ep.value == FIXTURE_VALUE
-        assert discovery._distribution_name(ep) == "q2mm-backend-plugin-fixture"
+        assert discovery._distribution_name(ep) == "q2mm-backend-reference"
         # Enumeration must not import the implementation.
-        assert "q2mm_fixture_backend.backend" not in sys.modules
+        assert "q2mm_reference_backend.backend" not in sys.modules
 
     def test_iter_backend_entry_points_deterministic(self, monkeypatch: pytest.MonkeyPatch) -> None:
         unordered = [
@@ -1042,16 +1079,16 @@ class TestRegistryDiscovery:
         self, fixture_on_path: None, inject_entry_points: Callable[[list[FakeEntryPoint]], None]
     ) -> None:
         inject_entry_points([])
-        assert "harmonic-fixture" not in registry.registered_backends()
+        assert "harmonic-reference" not in registry.registered_backends()
         inject_entry_points([_fixture_entry_point()])
-        assert "harmonic-fixture" in registry.registered_backends()
+        assert "harmonic-reference" in registry.registered_backends()
 
     def test_registered_external_available(
         self, fixture_on_path: None, inject_entry_points: Callable[[list[FakeEntryPoint]], None]
     ) -> None:
         inject_entry_points([_fixture_entry_point()])
-        assert "harmonic-fixture" in registry.available_mm_backends()
-        desc = registry.get_descriptor("harmonic-fixture")
+        assert "harmonic-reference" in registry.available_mm_backends()
+        desc = registry.get_descriptor("harmonic-reference")
         assert desc.role is BackendRole.MM
 
     def test_catalog_no_factory_import(
@@ -1060,7 +1097,7 @@ class TestRegistryDiscovery:
         inject_entry_points([_fixture_entry_point()])
         registry.catalog()
         registry.available_backends()
-        assert "q2mm_fixture_backend.backend" not in sys.modules
+        assert "q2mm_reference_backend.backend" not in sys.modules
 
     def test_broken_factory_recorded_on_explicit_load(
         self, inject_entry_points: Callable[[list[FakeEntryPoint]], None]
@@ -1103,7 +1140,7 @@ class TestRegistryDiscovery:
             ]
         )
         report = registry.discovery_report()
-        assert "harmonic-fixture" in report.registered
+        assert "harmonic-reference" in report.registered
         assert {"openmm", "psi4"} <= set(report.registered)
         assert any(r.issue is DiscoveryIssueKind.INVALID_CAPABILITY_CLAIM for r in report.issues)
 
@@ -1112,16 +1149,16 @@ class TestRegistryDiscovery:
     ) -> None:
         inject_entry_points([_fixture_entry_point()])
         # Simulate a prior transient/invalid-config failure poisoning the catalog.
-        registry._record_load_failure("harmonic-fixture", BackendConfigurationError("transient config"))
-        assert {s.name: s.healthy for s in registry.catalog()}["harmonic-fixture"] is False
+        registry._record_load_failure("harmonic-reference", BackendConfigurationError("transient config"))
+        assert {s.name: s.healthy for s in registry.catalog()}["harmonic-reference"] is False
         # A later successful load must clear the overlay so the catalog recovers.
-        backend = registry.load_backend("harmonic-fixture")
-        assert backend.info.provenance.backend == "harmonic-fixture"
-        assert {s.name: s.healthy for s in registry.catalog()}["harmonic-fixture"] is True
+        backend = registry.load_backend("harmonic-reference")
+        assert backend.info.provenance.backend == "harmonic-reference"
+        assert {s.name: s.healthy for s in registry.catalog()}["harmonic-reference"] is True
         lingering = [
             r
             for r in registry.discovery_records()
-            if r.name == "harmonic-fixture" and r.state is DiscoveryState.LOAD_FAILED
+            if r.name == "harmonic-reference" and r.state is DiscoveryState.LOAD_FAILED
         ]
         assert lingering == []
 
@@ -1136,9 +1173,16 @@ class TestCapabilityConformance:
         self, fixture_on_path: None, inject_entry_points: Callable[[list[FakeEntryPoint]], None]
     ) -> None:
         inject_entry_points([_fixture_entry_point()])
-        backend = registry.load_backend("harmonic-fixture")
+        backend = registry.load_backend("harmonic-reference")
         molecule, force_field = _harmonic_case()
-        outcome = assert_capability_conformance(backend, molecule=molecule, force_field=force_field)
+        outcome = run_mm_conformance(
+            MMConformanceCase(
+                descriptor=registry.get_descriptor("harmonic-reference"),
+                backend=backend,
+                molecule=molecule,
+                force_field=force_field,
+            )
+        )
         assert outcome.executed == (Capability.ENERGY,)
         # Every other drivable capability is proven typed-unsupported, including
         # the backend-level BATCHED_HESSIAN surface.
@@ -1159,7 +1203,15 @@ class TestCapabilityConformance:
         # SAME prepared session; REUSABLE_STATE is recorded as executed.
         molecule, force_field = _harmonic_case()
         backend = _ReusableStateBackend()
-        outcome = assert_capability_conformance(backend, molecule=molecule, force_field=force_field)
+        outcome = run_mm_conformance(
+            MMConformanceCase(
+                descriptor=_descriptor_for_backend(backend),
+                backend=backend,
+                molecule=molecule,
+                force_field=force_field,
+                capabilities=frozenset({Capability.ENERGY, Capability.REUSABLE_STATE}),
+            )
+        )
         assert Capability.ENERGY in outcome.executed
         assert Capability.REUSABLE_STATE in outcome.executed
         assert backend.prepared_sessions == 1  # prepared once, not twice
@@ -1168,7 +1220,16 @@ class TestCapabilityConformance:
         # A backend declaring HESSIAN + REUSABLE_STATE (no ENERGY) demonstrates
         # reuse via its declared+executed HESSIAN driver.
         molecule, force_field = _harmonic_case()
-        outcome = assert_capability_conformance(_HessianReuseBackend(), molecule=molecule, force_field=force_field)
+        backend = _HessianReuseBackend()
+        outcome = run_mm_conformance(
+            MMConformanceCase(
+                descriptor=_descriptor_for_backend(backend),
+                backend=backend,
+                molecule=molecule,
+                force_field=force_field,
+                capabilities=frozenset({Capability.HESSIAN, Capability.REUSABLE_STATE}),
+            )
+        )
         assert Capability.HESSIAN in outcome.executed
         assert Capability.REUSABLE_STATE in outcome.executed
         assert Capability.ENERGY in outcome.unsupported_verified
@@ -1177,12 +1238,16 @@ class TestCapabilityConformance:
         # REUSABLE_STATE selected but nothing runnable was executed -> failure,
         # not a silent omission.
         molecule, force_field = _harmonic_case()
-        with pytest.raises(ConformanceError, match="no drivable prepared-session capability"):
-            assert_capability_conformance(
-                _HessianReuseBackend(),
-                molecule=molecule,
-                force_field=force_field,
-                execute=frozenset({Capability.REUSABLE_STATE}),
+        backend = _HessianReuseBackend()
+        with pytest.raises(ConformanceError, match="no selected prepared-session capability"):
+            run_mm_conformance(
+                MMConformanceCase(
+                    descriptor=_descriptor_for_backend(backend),
+                    backend=backend,
+                    molecule=molecule,
+                    force_field=force_field,
+                    capabilities=frozenset({Capability.REUSABLE_STATE}),
+                )
             )
 
     def test_only_declared_implementation_hooks_run(self) -> None:
@@ -1190,7 +1255,14 @@ class TestCapabilityConformance:
         # guard, but no undeclared implementation hook body may execute.
         molecule, force_field = _harmonic_case()
         backend = _HookSpyBackend()
-        outcome = assert_capability_conformance(backend, molecule=molecule, force_field=force_field)
+        outcome = run_mm_conformance(
+            MMConformanceCase(
+                descriptor=_descriptor_for_backend(backend),
+                backend=backend,
+                molecule=molecule,
+                force_field=force_field,
+            )
+        )
         assert outcome.executed == (Capability.ENERGY,)
         # Only the ENERGY hook implementation ran; every undeclared hook was
         # blocked by the base capability guard before dispatch.
@@ -1199,7 +1271,7 @@ class TestCapabilityConformance:
     def test_fixture_unsupported_capability_not_invoked(self, fixture_on_path: None) -> None:
         # The base class raises before dispatch, so the hook body never runs.
         snapshot = build_snapshot(registry._BUILTIN_MANIFESTS, entry_points=[_fixture_entry_point()])
-        backend = snapshot.descriptors["harmonic-fixture"].load()
+        backend = snapshot.descriptors["harmonic-reference"].load()
         molecule, force_field = _harmonic_case()
         from q2mm.backends.contracts import HessianRequest
 
@@ -1210,18 +1282,29 @@ class TestCapabilityConformance:
 
     def test_conformance_rejects_qm_backend(self) -> None:
         molecule, force_field = _harmonic_case()
-        with pytest.raises(ConformanceError, match="MM backends only"):
-            assert_capability_conformance(_ReferenceLikeBackend(), molecule=molecule, force_field=force_field)
+        backend = _ReferenceLikeBackend()
+        with pytest.raises(ConformanceError, match="runtime role"):
+            run_mm_conformance(
+                MMConformanceCase(
+                    descriptor=_descriptor_for_backend(backend, role=BackendRole.MM),
+                    backend=backend,
+                    molecule=molecule,
+                    force_field=force_field,
+                )
+            )
 
     @pytest.mark.openmm
     def test_openmm_claim_gated_conformance(self) -> None:
         backend = registry.load_backend("openmm", platform_name="CPU")
         molecule, force_field = _harmonic_case()
-        outcome = assert_capability_conformance(
-            backend,
-            molecule=molecule,
-            force_field=force_field,
-            execute=frozenset({Capability.ENERGY, Capability.REUSABLE_STATE}),
+        outcome = run_mm_conformance(
+            MMConformanceCase(
+                descriptor=registry.get_descriptor("openmm"),
+                backend=backend,
+                molecule=molecule,
+                force_field=force_field,
+                capabilities=frozenset({Capability.ENERGY, Capability.REUSABLE_STATE}),
+            )
         )
         assert Capability.ENERGY in outcome.executed
         assert Capability.REUSABLE_STATE in outcome.executed  # session reuse works
@@ -1234,7 +1317,12 @@ class TestCapabilityConformance:
     def test_jax_claim_gated_conformance(self) -> None:
         backend = registry.load_backend("jax")
         molecule, force_field = _harmonic_case()
-        outcome = assert_capability_conformance(
-            backend, molecule=molecule, force_field=force_field, execute=frozenset({Capability.ENERGY})
+        outcome = run_mm_conformance(
+            MMConformanceCase(
+                descriptor=registry.get_descriptor("jax"),
+                backend=backend,
+                molecule=molecule,
+                force_field=force_field,
+            )
         )
         assert Capability.ENERGY in outcome.executed

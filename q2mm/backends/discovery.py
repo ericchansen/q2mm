@@ -1,4 +1,4 @@
-"""Internal, unstable lazy backend discovery.
+"""Public backend API-v1 manifest validation and lazy discovery.
 
 This module turns *manifests* — JSON-safe mappings describing a backend — into
 validated :class:`~q2mm.backends.contracts.BackendDescriptor` records, and
@@ -27,18 +27,17 @@ Design contract (kept deliberately narrow):
 * **Deterministic.**  Records are deep-immutable and emitted in a stable order
   regardless of entry-point iteration order or distribution naming.
 
-.. warning::
-
-   This is an internal, unstable API.  It is documented and shipped as
-   *internal* until Milestone PR 3; it is not covered by semantic versioning,
-   carries no compatibility promise, and may change without notice between
-   Q2MM releases.
+The manifest keys, entry-point group, descriptor import boundary, and runtime
+validation rules are the stable public backend-authoring contract for
+``BACKEND_API_VERSION == 1``.  Discovery records are advanced diagnostics;
+plugins do not need to construct them.
 """
 
 from __future__ import annotations
 
 import enum
 import importlib.metadata as importlib_metadata
+import math
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
@@ -52,13 +51,14 @@ from q2mm.backends.contracts import (
     BackendRole,
     Capability,
     DependencyProbe,
+    _role_capability_conflicts,
 )
 
-#: The single internal entry-point group out-of-tree plugins advertise on.
+#: The public entry-point group out-of-tree plugins advertise on.
 ENTRY_POINT_GROUP = "q2mm.backends"
 
-#: The complete, closed set of manifest keys.  This is an internal API with **no
-#: compatibility promise**: an unknown key is rejected as an invalid descriptor
+#: The complete, closed set of API-v1 manifest keys. An unknown key is rejected
+#: as an invalid descriptor
 #: (see :func:`validate_manifest`) rather than silently ignored, so a typo or a
 #: forward-incompatible extension fails loudly instead of being misinterpreted.
 #: Genuinely newer descriptors are gated first by ``backend_api_version``.
@@ -143,7 +143,7 @@ def _functional_form_values() -> frozenset[str]:
 
 
 # ---------------------------------------------------------------------------
-# Discovery vocabulary (internal, unstable)
+# Advanced discovery-diagnostic vocabulary
 # ---------------------------------------------------------------------------
 
 
@@ -375,6 +375,21 @@ def _as_str_sequence(value: object) -> list[str] | None:
     return items
 
 
+def _is_json_safe(value: object) -> bool:
+    """Return whether *value* uses the closed JSON data vocabulary."""
+    if value is None or isinstance(value, (str, bool)):
+        return True
+    if isinstance(value, int):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, Mapping):
+        return all(isinstance(key, str) and _is_json_safe(item) for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return all(_is_json_safe(item) for item in value)
+    return False
+
+
 def _validate_probe(raw: object) -> DependencyProbe | ManifestFailure:
     """Validate a manifest ``probe`` mapping into a :class:`DependencyProbe`."""
     if raw is None:
@@ -460,9 +475,14 @@ def validate_manifest(manifest: object, *, entry_point_name: str | None = None) 
             f"manifest targets backend_api_version {backend_api_version}, this runtime is {BACKEND_API_VERSION}.",
         )
 
-    # 1b. Unknown keys are rejected (this is an internal API with no
-    #     compatibility promise; a genuinely newer descriptor is caught by the
-    #     api_version gate above, so a leftover unknown key here is a mistake).
+    if not _is_json_safe(manifest):
+        return ManifestFailure(
+            DiscoveryIssueKind.INVALID_DESCRIPTOR,
+            "manifest must contain only JSON-safe string keys and finite scalar/list/mapping values.",
+        )
+
+    # 1b. Unknown keys are rejected. A genuinely newer descriptor is caught by
+    #     the version gate above, so a leftover unknown key here is a mistake.
     unknown_keys = sorted(str(key) for key in manifest if key not in MANIFEST_KEYS)
     if unknown_keys:
         return ManifestFailure(
@@ -523,10 +543,12 @@ def validate_manifest(manifest: object, *, entry_point_name: str | None = None) 
                 f"manifest declares unknown capability {value!r}; valid capabilities: {sorted(valid_capabilities)}.",
             )
         capabilities.add(Capability(value))
-    if role is BackendRole.MM and Capability.COORDINATE_GRADIENT in capabilities:
+    conflicts = _role_capability_conflicts(role, capabilities)
+    if conflicts:
+        values = sorted(capability.value for capability in conflicts)
         return ManifestFailure(
             DiscoveryIssueKind.INVALID_CAPABILITY_CLAIM,
-            "manifest declares coordinate_gradient for an MM backend; coordinate gradients are reference-only.",
+            f"manifest role {role.value!r} cannot declare capabilities {values}.",
         )
 
     # 5. Functional forms (restricted to supported values; reference must be empty).

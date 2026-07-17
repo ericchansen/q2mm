@@ -30,9 +30,9 @@ from q2mm.backends.contracts import (
     ReferenceHessianRequest,
     UnsupportedCapabilityError,
 )
+from q2mm.backends.conformance import ReferenceConformanceCase, run_reference_conformance
 from q2mm.backends.reference.ase import ASEBackend, ASEEvaluationError
 from q2mm.models.molecule import Molecule
-from test._conformance import assert_reference_capability_conformance
 
 
 class _EnergyOnly(Calculator):
@@ -316,12 +316,24 @@ def test_descriptor_runtime_subset_conformance_and_provenance(argon_pair: Molecu
 
     backend = registry.load_backend("ase", calculator=LennardJones())
     assert backend.info.capabilities == ceiling
-    outcome = assert_reference_capability_conformance(backend, molecule=argon_pair)
+    outcome = run_reference_conformance(
+        ReferenceConformanceCase(
+            descriptor=descriptor,
+            backend=backend,
+            molecule=argon_pair,
+            capabilities=ceiling,
+        )
+    )
     assert set(outcome.executed) == ceiling
     assert set(outcome.unsupported_verified) == {
+        Capability.MINIMIZE,
         Capability.HESSIAN,
         Capability.FREQUENCIES,
         Capability.GEOMETRY_OPTIMIZATION,
+        Capability.PARAMETER_GRADIENT,
+        Capability.HESSIAN_PARAMETER_JACOBIAN,
+        Capability.BATCHED_ENERGY,
+        Capability.BATCHED_HESSIAN,
     }
 
     energy_only = registry.load_backend("ase", calculator=_EnergyOnly())

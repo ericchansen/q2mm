@@ -554,19 +554,16 @@ These exist to back up the checklist; do not rely on them alone:
 - `.copilot/skills/q2mm-benchmark/SKILL.md` — agent skill that walks through this checklist automatically before launching any batch
 - `.copilot/skills/q2mm-analysis-design/SKILL.md` — agent skill that forces design-first analysis methodology before writing comparison docs
 
-## 12. Backend Plugin Discovery (internal, unstable)
-
-> ⚠️ **This is an internal, unstable API — not a public plugin API.** It is
-> documented as internal until Milestone PR 3 and carries **no compatibility
-> promise**. Do not describe it as a stable/public plugin API v1, and do not
-> write a migration guide for it.
+## 12. Backend Plugin API v1 (public, stable)
 
 `q2mm.backends.registry` discovers backends lazily through one validator. Both
 in-tree built-ins and out-of-tree plugins are declared as **JSON-safe manifest
-mappings** (`api_version`/`name`/`role`/`capabilities`/`forms`/`factory`/`probe`)
-and validated by `q2mm.backends.discovery.validate_manifest`, which produces a
-`BackendDescriptor`. There is exactly one construction path — built-ins are not
-privileged.
+mappings** with exactly `backend_api_version`, `name`, `role`,
+`capability_ceiling`, `functional_form_ceiling`, `factory`, and optional
+`probe`. They are validated by `q2mm.backends.discovery.validate_manifest`,
+which produces a `BackendDescriptor`. This is the public, versioned
+`BACKEND_API_VERSION == 1` authoring contract. Pre-v1 field names, role `qm`,
+`BackendRole.QM`, and `QM*Request` names have no compatibility aliases.
 
 - **Entry-point group:** out-of-tree plugins advertise one entry point in the
   `q2mm.backends` group whose value targets a *lightweight descriptor module*
@@ -585,10 +582,16 @@ privileged.
   `DiscoveryIssueKind`) and never hide a healthy built-in or external plugin.
   Built-in names win conflicts; two externals claiming one name are **all**
   rejected. A broken factory is discovered only on explicit load.
-- **Fixture + tests:** the out-of-tree fixture lives at
-  `test/fixtures/backend_plugin/` (repository test code — it must **never** ship
-  in the `q2mm` wheel/sdist). `test/test_backend_discovery.py` covers the
-  discovery/isolation/conformance matrix without `pip install`ing anything;
-  `test/_conformance.py` executes only a backend's declared capabilities.
-  `scripts/check_release_artifacts.py` performs the only real install and prints
-  `external-plugin=ok`.
+- **Strict validation:** unknown keys, incompatible/non-integer versions,
+  unsafe or entry-point-mismatched names, invalid roles/capabilities/forms,
+  non-JSON-safe data, and malformed factory/probe values are rejected.
+- **Ceilings:** descriptor capabilities/forms are static ceilings. Runtime
+  `BackendInfo` gives authoritative exact subsets; role equality is mandatory
+  and runtime overclaims are rejected. Provenance identifies descriptor name
+  and role.
+- **Conformance + example:** `q2mm.backends.conformance` provides immutable
+  typed MM/reference cases and deterministic outcomes without optional runtime
+  imports. The canonical independently installable plugin is
+  `examples/backend-plugin/`; it is excluded from Q2MM wheel and sdist.
+  `scripts/check_release_artifacts.py` installs it against a built wheel and
+  prints `external-plugin=ok`.
