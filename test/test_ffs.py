@@ -20,7 +20,7 @@ from q2mm.io.mm3 import (
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-FF_PATH = REPO_ROOT / "examples" / "rh-enamide" / "mm3.fld"
+FF_PATH = REPO_ROOT / "examples" / "publication" / "rh-enamide" / "mm3.fld"
 
 
 class TestMM3Import(unittest.TestCase):

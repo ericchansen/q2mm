@@ -1,7 +1,7 @@
 """External-data-root resolution for :mod:`q2mm.benchmarks.systems` modules.
 
-Every published-FF/training-set system needs licensed or non-distributed
-scientific data (Rh-enamide training set, Wahlers/Rosales dissertation
+Every published-FF/training-set system needs source-only or externally
+supplied scientific data (Rh-enamide training set, Wahlers/Rosales dissertation
 supporting information, the licensed MM3 base force field) located
 outside the repository. This module is the *one* place that resolves
 those locations — from explicit :class:`ExternalDataRoots` overrides,
@@ -78,7 +78,7 @@ def resolve_rh_enamide_dir(roots: ExternalDataRoots | None = None) -> Path:
     path = resolve_external_roots(roots).rh_enamide
     if path is None:
         raise FileNotFoundError(
-            "Rh-enamide data is not distributed with q2mm. Configure "
+            "Rh-enamide data is excluded from installed q2mm artifacts. Configure "
             "ExternalDataRoots(rh_enamide=Path(...)) via the rh_enamide loader's "
             "data_roots= argument, or set Q2MM_RH_ENAMIDE to the directory "
             "containing mm3.fld and rh_enamide_training_set/."

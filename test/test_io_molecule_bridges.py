@@ -18,7 +18,7 @@ from q2mm.models.hessian import HessianUnits
 from test._shared import GS_FCHK, REPO_ROOT
 
 _GAUSSIAN = REPO_ROOT / "test" / "fixtures" / "seminario_parity" / "cisplatin_opt_freq_m06.log"
-_RH_ROOT = REPO_ROOT / "examples" / "rh-enamide" / "rh_enamide_training_set"
+_RH_ROOT = REPO_ROOT / "examples" / "publication" / "rh-enamide" / "rh_enamide_training_set"
 _JAGUAR_ROOT = _RH_ROOT / "jaguar_spe_freq_in_out"
 _JAGUAR_IN = _JAGUAR_ROOT / "1ZDMPfromJCTCSI_loner1.01.in"
 _JAGUAR_OUT = _JAGUAR_ROOT / "1ZDMPfromJCTCSI_loner1.out"

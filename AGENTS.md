@@ -28,7 +28,7 @@ repeatedly cited the wrong reference here.
 | **Farrugia, Helquist, Norrby & Wiest 2025** — "Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement", *J. Chem. Theory Comput.* **22**, 469. | [10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751) | **QFUERZA** — the methodology of record for `q2mm/models/seminario.py`. Defines the FUERZA + H-angle-substitution variant we ship; documents that torsions are intentionally zeroed at initial-parameter time; explains the "mixing literature + custom params" workflow our loaders implement. |
 | Seminario 1996 — "Calculation of intramolecular force fields from second-derivative tensors", *Int. J. Quantum Chem.* **60**, 1271. | [10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W) | Original **FUERZA** projection.  Background only; QFUERZA above supersedes it for us. |
 | Limé & Norrby 2014 (vol. 36, 2015) — "Improving the Q2MM method for transition state force field modeling", *J. Comput. Chem.* **36**, 244–250. | [10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797) | TS Hessian inversion (`invert_ts_curvature=True`) and Method E2.  See the "TS Hessian Inversion" warning below. |
-| Donoghue, Helquist, Norrby & Wiest 2008 — *J. Chem. Theory Comput.* **4**, 1313. | [10.1021/ct800132a](https://doi.org/10.1021/ct800132a) | Rh-enamide TSFF reference paper.  Governs `examples/rh-enamide/`, `load_rh_enamide`, and the 9-molecule benchmark system. |
+| Donoghue, Helquist, Norrby & Wiest 2008 — *J. Chem. Theory Comput.* **4**, 1313. | [10.1021/ct800132a](https://doi.org/10.1021/ct800132a) | Rh-enamide TSFF reference paper.  Governs `examples/publication/rh-enamide/`, `load_rh_enamide`, and the 9-molecule benchmark system. |
 | Rosales, Helquist, Norrby & Wiest 2020 — *J. Am. Chem. Soc.* **142**, 9700. | [10.1021/jacs.0c01979](https://doi.org/10.1021/jacs.0c01979) | Heck-relay TSFF reference paper.  Governs `load_heck_relay` and the 23-molecule benchmark system. |
 | Wahlers, *Ph.D. Dissertation*, University of Notre Dame, 2021. | [10.7274/k930bv76q4n](https://doi.org/10.7274/k930bv76q4n) | pd-allyl, pd 1,4-conjugate-addition, rh 1,4-conjugate-addition TSFFs, plus the Chapter 4 Ferrocene GSFF. |
 
@@ -470,7 +470,7 @@ torsions, vdW) that all Q2MM systems build on.
   All rights reserved", which does not grant redistribution rights.
 - **Source:** download from [atlas-nano/ATLAS_toolkit](https://github.com/atlas-nano/ATLAS_toolkit)
   `ff/macromodel/mm3.fld` or extract from a MacroModel installation.
-- **Identical** to the base section of `examples/rh-enamide/mm3.fld`
+- **Identical** to the base section of `examples/publication/rh-enamide/mm3.fld`
   (the first ~1,850 lines before Rh-specific additions).
 
 ### Force field composition

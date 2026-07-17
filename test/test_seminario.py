@@ -10,8 +10,8 @@ from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
 from q2mm.models.molecule import Molecule
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-ETHANE_DIR = REPO_ROOT / "examples" / "ethane"
-RH_SEMINARIO_DIR = REPO_ROOT / "examples" / "rh-enamide"
+ETHANE_DIR = REPO_ROOT / "test" / "fixtures" / "ethane"
+RH_SEMINARIO_DIR = REPO_ROOT / "examples" / "publication" / "rh-enamide"
 RH_TRAINING_DIR = RH_SEMINARIO_DIR / "rh_enamide_training_set"
 RH_MMO = RH_TRAINING_DIR / "rh_enamide_training_set.mmo"
 RH_JAGUAR_IN = RH_TRAINING_DIR / "jaguar_spe_freq_in_out" / "1ZDMPfromJCTCSI_loner1.01.in"

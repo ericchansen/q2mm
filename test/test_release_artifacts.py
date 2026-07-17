@@ -10,12 +10,14 @@ import zipfile
 import pytest
 
 from scripts.check_release_artifacts import (
+    INSTALLED_EXAMPLE_CHECK,
     INSTALLED_PUBLICATION_CHECK,
     REFERENCE_PLUGIN_DIR,
     ArtifactContractError,
     _sdist_member_allowed,
     _validate_resource_manifest,
     smoke_test_installed_publications,
+    smoke_test_installed_examples,
     _wheel_member_allowed,
     compare_wheel_payload,
     inspect_sdist,
@@ -127,10 +129,24 @@ def test_backend_reference_plugin_present_in_repo() -> None:
     assert (REFERENCE_PLUGIN_DIR / "q2mm_reference_backend" / "descriptor.py").is_file()
     assert (REFERENCE_PLUGIN_DIR / "q2mm_reference_backend" / "backend.py").is_file()
     assert INSTALLED_PUBLICATION_CHECK.is_file()
+    assert INSTALLED_EXAMPLE_CHECK.is_file()
 
 
 def test_installed_publication_proof_reports_missing_configuration(tmp_path: Path) -> None:
     assert smoke_test_installed_publications(Path("python"), tmp_path, {}) == "installed-publication-sdk=not-configured"
+
+
+def test_installed_example_proof_has_explicit_missing_root_marker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    class Completed:
+        stdout = "installed-examples-small=ok\ninstalled-examples-publication=not-configured\n"
+
+    monkeypatch.setattr("scripts.check_release_artifacts.subprocess.run", lambda *args, **kwargs: Completed())
+    assert smoke_test_installed_examples(Path("python"), tmp_path, {}) == (
+        "installed-examples-small=ok installed-examples-publication=not-configured"
+    )
 
 
 def test_wheel_allowlist_excludes_reference_plugin() -> None:

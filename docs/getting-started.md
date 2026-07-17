@@ -1,166 +1,167 @@
-# Getting Started
+# Getting started with your own files
 
-This page covers installation and a quick sanity check. For a full
-parameterization walkthrough, see the [Tutorial](tutorial.md).
+Q2MM prepares and optimizes a molecular mechanics force field against
+quantum-mechanical reference data. The shortest safe workflow starts from a
+file that contains both an optimized geometry and a Cartesian Hessian, then
+requires you to choose the stationary-point kind, force-field form, and MM
+backend explicitly.
 
-## Installation
+## Install only what you use
 
-!!! note "Requirements"
-    Python **3.10** or newer is required.
-
-### From PyPI (recommended)
-
-```bash
-pip install q2mm                   # core package
-pip install "q2mm[openmm]"         # with OpenMM backend
-pip install "q2mm[jax]"            # with JAX backend + optax optimizers
-pip install "q2mm[jax-md]"         # with JAX-MD backend (periodic, PBC)
-pip install "q2mm[amber]"          # with parmed (AMBER support)
-pip install "q2mm[all]"            # all optional dependencies
-```
-
-> **Pre-release:** the current version is an alpha. Add `--pre` to any
-> install command (e.g. `pip install --pre q2mm` or
-> `pip install --pre "q2mm[openmm]"`) if a stable release hasn't been
-> published yet.
-
-### GPU setup
-
-For GPU setup instructions (CUDA, WSL2, verification commands), see
-[Platform Support](platform-support.md#gpu-setup).
-
-### From source (for development)
+Python 3.10 or newer is required.
 
 ```bash
-git clone https://github.com/ericchansen/q2mm.git
-cd q2mm
-pip install -e ".[dev]"            # editable install with dev tools
+pip install q2mm
+pip install "q2mm[jax]"       # JAX backend and its optimization dependencies
+pip install "q2mm[openmm]"    # OpenMM backend
+pip install "q2mm[qcengine]"  # optional reference-property generation
+pip install "q2mm[ase]"       # optional ASE reference calculators
 ```
 
-### External data for published systems
+SciPy is in optimizer extras such as `q2mm[jax]` and `q2mm[optimize]`; it is not
+an automatic core dependency. Q2MM never chooses a backend or runs a QM job
+inside `prepare`.
 
-Q2MM does not distribute the licensed or third-party datasets used by the
-published transition-state systems. Configure their locations before running
-those systems:
+For an alpha release that is not yet stable on PyPI, add `--pre`. Developers
+can instead clone the repository and run `pip install -e ".[dev]"`.
 
-| Variable | Required by | Value |
-|----------|-------------|-------|
-| `Q2MM_RH_ENAMIDE` | Rh-enamide | Directory containing `mm3.fld` and `rh_enamide_training_set/` |
-| `Q2MM_SUPPORTING_INFO` | Heck relay; Pd/Rh conjugate; Pd-allyl | Root of the extracted Wahlers/Rosales supporting information |
-| `Q2MM_MM3_BASE` | Pd-allyl; Pd/Rh conjugate | Licensed `mm3_base.fld` file |
+## First complete problem
 
-For example, in Bash:
-
-```bash
-export Q2MM_RH_ENAMIDE=/path/to/q2mm/examples/rh-enamide
-export Q2MM_SUPPORTING_INFO=/path/to/q2mm/validation/supporting-info
-export Q2MM_MM3_BASE=/path/to/mm3_base.fld
-```
-
-In PowerShell, use `$env:Q2MM_RH_ENAMIDE = "..."` (and likewise for the
-other variables). Missing or invalid roots raise an error naming the exact
-variable or `ExternalDataRoots` field to configure; Q2MM never searches above
-the installed package.
-
----
-
-## Generic preparation API
-
-The package root provides the small workflow facade:
-`q2mm.prepare`, `q2mm.evaluate`, `q2mm.optimize`, and `q2mm.save`.
-Preparation requires an explicit ground-state or transition-state choice. A
-single molecule without a force-field template also requires its functional
-form:
+A Gaussian formatted checkpoint (`.fchk`) can carry the geometry and Cartesian
+force constants needed by QFUERZA:
 
 ```python
+from pathlib import Path
+
 import q2mm
 from q2mm.io import load_fchk_molecule
 
-molecule = load_fchk_molecule("calculation.fchk")
+input_file = Path("/data/project/ts.fchk")
+output_dir = Path("/data/project/q2mm-output")
+output_dir.mkdir(parents=True, exist_ok=True)
+
+molecule = load_fchk_molecule(input_file, bond_tolerance=1.4)
 problem = q2mm.prepare(
     molecule,
-    stationary_point="ground_state",
+    stationary_point="transition_state",
     functional_form="harmonic",
+)
+initial = q2mm.evaluate(problem, backend="jax", executor="jax")
+run = q2mm.optimize(problem, backend="jax", recipe="recommended")
+saved = q2mm.save(run, output_dir / "optimized.frcmod")
+```
+
+The output manifest records the resolved backend, optimizer, workflow, bounds,
+input fingerprints, active slots, preparation audit, and objective result.
+Saving never overwrites an existing file unless `overwrite=True` is explicit.
+
+!!! warning "XYZ is geometry only"
+    XYZ contains element labels and coordinates. It does not carry a Cartesian
+    Hessian. Load the Hessian from its actual source and attach it with
+    `molecule.with_hessian(hessian, provenance=...)`; never imply that
+    `load_xyz` supplied it.
+
+## Input bridges are explicit
+
+Q2MM does not guess file formats or which structure in a trajectory is intended.
+
+```python
+from q2mm.io import (
+    load_fchk_molecule,
+    load_gaussian_molecules,
+    load_jaguar_molecules,
+    load_macromodel_molecules,
+)
+
+one = load_fchk_molecule("minimum.fchk")
+gaussian = load_gaussian_molecules(
+    ["case-1.log", "case-2.log"],
+    structure_index=-1,
+    require_hessian=True,
+)
+jaguar = load_jaguar_molecules(
+    ["case-1.in", "case-2.in"],
+    structure_index=0,
+    require_hessian=True,
+)
+macromodel = load_macromodel_molecules(
+    ["training-set.mmo"],
+    structure_index=0,
 )
 ```
 
-For trajectory-like files, use the format-specific
-`load_gaussian_molecules`, `load_jaguar_molecules`, or
-`load_macromodel_molecules` bridge and pass `structure_index` explicitly.
-These bridges never infer whether the first or last structure is intended.
-Low-level parser classes remain available when a workflow needs custom record
-selection.
+Gaussian, Jaguar, and MacroModel bridges require `structure_index`; the SDK
+does not silently choose first or last. Batch loading is all-or-nothing.
 
----
+## Template-backed multi-structure problems
 
-## QM/MM backends
-
-Q2MM can interface with several quantum-mechanical and molecular-mechanics
-backends. Install the ones your workflow requires:
-
-| Backend          | Type  | License              | Install                                          |
-| ---------------- | ----- | -------------------- | ------------------------------------------------ |
-| **OpenMM**       | MM    | MIT                  | `pip install openmm`                             |
-| **JAX-MD**       | MM    | Apache-2.0           | `pip install "q2mm[jax-md]"` (Linux/macOS/WSL2)  |
-| **Psi4**         | QM    | BSD-3 (open source)  | `conda install psi4 -c conda-forge`              |
-| **Tinker**       | MM    | Free (academic)      | [download](https://dasher.wustl.edu/tinker/)     |
-| **Gaussian**     | QM    | Commercial           | Site license                                     |
-| **Jaguar** (Schrödinger)  | QM | Commercial      | Site license (Schrödinger Suite)                 |
-
-!!! tip
-    You only need the backends relevant to your project — Q2MM will skip
-    unavailable backends gracefully.
-
----
-
-## Quick example
-
-A minimal script that reads QM reference data from the included example files.
-Clone the repository first to access the example data:
-
-```bash
-git clone https://github.com/ericchansen/q2mm.git
-cd q2mm
-```
+Use a complete field for evaluation and a smaller OPT/custom field to identify
+the rows that can change:
 
 ```python
-from q2mm.io import GaussLog, load_mm3_fld
-from q2mm.io.xyz import load_xyz
-from q2mm.resources import sn2_reference_dir
+import q2mm
+from q2mm.io import load_gaussian_molecules, load_mm3_fld
+from q2mm.models.observations import ObservationSet
 
-# Parse a Gaussian log for the QM Hessian (matrix of energy second derivatives)
-log = GaussLog("examples/ethane/TS.log")
-mol_from_log = log.molecules[-1]
-print(f"Gaussian molecule: {mol_from_log.n_atoms} atoms, Hessian shape: {mol_from_log.hessian.shape}")
+paths = ["TS1.log", "TS2.log", "TS3.log"]
+molecules = load_gaussian_molecules(paths, structure_index=-1)
+case_ids = ("TS1", "TS2", "TS3")
+full_ff = load_mm3_fld("complete.fld")
+opt_ff = load_mm3_fld("custom-opt.fld", include_standard=False)
+observations = ObservationSet.from_molecules(molecules, case_ids=case_ids)
 
-# Load an XYZ geometry into the unified Molecule model
-mol = load_xyz(sn2_reference_dir() / "ch3f-optimized.xyz")
-print(f"Molecule atoms: {mol.n_atoms}")
-
-# Load an MM3 force field
-ff = load_mm3_fld("examples/rh-enamide/mm3.fld")
-print(f"Bonds: {len(ff.bonds)}, Angles: {len(ff.angles)}")
+problem = q2mm.prepare(
+    molecules,
+    stationary_point="transition_state",
+    force_field=full_ff,
+    active_parameters=opt_ff,
+    observations=observations,
+    case_ids=case_ids,
+    initialize="qfuerza",
+)
 ```
 
----
+Only active scalar slots are re-estimated. Frozen slots remain bitwise equal to
+the supplied baseline. QFUERZA methodology is governed by
+[Farrugia et al.](https://doi.org/10.1021/acs.jctc.5c01751); transition-state
+curvature handling follows
+[Limé and Norrby](https://doi.org/10.1002/jcc.23797).
 
-## Package structure
+## Publication data roots
 
+Publication examples never download scientific data. Supply the required roots
+as CLI arguments or through the loader's `ExternalDataRoots` object.
+
+| Root | Systems | Distribution status |
+|---|---|---|
+| `rh_enamide` / `Q2MM_RH_ENAMIDE` | Rh-enamide | Source-tracked at `examples/publication/rh-enamide`, excluded from wheel/sdist; redistribution/licensing not established. |
+| `supporting_info` / `Q2MM_SUPPORTING_INFO` | Heck, Pd/Rh conjugate, Pd-allyl, Ferrocene | Caller-supplied recovered/source archive; never packaged. |
+| `mm3_base` / `Q2MM_MM3_BASE` | Pd/Rh conjugate, Pd-allyl, Ferrocene | Caller-supplied MM3 base; never packaged. |
+
+PowerShell example:
+
+```powershell
+$env:Q2MM_RH_ENAMIDE = "C:\path\to\q2mm\examples\publication\rh-enamide"
+$env:Q2MM_SUPPORTING_INFO = "C:\path\to\publication-data"
+$env:Q2MM_MM3_BASE = "C:\path\to\mm3_base.fld"
 ```
-q2mm/
-├── io/            # File format I/O (Gaussian, Jaguar, MM3, MOL2, AMBER, etc.)
-├── backends/      # QM/MM backend integrations (OpenMM, Tinker, JAX, Psi4)
-├── models/        # Molecule/force-field models + QFUERZA estimation
-├── preparation.py # Generic immutable problem construction
-├── application/   # Generic evaluation, optimization, and persistence
-├── objectives/    # Objective plans, executors, and fit metrics
-├── optimizers/    # Optimizers that consume objective executors
-├── workflows/     # Multi-stage parameterization workflows
-└── benchmarks/    # Benchmark systems, run profiles, acceptance, and the runner
+
+The canonical source-linked status and blocker table is
+[Publication Force-Field Coverage](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md).
+
+## Run fast executable examples
+
+From a source checkout, while q2mm is installed:
+
+```bash
+python examples/ch3f/run.py --bounded-ci --output-root ./results/ch3f
+python examples/ch3f-sn2/run.py --bounded-ci --output-root ./results/ch3f-sn2
 ```
 
-## Next steps
+`--bounded-ci` constructs the real problem and enters its optimizer once. It is
+deliberately separate from the default scientific workflow and makes no
+convergence claim.
 
-1. Follow the [Tutorial](tutorial.md) for a complete parameterization walkthrough
-2. Read [Theory & Methods](how-it-works/theory.md) to understand the pipeline
-3. See [Platform Support](platform-support.md) for GPU and backend setup
+Next, follow the [tutorial](tutorial.md) for the first full nine-structure
+Rh-enamide case, bring-your-own substitutions, reference backends, manual
+problem construction, blocked publication records, and an external plugin.

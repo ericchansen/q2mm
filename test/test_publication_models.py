@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import dataclasses
+import hashlib
 import json
 
 import numpy as np
@@ -94,7 +95,29 @@ def test_rh_enamide_partial_row_records_source_omissions_and_distribution_confli
     assert targets[PublicationTargetCategory.RELATIVE_ENTHALPY].disposition is ObjectiveTargetDisposition.AVAILABLE
     assert targets[PublicationTargetCategory.BOND_LENGTH].profile_weight == 10.0
     assert targets[PublicationTargetCategory.BOND_LENGTH].source_weight == 100.0
-    assert any("Redistribution" in blocker for blocker in record.blockers)
+    assert any("redistribution/licensing is not established" in blocker for blocker in record.blockers)
+
+
+def test_rh_enamide_source_tree_fingerprint_is_content_verified() -> None:
+    from test._shared import REPO_ROOT
+
+    root = REPO_ROOT / "examples" / "publication" / "rh-enamide"
+    entries = []
+    for path in sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts and path.name not in {"README.md", "run.py"}
+    ):
+        entries.append(
+            {
+                "path": path.relative_to(root).as_posix(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            }
+        )
+    digest = "sha256:" + hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    record = _record("rh-enamide", REPOSITORY_OBJECTIVE_PROFILE, "published")
+    assert len(entries) == 66
+    assert record.source_artifacts[0].fingerprint == digest
 
 
 def test_heck_has_separate_23_archive_and_blocked_24_publication_rows() -> None:

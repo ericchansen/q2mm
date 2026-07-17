@@ -1,113 +1,117 @@
 # Q2MM
 
-**Quantum-guided molecular mechanics force field optimization.**
+**Quantum-guided molecular mechanics force-field optimization.**
 
 [![CI](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml/badge.svg)](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/q2mm)](https://pypi.org/project/q2mm/)
 [![Python](https://img.shields.io/pypi/pyversions/q2mm)](https://pypi.org/project/q2mm/)
 
-Q2MM optimizes molecular mechanics (MM) force field parameters by minimizing
-the difference between MM-calculated properties and quantum mechanics (QM)
-reference data. It is designed for building **transition state force fields
-(TSFFs)** that enable rapid virtual screening of enantioselective catalysts.
+Q2MM turns quantum-mechanical structures and Hessians into a molecular
+mechanics fitting problem. It supports fresh force fields and
+literature-template workflows while keeping the scientific choices—stationary
+point, functional form, backend, optimizer, and bounds—explicit.
 
-**📖 [Documentation](https://ericchansen.github.io/q2mm/)**
+**[Documentation](https://ericchansen.github.io/q2mm/)** ·
+**[Bring-your-own tutorial](https://ericchansen.github.io/q2mm/tutorial/)** ·
+**[Publication coverage](validation/published_ffs/README.md)**
 
-## Why Q2MM?
-
-- **Hessian-informed initialization** — QFUERZA extracts bond and angle force
-  constants directly from QM Hessians, providing excellent starting parameters
-  before optimization begins.
-- **Open-source backends** — first-class support for [OpenMM](https://openmm.org/)
-  and [Psi4](https://psicode.org/) alongside commercial packages (Gaussian,
-  Schrödinger, Tinker).
-- **Clean, modular architecture** — format-agnostic data models (`ForceField`,
-  `Molecule`) decouple algorithms from file formats.
-- **Modern optimization** — powered by `scipy.optimize` with L-BFGS-B,
-  Nelder-Mead, trust-region, and Levenberg-Marquardt methods.
-- **Transition state support** — negative force constants, torsion parameters,
-  and proper eigenvalue handling for saddle-point geometries.
-
-## Quick Start
+## Install
 
 ```bash
-pip install "q2mm[openmm,optimize]"   # OpenMM backend + scipy optimizer
+pip install q2mm                 # models, preparation, I/O, and application API
+pip install "q2mm[jax]"          # JAX MM backend + optional SciPy optimizer
 ```
 
-> **Pre-release:** the current version is an alpha. Add `--pre` to any
-> install command (e.g. `pip install --pre "q2mm[openmm,optimize]"`) if a
-> stable release hasn't been published yet.
+Q2MM is an alpha release. Add `--pre` if no stable PyPI release is available.
+SciPy is optional; core installation does not silently choose or install an
+optimizer.
 
-> **GPU acceleration:** OpenMM CUDA works on Linux, WSL2, and native
-> Windows. For the full GPU stack (JAX CUDA + JAX-MD), use Linux or WSL2.
-> See the [Platform Support](https://ericchansen.github.io/q2mm/platform-support/)
-> guide for details.
+## Bring your own calculation
 
-For development, clone the repo and install in editable mode:
-
-```bash
-pip install -e ".[dev]"
-```
+This complete path reads a Gaussian formatted checkpoint containing geometry
+and Cartesian force constants, prepares a fresh harmonic transition-state
+problem, evaluates it with JAX, runs the documented JAX/SciPy workflow, and
+saves an AMBER force-field file plus provenance manifest.
 
 ```python
-from q2mm.io.fchk import load_fchk_reference
-from q2mm.models.forcefield import FunctionalForm
-from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.models.problem import StationaryPointKind
-from q2mm.models.seminario import qfuerza_fresh
-from q2mm.objectives.plan import ObjectivePlan
-from q2mm.objectives.python import PythonObjectiveExecutor
-from q2mm.optimizers.scipy_opt import ScipyOptimizer
-from q2mm.backends.mm.openmm import OpenMMBackend
+from pathlib import Path
 
-# 1. Load QM reference data and molecule from a Gaussian checkpoint
-ref, mol = load_fchk_reference("ts-optimized.fchk", bond_tolerance=1.4)
+import q2mm
+from q2mm.io import load_fchk_molecule
 
-# 2. Build the initial force field from the QM Hessian (QFUERZA)
-ff = qfuerza_fresh(mol, functional_form=FunctionalForm.MM3, au_hessian=True)
-
-# 3. Compile the objective plan, attach a backend, and optimize
-backend = OpenMMBackend()
-layout = ParameterLayout.from_force_field(ff)
-space = ActiveParameterSpace.all_active(layout, ff)
-plan = ObjectivePlan(
-    case_ids=("0",),
-    molecules=(mol,),
-    stationary_points=(StationaryPointKind.TRANSITION_STATE,),
-    observations=ref,
-    layout=layout,
-    active_space=space,
+molecule = load_fchk_molecule(
+    Path("my-transition-state.fchk"),
+    bond_tolerance=1.4,
 )
-obj = PythonObjectiveExecutor(plan, backend, ff)
-result = ScipyOptimizer(method="L-BFGS-B").optimize(obj, space)
 
-print(result.summary())
+problem = q2mm.prepare(
+    molecule,
+    stationary_point="transition_state",
+    functional_form="harmonic",
+)
+output_dir = Path("output")
+output_dir.mkdir(parents=True, exist_ok=True)
+baseline = q2mm.evaluate(problem, backend="jax", executor="jax")
+run = q2mm.optimize(
+    problem,
+    backend="jax",
+    recipe="recommended",
+)
+saved = q2mm.save(run, output_dir / "my-transition-state.frcmod")
+
+print(baseline.total)
+print(saved.force_field_path, saved.manifest_path)
 ```
 
-`load_fchk_reference()` auto-extracts bond lengths and angles from the
-QM geometry. You can also use `load_gaussian_reference()` for `.log` files, or
-`ObservationSet.from_molecule()` for maximum control. See the
-[Tutorial](https://ericchansen.github.io/q2mm/tutorial/) for the full
-workflow including frequencies, eigenmatrix data, and multi-molecule fits.
+The choices above are intentional:
 
-## Supported Backends
+- `stationary_point="transition_state"` drives TS curvature inversion;
+- `functional_form="harmonic"` is compatible with JAX and `.frcmod`;
+- `backend="jax"` selects the MM evaluator;
+- `recipe="recommended"` resolves and records the measured JAX/SciPy policy.
 
-| Backend | Type | License |
-|---------|------|---------|
-| **OpenMM** | MM | MIT |
-| **JAX** | MM | Apache 2.0 |
-| **JAX-MD** | MM | Apache 2.0 |
-| **Tinker** | MM | Free (academic) |
-| **Psi4** | QM | BSD-3 |
-| **Gaussian** | QM | Commercial |
-| **Schrödinger** | QM/MM | Commercial |
+An XYZ file carries symbols and coordinates, **not a Hessian**. If XYZ is your
+geometry source, attach a separately generated canonical Hartree/Bohr² Hessian
+with `molecule.with_hessian(...)` before calling `q2mm.prepare`.
+
+## Multi-structure template workflow
+
+For a production fitting set, supply one complete force field and a smaller
+OPT/custom field identifying the scalar slots that may change:
+
+```python
+problem = q2mm.prepare(
+    molecules,
+    stationary_point="transition_state",
+    force_field=complete_force_field,
+    active_parameters=opt_force_field,
+    observations=observations,
+    case_ids=case_ids,
+    initialize="qfuerza",
+)
+run = q2mm.optimize(problem, backend="jax")
+q2mm.save(run, "optimized.fld")
+```
+
+The [Rh-enamide tutorial](https://ericchansen.github.io/q2mm/tutorial/#first-full-case-rh-enamide)
+shows the nine-structure form of this workflow and clearly labels its current
+geometry/eigenmatrix objective as a partial repository reproduction. The
+governing source is
+[Donoghue et al. 2008](https://doi.org/10.1021/ct800132a).
+
+## Source-only examples
+
+- `examples/ch3f/` — fresh ground-state and caller-owned FCHK workflow
+- `examples/ch3f-sn2/` — fresh transition-state workflow
+- `examples/publication/` — six real multi-molecule case studies
+- `examples/backend-plugin/` — independently installable backend API v1 example
+
+Examples and Rh-enamide source inputs are excluded from wheel and sdist
+artifacts. Rh-enamide is tracked in the source repository; its
+redistribution/licensing is not established. Dissertation archives and the
+standalone MM3 base are never copied into q2mm artifacts.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing with
-Docker, and submitting changes.
-
+The q2mm software is MIT licensed; see [LICENSE](LICENSE). This statement does
+not grant rights to external scientific inputs or third-party force fields.

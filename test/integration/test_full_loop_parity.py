@@ -67,7 +67,7 @@ def _make_freq_evaluator(ff, backend, molecules, reference, layout):  # noqa: AN
 FIXTURE_DIR = REPO_ROOT / "test" / "fixtures" / "full_loop"
 ETHANE_GS_GOLDEN = FIXTURE_DIR / "ethane_gs_golden.json"
 
-RH_DIR = REPO_ROOT / "examples" / "rh-enamide"
+RH_DIR = REPO_ROOT / "examples" / "publication" / "rh-enamide"
 TRAINING_SET_DIR = RH_DIR / "rh_enamide_training_set"
 MMO_PATH = TRAINING_SET_DIR / "rh_enamide_training_set.mmo"
 JAG_DIR = TRAINING_SET_DIR / "jaguar_spe_freq_in_out"

@@ -1,157 +1,37 @@
-# Pd 1,4-Conjugate
+# Pd 1,4-conjugate addition
 
-Pd 1,4-conjugate addition is another composed-force-field transfer case: the published TSFF combines a base MM3 field with an OPT overlay, and that composition does not carry over faithfully under our backend. The paper reports internal R² > 0.99 under MacroModel MM3*; our reproduction yields R² = −4.94 under the JAX backend.
+This ten-structure Pd system independently tests an OPT-only overlay composed
+with a caller-supplied MM3 base.
 
-## Scope
+## Source and membership
 
-- Type: Transition state (Pd-catalyzed 1,4-conjugate addition)
-- Molecules: 10 TS structures
-- Parameters: 340 (OPT substructure: 20 bonds, 32 angles, 236 torsions)
-- QM reference: B3LYP-D3/6-31G(d)
+- Article: Wahlers et al.,
+  [*J. Org. Chem.* **2021**, 86, 5660–5667](https://doi.org/10.1021/acs.joc.1c00136)
+  (Zotero `R62E6EGV`).
+- Derivation: Wahlers, *Ph.D. Dissertation*, University of Notre Dame,
+  **2021**, Chapter 5,
+  [10.7274/k930bv76q4n](https://doi.org/10.7274/k930bv76q4n)
+  (Zotero `AAZ6I5V3`).
+- Membership: exactly `TS1`–`TS10`, preserving the repository compatibility
+  order.
+- Composition: four conceptual source groups represented by six parser-visible
+  OPT blocks plus an external MM3 base.
 
-## Publication
+## Current claim
 
-| Property | Value |
-|----------|-------|
-| **Paper** | Wahlers, J. et al. *J. Org. Chem.* **2021**, *86*, 5660–5667 |
-| **DOI** | [10.1021/acs.joc.1c00136](https://doi.org/10.1021/acs.joc.1c00136) |
-| **System** | Pd-catalyzed 1,4-conjugate addition |
-| **Training set** | 10 transition-state structures |
-| **Engine** | MacroModel MM3* |
+| Row | Status | Substantiation |
+|---|---|---|
+| `repository-geometry-eigenmatrix-v1`, published or QFUERZA start | `partial_repository_reproduction` | [Ten-case and six-block evidence](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition) |
 
-## What the paper fitted and reports
+The source electrostatic, torsion, and equilibrium-tether terms are not
+reconstructed by this compatibility row.
 
-### What the original Q2MM workflow fitted
-
-This TSFF belongs to the same Notre Dame Q2MM program: MacroModel MM3* plus the standard multi-target Q2MM fitting logic, not eigenvalue-only projection.[^joc]
-
-- Structural targets
-- Hessian/eigenvalue targets
-- Q2MM optimization under MacroModel MM3*
-- External selectivity validation on literature reactions
-
-### What the paper reports
-
-The paper and thesis summary report:[^joc]
-
-- **Internal slopes:** ~1.01
-- **Internal R²:** > 0.99
-- **External validation:** 82 predictions
-- **Selectivity R²:** 0.88 with y = 0.86x
-- **Selectivity MUE:** 1.8 kJ/mol
-
-## Our reproduction
-
-| Metric | Value |
-|--------|:-----:|
-| Overall eigenvalue R² | -4.94 |
-| Per-molecule R² range | all negative |
-| Positive R² values | 0 / 10 |
-| Aggregate frequency RMSD | 764.4 cm⁻¹ (per-molecule avg: 226.5) |
-
-**What this means:** A negative R² means our engine's reproduction of the
-published eigenspectrum is worse than simply predicting the average — a
-complete failure of cross-engine transfer, not a small miss.
-
-!!! warning "All molecules fail the reproduction test"
-    Every molecule is negative. The reproduced eigenspectrum is worse than a mean-value model across the whole training set.
-
-## Benchmark results
-
-!!! success "Executor-ratio gate now passes — loader API refactor"
-    After the loader API refactor that stopped overwriting Wahlers OPT
-    values with raw QFUERZA projections, the JAX/Python objective
-    ratio for pd-conjugate is 0.985 — comfortably inside the
-    [0.85, 1.15] band.  JAX-executor-guided optimization improves the
-    real Python objective by 16.1 % (see "End-to-end optimization"
-    below).
-
-| Metric | Value |
-|--------|:-----:|
-| Ratio check | 0.985 (in_band) |
-| Initial Python objective score | 8.61 × 10⁶ |
-| Final Python objective score | 7.23 × 10⁶ |
-| Improvement | **16.1 %** |
-| Optimizer | L-BFGS-B (scipy) over JAX analytical executor gradients |
-| Wall time | 700 s |
-| n_iterations / n_evaluations | 3 / 2 |
-
-`n_evaluations` counts real Python objective calls (initial baseline +
-final validation = 2); the JAX surrogate calls L-BFGS-B makes
-internally are not tracked in this field.  Both values are reported
-verbatim from `validation_results.json`.
-
-Per-category fit before and after optimization, evaluated by the q2mm
-JAX backend against the QM training data (the "published" column uses
-the literature OPT values directly — no QFUERZA — and the "optimized"
-column uses the FF produced by the L-BFGS-B + JAX executor run above):
-
-| Category | n_refs | R² (published) | R² (optimized) |
-|----------|-------:|---------------:|---------------:|
-| bond_length | 473 | 0.939 | 0.950 |
-| bond_angle | 892 | −0.182 | 0.037 |
-| eig_diagonal | 1286 | −10.056 | −9.642 |
-
-Geometry reproduction is now strong (bond_length R² ≈ 0.95); the
-eigenmatrix R² is still negative, reflecting the same MM3* ↔ JAX-backend
-cross-engine gap that affects all Wahlers / Rosales systems but not
-rh-enamide.
-
-### End-to-end optimization (issue #276 follow-up)
-
-Issue [#276](https://github.com/ericchansen/q2mm/issues/276) asked
-whether bypassing the executor-ratio gate (`--executor-ratio-tol none`) would unlock
-useful optimization for pd-conjugate, which historically sat at
-ratio = 1.20 in the pre-refactor baseline.  The loader refactor
-itself resolved the surrogate mismatch: ratio is now 0.985 and the
-default gate passes without intervention.  Running the experiment
-with `--executor-ratio-tol none` (a no-op in this regime) confirms a real
-16.1 % Python objective improvement, well past the 5 % decision
-threshold set in the issue.  No change to the default `executor_ratio_tol`
-is recommended — the gate was diagnosing a real problem (the
-overwritten OPT values), and the fix lived in the loader.
-
-See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
-cross-system comparison and methodology details.  Raw numbers (published-start
-baseline) are in the
-[`from-published/` baseline](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition/from-published)
-in `ericchansen/q2mm-data`, with full provenance (q2mm git SHA, JAX/OpenMM
-device, executor_ratio_tol, timestamp).  Canonical QFUERZA-start results
-(default since q2mm#290) live at
-[`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition/convergence)
-and are summarized in the [QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
-
-## Comparison and gap analysis
-
-### Comparison
-
-The literature TSFF is reported as an excellent internal fit and a strong selectivity model. Our reproduction does not retain that internal fit.
-
-Here the leading explanation is again the **composed-force-field workflow**. The published TSFF is built from a standard MM3 base plus an OPT overlay. If our engine does not interpret that composition exactly the way MacroModel MM3* does, the fitted eigenvalue structure is not preserved.
-
-Frequency-only optimization improves the benchmark metric substantially — the best Adam+cosine run lowers RMSD from **764.4** to **305.3 cm⁻¹** — but the reproduced eigenspectrum is still negative for every molecule. The transfer problem comes before optimizer choice.
-
-### Gap analysis
-
-To close the gap for Pd 1,4-conjugate addition, we would need:
-
-1. **MacroModel-faithful composition of the base MM3 field and OPT overlay.**
-2. **System-specific validation of Pd nonbonded and coupling behavior** after composition.
-3. **A full Q2MM re-fit under the original objective** once the composed starting field behaves correctly.
-
-The negative R² reflects a transfer gap in the composed FF workflow.
-
-## Reproduce
-
-Configure both `Q2MM_SUPPORTING_INFO` and `Q2MM_MM3_BASE` as described in
-[External data for published systems](../getting-started.md#external-data-for-published-systems)
-before running this command.
+## Run
 
 ```bash
-q2mm-benchmark matrix --system pd-conjugate --backend jax --optimizer optax-adam-cosine
+python examples/publication/pd-conjugate/run.py \
+  --supporting-info /path/to/publication-data \
+  --mm3-base /path/to/mm3_base.fld \
+  --output-root /path/to/output \
+  --bounded-ci
 ```
-
-Raw data:
-[`q2mm-data/benchmarks/pd-1,4-conjugate-addition/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-1,4-conjugate-addition).
-
-[^joc]: Wahlers, J. et al. *J. Org. Chem.* **2021**, *86*, 5660–5667. [DOI: 10.1021/acs.joc.1c00136](https://doi.org/10.1021/acs.joc.1c00136)

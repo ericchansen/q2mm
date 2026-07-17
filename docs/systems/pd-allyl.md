@@ -1,157 +1,37 @@
-# Pd-Allyl
+# Pd-allyl
 
-Pd-allyl is a composed-force-field transfer case: the published Pd-catalyzed enantioselective allylic amination TSFF layers an OPT substructure (482 params) on top of an MM3 base field, and that composition does not survive cleanly under our engine. The benchmark still matters because optimizer refinement on this 21-structure system tests the frozen-parameter workflow at scale even though the literature-level internal fit does not transfer.
+Pd-allyl demonstrates composition of a caller-supplied MM3 base with an
+OPT-only publication field and an exact frozen/active scalar partition.
 
-## Scope
+## Source and membership
 
-- Type: Transition state (Pd-catalyzed allylic amination)
-- Molecules: 21 TS structures
-- Parameters: 482 (OPT substructure: 43 bonds, 88 angles, 220 torsions)
-- QM reference: M06-D3/LANL2DZ/6-31+G*
+- Article: Wahlers et al.,
+  [*Nature Communications* **2021**, 12, 6508](https://doi.org/10.1038/s41467-021-27065-2)
+  (Zotero `QVKE99W3`).
+- Derivation: Wahlers, *Ph.D. Dissertation*, University of Notre Dame,
+  **2021**, Chapter 3,
+  [10.7274/k930bv76q4n](https://doi.org/10.7274/k930bv76q4n)
+  (Zotero `AAZ6I5V3`).
+- Primary set: `TS1`–`TS21`.
+- Auxiliary oxazole-fitting set: `TS22`–`TS25`.
+- Force field: eight physical OPT blocks composed with an external MM3 base.
 
-## Publication
+## Current claims
 
-| Property | Value |
-|----------|-------|
-| **Paper** | Wahlers, J. et al. *Nat. Commun.* **2021**, *12*, 6508 |
-| **DOI** | [10.1038/s41467-021-27065-2](https://doi.org/10.1038/s41467-021-27065-2) |
-| **System** | Pd-catalyzed enantioselective allylic amination |
-| **Training set** | 21 transition-state structures |
-| **Engine** | MacroModel MM3* |
+| Row | Status | Substantiation |
+|---|---|---|
+| 21 primary cases, `repository-geometry-eigenmatrix-v1` | `partial_repository_reproduction` | [Primary/auxiliary evidence](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl) |
+| Complete eight-block rederivation across 25 cases | `blocked_historical_record` | [Missing TS22–TS25 Hessian blocker](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl) |
 
-## What the paper fitted and reports
+No charge, torsion, or equilibrium-tether source target is silently substituted
+by the compatibility profile.
 
-### What the original Q2MM workflow fitted
-
-Like the other Notre Dame TSFF papers, this force field comes from the full Q2MM/MacroModel workflow rather than eigenvalue-only fitting.[^pdallyl]
-
-- Simultaneous fitting of multiple target classes
-- MacroModel MM3* throughout parameter refinement
-- Internal validation reported separately for Hessian, geometry, and charges
-- External validation reported on selectivity predictions
-
-### What the paper reports
-
-Wahlers et al. report:[^pdallyl]
-
-- **Hessian R²:** 0.998
-- **Geometry R²:** 0.988
-- **Charges R²:** 0.822
-- **External validation:** 77 selectivity predictions
-- **Selectivity MUE:** 4.4 kJ/mol
-- **Selectivity R²:** 0.41
-
-## Our reproduction
-
-| Metric | Value |
-|--------|:-----:|
-| Overall eigenvalue R² | -0.93 |
-| Per-molecule R² range | -2.7 to +0.36 |
-| Best molecule | Only mildly positive (+0.36) |
-| Aggregate frequency RMSD | 1068.7 cm⁻¹ (per-molecule avg: 380.5) |
-
-**What this means:** The overall negative R² means the published
-eigenspectrum does not transfer cleanly into our engine. Even though a
-few molecules are slightly positive, the system as a whole performs
-worse than simply predicting the average.
-
-!!! warning "Negative overall R²"
-    The overall reproduction is still poor. A small number of molecules barely cross above zero, but the system as a whole remains negative. The paper reports Hessian R² = 0.998; our reproduction yields R² = −0.93.
-
-## Benchmark results
-
-SciPy L-BFGS-B with JAX analytical executor gradients.  After the loader
-API refactor that preserves the published Wahlers OPT values
-as-published (no QFUERZA overwrite), the executor-ratio gate passes for
-pd-allyl.  Run with `--n-evals 10` so the verdict is statistically
-defensible against the per-call engine noise documented in
-[#284](https://github.com/ericchansen/q2mm/issues/284).
-
-| Metric | Value |
-|--------|:-----:|
-| Ratio check | 1.091 (pass) |
-| Initial Python objective (n=10 mean) | 8.036 × 10⁶ ± 0.173 % CI₉₅ |
-| Final Python objective (n=10 mean) | 8.037 × 10⁶ ± 0.229 % CI₉₅ |
-| Improvement (mean Δ%) | **−0.010 % (NOT SIGNIFICANT — CI₉₅ ± 0.40 %)** |
-| L-BFGS-B iterations / OF evaluations | 2 / 2 |
-| Gradient source | `JaxObjectiveExecutor` analytical gradients |
-| Wall time | 1,289 s opt + ~16 min for 20 post-eval samples |
-
-Per-category fit of the optimized force field (post-L-BFGS-B):
-
-| Category | n_refs | R² |
-|----------|-------:|----:|
-| bond_length | 849 | 0.046 |
-| bond_angle | 1,582 | 0.331 |
-| eig_diagonal | 2,412 | −2.82 |
-
-These numbers are from the published-start baseline. Reproduce with
-`q2mm-benchmark single --starting-point published --system pd-allyl --n-evals 10`;
-raw JSON output with provenance lives at
-[`q2mm-data/benchmarks/pd-allyl-amination/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/from-published).
-The canonical QFUERZA-start results (current default since q2mm#290)
-live at [`convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks/pd-allyl-amination/convergence)
-and are summarized in the
-[QFUERZA-recovery doc](../benchmarks/qfuerza-recovery.md).
-
-!!! success "Confirmed: published Wahlers FF sits at a JAX-executor local minimum (post angle-grad fix)"
-    With n=10 samples the 95 % CI on the improvement is **±0.40 %**,
-    which excludes any improvement larger than ~0.4 %.  Unlike
-    [rh-conjugate](rh-conjugate.md) and [heck-relay](heck-relay.md)
-    — which were "newly unlocked" by the MM3 angle gradient
-    correctness fix ([#284](https://github.com/ericchansen/q2mm/issues/284))
-    — pd-allyl's verdict did not change after the fix: a true
-    JAX-executor local minimum is exactly where the published OPT values
-    already sit, so the fix had no descent direction to expose.
-
-    The published FF was fit by a different objective (MacroModel MM3*
-    multi-target).  The q2mm JAX backend's eigenmatrix-diagonal
-    objective places its local minimum in the same location, but
-    that location is not a *good* fit by either objective's full
-    metric (bond_length R² ≈ 0.05, eig_diagonal R² ≈ −2.8 —
-    see "Comparison and gap analysis" below).
-
-Improving on pd-allyl requires either (a) closing the MM3* ↔
-JAX-backend functional-form gap so the JAX executor's local minimum aligns with
-a better point on the real objective surface, or (b) using a
-different optimizer / objective that doesn't rely on the
-geometry-relaxation surrogate.  [#284](https://github.com/ericchansen/q2mm/issues/284)
-tracks the underlying engine-side problems (MM3 non-smooth points
-in particular).
-
-See [Optimizer Comparison](../benchmarks/optimizer-comparison.md) for
-cross-system comparison and methodology details.
-
-## Comparison and gap analysis
-
-### Comparison
-
-The paper reports Hessian R² = 0.998 under MacroModel MM3*. Our reproduction yields R² = −0.93 under the JAX backend.
-
-This TSFF is a **composed force field**: the published workflow layers an OPT substructure on top of an MM3 base field. That composition does not transfer cleanly into our engine — when the base field and the overlay do not interact with the same semantics they had in MacroModel, the eigenvalue structure collapses.
-
-Frequency-only optimization still matters: the best Optax run lowers RMSD from **1068.7** to **214.0 cm⁻¹**, but the literature-transfer test remains negative overall. That means optimizer refinement can improve our benchmark metric without repairing the underlying engine-transfer gap.
-
-### Gap analysis
-
-To close the gap for Pd-allyl, we would need to:
-
-1. **Validate base + OPT overlay composition exactly** against MacroModel MM3*.
-2. **Confirm that metal-specific nonbonded and cross-term behavior** is transferred with the same conventions.
-3. **Run a full Q2MM-style re-fit** only after the composed force field reproduces the intended starting eigenspectrum.
-
-The negative R² reflects incomplete composed-force-field transfer, not a problem with the original TSFF.
-
-## Reproduce
-
-Configure both `Q2MM_SUPPORTING_INFO` and `Q2MM_MM3_BASE` as described in
-[External data for published systems](../getting-started.md#external-data-for-published-systems)
-before running this command.
+## Run
 
 ```bash
-q2mm-benchmark matrix --system pd-allyl --backend jax --optimizer optax-adam-cosine
+python examples/publication/pd-allyl/run.py \
+  --supporting-info /path/to/publication-data \
+  --mm3-base /path/to/mm3_base.fld \
+  --output-root /path/to/output \
+  --bounded-ci
 ```
-
-Raw data: [`q2mm-data/benchmarks/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks) → `pd-allyl-amination/`.
-
-[^pdallyl]: Wahlers, J. et al. *Nat. Commun.* **2021**, *12*, 6508. [DOI: 10.1038/s41467-021-27065-2](https://doi.org/10.1038/s41467-021-27065-2)

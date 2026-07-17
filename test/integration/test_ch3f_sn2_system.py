@@ -46,7 +46,7 @@ class TestCh3fSn2System:
 
         Also verifies ``charge=-1`` — the QM Hessian was computed on
         the anionic F⁻ + CH3F complex (see
-        ``examples/sn2-test/generate_qm_data.py``), so the loaded
+        ``scripts/generate_sn2_reference.py``), so the loaded
         molecule must match or downstream electrostatic / charge-
         sensitive code paths would silently disagree with the QM.
         """

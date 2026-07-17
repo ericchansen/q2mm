@@ -453,7 +453,7 @@ detailed results and timing data.
 
 ## Further Reading
 
-- [Tutorial: Step 6 — Optimize](../tutorial.md#step-6-optimise-the-force-field) — walkthrough of a single-shot optimization
+- [Tutorial: first full Rh-enamide case](../tutorial.md#first-full-case-rh-enamide) — root-API evaluation, optimization, and persistence
 - [CH₃F Benchmarks](../systems/small-molecules.md) — full 75-combo comparison matrix with RMSD, timing, and per-eval costs
 - [Rh-Enamide Benchmarks](../systems/rh-enamide.md) — large-system case study (182 parameters)
 - [References](../references.md) — academic papers describing the Q2MM methodology

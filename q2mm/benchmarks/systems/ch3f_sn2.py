@@ -55,7 +55,7 @@ def load_molecule(*, data_dir: Path | None = None) -> Molecule:
     the partially-formed C-F bonds at the TS geometry (~1.85 Å each);
     the default ``1.3`` misses them.  Charge is set to −1 to match the
     anionic complex on which the QM Hessian was computed (see
-    ``examples/sn2-test/generate_qm_data.py``).
+    ``scripts/generate_sn2_reference.py``).
     """
     from q2mm.io.xyz import load_xyz
 
@@ -71,7 +71,7 @@ def load_molecule(*, data_dir: Path | None = None) -> Molecule:
     if missing:
         raise FileNotFoundError(
             f"SN2 TS reference data missing in {qm_dir}: {missing}. "
-            "Run ``examples/sn2-test/generate_qm_data.py`` to regenerate the packaged TS "
+            "Run ``scripts/generate_sn2_reference.py`` to regenerate the packaged TS "
             "Hessian + frequencies, or pass ``data_dir=`` pointing at a "
             "complete reference directory."
         )

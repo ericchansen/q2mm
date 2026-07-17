@@ -18,7 +18,7 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 from q2mm.resources import sn2_reference_dir
 
-FIXTURE_DIR = REPO_ROOT / "examples" / "sn2-test"
+FIXTURE_DIR = REPO_ROOT / "examples" / "ch3f-sn2"
 QM_REF = sn2_reference_dir()
 
 try:

@@ -20,6 +20,16 @@ from test._shared import REPO_ROOT
 _FARRUGIA = "https://doi.org/10.1021/acs.jctc.5c01751"
 _LIME_NORRBY = "https://doi.org/10.1002/jcc.23797"
 _WRONG_TS_DOI = "10.1021/acs.jctc.5b00461"
+_PUBLICATION_SOURCES = {
+    "XDS9K3C4": "https://doi.org/10.1021/acs.jctc.5c01751",
+    "JXH5HHS6": "https://doi.org/10.1021/ct800132a",
+    "2NHVUNW5": "https://doi.org/10.1021/jacs.0c01979",
+    "QVKE99W3": "https://doi.org/10.1038/s41467-021-27065-2",
+    "R62E6EGV": "https://doi.org/10.1021/acs.joc.1c00136",
+    "SXWNJTQ2": "https://doi.org/10.1021/acs.joc.2c01553",
+    "AAZ6I5V3": "https://doi.org/10.7274/k930bv76q4n",
+    "QCQ6Z5MR": "https://doi.org/10.7274/rj430290902",
+}
 
 # Methodology pages whose scientific claims rest on QFUERZA + TS inversion.
 _QFUERZA_PAGES = (
@@ -57,3 +67,51 @@ def test_wrong_ts_doi_absent_from_current_docs_and_instructions() -> None:
     assert not offenders, (
         f"the superseded TS DOI {_WRONG_TS_DOI} must not appear in current docs/instructions: {offenders}"
     )
+
+
+def test_references_use_zotero_validated_publication_metadata() -> None:
+    text = (REPO_ROOT / "docs" / "references.md").read_text(encoding="utf-8")
+    for key, url in _PUBLICATION_SOURCES.items():
+        assert f"`{key}`" in text
+        assert url in text
+    assert "University of Notre Dame, **2021**" in text
+    assert "University of Notre Dame, **2019**" in text
+
+
+def test_publication_system_pages_and_nav_cover_every_executable_row() -> None:
+    keys = ("rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate", "ferrocene")
+    nav = (REPO_ROOT / "properdocs.yml").read_text(encoding="utf-8")
+    coverage = (REPO_ROOT / "docs" / "benchmarks" / "published-ff-validation.md").read_text(encoding="utf-8")
+    for key in keys:
+        page = REPO_ROOT / "docs" / "systems" / f"{key}.md"
+        assert page.is_file()
+        assert f"systems/{key}.md" in nav
+        assert f"(../systems/{key}.md)" in coverage
+
+
+def test_byo_docs_use_root_facade_and_current_example_paths() -> None:
+    files = (
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "docs" / "getting-started.md",
+        REPO_ROOT / "docs" / "tutorial.md",
+    )
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in files)
+    for symbol in ("q2mm.prepare", "q2mm.evaluate", "q2mm.optimize", "q2mm.save", "load_fchk_molecule"):
+        assert symbol in combined
+    assert "examples/publication/rh-enamide" in combined
+    assert "examples/" + "rh-enamide" not in combined
+    assert "examples/" + "sn2-test" not in combined
+    assert "examples/" + "ethane" not in combined
+    assert "SciPy is optional" in combined
+
+
+def test_rh_source_policy_is_narrow_and_factual() -> None:
+    files = (
+        REPO_ROOT / "README.md",
+        REPO_ROOT / "docs" / "systems" / "rh-enamide.md",
+        REPO_ROOT / "examples" / "publication" / "rh-enamide" / "README.md",
+    )
+    combined = "\n".join(path.read_text(encoding="utf-8") for path in files)
+    assert "excluded from wheel and sdist" in combined
+    assert "redistribution/licensing is not established" in combined.lower()
+    assert "https://doi.org/10.1021/ct800132a" in combined

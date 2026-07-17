@@ -15,7 +15,7 @@ from q2mm.resources import sn2_reference_dir, validate_sn2_resources
 
 
 def _load_generator_module() -> ModuleType:
-    path = Path(__file__).resolve().parents[1] / "examples" / "sn2-test" / "generate_qm_data.py"
+    path = Path(__file__).resolve().parents[1] / "scripts" / "generate_sn2_reference.py"
     spec = importlib.util.spec_from_file_location("q2mm_sn2_generator", path)
     if spec is None or spec.loader is None:
         raise RuntimeError(f"Cannot load generator module: {path}")
@@ -28,7 +28,7 @@ def test_source_tree_sn2_resource_is_canonical_package_data() -> None:
     resource_dir = sn2_reference_dir()
     assert resource_dir.parts[-3:] == ("q2mm", "data", "sn2")
     assert (resource_dir / "ch3f-optimized.xyz").is_file()
-    assert not (resource_dir.parents[2] / "examples" / "sn2-test" / "qm-reference").exists()
+    assert not (resource_dir.parents[2] / "examples" / "ch3f-sn2" / "qm-reference").exists()
 
     from q2mm.benchmarks.systems.ch3f import load_molecule as load_ch3f_molecule
     from q2mm.benchmarks.systems.ch3f_sn2 import load_molecule as load_ch3f_sn2_molecule
@@ -119,7 +119,7 @@ def test_resource_resolution_uses_importlib_package_location(
 
 def test_regenerator_targets_its_source_checkout(tmp_path: Path) -> None:
     generator = _load_generator_module()
-    script = tmp_path / "checkout" / "examples" / "sn2-test" / "generate_qm_data.py"
+    script = tmp_path / "checkout" / "scripts" / "generate_sn2_reference.py"
     script.parent.mkdir(parents=True)
     resource_dir = tmp_path / "checkout" / "q2mm" / "data" / "sn2"
     resource_dir.mkdir(parents=True)
