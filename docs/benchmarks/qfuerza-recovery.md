@@ -1,19 +1,23 @@
-# QFUERZA-Recovery Validation
+# Historical QFUERZA-Recovery Experiment
+
+> **Status:** The numerical tables on this page are a historical experiment,
+> not current publication-validation evidence. They predate enforced inner
+> geometry convergence and bound-normalized analytical L-BFGS-B coordinates.
+> Use the source-completeness and executable-status table in
+> [Published force-field validation](published-ff-validation.md) for current
+> claims. The historical numbers remain here only to explain why those
+> optimizer safeguards were required.
 
 **Question**: If we *throw away* the published OPT bond/angle values and replace them with QFUERZA Hessian-derived values, does the q2mm optimizer recover the published TSFFs?
 
-**Answer (preview)**:
+**Historical outcome (not a current validation claim)**:
 - **rh-enamide ✅** — QFUERZA-start reaches the same basin as published-start (q2mm objective within 9%; bond/angle R² close to the paper's reported RMSD ≤ 0.03 Å / RMSD < 2°).
 - **pd-allyl, pd-conjugate 🌟** — q2mm objective at QFUERZA-optimized is actually **lower** than at published-optimized (0.77×, 0.86×). But this is **not** a chemical "win" — the per-parameter comparison and R²/RMSD tables show this is a q2mm-engine-vs-MacroModel-backend mismatch favoring the QFUERZA params, not the published ones (§3.2, §4.2).
 - **rh-conjugate ⚠** — nearby basin (1.50× q2mm objective), but the optimized FF contains **negative angle force constants** (§3.4) — unphysical.
 - **heck-relay ❌** — the JAX surrogate explodes from the QFUERZA start; L-BFGS-B exits in 0 iterations with a worse final FF, also containing negative force constants.
 
-This page documents the experiment honestly. It is the strongest
-end-to-end validation of the q2mm pipeline to date (reference data +
-weighting + gradients + engine), but the headline result is **mixed**,
-and it surfaced two real issues to fix in the optimizer (positive-`fc`
-sign constraint; JAX surrogate behavior at FFs with very poor
-Seminario starts).
+This page documents the pre-safeguard experiment and the failures it exposed.
+Its candidates must not be promoted or compared with post-fix runs.
 
 ---
 
@@ -47,6 +51,12 @@ of the bond/angle scalars it is defined to estimate.
 | van der Waals `r₀`, `ε`, stretch-bend coefficients | Literature `.fld` | Outside QFUERZA's defined scope; supplied by skeleton |
 | Reference data (geometries, eigenmatrix, charges) | Identical to publication-baseline runs | — |
 | Optimizer | SciPy L-BFGS-B + JAX analytical executor, `--executor-ratio-tol none` | — |
+
+Current analytical L-BFGS-B runs normalize finite parameter bounds before
+optimization, retain the best valid evaluated point if SciPy terminates at a
+worse trial, and reject inner geometry solutions that miss their convergence
+tolerance. These are numerical safeguards; they do not change the force-field
+bounds or objective weights.
 
 The **per-system overwrite count** in §3.5 reports how many active OPT
 scalars QFUERZA touches: this is the count of bond/angle parameters in

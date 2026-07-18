@@ -71,6 +71,10 @@ def test_every_publication_example_runs_real_bounded_problem(
     assert result["optimization"]["iterations"] == 1
     assert result["optimization"]["convergence_claim"] is False
     assert result["execution"]["resolved_bounds"] == {"mode": "bounded_ci_no_parameter_update"}
+    assert result["optimization"]["proof"]["proof_status"] in {
+        "blocked_methodology",
+        "bounded_software_path",
+    }
     assert result["parameter_counts"]
     assert result["initial"]["categories"] == result["final"]["categories"]
     assert Path(result["saved"]["force_field"]).parent == output.resolve()

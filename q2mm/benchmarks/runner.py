@@ -988,6 +988,7 @@ def _run_profile_inner(
             base_summary=base_summary,
             analyze=analyze,
             is_jax_backend=_is_jax_backend(backend),
+            success_spec=success_spec,
         )
     except Exception as exc:
         logger.exception("[%s] execution failed after resolution", candidate_id)
@@ -1029,6 +1030,7 @@ def _execute(
     base_summary: dict[str, Any],
     analyze: bool,
     is_jax_backend: bool,
+    success_spec: Any | None,
 ) -> CandidateResult:
     from q2mm.objectives.plan import ObjectivePlan
     from q2mm.objectives.python import PythonObjectiveExecutor
@@ -1042,10 +1044,17 @@ def _execute(
     # ---- objective-of-record baseline (Python executor, regularized) ----
     record_plan = ObjectivePlan.from_problem(problem, regularization=regularization)
     obj_initial = PythonObjectiveExecutor(record_plan, backend, initial_ff)
-    initial_score = float(obj_initial.value(baseline))
-    seminario_categories = category_metrics(record_plan, obj_initial.evaluate(baseline))
+    initial_evaluation = obj_initial.evaluate(baseline)
+    initial_score = float(initial_evaluation.total)
+    initial_category_scores = dict(initial_evaluation.category_scores)
+    seminario_categories = category_metrics(record_plan, initial_evaluation)
 
-    summary: dict[str, Any] = {**base_summary, "initial_obj_score": initial_score, "seminario": seminario_categories}
+    summary: dict[str, Any] = {
+        **base_summary,
+        "initial_obj_score": initial_score,
+        "initial_category_scores": initial_category_scores,
+        "seminario": seminario_categories,
+    }
 
     ratio_info: dict[str, Any] = {}
     if is_jax_backend:
@@ -1103,9 +1112,12 @@ def _execute(
     final_vector = np.asarray(result.final_params, dtype=float)
 
     obj_final = PythonObjectiveExecutor(record_plan, backend, final_ff)
-    final_score = float(obj_final.value(final_vector))
-    optimized_categories = category_metrics(record_plan, obj_final.evaluate(final_vector))
+    final_evaluation = obj_final.evaluate(final_vector)
+    final_score = float(final_evaluation.total)
+    final_category_scores = dict(final_evaluation.category_scores)
+    optimized_categories = category_metrics(record_plan, final_evaluation)
     improvement_pct = improvement_percent(initial_score, final_score)
+    final_executor_ratio = float(result.final_score) / final_score if final_score > 0 else float("nan")
 
     # Fail closed on a gradient-provenance mismatch: a successful executed
     # candidate must report the expected gradient mode.  A disagreement means
@@ -1121,6 +1133,7 @@ def _execute(
     summary.update(
         {
             "final_obj_score": final_score,
+            "final_category_scores": final_category_scores,
             "improvement_pct": improvement_pct,
             "initial_optimizer_score": float(result.initial_score),
             "final_optimizer_score": float(result.final_score),
@@ -1133,6 +1146,7 @@ def _execute(
             "result_fd_step": result.fd_step,
             "opt_time_s": elapsed,
             "optimized": optimized_categories,
+            "final_executor_ratio": final_executor_ratio,
             "stages": [_stage_to_dict(s) for s in result.stages],
         }
     )
@@ -1153,6 +1167,28 @@ def _execute(
         final_score=final_score,
         converged=bool(result.success),
     )
+    if success_spec is not None and success_spec.methodology_blocker is not None:
+        summary["publication_methodology_blocker"] = success_spec.methodology_blocker
+        decision = AcceptanceDecision(
+            CandidateStatus.REJECTED,
+            f"publication optimization proof blocked: {success_spec.methodology_blocker}",
+        )
+    elif success_spec is not None and success_spec.canonical_full_run:
+        success_audit = success_spec.audit(
+            improvement_percent=improvement_pct,
+            initial_executor_ratio=ratio_info.get("executor_ratio"),
+            final_executor_ratio=final_executor_ratio,
+            initial_category_scores=initial_category_scores,
+            final_category_scores=final_category_scores,
+            optimizer_converged=bool(result.success),
+            accepted=decision.is_accepted,
+        )
+        summary["publication_success_audit"] = success_audit
+        if not success_audit["passes"]:
+            decision = AcceptanceDecision(
+                CandidateStatus.REJECTED,
+                "publication success gate failed: " + "; ".join(success_audit["failures"]),
+            )
     summary["acceptance"] = {"status": decision.status.value, "reason": decision.reason}
 
     # Both accepted AND rejected retain the full canonical result + final FF.

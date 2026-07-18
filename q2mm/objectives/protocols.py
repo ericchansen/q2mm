@@ -32,6 +32,7 @@ from q2mm.objectives.plan import ObjectivePlan
 __all__ = [
     "GradientMode",
     "ObjectiveError",
+    "ObjectiveConvergenceError",
     "ObjectiveGradientError",
     "UnsupportedObservationError",
     "Evaluation",
@@ -60,6 +61,10 @@ class GradientMode(str, Enum):
 
 class ObjectiveError(RuntimeError):
     """Base class for objective-evaluation errors."""
+
+
+class ObjectiveConvergenceError(ObjectiveError):
+    """Raised when an inner objective calculation does not converge."""
 
 
 class ObjectiveGradientError(ObjectiveError):

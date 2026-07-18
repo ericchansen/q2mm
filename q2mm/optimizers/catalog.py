@@ -242,10 +242,13 @@ def resolve_optimizer(
             "method": method,
             "maxiter": effective,
             "ftol": float(cfg["ftol"]),
+            "gtol": opt.gtol,
+            "maxls": opt.maxls,
             "eps": opt.eps,
             "fc_fraction": cfg["fc_fraction"],
             "eq_fraction": cfg["eq_fraction"],
             "use_bounds": opt.use_bounds,
+            "analytical_parameter_scaling": "bound-normalized",
         }
     if method == "cycling":
         effective_cfg: dict[str, Any] = {

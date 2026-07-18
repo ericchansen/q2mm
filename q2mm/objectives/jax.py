@@ -38,7 +38,7 @@ from q2mm.models.observations import (
 from q2mm.objectives._base import BaseObjectiveExecutor
 from q2mm.objectives._observables import extract_calc_value, geometry_computed
 from q2mm.objectives.plan import ObjectivePlan
-from q2mm.objectives.protocols import GradientMode, UnsupportedObservationError
+from q2mm.objectives.protocols import GradientMode, ObjectiveConvergenceError, UnsupportedObservationError
 
 if TYPE_CHECKING:
     from q2mm.backends.mm.jax_engine import JaxBackend, PreparedJax
@@ -47,9 +47,13 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["JaxObjectiveExecutor"]
 
-# Inner geometry-minimizer tolerance + iteration cap (see issue #243).
-_GEOM_INNER_TOL = 1e-8
-_GEOM_INNER_MAXITER = 500
+# Inner geometry-minimizer controls (see issue #243). Literature-scale
+# transition-state structures require more than 500 iterations; implicit
+# differentiation is valid only at a stationary inner solution.
+_GEOM_INNER_TOL = 1e-5
+_GEOM_INNER_MAXITER = 4000
+_GEOM_NONCONVERGENCE_PENALTY = 1e12
+_GEOM_NONCONVERGENCE_BARRIER_SCALE = 1e6
 
 _GEOMETRY_KINDS = frozenset({"bond_length", "bond_angle", "torsion_angle"})
 _EIG_KINDS = frozenset({"eig_diagonal", "eig_offdiagonal"})
@@ -68,7 +72,8 @@ _UNSUPPORTED_KINDS = frozenset(
 
 
 def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
-    """Return the implicit-diff relaxed geometry for a molecule."""
+    """Return the implicit-diff relaxed geometry and convergence state."""
+    import jax.numpy as jnp
     import jaxopt
 
     def energy_of_coords(coords, p):  # noqa: ANN001, ANN202
@@ -81,7 +86,9 @@ def _relax_coords(energy_fn, params, coords0):  # noqa: ANN001, ANN202
         implicit_diff=True,
     )
     sol = solver.run(coords0, params)
-    return sol.params
+    max_force = jnp.max(jnp.abs(sol.state.grad))
+    converged = max_force <= _GEOM_INNER_TOL
+    return sol.params, converged, max_force
 
 
 def _bond_lengths(coords, atoms):  # noqa: ANN001, ANN202
@@ -465,10 +472,12 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
         def _make_geom_loss(entry_data: dict) -> Callable:
             coords = entry_data["coords"]
             energy_fn = entry_data["session"]._energy_kernel()
+            baseline_params = jnp.array(plan.active_space.baseline, dtype=jnp.float64)
+            parameter_scales = jnp.maximum(jnp.abs(baseline_params), jnp.float64(1.0))
 
             def _loss(params):  # noqa: ANN001, ANN202
                 total = jnp.float64(0.0)
-                relaxed = _relax_coords(energy_fn, params, coords)
+                relaxed, converged, _error = _relax_coords(energy_fn, params, coords)
                 if entry_data["has_bond"]:
                     calc = _bond_lengths(relaxed, entry_data["bond_atoms"])
                     residuals = entry_data["bond_weights"] * (entry_data["bond_refs"] - calc)
@@ -483,7 +492,15 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
                     diff = (diff + 180.0) % 360.0 - 180.0
                     residuals = entry_data["torsion_weights"] * diff
                     total = total + jnp.sum(residuals**2)
-                return total
+                displacement = (params - baseline_params) / parameter_scales
+                nonconvergence_penalty = jnp.float64(_GEOM_NONCONVERGENCE_PENALTY) + jnp.float64(
+                    _GEOM_NONCONVERGENCE_BARRIER_SCALE
+                ) * jnp.dot(displacement, displacement)
+                return jnp.where(
+                    converged,
+                    total,
+                    nonconvergence_penalty,
+                )
 
             return _loss
 
@@ -662,7 +679,14 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
                     computed["eigenmatrix"] = mass_weighted_eigenmatrix(hess_au, meta["qm_evecs"], symbols)
 
             if needed & _GEOMETRY_KINDS:
-                relaxed = np.asarray(_relax_coords(energy_fn, p, coords0))
+                relaxed_jax, converged_jax, error_jax = _relax_coords(energy_fn, p, coords0)
+                if not bool(converged_jax):
+                    raise ObjectiveConvergenceError(
+                        f"JAX geometry relaxation for case {case_id!r} did not converge "
+                        f"(gradient error {float(error_jax):.6g} > {_GEOM_INNER_TOL:.6g} "
+                        f"after {_GEOM_INNER_MAXITER} iterations)."
+                    )
+                relaxed = np.asarray(relaxed_jax)
                 computed.update(geometry_computed(mol, relaxed, needed))
 
             for gi in indices:
