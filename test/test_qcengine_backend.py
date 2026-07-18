@@ -12,10 +12,17 @@ import pytest
 
 qcengine = pytest.importorskip("qcengine")
 pytest.importorskip("qcelemental")
+qcelemental_v2 = pytest.importorskip(
+    "qcelemental.models.v2",
+    reason="QCEngine backend tests require the QCSchema v2 model API",
+)
 from pydantic import ConfigDict
-from qcelemental.models.v2 import AtomicResult, ComputeError, FailedOperation
 from qcengine.config import TaskConfig
 from qcengine.programs import ProgramHarness
+
+AtomicResult = qcelemental_v2.AtomicResult
+ComputeError = qcelemental_v2.ComputeError
+FailedOperation = qcelemental_v2.FailedOperation
 
 from q2mm.backends import registry
 from q2mm.backends.contracts import (
