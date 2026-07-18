@@ -36,6 +36,7 @@ from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.problem import StationaryPointKind
 from q2mm.objectives.jax import JaxObjectiveExecutor
 from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import ObjectiveConvergenceError
 from q2mm.objectives.python import PythonObjectiveExecutor
 
 # Module-level globals populated by autouse fixture
@@ -765,24 +766,15 @@ class TestJaxObjectiveExecutorGeometryParity:
         assert loss < 10.0
         np.testing.assert_allclose(loss, 4.0, atol=1e-6)
 
-    def test_nonconvergence_yields_finite_loss(self) -> None:
-        """When inner solver cannot converge, loss must still be finite.
-
-        Historically (before commit 8c56fe9) a ``_GEOM_NONCONV_PENALTY``
-        constant added a fixed penalty per geometry ref when the inner
-        geometry solver hit max-iter without reaching its gradient
-        tolerance.  That penalty was zeroed out and then removed (PR #285)
-        because it inflated scores for nearly-converged geometries by
-        ~40×.  This test still guards the underlying invariant: even
-        when the inner solver does not strictly converge, the outer
-        loss must be finite (not NaN, not Inf).
-        """
+    def test_nonconvergence_penalizes_loss_and_blocks_observables(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """An unconverged inner solve cannot masquerade as a valid objective."""
         import jax.numpy as jnp
 
+        import q2mm.objectives.jax as jax_objective
         from q2mm.models.observations import ObservationSet
 
-        # Use a very stretched geometry far from equilibrium — the inner
-        # solver with limited iterations may not fully converge.
+        monkeypatch.setattr(jax_objective, "_GEOM_INNER_MAXITER", 1)
+        monkeypatch.setattr(jax_objective, "_GEOM_INNER_TOL", 1e-30)
         mol = make_diatomic(distance=3.0, bond_tolerance=5.0)
         ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
         backend = load_backend("jax")
@@ -794,10 +786,13 @@ class TestJaxObjectiveExecutorGeometryParity:
         spec = obj.plan
         jax_loss = JaxObjectiveExecutor(spec, backend, ff)
 
-        params = jnp.array(_params(ff), dtype=jnp.float64)
+        params = jnp.array(_params(ff), dtype=jnp.float64).at[0].multiply(1.01)
         loss, _grad = jax_loss.loss_and_grad(params)
         loss = float(loss)
-        assert np.isfinite(loss), f"Loss is not finite: {loss}"
+        assert loss > jax_objective._GEOM_NONCONVERGENCE_PENALTY
+        assert _grad[0] > 0.0
+        with pytest.raises(ObjectiveConvergenceError, match="did not converge"):
+            jax_loss.evaluate(np.asarray(params))
 
 
 class TestJaxObjectiveExecutorTopologyBatching:

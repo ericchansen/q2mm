@@ -198,11 +198,43 @@ def test_canonical_full_optimization_success_specs_are_measurable_and_bounded() 
     published = publication_success_spec("heck-relay", REPOSITORY_OBJECTIVE_PROFILE, "published")
     ferrocene = publication_success_spec("ferrocene", FERROCENE_SEVEN_STRUCTURE_PROFILE, "published")
 
-    assert heck.minimum_iterations == 6
     assert heck.minimum_absolute_improvement_percent == 1.0
     assert heck.executor_ratio_bounds == (0.1, 10.0)
-    assert heck.improving_categories == ("bond_length", "bond_angle", "eigenmatrix")
+    assert heck.maximum_category_regression_percent_of_initial_total == 1.0
+    assert heck.require_optimizer_convergence is True
     assert heck.require_accepted_candidate is True
     assert heck.canonical_full_run is True
+    assert heck.proof_status == "blocked_methodology"
+    assert heck.methodology_blocker is not None
     assert published.canonical_full_run is False
+    assert published.proof_status == "bounded_software_path"
+    assert published.methodology_blocker is None
     assert ferrocene.canonical_full_run is True
+    assert ferrocene.proof_status == "blocked_methodology"
+
+
+def test_publication_success_spec_enforces_convergence_and_weighted_category_regression() -> None:
+    spec = publication_success_spec("rh-enamide", REPOSITORY_OBJECTIVE_PROFILE, "qfuerza")
+    failed = spec.audit(
+        improvement_percent=23.0,
+        initial_executor_ratio=1.0,
+        final_executor_ratio=1.0,
+        initial_category_scores={"geometry": 100.0, "eigenmatrix": 1.0},
+        final_category_scores={"geometry": 70.0, "eigenmatrix": 3.0},
+        optimizer_converged=False,
+        accepted=True,
+    )
+    assert failed["passes"] is False
+    assert any("eigenmatrix weighted objective regressed" in failure for failure in failed["failures"])
+    assert any("did not report convergence" in failure for failure in failed["failures"])
+
+    passed = spec.audit(
+        improvement_percent=42.0,
+        initial_executor_ratio=1.0,
+        final_executor_ratio=1.01,
+        initial_category_scores={"geometry": 100.0, "eigenmatrix": 0.1},
+        final_category_scores={"geometry": 57.0, "eigenmatrix": 0.2},
+        optimizer_converged=True,
+        accepted=True,
+    )
+    assert passed["passes"] is True

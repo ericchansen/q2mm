@@ -17,6 +17,7 @@ from q2mm.benchmarks.publications import (
     PublicationProfileBlockedError,
     publication_record,
     publication_records,
+    publication_success_spec,
 )
 from q2mm.benchmarks.systems import load_system
 from q2mm.benchmarks.systems._paths import ExternalDataRoots
@@ -117,6 +118,11 @@ def run_publication(
             f"{config.key} status changed from {config.expected_status!r} to {record.status.value!r}; "
             "review the source-backed example before running it."
         )
+    optimization_proof = publication_success_spec(
+        config.key,
+        config.objective_profile,
+        selected_start,
+    )
 
     case = load_system(
         config.key,
@@ -230,6 +236,7 @@ def run_publication(
             "iterations": run.result.n_iterations,
             "evaluations": run.result.n_evaluations,
             "convergence_claim": False if bounded_ci else run.result.success,
+            "proof": optimization_proof.to_dict(),
         },
         "saved": {
             "force_field": str(saved.force_field_path.resolve()),

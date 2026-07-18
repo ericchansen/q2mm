@@ -18,6 +18,7 @@ from q2mm.objectives.plan import KIND_TO_CATEGORY, ObjectivePlan
 from q2mm.objectives.protocols import (
     Evaluation,
     GradientMode,
+    ObjectiveConvergenceError,
     ObjectiveError,
     ObjectiveEvaluator,
     ObjectiveGradientError,
@@ -30,6 +31,7 @@ __all__ = [
     "KIND_TO_CATEGORY",
     "GradientMode",
     "Evaluation",
+    "ObjectiveConvergenceError",
     "ObjectiveError",
     "ObjectiveGradientError",
     "UnsupportedObservationError",

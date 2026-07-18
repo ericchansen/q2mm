@@ -523,7 +523,9 @@ OsO₄, Ru ketone, and sulfone remain blocked historical records.
 Many hours of GPU time have been wasted on batches where the optimizer never actually optimized. The pattern is silent — scipy reports `success=True`, the runner writes its JSON, and the misleading result is only caught during post-hoc analysis. This checklist prevents that.
 
 1. **Write a measurable success spec** in your plan/PR description before launching:
-   - What metric defines "the optimizer worked"? (e.g. `n_iterations > 5 AND real-OF improvement > 10%`)
+   - What metric defines "the optimizer worked"? Use objective movement,
+     executor agreement, convergence, and weighted category losses — never an
+     iteration count or a single favorable R².
    - What does the comparison table look like? Mock the rows/columns now.
    - If the user asked a specific scientific question (e.g. "do params end up near published?"), restate it verbatim and map each metric back to the question.
 
@@ -536,11 +538,22 @@ Many hours of GPU time have been wasted on batches where the optimizer never act
 
 4. **Run the FIRST system alone.** Do NOT launch all systems sequentially in one call.
 
+   The current publication SDK marks canonical relaxed-geometry optimization
+   as `blocked_methodology`. Until a separate scientific policy defines
+   local-basin semantics, run only preparation/evaluation and bounded
+   optimizer-entry/save proofs; do not launch the full smooth-gradient matrix.
+
 5. **AUDIT GATE — read the first candidate's persisted record (`<output>/candidates/<stem>.json`, its `summary`) before launching the rest:**
-   - `n_iterations > 5` (not just `n_evaluations`; that counter can be misleading on the JAX executor path — see `scipy_opt._run_minimize`).
-   - `|improvement_pct| > 1%` on the Python objective-executor score of record (the `improvement_pct` field, not `final_optimizer_score`).
-   - `executor_ratio = initial_jax_score / initial_obj_score` in `[0.1, 10]` (or document why it's outside).
-   - Per-category R² (`seminario` → `optimized`) improves on at least one of bond_length, bond_angle, eigenmatrix.
+   - `improvement_pct >= 1%` on the Python objective-executor score of record
+     (not `final_optimizer_score`).
+   - Both initial and final JAX/Python executor ratios are in `[0.1, 10]`.
+   - `converged` is true. A large objective decrease does not excuse an
+     unconverged optimizer or inner geometry solve.
+   - Compare `initial_category_scores` with `final_category_scores`. No
+     weighted objective category may regress by more than 1% of the initial
+     total objective. R²/RMSD remain descriptive diagnostics; they do not vote
+     independently of the objective weights, and off-diagonal eigenmatrix R²
+     is unstable when reference variance is near zero.
    - The candidate `status` is `accepted` (not `rejected`/`skipped`/`error`).
    - If ANY of these fail, **STOP**. Re-tune and re-run the single system. Do not launch the batch.
 
@@ -552,6 +565,12 @@ Many hours of GPU time have been wasted on batches where the optimizer never act
 
 These exist to back up the checklist; do not rely on them alone:
 - `q2mm/optimizers/scipy_opt.py::_run_minimize` — WARNING when `n_iterations<=2` and `|delta|/init<0.01`
+- `q2mm/objectives/jax.py::_relax_coords` — rejects unconverged inner
+  geometries; implicit differentiation is valid only at a stationary inner
+  solution
+- `q2mm/benchmarks/publications.py::PublicationOptimizationSuccessSpec` —
+  canonical publication runs require convergence, executor agreement,
+  substantive total improvement, and bounded weighted-category regression
 - `q2mm/benchmarks/acceptance.py::NoProgressPolicy.made_progress` — the single no-progress decision that rejects a stalled candidate
 - `q2mm/benchmarks/runner.py::run_profiles` — logs BATCH FAILURE and reports `outcome.ok is False` when optimizations ran but none was accepted
 - `.copilot/skills/q2mm-benchmark/SKILL.md` — agent skill that walks through this checklist automatically before launching any batch

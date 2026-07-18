@@ -258,6 +258,72 @@ class TestJacAutoDetection:
         assert result.gradient_mode == "analytical"
         assert result.fd_step is None
 
+    def test_analytical_lbfgsb_scales_bounds_and_recovers_best(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from scipy import optimize
+
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+
+        def fake_minimize(fun, x0, *, method, jac, bounds, options, callback):  # noqa: ANN001, ANN202
+            np.testing.assert_allclose(x0, [-0.8, -0.6])
+            assert method == "L-BFGS-B"
+            assert jac is True
+            assert bounds == [(-1.0, 1.0), (-1.0, 1.0)]
+            assert options["gtol"] == pytest.approx(1e-5)
+            assert options["maxls"] == 100
+            best_x = np.array([-0.9, -0.7])
+            best_value, _best_gradient = fun(best_x)
+            assert best_value == pytest.approx(0.0)
+            terminal_x = np.array([1.0, 1.0])
+            terminal_value, terminal_gradient = fun(terminal_x)
+            return optimize.OptimizeResult(
+                x=terminal_x,
+                fun=terminal_value,
+                jac=terminal_gradient,
+                nit=2,
+                nfev=2,
+                njev=2,
+                success=True,
+                message="synthetic terminal penalty",
+            )
+
+        monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=2, verbose=False).optimize(obj, obj.space)
+
+        np.testing.assert_allclose(result.final_params, [0.5, 1.5])
+        assert result.final_score == pytest.approx(0.0)
+        assert result.success is False
+        assert result.message.startswith("Recovered best evaluated point")
+
+    @pytest.mark.parametrize("terminal_score", [float("nan"), float("inf")])
+    def test_analytical_lbfgsb_recovers_best_from_nonfinite_terminal(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        terminal_score: float,
+    ) -> None:
+        from scipy import optimize
+
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+
+        def fake_minimize(fun, x0, *, method, jac, bounds, options, callback):  # noqa: ANN001, ANN202
+            best_x = np.array([-0.9, -0.7])
+            fun(best_x)
+            return optimize.OptimizeResult(
+                x=np.array([1.0, 1.0]),
+                fun=terminal_score,
+                jac=np.array([np.nan, np.nan]),
+                nit=2,
+                success=False,
+                message="synthetic non-finite terminal",
+            )
+
+        monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
+        result = ScipyOptimizer(method="L-BFGS-B", maxiter=2, verbose=False).optimize(obj, obj.space)
+
+        np.testing.assert_allclose(result.final_params, [0.5, 1.5])
+        assert result.final_score == pytest.approx(0.0)
+        assert result.success is False
+        assert result.message.startswith("Recovered best evaluated point")
+
     def test_lbfgsb_no_analytical_when_unsupported(self, caplog: pytest.LogCaptureFixture) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.NONE)
         result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)

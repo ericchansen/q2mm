@@ -26,6 +26,13 @@ Every publication profile and saved run uses one of these exact values:
 No currently provisionable row is labeled
 `exact_publication_reproduction`.
 
+Full canonical smooth-gradient optimization is currently a separate
+`blocked_methodology` proof for every relaxed-geometry publication row. The
+loader, preparation, evaluation, bounded optimizer-entry, and save paths remain
+provisionable. A future scientific-methodology change must define local-basin
+semantics before convergence can be claimed; this PR does not invent a
+restraint or continuation policy.
+
 ## Coverage at a glance
 
 Each comparison row links to the system-specific evidence and blocker details
@@ -231,18 +238,23 @@ publication belong in
 [`ericchansen/q2mm-data`](https://github.com/ericchansen/q2mm-data), not this
 code repository.
 
-### Parent-run canonical optimization gate
+### Optimization-proof boundary
 
-`publication_success_spec(...)` records the pre-flight gate before a long GPU
-run. A canonical candidate must:
+`publication_success_spec(...)` records whether a row is a bounded software
+path or a blocked canonical optimization proof. The five QFUERZA-start TS rows
+under `repository-geometry-eigenmatrix-v1` and the published-start Ferrocene
+seven-structure row are `blocked_methodology`: the relaxed-geometry objective
+can switch local minima as parameters move, so this PR makes no convergence
+claim and does not run the downstream full matrix.
 
-1. complete at least six optimizer iterations;
-2. change the objective-of-record by more than one percent in magnitude;
-3. have an initial JAX/Python executor ratio between `0.1` and `10`;
-4. improve at least one of bond length, bond angle, or eigenmatrix fit; and
-5. finish as an accepted candidate.
+The multi-signal audit remains fail-closed for future methodology work. It
+requires optimizer convergence, at least one-percent improvement in the Python
+objective of record, initial and final JAX/Python executor agreement, bounded
+weighted-category regression, and ordinary candidate acceptance. Iteration
+count and a single favorable R² are not success criteria.
 
-For the five existing TS systems, the canonical full-run row is the QFUERZA
-start under `repository-geometry-eigenmatrix-v1`. For Ferrocene it is the
-published start under `wahlers-ferrocene-seven-structure-v1`; this remains a
-seven-case partial profile, not exact scan reoptimization.
+The committed proof instead executes every provisionable row through real
+preparation/evaluation plus a deliberately bounded optimizer-entry/save path in
+[`test_publication_sdk_matrix.py`](../../test/integration/test_publication_sdk_matrix.py)
+and
+[`check_installed_publication_sdk.py`](../../scripts/check_installed_publication_sdk.py).

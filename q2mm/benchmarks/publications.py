@@ -8,6 +8,8 @@ lazy under :mod:`q2mm.benchmarks.systems`.
 from __future__ import annotations
 
 import dataclasses
+import math
+from collections.abc import Mapping
 
 from q2mm.models.publication import (
     ObjectiveProfileIdentity,
@@ -61,6 +63,11 @@ KNOWN_OBJECTIVE_PROFILES: frozenset[str] = frozenset(
 )
 PUBLICATION_SYSTEM_KEYS: frozenset[str] = frozenset(
     {"rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate", "ferrocene"}
+)
+RELAXED_GEOMETRY_METHODOLOGY_BLOCKER = (
+    "Full canonical optimization is blocked until q2mm defines and validates "
+    "local-basin semantics for relaxed-geometry objectives; preparation, "
+    "evaluation, bounded optimizer entry, and persistence remain supported."
 )
 
 _IMPLEMENTED = ObjectiveTargetDisposition.IMPLEMENTED
@@ -633,12 +640,80 @@ class PublicationOptimizationSuccessSpec:
     system: str
     objective_profile: str
     starting_point: str
-    minimum_iterations: int = 6
     minimum_absolute_improvement_percent: float = 1.0
     executor_ratio_bounds: tuple[float, float] = (0.1, 10.0)
-    improving_categories: tuple[str, ...] = ("bond_length", "bond_angle", "eigenmatrix")
+    maximum_category_regression_percent_of_initial_total: float = 1.0
+    require_optimizer_convergence: bool = True
     require_accepted_candidate: bool = True
     canonical_full_run: bool = False
+    proof_status: str = "bounded_software_path"
+    methodology_blocker: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.proof_status not in {"bounded_software_path", "blocked_methodology"}:
+            raise ValueError(f"Unknown publication optimization proof status {self.proof_status!r}.")
+        if self.proof_status == "blocked_methodology":
+            if not self.canonical_full_run or not self.methodology_blocker:
+                raise ValueError("Blocked methodology proofs require a canonical row and explicit blocker.")
+        elif self.methodology_blocker is not None:
+            raise ValueError("Bounded software-path proofs cannot carry a methodology blocker.")
+
+    def audit(
+        self,
+        *,
+        improvement_percent: float,
+        initial_executor_ratio: float | None,
+        final_executor_ratio: float | None,
+        initial_category_scores: Mapping[str, float],
+        final_category_scores: Mapping[str, float],
+        optimizer_converged: bool,
+        accepted: bool,
+    ) -> dict[str, object]:
+        """Evaluate the measurable canonical-run gate."""
+        failures: list[str] = []
+        if improvement_percent < self.minimum_absolute_improvement_percent:
+            failures.append(
+                f"improvement={improvement_percent:.3f}% < {self.minimum_absolute_improvement_percent:.3f}%"
+            )
+        low, high = self.executor_ratio_bounds
+        ratios = {
+            "initial_executor_ratio": initial_executor_ratio,
+            "final_executor_ratio": final_executor_ratio,
+        }
+        for name, ratio in ratios.items():
+            if ratio is None or not math.isfinite(ratio) or not low <= ratio <= high:
+                failures.append(f"{name}={ratio!r} outside [{low}, {high}]")
+        initial_total = sum(float(value) for value in initial_category_scores.values())
+        regression_budget = initial_total * self.maximum_category_regression_percent_of_initial_total / 100.0
+        category_regressions: dict[str, dict[str, float | bool]] = {}
+        for category in sorted(set(initial_category_scores) | set(final_category_scores)):
+            initial = float(initial_category_scores.get(category, 0.0))
+            final = float(final_category_scores.get(category, 0.0))
+            increase = final - initial
+            passes = increase <= regression_budget
+            category_regressions[category] = {
+                "initial": initial,
+                "final": final,
+                "increase": increase,
+                "allowed_increase": regression_budget,
+                "passes": passes,
+            }
+            if not passes:
+                failures.append(
+                    f"{category} weighted objective regressed by {increase:.6g}, "
+                    f"exceeding {regression_budget:.6g} "
+                    f"({self.maximum_category_regression_percent_of_initial_total:g}% of initial total)"
+                )
+        if self.require_optimizer_convergence and not optimizer_converged:
+            failures.append("optimizer did not report convergence")
+        if self.require_accepted_candidate and not accepted:
+            failures.append("base acceptance policy rejected the candidate")
+        return {
+            "passes": not failures,
+            "failures": failures,
+            "executor_ratios": ratios,
+            "category_regressions": category_regressions,
+        }
 
     def to_dict(self) -> dict[str, object]:
         """Return the JSON-safe pre-flight gate."""
@@ -646,12 +721,16 @@ class PublicationOptimizationSuccessSpec:
             "system": self.system,
             "objective_profile": self.objective_profile,
             "starting_point": self.starting_point,
-            "minimum_iterations": self.minimum_iterations,
             "minimum_absolute_improvement_percent": self.minimum_absolute_improvement_percent,
             "executor_ratio_bounds": list(self.executor_ratio_bounds),
-            "improving_categories": list(self.improving_categories),
+            "maximum_category_regression_percent_of_initial_total": (
+                self.maximum_category_regression_percent_of_initial_total
+            ),
+            "require_optimizer_convergence": self.require_optimizer_convergence,
             "require_accepted_candidate": self.require_accepted_candidate,
             "canonical_full_run": self.canonical_full_run,
+            "proof_status": self.proof_status,
+            "methodology_blocker": self.methodology_blocker,
         }
 
 
@@ -731,4 +810,6 @@ def publication_success_spec(
         objective_profile=objective_profile,
         starting_point=starting_point,
         canonical_full_run=canonical,
+        proof_status="blocked_methodology" if canonical else "bounded_software_path",
+        methodology_blocker=RELAXED_GEOMETRY_METHODOLOGY_BLOCKER if canonical else None,
     )
