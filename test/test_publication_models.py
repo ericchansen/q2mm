@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -32,6 +33,21 @@ def _record(system: str, profile: str, start: str) -> PublicationMetadata:
         for record in publication_records(system=system)
         if record.objective_profile.identifier == profile and record.starting_point == start
     )
+
+
+def _source_tree_manifest(root: Path) -> list[dict[str, str]]:
+    serialized_paths = (
+        (path.relative_to(root).as_posix(), path)
+        for path in root.rglob("*")
+        if path.is_file() and "__pycache__" not in path.parts and path.name not in {"README.md", "run.py"}
+    )
+    return [
+        {
+            "path": relative_path,
+            "sha256": hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest(),
+        }
+        for relative_path, path in sorted(serialized_paths, key=lambda item: item[0])
+    ]
 
 
 def test_reproduction_status_vocabulary_is_exact() -> None:
@@ -102,21 +118,12 @@ def test_rh_enamide_source_tree_fingerprint_is_content_verified() -> None:
     from test._shared import REPO_ROOT
 
     root = REPO_ROOT / "examples" / "publication" / "rh-enamide"
-    entries = []
-    for path in sorted(
-        path
-        for path in root.rglob("*")
-        if path.is_file() and "__pycache__" not in path.parts and path.name not in {"README.md", "run.py"}
-    ):
-        entries.append(
-            {
-                "path": path.relative_to(root).as_posix(),
-                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
-            }
-        )
+    entries = _source_tree_manifest(root)
     digest = "sha256:" + hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     record = _record("rh-enamide", REPOSITORY_OBJECTIVE_PROFILE, "published")
     assert len(entries) == 66
+    assert [entry["path"] for entry in entries] == sorted(entry["path"] for entry in entries)
+    assert all("\\" not in entry["path"] for entry in entries)
     assert record.source_artifacts[0].fingerprint == digest
 
 

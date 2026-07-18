@@ -385,7 +385,7 @@ _RH_BASE = PublicationMetadata(
         SourceArtifactIdentity(
             identity="Rh-enamide tracked source tree",
             role="repository-tracked scientific-input content manifest excluded from installed package data",
-            fingerprint="sha256:8453fa0d81f58a56278c187d23e18adf9812a7594977f713a23938c5cd9d43fe",
+            fingerprint="sha256:5d29a37e56a5b3b780ec1478c9b9fd8b523a2f647d554817587de44b34692563",
         ),
     ),
     force_field_blocks=("RhH3-E core OPT", "RH-PX OPT"),
