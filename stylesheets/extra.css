@@ -1,0 +1,153 @@
+@media screen and (min-width: 76.25em) {
+  .md-grid {
+    max-width: 88rem;
+  }
+}
+
+.benchmark-table-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem auto;
+}
+
+.benchmark-table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem 1rem;
+  position: relative;
+  width: 100%;
+  z-index: 3;
+}
+
+.benchmark-filter {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 10rem;
+}
+
+.benchmark-filter__label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.benchmark-filter select {
+  background-color: var(--md-default-bg-color);
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.25rem;
+  color: inherit;
+  font: inherit;
+  padding: 0.45rem 0.6rem;
+}
+
+.benchmark-table-scroll {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  overflow-x: auto;
+}
+
+.benchmark-table-scroll table {
+  margin-inline: auto;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Table header */
+.benchmark-table-scroll thead th {
+  border-bottom: 2px solid var(--md-default-fg-color--lightest);
+  padding: 0.65rem 1rem;
+  white-space: nowrap;
+}
+
+/* Table body cells */
+.benchmark-table-scroll tbody td {
+  border-bottom: 1px solid var(--md-default-fg-color--lightest);
+  padding: 0.55rem 1rem;
+  white-space: nowrap;
+}
+
+/* Zebra striping */
+.benchmark-table-scroll tbody tr:nth-child(even) {
+  background-color: color-mix(in srgb, var(--md-default-fg-color) 4%, transparent);
+}
+
+/* Hover effect */
+.benchmark-table-scroll tbody tr:hover {
+  background-color: color-mix(in srgb, var(--md-accent-fg-color) 8%, transparent);
+}
+
+/* Right-align columns 6+ (numeric: MAE, Wall clock, and any future additions) */
+.benchmark-table-scroll td:nth-child(n+6),
+.benchmark-table-scroll th:nth-child(n+6) {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.benchmark-sort-button {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  gap: 0.35rem;
+  justify-content: space-between;
+  padding: 0;
+  width: 100%;
+}
+
+.benchmark-sort-button:hover,
+.benchmark-sort-button:focus-visible {
+  color: var(--md-accent-fg-color);
+  outline: none;
+}
+
+.benchmark-sort-indicator {
+  color: var(--md-default-fg-color--lighter);
+  flex: 0 0 auto;
+  font-size: 0.9em;
+}
+
+.benchmark-table-empty {
+  color: var(--md-default-fg-color--light);
+  display: none;
+  font-style: italic;
+  margin: 0;
+  text-align: center;
+}
+
+.benchmark-table-empty.is-visible {
+  display: block;
+}
+
+@media screen and (max-width: 44.9375em) {
+  .benchmark-filter {
+    min-width: min(100%, 14rem);
+    width: 100%;
+  }
+
+  .benchmark-table-toolbar {
+    align-items: stretch;
+  }
+}
+
+/* Mermaid diagrams: improve readability in dark mode.
+   Ensure text is dark against the default pastel node fills. */
+[data-md-color-scheme="slate"] .mermaid .nodeLabel,
+[data-md-color-scheme="slate"] .mermaid .label,
+[data-md-color-scheme="slate"] pre.mermaid .nodeLabel,
+[data-md-color-scheme="slate"] svg[id^="mermaid-"] .nodeLabel,
+[data-md-color-scheme="slate"] .mermaid .nodeLabel div {
+  color: #1a1a1a !important;
+}
+[data-md-color-scheme="slate"] svg[id^="mermaid-"] text {
+  fill: #1a1a1a !important;
+}

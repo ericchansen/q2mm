@@ -1,0 +1,5765 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Quantum-guided molecular mechanics force field optimization">
+      
+      
+      
+        <link rel="canonical" href="https://ericchansen.github.io/q2mm/benchmarks/qfuerza-recovery/">
+      
+      
+        <link rel="prev" href="../qfuerza-validation/">
+      
+      
+        <link rel="next" href="../../systems/small-molecules/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>QFUERZA Recovery - Q2MM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#historical-qfuerza-recovery-experiment" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Q2MM" class="md-header__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Q2MM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              QFUERZA Recovery
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Q2MM" class="md-nav__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Q2MM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform-support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    How It Works
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/theory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theory & Methods
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/data-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/optimization-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimization Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Differences from v4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Engines
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backend Engines
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/authoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring a Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenMM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/jax-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/jax-md/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX-MD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Psi4 (Reference)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../optimizer-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimizer Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU Acceleration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../crossover/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    When Analytical Wins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../published-ff-validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Published FF Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qfuerza-validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QFUERZA Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QFUERZA Recovery
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QFUERZA Recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-this-experiment-actually-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What this experiment actually tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-why-we-ran-this" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Why we ran this
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Results
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-headline-qfuerza-start-vs-published-start-objective-scores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Headline: QFUERZA-start vs published-start objective scores
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-r2-and-rmsd-paper-vs-q2mmpublished-vs-q2mmqfuerza" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 R² and RMSD: paper vs q2mm@published vs q2mm@QFUERZA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-per-parameter-deviations-from-the-published-ff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Per-parameter deviations from the published FF
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-negative-force-constants-in-optimized-ffs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 ⚠ Negative force constants in optimized FFs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-audit-of-qfuerza-overwritten-vs-literature-retained-rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Audit of QFUERZA-overwritten vs literature-retained rows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-physical-chemistry-walkthrough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Physical-chemistry walkthrough
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Physical-chemistry walkthrough">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-rh-enamide-cleanest-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 rh-enamide — cleanest recovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-pd-allyl-q2mm-engine-favors-qfuerza-params" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 pd-allyl — q2mm engine favors QFUERZA params
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-pd-conjugate-l-m-x-angle-force-constant-explosion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 pd-conjugate — L-M-X angle force constant explosion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-rh-conjugate-most-negative-force-constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 rh-conjugate — most negative force constants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-heck-relay-jax-surrogate-broken-optimizer-found-garbage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 heck-relay — JAX surrogate broken, optimizer found garbage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Interpretation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Interpretation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-this-experiment-validates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this experiment validates ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-does-not-yet-validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it does NOT yet validate ❌
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-to-do-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to do next
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limitations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-how-to-reproduce" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. How to reproduce
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-anchors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Anchors
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Systems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Systems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/small-molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Small Molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/rh-enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh-Enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/heck-relay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heck Relay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/pd-allyl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pd-Allyl
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/pd-conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pd 1,4-Conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/rh-conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh 1,4-Conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/ferrocene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ferrocene
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    q2mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1" id="__nav_9_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    q2mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/application/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    application
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_1" id="__nav_9_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    application
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    backends
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2" id="__nav_9_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/conformance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    conformance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    discovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2_4" id="__nav_9_1_2_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/batched/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    batched
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/jax_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/jax_md_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_md_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/qm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2_5" id="__nav_9_1_2_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    qm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/qm/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    psi4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2_6" id="__nav_9_1_2_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/reference/ase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/reference/qcengine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qcengine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/benchmarks/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3" id="__nav_9_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/acceptance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    acceptance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    publications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/runner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    runner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/benchmarks/systems/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systems
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_7" id="__nav_9_1_3_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    systems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/ch3f/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ch3f
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/ch3f_sn2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ch3f_sn2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/ferrocene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ferrocene
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/heck_relay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    heck_relay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/pd_allyl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pd_allyl
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/pd_conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pd_conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/rh_conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rh_conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/rh_enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rh_enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/constants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    constants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/elements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    elements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_7" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/io/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    io
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_7" id="__nav_9_1_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    io
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/amber/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    amber
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/cmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/fchk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fchk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/gaussian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    gaussian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/jaguar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaguar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/macromodel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macromodel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/mm3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/mol2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mol2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/qcelemental/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qcelemental
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/xyz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    xyz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/models/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_8" id="__nav_9_1_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    models
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/forcefield/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    forcefield
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/hessian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    hessian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/identifiers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    identifiers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/molecule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/observations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    observations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/parameters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    parameters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/problem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    problem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/publication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    publication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/seminario/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    seminario
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/objectives/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    objectives
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_9" id="__nav_9_1_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    objectives
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/jax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/protocols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    protocols
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    python
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/optimizers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimizers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_10" id="__nav_9_1_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    optimizers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/basinhopping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    basinhopping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/cycling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cycling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/jax_multistart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_multistart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/jaxopt_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaxopt_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/multistart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    multistart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/optax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optax
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/protocols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    protocols
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/scipy_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scipy_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/preparation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    preparation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_13" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    workflows
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_13" id="__nav_9_1_13_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/workflows/base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/workflows/method_e2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    method_e2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/workflows/single_stage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    single_stage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-what-this-experiment-actually-tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. What this experiment actually tests
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-why-we-ran-this" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Why we ran this
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-results" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Results
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="3. Results">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#31-headline-qfuerza-start-vs-published-start-objective-scores" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.1 Headline: QFUERZA-start vs published-start objective scores
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#32-r2-and-rmsd-paper-vs-q2mmpublished-vs-q2mmqfuerza" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.2 R² and RMSD: paper vs q2mm@published vs q2mm@QFUERZA
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#33-per-parameter-deviations-from-the-published-ff" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.3 Per-parameter deviations from the published FF
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#34-negative-force-constants-in-optimized-ffs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.4 ⚠ Negative force constants in optimized FFs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#35-audit-of-qfuerza-overwritten-vs-literature-retained-rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3.5 Audit of QFUERZA-overwritten vs literature-retained rows
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-physical-chemistry-walkthrough" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4. Physical-chemistry walkthrough
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Physical-chemistry walkthrough">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#41-rh-enamide-cleanest-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.1 rh-enamide — cleanest recovery
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#42-pd-allyl-q2mm-engine-favors-qfuerza-params" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.2 pd-allyl — q2mm engine favors QFUERZA params
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#43-pd-conjugate-l-m-x-angle-force-constant-explosion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.3 pd-conjugate — L-M-X angle force constant explosion
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#44-rh-conjugate-most-negative-force-constants" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.4 rh-conjugate — most negative force constants
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#45-heck-relay-jax-surrogate-broken-optimizer-found-garbage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        4.5 heck-relay — JAX surrogate broken, optimizer found garbage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-interpretation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5. Interpretation
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. Interpretation">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-this-experiment-validates" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What this experiment validates ✅
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-it-does-not-yet-validate" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What it does NOT yet validate ❌
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#what-to-do-next" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        What to do next
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#known-limitations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Known limitations
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-how-to-reproduce" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        6. How to reproduce
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-anchors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        7. Anchors
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="historical-qfuerza-recovery-experiment">Historical QFUERZA-Recovery Experiment<a class="headerlink" href="#historical-qfuerza-recovery-experiment" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>Status:</strong> The numerical tables on this page are a historical experiment,
+not current publication-validation evidence. They predate enforced inner
+geometry convergence and bound-normalized analytical L-BFGS-B coordinates.
+Use the source-completeness and executable-status table in
+<a href="../published-ff-validation/">Published force-field validation</a> for current
+claims. The historical numbers remain here only to explain why those
+optimizer safeguards were required.</p>
+</blockquote>
+<p><strong>Question</strong>: If we <em>throw away</em> the published OPT bond/angle values and replace them with QFUERZA Hessian-derived values, does the q2mm optimizer recover the published TSFFs?</p>
+<p><strong>Historical outcome (not a current validation claim)</strong>:
+- <strong>rh-enamide ✅</strong> — QFUERZA-start reaches the same basin as published-start (q2mm objective within 9%; bond/angle R² close to the paper's reported RMSD ≤ 0.03 Å / RMSD &lt; 2°).
+- <strong>pd-allyl, pd-conjugate 🌟</strong> — q2mm objective at QFUERZA-optimized is actually <strong>lower</strong> than at published-optimized (0.77×, 0.86×). But this is <strong>not</strong> a chemical "win" — the per-parameter comparison and R²/RMSD tables show this is a q2mm-engine-vs-MacroModel-backend mismatch favoring the QFUERZA params, not the published ones (§3.2, §4.2).
+- <strong>rh-conjugate ⚠</strong> — nearby basin (1.50× q2mm objective), but the optimized FF contains <strong>negative angle force constants</strong> (§3.4) — unphysical.
+- <strong>heck-relay ❌</strong> — the JAX surrogate explodes from the QFUERZA start; L-BFGS-B exits in 0 iterations with a worse final FF, also containing negative force constants.</p>
+<p>This page documents the pre-safeguard experiment and the failures it exposed.
+Its candidates must not be promoted or compared with post-fix runs.</p>
+<hr />
+<h2 id="1-what-this-experiment-actually-tests">1. What this experiment actually tests<a class="headerlink" href="#1-what-this-experiment-actually-tests" title="Permanent link">&para;</a></h2>
+<p><strong>QFUERZA workflow (canonical default)</strong>: QFUERZA (Farrugia 2025,
+<a href="https://doi.org/10.1021/acs.jctc.5c01751">10.1021/acs.jctc.5c01751</a>)
+is defined as a tool for estimating the bond and angle force constants
+and equilibria of an OPT substructure from a QM Hessian, given an
+existing force-field skeleton. The chemist provides the skeleton — atom
+types, OPT-row topology, frozen/active partition, vdW radii/ε,
+stretch-bend cross-term coefficients, torsion phase information — via a
+<code>.fld</code> file; QFUERZA fills in the Hessian-derivable scalars. This is
+true for every QFUERZA workflow on every system, including any new
+ligand or substrate a user wants to parameterize. There is no
+<code>.fld</code>-free flow because those topology and atom-type decisions are
+chemistry calls that cannot be automated.</p>
+<p>For our 5 TS systems, the literature <code>.fld</code> files
+(Donoghue 2008, Rosales 2020, Wahlers 2022) encode the chemists'
+skeleton decisions; we use them verbatim and let QFUERZA fill in 100%
+of the bond/angle scalars it is defined to estimate.</p>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>Source</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>OPT row topology (which atom-type triples/quadruples appear)</td>
+<td>Literature <code>.fld</code></td>
+<td>Chemistry decision: which substructure rows need a custom OPT entry</td>
+</tr>
+<tr>
+<td>Frozen vs active partition (<code>opt_substructure_membership</code> + <code>ActiveParameterSpace.from_membership</code>)</td>
+<td>Literature <code>.fld</code></td>
+<td>Chemistry decision: which parameters can be re-derived per-system</td>
+</tr>
+<tr>
+<td>Atom-type rows, MM3 backbone</td>
+<td>Literature <code>.fld</code> (frozen)</td>
+<td>Standard MM3 library</td>
+</tr>
+<tr>
+<td>Bond/angle <em>equilibria</em> and <em>force constants</em></td>
+<td><strong>QFUERZA</strong> (per-mol projection of TS-inverted QM Hessian, multi-mol mean)</td>
+<td>Hessian-derivable scalars — QFUERZA's defined scope</td>
+</tr>
+<tr>
+<td>Torsion <code>V₁/V₂/V₃</code></td>
+<td>Zero</td>
+<td>Per Farrugia 2025, torsions are intentionally zeroed at QFUERZA-init time</td>
+</tr>
+<tr>
+<td>van der Waals <code>r₀</code>, <code>ε</code>, stretch-bend coefficients</td>
+<td>Literature <code>.fld</code></td>
+<td>Outside QFUERZA's defined scope; supplied by skeleton</td>
+</tr>
+<tr>
+<td>Reference data (geometries, eigenmatrix, charges)</td>
+<td>Identical to publication-baseline runs</td>
+<td>—</td>
+</tr>
+<tr>
+<td>Optimizer</td>
+<td>SciPy L-BFGS-B + JAX analytical executor, <code>--executor-ratio-tol none</code></td>
+<td>—</td>
+</tr>
+</tbody>
+</table>
+<p>Current analytical L-BFGS-B runs normalize finite parameter bounds before
+optimization, retain the best valid evaluated point if SciPy terminates at a
+worse trial, and reject inner geometry solutions that miss their convergence
+tolerance. These are numerical safeguards; they do not change the force-field
+bounds or objective weights.</p>
+<p>The <strong>per-system overwrite count</strong> in §3.5 reports how many active OPT
+scalars QFUERZA touches: this is the count of bond/angle parameters in
+the skeleton, by definition. Torsions, vdW, and stretch-bend rows are
+not in QFUERZA's scope and stay at the literature values.</p>
+<hr />
+<h2 id="2-why-we-ran-this">2. Why we ran this<a class="headerlink" href="#2-why-we-ran-this" title="Permanent link">&para;</a></h2>
+<p>Every TS benchmark in
+<a href="https://github.com/ericchansen/q2mm-data/tree/main/benchmarks"><code>q2mm-data/benchmarks/*/convergence/</code></a>
+has started from published OPT values. That answers "can the optimizer
+refine a near-converged FF?" but not "can it find a good FF given only
+QM data?"</p>
+<p>The QFUERZA-recovery protocol tests the latter: starting from
+Hessian-derived bond/angle values, can the existing q2mm pipeline
+(reference data, JAX analytical surrogate, L-BFGS-B) close the gap to the
+published TSFF?</p>
+<hr />
+<h2 id="3-results">3. Results<a class="headerlink" href="#3-results" title="Permanent link">&para;</a></h2>
+<p>All runs: WSL2 + RTX 5090, SciPy L-BFGS-B + JAX analytical executor,
+<code>--executor-ratio-tol none</code>, TS Hessian inversion on, <strong>fractional bounds</strong>
+(<code>fc_fraction=0.20</code>, <code>eq_fraction=0.05</code>; heck-relay overridden to
+<code>fc_fraction=0.05</code> per the fragile-TS guidance in
+<a href="https://github.com/ericchansen/q2mm/blob/main/AGENTS.md">AGENTS.md §9</a>),
+<strong>tight L-BFGS-B convergence</strong> (<code>ftol=1e-12</code>, replacing the loose
+SciPy default that previously let the optimizer exit after one line
+search step).
+Data: <a href="https://github.com/ericchansen/q2mm-data/tree/main/benchmarks"><code>q2mm-data/benchmarks/&lt;system&gt;/convergence/</code></a> (canonical QFUERZA-start default).</p>
+<h3 id="31-headline-qfuerza-start-vs-published-start-objective-scores">3.1 Headline: QFUERZA-start vs published-start objective scores<a class="headerlink" href="#31-headline-qfuerza-start-vs-published-start-objective-scores" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th style="text-align: right;">Pub. final OF</th>
+<th style="text-align: right;">QFUERZA final OF</th>
+<th style="text-align: right;">QFUERZA/Pub. ratio</th>
+<th style="text-align: right;">L-BFGS-B iters</th>
+<th style="text-align: left;">Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rh-enamide</td>
+<td style="text-align: right;">2.70 × 10⁵</td>
+<td style="text-align: right;">2.94 × 10⁵</td>
+<td style="text-align: right;">1.09×</td>
+<td style="text-align: right;">20</td>
+<td style="text-align: left;">✅ same basin</td>
+</tr>
+<tr>
+<td>pd-allyl</td>
+<td style="text-align: right;">7.99 × 10⁶</td>
+<td style="text-align: right;">6.14 × 10⁶</td>
+<td style="text-align: right;"><strong>0.77×</strong></td>
+<td style="text-align: right;">3</td>
+<td style="text-align: left;">🌟 q2mm-objective lower than published</td>
+</tr>
+<tr>
+<td>pd-conjugate</td>
+<td style="text-align: right;">7.24 × 10⁶</td>
+<td style="text-align: right;">6.22 × 10⁶</td>
+<td style="text-align: right;"><strong>0.86×</strong></td>
+<td style="text-align: right;">5</td>
+<td style="text-align: left;">🌟 q2mm-objective lower than published</td>
+</tr>
+<tr>
+<td>rh-conjugate</td>
+<td style="text-align: right;">5.10 × 10⁶</td>
+<td style="text-align: right;">7.67 × 10⁶</td>
+<td style="text-align: right;">1.50×</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: left;">⚠ nearby basin, marginal</td>
+</tr>
+<tr>
+<td>heck-relay</td>
+<td style="text-align: right;">1.45 × 10⁶</td>
+<td style="text-align: right;">1.32 × 10⁸</td>
+<td style="text-align: right;"><strong>91×</strong></td>
+<td style="text-align: right;">0</td>
+<td style="text-align: left;">❌ JAX surrogate diverged</td>
+</tr>
+</tbody>
+</table>
+<p>A QFUERZA/Pub. ratio of <code>1×</code> means the QFUERZA-start optimizer reaches
+the same objective as starting from published OPT values. <strong>Ratio &lt; 1
+does not necessarily mean a better physical FF</strong> — it means the q2mm
+objective function (geometry RMSD + Hessian eigenmatrix mismatch +
+charge RMSD) is lower at the QFUERZA-optimized point than at the
+published-optimized point <em>when evaluated through the q2mm/JaxBackend
+backend</em>. The published authors evaluated through MacroModel/MM3*.
+Backend-attributable differences are dissected in §3.2.</p>
+<h3 id="32-r2-and-rmsd-paper-vs-q2mmpublished-vs-q2mmqfuerza">3.2 R² and RMSD: paper vs q2mm@published vs q2mm@QFUERZA<a class="headerlink" href="#32-r2-and-rmsd-paper-vs-q2mmpublished-vs-q2mmqfuerza" title="Permanent link">&para;</a></h3>
+<p>This table separates two sources of error:</p>
+<ul>
+<li><strong>Backend gap</strong> (paper R² vs q2mm@published-start R²) — caused by
+  q2mm/JaxBackend's MM3 implementation diverging from MacroModel's MM3*
+  (e.g., q2mm omits MM3 stretch-bend cross terms, π-system corrections,
+  dipole-dipole electrostatics)</li>
+<li><strong>Starting-point gap</strong> (q2mm@published vs q2mm@QFUERZA) — caused by
+  L-BFGS-B converging to a different local minimum from the QFUERZA
+  start</li>
+</ul>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>Metric</th>
+<th>Paper R² / RMSD</th>
+<th>q2mm @ published</th>
+<th>q2mm @ QFUERZA</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>rh-enamide</strong></td>
+<td>bond length</td>
+<td>RMSD ≤ 0.03 Å (Tab. 5)</td>
+<td>R² = 0.989 / 0.039 Å</td>
+<td>R² = 0.979 / 0.054 Å</td>
+</tr>
+<tr>
+<td></td>
+<td>bond angle</td>
+<td>RMSD &lt; 2° (Tab. 6)</td>
+<td>R² = 0.955 / 3.21°</td>
+<td>R² = 0.950 / 3.35°</td>
+</tr>
+<tr>
+<td></td>
+<td>Hessian eig (diag)</td>
+<td>not reported</td>
+<td>R² = 0.968 / 0.068 mdyn/Å</td>
+<td>R² = 0.969 / 0.067 mdyn/Å</td>
+</tr>
+<tr>
+<td><strong>pd-allyl</strong></td>
+<td>bond length</td>
+<td>aggregate R² = 0.988 (geom)</td>
+<td>R² = 0.046 / 0.37 Å</td>
+<td>R² = <strong>0.416 / 0.29 Å</strong></td>
+</tr>
+<tr>
+<td></td>
+<td>bond angle</td>
+<td>aggregate R² = 0.988 (geom)</td>
+<td>R² = 0.331 / 14.3°</td>
+<td>R² = <strong>0.491 / 12.5°</strong></td>
+</tr>
+<tr>
+<td></td>
+<td>Hessian eig (diag)</td>
+<td>aggregate R² = 0.998</td>
+<td>R² = −2.82</td>
+<td>R² = −2.59</td>
+</tr>
+<tr>
+<td><strong>pd-conjugate</strong></td>
+<td>bond length</td>
+<td>aggregate R² &gt; 0.99</td>
+<td>R² = 0.950 / 0.076 Å</td>
+<td>R² = 0.405 / 0.260 Å</td>
+</tr>
+<tr>
+<td></td>
+<td>bond angle</td>
+<td>aggregate R² &gt; 0.99</td>
+<td>R² = 0.037 / 17.9°</td>
+<td>R² = 0.155 / 16.8°</td>
+</tr>
+<tr>
+<td></td>
+<td>Hessian eig</td>
+<td>not reported per-category</td>
+<td>R² = −9.6</td>
+<td>R² = −4.6</td>
+</tr>
+<tr>
+<td><strong>rh-conjugate</strong></td>
+<td>bond length</td>
+<td>aggregate R² = 0.91–0.99</td>
+<td>R² = 0.822 / 0.165 Å</td>
+<td>R² = 0.777 / 0.185 Å</td>
+</tr>
+<tr>
+<td></td>
+<td>bond angle</td>
+<td>aggregate R² = 0.91–0.99</td>
+<td>R² = 0.540 / 15.2°</td>
+<td>R² = 0.337 / 18.2°</td>
+</tr>
+<tr>
+<td></td>
+<td>Hessian eig</td>
+<td>not reported per-category</td>
+<td>R² = −12.9</td>
+<td>R² = −4.7</td>
+</tr>
+<tr>
+<td><strong>heck-relay</strong></td>
+<td>bond length</td>
+<td>not reported (paper has ext. only)</td>
+<td>R² = 0.983 / 0.043 Å</td>
+<td><strong>R² = −6228 / 25.8 Å</strong></td>
+</tr>
+<tr>
+<td></td>
+<td>bond angle</td>
+<td>not reported (paper has ext. only)</td>
+<td>R² = 0.909 / 5.2°</td>
+<td><strong>R² = −8.3 / 52.6°</strong></td>
+</tr>
+<tr>
+<td></td>
+<td>Hessian eig</td>
+<td>not reported</td>
+<td>R² = −14.3</td>
+<td>R² = −4.7</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>The interesting backend story</strong>: For all four Wahlers/Rosales TS
+systems, q2mm@published shows much lower R² than the paper reports.
+q2mm's bond/angle R² for pd-allyl at the <strong>published</strong> FF is 0.05/0.33
+— the same FF the paper reports at R²=0.988. The gap is the
+MacroModel-vs-q2mm engine, not the FF parameters. <strong>This means our
+"QFUERZA-recovery" experiment cannot cleanly answer the user's
+question for Wahlers systems</strong> until q2mm achieves MacroModel parity.</p>
+<p><strong>Where QFUERZA-start improves over published-start in q2mm</strong>: For
+pd-allyl (R² 0.05 → 0.42 for bonds; 0.33 → 0.49 for angles), the
+optimizer found a parameter set that is <em>better suited to q2mm's
+engine quirks</em> than the published parameters are. This is not
+evidence that QFUERZA "won" chemically — it's evidence that q2mm's
+MM3 lacks the cross-terms that make the published params work in
+MacroModel.</p>
+</blockquote>
+<h3 id="33-per-parameter-deviations-from-the-published-ff">3.3 Per-parameter deviations from the published FF<a class="headerlink" href="#33-per-parameter-deviations-from-the-published-ff" title="Permanent link">&para;</a></h3>
+<p>Generated by <a href="https://github.com/ericchansen/q2mm/blob/main/scripts/compare_opt_rows.py"><code>scripts/compare_opt_rows.py</code></a>.
+Both files are round-tripped through <code>q2mm.io.mm3.save_mm3_fld()</code> first so
+atom-type tokens and OPT-row ordering match exactly. Per-system markdown
+tables are committed alongside the artifacts at
+<a href="https://github.com/ericchansen/q2mm-data/tree/main/benchmarks"><code>benchmarks/&lt;system&gt;/convergence/per_param_comparison.md</code></a>.</p>
+<p><strong>Mean and max absolute deviation by parameter category</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th style="text-align: right;">bond eq (Å)</th>
+<th style="text-align: right;">bond fc (mdyn/Å)</th>
+<th style="text-align: right;">angle eq (°)</th>
+<th style="text-align: right;">angle fc (mdyn·Å/rad²)</th>
+<th style="text-align: right;">matched rows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rh-enamide</td>
+<td style="text-align: right;">mean 0.007, max 0.12</td>
+<td style="text-align: right;">mean 0.31, max 18.1</td>
+<td style="text-align: right;">mean 0.28, max 53°</td>
+<td style="text-align: right;">mean 0.06, max 4.6</td>
+<td style="text-align: right;">347</td>
+</tr>
+<tr>
+<td>pd-allyl</td>
+<td style="text-align: right;">mean 0.006, max 0.50</td>
+<td style="text-align: right;">mean 0.26, max 12.6</td>
+<td style="text-align: right;">mean 0.37, max 16°</td>
+<td style="text-align: right;">mean 0.03, max 3.2</td>
+<td style="text-align: right;">598</td>
+</tr>
+<tr>
+<td>pd-conjugate</td>
+<td style="text-align: right;">mean 0.007, max 0.71</td>
+<td style="text-align: right;">mean 0.31, max 11.9</td>
+<td style="text-align: right;">mean 0.92, max 54°</td>
+<td style="text-align: right;">mean 0.03, max 1.4</td>
+<td style="text-align: right;">519</td>
+</tr>
+<tr>
+<td>rh-conjugate</td>
+<td style="text-align: right;">mean 0.005, max 0.61</td>
+<td style="text-align: right;">mean 0.31, max 11.6</td>
+<td style="text-align: right;">mean 0.60, max 30°</td>
+<td style="text-align: right;">mean 0.02, max 2.5</td>
+<td style="text-align: right;">537</td>
+</tr>
+<tr>
+<td>heck-relay</td>
+<td style="text-align: right;">mean 0.013, max 0.71</td>
+<td style="text-align: right;">mean 0.68, max  9.3</td>
+<td style="text-align: right;">mean 0.77, max 55°</td>
+<td style="text-align: right;">mean 0.09, max 7.9</td>
+<td style="text-align: right;">373</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bond equilibria stay close</strong> to published across all 5 systems (mean
+abs dev &lt; 0.013 Å, well below the published RMSD ≤ 0.03 Å for
+rh-enamide). <strong>Bond and angle force constants drift much further</strong> —
+the optimizer routinely shrinks published <code>fc</code> values toward zero
+(e.g. pd-allyl C2–O3 bond fc 3.46 → 0.22, a 94% reduction). This is the
+QFUERZA H-substitution effect propagating through optimization: when
+the starting <code>fc</code> is small (because QFUERZA estimated a weak mode from
+a small Hessian eigenvalue), the optimizer has little gradient signal
+to push it back up.</p>
+<h3 id="34-negative-force-constants-in-optimized-ffs">3.4 ⚠ Negative force constants in optimized FFs<a class="headerlink" href="#34-negative-force-constants-in-optimized-ffs" title="Permanent link">&para;</a></h3>
+<p>Inspecting the per-parameter comparison tables for rh-conjugate and
+heck-relay reveals <strong>negative bond and angle force constants</strong> in the
+QFUERZA-optimized FFs:</p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>Param</th>
+<th>Atoms</th>
+<th style="text-align: right;">Published <code>fc</code></th>
+<th style="text-align: right;">Optimized <code>fc</code></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rh-conjugate</td>
+<td>angle</td>
+<td>C2–C2–O2</td>
+<td style="text-align: right;">+0.529</td>
+<td style="text-align: right;"><strong>−1.049</strong></td>
+</tr>
+<tr>
+<td>rh-conjugate</td>
+<td>angle</td>
+<td>C2–C2–O2</td>
+<td style="text-align: right;">+1.400</td>
+<td style="text-align: right;"><strong>−1.062</strong></td>
+</tr>
+<tr>
+<td>heck-relay</td>
+<td>angle</td>
+<td>2–5–4</td>
+<td style="text-align: right;">+0.041</td>
+<td style="text-align: right;"><strong>−7.562</strong></td>
+</tr>
+<tr>
+<td>heck-relay</td>
+<td>angle</td>
+<td>2–3–4</td>
+<td style="text-align: right;">+0.344</td>
+<td style="text-align: right;"><strong>−7.562</strong></td>
+</tr>
+</tbody>
+</table>
+<p>These are <strong>unphysical</strong>. A negative angle force constant makes the
+harmonic potential <code>½·k·(θ−θ₀)²</code> unbounded below (any displacement
+from <code>θ₀</code> lowers the energy). L-BFGS-B found these because q2mm's
+parameter bounds (now <code>fc_fraction=0.20</code> of the starting value) <strong>do
+not enforce a sign constraint</strong>: when the QFUERZA starting <code>fc</code> is
+near zero, <code>±20%</code> of zero is still near zero, and the optimizer can
+cross the sign boundary without violating its box constraint.</p>
+<blockquote>
+<p><strong>This is a real issue in the optimizer</strong>, separate from the QFUERZA
+recovery question. Force constants should have a positive sign
+constraint regardless of the fractional bounds. Tracking issue: [TBD].</p>
+</blockquote>
+<h3 id="35-audit-of-qfuerza-overwritten-vs-literature-retained-rows">3.5 Audit of QFUERZA-overwritten vs literature-retained rows<a class="headerlink" href="#35-audit-of-qfuerza-overwritten-vs-literature-retained-rows" title="Permanent link">&para;</a></h3>
+<p>For each system we report which OPT-substructure rows had their bond
+and angle scalars filled in by QFUERZA (vs retained from the literature
+<code>.fld</code> — these are torsions, vdW, stretch-bend, and Urey-Bradley rows
+that are outside QFUERZA's defined scope). See <code>starting_point_audit</code>
+in each <code>validation_results.json</code>. Across the 5 systems, QFUERZA fills
+in <strong>17–33% of active parameters</strong> (corresponding to 100% of the
+bond/angle scalars in each system's skeleton).</p>
+<hr />
+<h2 id="4-physical-chemistry-walkthrough">4. Physical-chemistry walkthrough<a class="headerlink" href="#4-physical-chemistry-walkthrough" title="Permanent link">&para;</a></h2>
+<p>This section interprets the largest QFUERZA-vs-published deviations
+through a chemical lens. The full per-row tables live in
+<a href="https://github.com/ericchansen/q2mm-data/tree/main/benchmarks"><code>benchmarks/&lt;system&gt;/convergence/per_param_comparison.md</code></a>.</p>
+<h3 id="41-rh-enamide-cleanest-recovery">4.1 rh-enamide — cleanest recovery<a class="headerlink" href="#41-rh-enamide-cleanest-recovery" title="Permanent link">&para;</a></h3>
+<p>The QFUERZA-optimized FF is within 5% on every bond equilibrium and
+within 33% on every angle equilibrium. The largest force-constant
+deviations are:</p>
+<ul>
+<li><strong>Bond C–H types</strong> (15 entries): all unchanged (Δ = 0.000) — frozen.
+  X-H bonds aren't part of the OPT-substructure rows the optimizer
+  touches.</li>
+<li><strong>Phosphine–metal angles</strong>: a few angle <code>fc</code> values are amplified
+  from near-zero published values (e.g., 6–2–9 angle fc 0.0009 →
+  0.445). These are likely PR₃–Rh–C angles whose published values were
+  intentionally zeroed (consistent with the Donoghue 2008 protocol of
+  letting weak ligand-conformational modes float).</li>
+<li><strong>C–C bond fc collapses</strong> of 80% are seen for some sp²–sp² C–C bonds
+  along the substrate. Chemically, these are π-bonds whose force
+  constant in published MM3 is high (ca. 5 mdyn/Å) — QFUERZA derives
+  them from the QM Hessian, which projects in less stiffness because
+  the substrate is delocalized.</li>
+</ul>
+<h3 id="42-pd-allyl-q2mm-engine-favors-qfuerza-params">4.2 pd-allyl — q2mm engine favors QFUERZA params<a class="headerlink" href="#42-pd-allyl-q2mm-engine-favors-qfuerza-params" title="Permanent link">&para;</a></h3>
+<p>The top-15 relative deviations are dominated by <strong>C–N, C–O, and C=N
+bond <code>fc</code> values collapsing 90–98%</strong> from published (5–13 mdyn/Å) to
+optimized (0.1–0.5 mdyn/Å). These bonds are part of the amination
+substrate's backbone (e.g., C₂–N₂ amide, C₃–O₃ carbonyl, C₂–C₃ vinyl).</p>
+<p>Chemically, an MM3 amide C–N bond <code>fc</code> of 13 mdyn/Å is <strong>expected</strong> —
+the resonance-delocalized C–N has partial double-bond character.
+QFUERZA's projection through the QM Hessian gives <code>fc</code> values much
+lower because the Hessian eigenvalues for these modes are smaller than
+a pure harmonic model would predict — there's anharmonic and resonance
+character that QFUERZA cannot capture.</p>
+<p>So why does q2mm's objective <em>prefer</em> the QFUERZA values? <strong>Backend
+parity gap</strong>. In MacroModel's MM3*, the higher <code>fc</code> works because
+stretch-bend and π-system cross terms partially compensate. In q2mm's
+JaxBackend MM3 (which lacks those cross terms), the high <code>fc</code> produces
+overshooting predictions; lowering it to QFUERZA's value reduces the
+residual. This is a q2mm engine issue masquerading as a "win" in the
+optimization.</p>
+<h3 id="43-pd-conjugate-l-m-x-angle-force-constant-explosion">4.3 pd-conjugate — L-M-X angle force constant explosion<a class="headerlink" href="#43-pd-conjugate-l-m-x-angle-force-constant-explosion" title="Permanent link">&para;</a></h3>
+<p>Top deviation: C₂–C₂–PD angle fc 0.035 → 1.246 (<strong>+3491%</strong>). Chemically
+this is the metal-coordinated ene angle of the conjugate-addition
+substrate. The published value is near-zero (allowing the substrate
+plane to flex toward the metal), but the optimizer pushes it to a
+much stiffer +1.25.</p>
+<p>Two more concerning angles develop <strong>negative force constants</strong>: C2–N2–PD
+goes 0.004 → −0.046 (unphysical). See §3.4. These are L-M-L angles
+involving low-published-<code>fc</code> rows — the optimizer's bounds don't keep
+them positive.</p>
+<h3 id="44-rh-conjugate-most-negative-force-constants">4.4 rh-conjugate — most negative force constants<a class="headerlink" href="#44-rh-conjugate-most-negative-force-constants" title="Permanent link">&para;</a></h3>
+<p>Three of the top-5 deviations involve <strong>sign flips</strong> to negative <code>fc</code>:
+C2–C2–O2 angle goes from +0.53 to <strong>−1.05</strong>, and from +1.40 to <strong>−1.06</strong>;
+C2–C2 bond fc actually doubles to +0.31. The original published values
+are small but positive (allowed deviation, normal angle ranges).
+QFUERZA started from near-zero, and the optimizer overshot through
+zero. This optimization is <strong>not</strong> in the published basin and the
+optimizer found an unphysical solution.</p>
+<p>The relatively high R²-eig (<code>−4.7</code> vs published-start <code>−12.9</code>)
+suggests this unphysical FF coincidentally fits the diagonal
+eigenmatrix elements better than the published one in q2mm's engine —
+another symptom of the backend parity gap (§4.2).</p>
+<h3 id="45-heck-relay-jax-surrogate-broken-optimizer-found-garbage">4.5 heck-relay — JAX surrogate broken, optimizer found garbage<a class="headerlink" href="#45-heck-relay-jax-surrogate-broken-optimizer-found-garbage" title="Permanent link">&para;</a></h3>
+<p>The starting Seminario projection produces bond R² = −6228 (mean
+predicted bond length is <strong>25.8 Å off</strong> from QM reference). That FF is
+non-physical from the start, but the optimizer was supposed to repair
+it. Instead, the JAX surrogate diverges (no finite ratio reported), the
+gradient at the starting point is essentially zero (because L1-norm of
+the loss is so large that finite differences are dominated by floating
+point noise), and L-BFGS-B exits in 0 iterations declaring convergence.</p>
+<p>The final FF has <strong>multiple force constants at −7.56</strong> (the optimizer's
+output mapped to a degenerate value). This is the JAX surrogate + L-BFGS-B
+breakdown pattern documented in
+<a href="https://github.com/ericchansen/q2mm/blob/main/AGENTS.md">AGENTS.md §9</a>
+("jaxopt zoom" / "TS executor-ratio gate"). A <code>fc_fraction=0.05</code> bound was
+not tight enough to prevent the breakdown — the starting FF is too far
+from any physical basin for fractional bounds around it to make sense.</p>
+<hr />
+<h2 id="5-interpretation">5. Interpretation<a class="headerlink" href="#5-interpretation" title="Permanent link">&para;</a></h2>
+<h3 id="what-this-experiment-validates">What this experiment validates ✅<a class="headerlink" href="#what-this-experiment-validates" title="Permanent link">&para;</a></h3>
+<ul>
+<li><strong>The q2mm reference-data + JAX analytical executor + L-BFGS-B pipeline works for
+  rh-enamide</strong> — starting from QFUERZA gives a final FF within 9% of
+  the published-start objective, with bond/angle R² and RMSD close to
+  the paper's RMSD ≤ 0.03 Å / RMSD &lt; 2° quality.</li>
+</ul>
+<h3 id="what-it-does-not-yet-validate">What it does NOT yet validate ❌<a class="headerlink" href="#what-it-does-not-yet-validate" title="Permanent link">&para;</a></h3>
+<ul>
+<li>
+<p><strong>Per-parameter recovery of published values</strong>. Even on the cleanest
+  system (rh-enamide), bond force constants drift by up to 83% and
+  angle force constants by an order of magnitude. The optimizer reaches
+  the same <strong>objective basin</strong> but not the same <strong>parameter values</strong>.
+  This is a known property of degenerate force-field landscapes — many
+  parameter sets give similar predictions for the training set.</p>
+</li>
+<li>
+<p><strong>q2mm's MM3 implementation has substantial gaps vs MacroModel's
+  MM3*</strong>. R² values at the published FF are far below paper-reported
+  R² for pd-allyl, pd-conjugate, rh-conjugate. Until backend parity
+  improves, parameter-recovery experiments on Wahlers systems are
+  inconclusive.</p>
+</li>
+<li>
+<p><strong>The optimizer needs a positive-<code>fc</code> sign constraint</strong>. Negative
+  force constants in rh-conjugate and heck-relay outputs are
+  unphysical and should be unreachable from any starting point.</p>
+</li>
+<li>
+<p><strong>The JAX surrogate fails for FFs with QFUERZA bond R² ≪ 0</strong>. Until
+  we have a pre-conditioning step (or use a different surrogate for
+  the first few L-BFGS-B steps), heck-relay-class systems cannot be
+  optimized from scratch.</p>
+</li>
+</ul>
+<h3 id="what-to-do-next">What to do next<a class="headerlink" href="#what-to-do-next" title="Permanent link">&para;</a></h3>
+<ol>
+<li><strong>Add a positive-<code>fc</code> constraint</strong> to q2mm's optimizer bounds.</li>
+<li><strong>Backend parity audit</strong> — compare q2mm/JaxBackend MM3 vs
+   MacroModel MM3* on a single fixed FF and identify which physics
+   terms are missing. (Open a tracking issue.)</li>
+<li><strong>Pre-conditioning for heck-relay-class systems</strong> — replace
+   QFUERZA <code>fc</code> outliers (|fc| &gt; 10) with literature averages before
+   L-BFGS-B sees them; or use a robust loss (Huber) instead of
+   squared-error for the first 20 optimizer steps.</li>
+</ol>
+<h3 id="known-limitations">Known limitations<a class="headerlink" href="#known-limitations" title="Permanent link">&para;</a></h3>
+<p>QFUERZA is now the canonical default (<code>starting_point="qfuerza"</code> on
+<code>load_system</code>; <code>--starting-point qfuerza</code> on
+<code>q2mm-benchmark</code>). Three of the five TS systems do
+<strong>not</strong> converge cleanly from QFUERZA with default bounds:</p>
+<table>
+<thead>
+<tr>
+<th>System</th>
+<th>Symptom</th>
+<th>Workaround</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>rh-conjugate</td>
+<td>Ratio 3.49× vs publication baseline; negative <code>fc</code> (§3.4)</td>
+<td><code>--fc-fraction 0.05 --eq-fraction 0.05</code> (tighter bounds) or <code>--starting-point published</code></td>
+</tr>
+<tr>
+<td>pd-conjugate</td>
+<td>Ratio 1.14× vs publication baseline</td>
+<td><code>--fc-fraction 0.05 --eq-fraction 0.05</code> or <code>--starting-point published</code></td>
+</tr>
+<tr>
+<td>heck-relay</td>
+<td>JAX surrogate diverges to ~10⁸; L-BFGS-B exits in 0 iters (§4.5)</td>
+<td><code>--starting-point published</code> (pre-conditioning fix tracked as future work; see "What to do next")</td>
+</tr>
+</tbody>
+</table>
+<p>The <code>--starting-point published</code> opt-out path retains the literature
+OPT values verbatim and reproduces the historical
+publication-baseline benchmarks (<code>from-published/</code> artifacts in
+q2mm-data).</p>
+<hr />
+<h2 id="6-how-to-reproduce">6. How to reproduce<a class="headerlink" href="#6-how-to-reproduce" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># 1. Verify GPU</span>
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nb">source</span><span class="w"> </span>/home/eric/repos/q2mm/.venv/bin/activate
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>python<span class="w"> </span>-c<span class="w"> </span><span class="s2">&quot;import jax; print(jax.devices())&quot;</span><span class="w">   </span><span class="c1"># must show CudaDevice</span>
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># 2. Run a single system (canonical default = QFUERZA; recommended</span>
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="c1">#    bounds for non-heck-relay TS).  --starting-point qfuerza is the</span>
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="c1">#    default and can be omitted.</span>
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>python<span class="w"> </span>-m<span class="w"> </span>q2mm.benchmarks.cli<span class="w"> </span>single<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">    </span>--system<span class="w"> </span>rh-enamide<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span>--executor-ratio-tol<span class="w"> </span>none<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">    </span>--ftol<span class="w"> </span>1e-12<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span>--fc-fraction<span class="w"> </span><span class="m">0</span>.20<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span>--eq-fraction<span class="w"> </span><span class="m">0</span>.05<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span>--output<span class="w"> </span>/path/to/q2mm-data/benchmarks
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>
+<a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="c1"># 3. Heck-relay or any 3/5-divergence system: see &quot;Known limitations&quot;</span>
+<a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="c1">#    in §5 — fall back to the publication-baseline path</span>
+<a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>python<span class="w"> </span>-m<span class="w"> </span>q2mm.benchmarks.cli<span class="w"> </span>single<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span>--system<span class="w"> </span>heck-relay<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">    </span>--starting-point<span class="w"> </span>published<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">    </span>--executor-ratio-tol<span class="w"> </span>none<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">    </span>--output<span class="w"> </span>/path/to/q2mm-data/benchmarks
+<a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>
+<a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="c1"># 4. Generate the cross-system R²/RMSD table</span>
+<a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>python<span class="w"> </span>scripts/build_qfuerza_recovery_tables.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a><span class="w">    </span>--data-dir<span class="w"> </span>/path/to/q2mm-data/benchmarks<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-27" name="__codelineno-0-27" href="#__codelineno-0-27"></a><span class="w">    </span>--paper-r2<span class="w"> </span>/path/to/q2mm-data/benchmarks/paper_r2_reference.json<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-28" name="__codelineno-0-28" href="#__codelineno-0-28"></a><span class="w">    </span>--out<span class="w"> </span>r2-tables.md
+<a id="__codelineno-0-29" name="__codelineno-0-29" href="#__codelineno-0-29"></a>
+<a id="__codelineno-0-30" name="__codelineno-0-30" href="#__codelineno-0-30"></a><span class="c1"># 5. Generate per-parameter comparison (per system)</span>
+<a id="__codelineno-0-31" name="__codelineno-0-31" href="#__codelineno-0-31"></a>python<span class="w"> </span>scripts/compare_opt_rows.py<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="w">    </span>--system<span class="w"> </span>rh-enamide<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-33" name="__codelineno-0-33" href="#__codelineno-0-33"></a><span class="w">    </span>--optimized<span class="w"> </span>/path/to/q2mm-data/benchmarks/rh-enamide/convergence/rh-enamide_optimized.fld<span class="w"> </span><span class="se">\</span>
+<a id="__codelineno-0-34" name="__codelineno-0-34" href="#__codelineno-0-34"></a><span class="w">    </span>--out<span class="w"> </span>compare-rh-enamide.md
+</code></pre></div>
+<p>The QFUERZA-start artifacts live in
+<a href="https://github.com/ericchansen/q2mm-data/tree/main/benchmarks"><code>q2mm-data/benchmarks/&lt;system&gt;/convergence/</code></a>
+(canonical default path). The publication-baseline artifacts live in
+<a href="https://github.com/ericchansen/q2mm-data/tree/main/benchmarks"><code>q2mm-data/benchmarks/&lt;system&gt;/from-published/</code></a>
+(opt-in <code>--starting-point published</code> path).</p>
+<p>The <code>--executor-ratio-tol none</code> flag bypasses the JAX/Python executor ratio
+gate (which would otherwise reject all 5 TS systems at the QFUERZA
+start because the surrogate is poorly aligned).</p>
+<p>The <code>--ftol 1e-12</code> flag overrides the script's default <code>ftol=1e-8</code> that
+previously let the optimizer exit after one line search step on most
+TS systems.</p>
+<p>The <code>--fc-fraction</code>/<code>--eq-fraction</code> flags set sign-aware fractional
+bounds — each parameter <code>v</code> is clamped to
+<code>[v − f·|v|, v + f·|v|]</code> (intersected with the physical-sanity
+<code>DEFAULT_BOUNDS</code>), so TSFF negative force constants are bounded
+symmetrically around their actual sign. Without them, L-BFGS-B will
+escape the QFUERZA basin entirely.</p>
+<p>The output <code>validation_results.json</code> includes a <code>starting_point_audit</code>
+block enumerating which OPT rows were filled in by QFUERZA vs retained
+from the literature <code>.fld</code>.</p>
+<hr />
+<h2 id="7-anchors">7. Anchors<a class="headerlink" href="#7-anchors" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Code: <a href="https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/systems/__init__.py"><code>q2mm/benchmarks/systems/__init__.py</code></a> (<code>load_system</code> registry); <code>starting_point</code> is accepted by each publication-system loader, e.g. <a href="https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/systems/rh_enamide.py"><code>q2mm/benchmarks/systems/rh_enamide.py</code></a></li>
+<li>Bounds: <a href="https://github.com/ericchansen/q2mm/blob/main/q2mm/models/parameters.py"><code>q2mm/models/parameters.py</code></a> (<code>fractional_bounds</code>)</li>
+<li>CLI: <a href="https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/cli.py"><code>q2mm-benchmark</code></a> (<code>single</code>/<code>batch</code>/<code>matrix</code> with <code>--starting-point</code>, <code>--executor-ratio-tol</code>, <code>--ftol</code>, <code>--fc-fraction</code>, <code>--eq-fraction</code>)</li>
+<li>Analysis scripts:</li>
+<li><a href="https://github.com/ericchansen/q2mm/blob/main/scripts/compare_opt_rows.py"><code>scripts/compare_opt_rows.py</code></a> — per-param row-by-row comparison</li>
+<li><a href="https://github.com/ericchansen/q2mm/blob/main/scripts/build_qfuerza_recovery_tables.py"><code>scripts/build_qfuerza_recovery_tables.py</code></a> — R²/RMSD cross-system rollup</li>
+<li>Pre-flight checklist: <a href="https://github.com/ericchansen/q2mm/blob/main/AGENTS.md"><code>AGENTS.md</code> §11</a></li>
+<li>Process skills: <a href="https://github.com/ericchansen/q2mm/blob/main/.copilot/skills/q2mm-benchmark/SKILL.md"><code>.copilot/skills/q2mm-benchmark/SKILL.md</code></a>, <a href="https://github.com/ericchansen/q2mm/blob/main/.copilot/skills/q2mm-analysis-design/SKILL.md"><code>.copilot/skills/q2mm-analysis-design/SKILL.md</code></a></li>
+<li>Tests: <a href="https://github.com/ericchansen/q2mm/blob/main/test/test_benchmarks_systems.py"><code>test/test_benchmarks_systems.py</code></a> (<code>TestStartingPoint</code>), <a href="https://github.com/ericchansen/q2mm/blob/main/test/test_parameters.py"><code>test/test_parameters.py</code></a> (<code>TestFractionalBounds</code>)</li>
+<li>Data: <a href="https://github.com/ericchansen/q2mm-data/tree/main/benchmarks"><code>q2mm-data/benchmarks/&lt;system&gt;/convergence/</code></a> (canonical QFUERZA-start default); <a href="https://github.com/ericchansen/q2mm-data/tree/main/benchmarks"><code>q2mm-data/benchmarks/&lt;system&gt;/from-published/</code></a> (opt-in publication baseline)</li>
+<li>Method paper: Farrugia, Helquist, Norrby &amp; Wiest, <em>J. Chem. Theory Comput.</em> <strong>2025</strong>, 22, 469. <a href="https://doi.org/10.1021/acs.jctc.5c01751">10.1021/acs.jctc.5c01751</a></li>
+<li>TS Hessian inversion: Limé &amp; Norrby, <em>J. Comput. Chem.</em> <strong>2015</strong>, 36, 244. <a href="https://doi.org/10.1002/jcc.23797">10.1002/jcc.23797</a></li>
+<li>Related: <a href="../qfuerza-validation/">QFUERZA Validation</a> — starting-FF quality across all systems.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+        <script src="../../javascripts/benchmarks.js"></script>
+      
+    
+  </body>
+</html>
