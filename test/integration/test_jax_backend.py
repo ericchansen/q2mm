@@ -19,6 +19,7 @@ from q2mm.backends.contracts import (
     EnergyRequest,
     FrequencyRequest,
     HessianJacobianRequest,
+    MinimizationRequest,
 )
 from q2mm.backends.registry import load_backend
 from test.backend_fixtures import param_vector, prepare_case
@@ -224,6 +225,37 @@ class TestJaxBackendKnownValue:
         energy = prepare_case(self.backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy
         expected = _BOND_K_CONV * 359.7 * 0.1**2
         assert abs(energy - expected) < 1e-8
+
+    def test_minimize_uses_explicit_stable_tolerances(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from scipy import optimize
+
+        captured: dict[str, object] = {}
+
+        def fake_minimize(fun, x0, *, jac, method, options):  # noqa: ANN001, ANN202
+            captured.update(method=method, options=dict(options))
+            return optimize.OptimizeResult(x=np.asarray(x0), fun=0.0, success=True)
+
+        monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
+        mol = make_diatomic(distance=0.84, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        session = prepare_case(self.backend, mol, ff)
+        session.minimize(
+            MinimizationRequest(
+                parameters=param_vector(ff),
+                max_iterations=17,
+                tolerance=2e-5,
+            )
+        )
+
+        assert captured == {
+            "method": "L-BFGS-B",
+            "options": {
+                "maxiter": 17,
+                "ftol": 1e-15,
+                "gtol": 2e-5,
+                "maxls": 100,
+            },
+        }
 
 
 class TestJaxBackendReuse:

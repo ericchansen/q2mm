@@ -19,6 +19,8 @@ from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.protocols import Evaluation, GradientMode, ObjectiveGradientError
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
+_RH_PUBLICATION_CATEGORY_RTOL = 1e-5
+_RH_PUBLICATION_CATEGORY_ATOL = 1e-4
 
 pytestmark = [
     pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"),
@@ -530,9 +532,19 @@ def test_rh_enamide_publication_geometry_eigenmatrix_parity(rh_enamide_plan: Any
     # One compiled fragment per case (multi-molecule Python aggregation).
     assert len(jx._compiled_value_fns) >= len(problem.case_ids)
     assert ev_py.category_scores.keys() == ev_jx.category_scores.keys()
-    for k in ev_py.category_scores:
-        assert ev_py.category_scores[k] == pytest.approx(ev_jx.category_scores[k], rel=1e-4, abs=1e-4)
-    assert ev_py.data_value == pytest.approx(ev_jx.data_value, rel=1e-4, abs=1e-4)
+    for category in ev_py.category_scores:
+        python_value = ev_py.category_scores[category]
+        jax_value = ev_jx.category_scores[category]
+        assert python_value == pytest.approx(
+            jax_value,
+            rel=_RH_PUBLICATION_CATEGORY_RTOL,
+            abs=_RH_PUBLICATION_CATEGORY_ATOL,
+        ), f"Rh-enamide {category} category parity failed: Python={python_value:.15g}, JAX={jax_value:.15g}"
+    assert ev_py.data_value == pytest.approx(
+        ev_jx.data_value,
+        rel=_RH_PUBLICATION_CATEGORY_RTOL,
+        abs=_RH_PUBLICATION_CATEGORY_ATOL,
+    ), f"Rh-enamide total parity failed: Python={ev_py.data_value:.15g}, JAX={ev_jx.data_value:.15g}"
 
 
 def test_finite_difference_step_reporting(ch3f_problem: Any) -> None:

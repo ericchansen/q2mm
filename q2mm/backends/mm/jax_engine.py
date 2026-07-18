@@ -1207,7 +1207,12 @@ class JaxBackend:
         )
 
     def _evaluate_minimize(
-        self, state: _JaxState, forcefield: ForceField, *, max_iterations: int = 200
+        self,
+        state: _JaxState,
+        forcefield: ForceField,
+        *,
+        max_iterations: int = 200,
+        tolerance: float = 1e-5,
     ) -> tuple[float, list[str], np.ndarray]:
         """Minimize coordinates with analytical JAX gradients (L-BFGS-B)."""
         from scipy.optimize import minimize as scipy_minimize
@@ -1229,7 +1234,12 @@ class JaxBackend:
             x0,
             jac=gradient,
             method="L-BFGS-B",
-            options={"maxiter": max_iterations},
+            options={
+                "maxiter": max_iterations,
+                "ftol": 1e-15,
+                "gtol": tolerance,
+                "maxls": 100,
+            },
         )
 
         opt_coords = result.x.reshape(-1, 3)
@@ -1293,8 +1303,14 @@ class PreparedJax(AbstractPreparedBackend):
     def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
         ff = self._ff_for(request.parameters)
         max_iterations = request.max_iterations if request.max_iterations is not None else 200
+        tolerance = request.tolerance if request.tolerance is not None else 1e-5
         try:
-            energy, atoms, coords = self._backend._evaluate_minimize(self._state, ff, max_iterations=max_iterations)
+            energy, atoms, coords = self._backend._evaluate_minimize(
+                self._state,
+                ff,
+                max_iterations=max_iterations,
+                tolerance=tolerance,
+            )
         except Exception as exc:  # noqa: BLE001
             raise EvaluationError(f"JAX minimization failed: {exc}") from exc
         return GeometryResult(
