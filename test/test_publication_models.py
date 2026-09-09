@@ -245,3 +245,106 @@ def test_publication_success_spec_enforces_convergence_and_weighted_category_reg
         accepted=True,
     )
     assert passed["passes"] is True
+
+
+@pytest.mark.parametrize("improvement_percent", [float("nan"), float("inf"), float("-inf")])
+def test_publication_success_audit_rejects_nonfinite_improvement(improvement_percent: float) -> None:
+    spec = publication_success_spec("rh-enamide", REPOSITORY_OBJECTIVE_PROFILE, "qfuerza")
+    audit = spec.audit(
+        improvement_percent=improvement_percent,
+        initial_executor_ratio=1.0,
+        final_executor_ratio=1.0,
+        initial_category_scores={},
+        final_category_scores={},
+        optimizer_converged=True,
+        accepted=True,
+    )
+    assert audit["passes"] is False
+    assert audit["failures"] == [f"improvement={improvement_percent!r} is not finite"]
+
+
+@pytest.mark.parametrize("endpoint", ["initial", "final"])
+@pytest.mark.parametrize("ratio", [float("nan"), float("inf"), float("-inf"), None])
+def test_publication_success_audit_rejects_invalid_ratios(endpoint: str, ratio: float | None) -> None:
+    spec = publication_success_spec("rh-enamide", REPOSITORY_OBJECTIVE_PROFILE, "qfuerza")
+    audit = spec.audit(
+        improvement_percent=1.0,
+        initial_executor_ratio=ratio if endpoint == "initial" else 1.0,
+        final_executor_ratio=ratio if endpoint == "final" else 1.0,
+        initial_category_scores={},
+        final_category_scores={},
+        optimizer_converged=True,
+        accepted=True,
+    )
+    assert audit["passes"] is False
+    assert audit["failures"] == [f"{endpoint}_executor_ratio={ratio!r} outside [0.1, 10.0]"]
+
+
+@pytest.mark.parametrize("endpoint", ["initial", "final"])
+@pytest.mark.parametrize("counterpart_present", [False, True])
+@pytest.mark.parametrize("score", [float("nan"), float("inf"), float("-inf")])
+def test_publication_success_audit_rejects_nonfinite_category_scores(
+    endpoint: str, counterpart_present: bool, score: float
+) -> None:
+    spec = publication_success_spec("rh-enamide", REPOSITORY_OBJECTIVE_PROFILE, "qfuerza")
+    scores = {
+        "initial": {"geometry": 100.0},
+        "final": {"geometry": 50.0},
+    }
+    if counterpart_present:
+        scores["initial"]["eigenmatrix"] = 1.0
+        scores["final"]["eigenmatrix"] = 1.0
+    scores[endpoint]["eigenmatrix"] = score
+    audit = spec.audit(
+        improvement_percent=1.0,
+        initial_executor_ratio=1.0,
+        final_executor_ratio=1.0,
+        initial_category_scores=scores["initial"],
+        final_category_scores=scores["final"],
+        optimizer_converged=True,
+        accepted=True,
+    )
+    assert audit["passes"] is False
+    assert any(
+        f"eigenmatrix {endpoint} weighted objective={score!r} is not finite" in failure for failure in audit["failures"]
+    )
+    assert audit["category_regressions"]["eigenmatrix"]["passes"] is False
+
+
+@pytest.mark.parametrize(
+    ("initial", "final"),
+    [
+        ({}, {}),
+        ({"geometry": 100.0}, {"geometry": 101.0}),
+        ({"geometry": 100.0}, {}),
+        ({}, {"geometry": 0.0}),
+    ],
+)
+def test_publication_success_audit_preserves_finite_and_missing_category_evidence(
+    initial: dict[str, float], final: dict[str, float]
+) -> None:
+    spec = publication_success_spec("rh-enamide", REPOSITORY_OBJECTIVE_PROFILE, "qfuerza")
+    audit = spec.audit(
+        improvement_percent=1.0,
+        initial_executor_ratio=0.1,
+        final_executor_ratio=10.0,
+        initial_category_scores=initial,
+        final_category_scores=final,
+        optimizer_converged=True,
+        accepted=True,
+    )
+    assert audit == {
+        "passes": True,
+        "failures": [],
+        "executor_ratios": {"initial_executor_ratio": 0.1, "final_executor_ratio": 10.0},
+        "category_regressions": {
+            category: {
+                "initial": initial.get(category, 0.0),
+                "final": final.get(category, 0.0),
+                "increase": final.get(category, 0.0) - initial.get(category, 0.0),
+                "allowed_increase": sum(initial.values()) / 100.0,
+                "passes": True,
+            }
+            for category in set(initial) | set(final)
+        },
+    }
