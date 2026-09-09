@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
+from math import isclose
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypeVar
 
@@ -353,11 +354,16 @@ class ForceField:
 
         When *prefer_generic_context* is True and multiple candidates
         match, prefer the one with empty context (generic ``0000 0000``
-        fallback) over context-specific entries. Exact environments outrank
-        empty environments. Remaining ties raise ``ValueError``.
+        fallback) over context-specific entries. Incompatible explicit bond
+        orders are excluded before environment ranking. Exact environments
+        outrank empty environments. Remaining ties raise ``ValueError``.
         """
         key = tuple(sorted([elem1, elem2]))
-        candidates = _environment_candidates([b for b in self.bonds if b.key == key], env_id, canonicalize_bond_env_id)
+        candidates = _environment_candidates(
+            [b for b in self.bonds if b.key == key and (not bond_order or b.bond_order in ("", bond_order))],
+            env_id,
+            canonicalize_bond_env_id,
+        )
         candidates = _bond_order_candidates(candidates, bond_order)
         if prefer_generic_context:
             candidates = _prefer_generic_bond_context(candidates)
@@ -412,16 +418,13 @@ class ForceField:
         target = (elem1, elem2, elem3, elem4)
         target_rev = (elem4, elem3, elem2, elem1)
         candidates = _environment_candidates(
-            [
-                t
-                for t in self.torsions
-                if t.elements in (target, target_rev) and (periodicity is None or t.periodicity == periodicity)
-            ],
+            [t for t in self.torsions if t.elements in (target, target_rev)],
             env_id,
             canonicalize_torsion_env_id,
         )
-        if candidates and periodicity is None:
-            candidates = [t for t in candidates if t.periodicity == candidates[0].periodicity]
+        if candidates:
+            selected_periodicity = candidates[0].periodicity if periodicity is None else periodicity
+            candidates = [t for t in candidates if t.periodicity == selected_periodicity]
         return _unique_parameter(candidates, f"torsion match for {target!r}, env_id={env_id!r}")
 
     # --- Parameter matching with ff_row → env_id → element fallback ---
@@ -437,11 +440,12 @@ class ForceField:
     ) -> BondParam | None:
         """Match a bond parameter using a priority chain.
 
-        Exact ``ff_row`` wins. Otherwise exact canonical environments precede
-        empty environments and then element-only fallback. Within a typed or
-        empty-environment tier, bond order precedes nearest equilibrium length;
-        generic context resolves remaining context variants. Element-only
-        fallback prefers generic context. Unresolved ties raise ``ValueError``.
+        Exact ``ff_row`` wins. An explicit bond order restricts all subsequent
+        tiers to matching or unspecified orders; no compatible row returns
+        ``None``. Exact canonical environments precede empty environments and
+        then element-only fallback. With no order, nearest equilibrium length
+        ranks typed or empty-environment candidates. Generic context resolves
+        remaining context variants. Unresolved ties raise ``ValueError``.
         """
         # Tier 1: exact ff_row
         if ff_row is not None:
@@ -449,17 +453,25 @@ class ForceField:
                 if bond.ff_row == ff_row:
                     return bond
 
+        if bond_order:
+            matched = self.get_bond(
+                elements[0], elements[1], env_id=env_id, bond_order=bond_order, prefer_generic_context=True
+            )
+            if matched is not None:
+                return matched
+            return self.get_bond(elements[0], elements[1], bond_order=bond_order, prefer_generic_context=True)
+
         key = tuple(sorted(elements))
         candidates = _environment_candidates([b for b in self.bonds if b.key == key], env_id, canonicalize_bond_env_id)
         description = f"bond match for {key!r}, env_id={env_id!r}, order={bond_order!r}, length={bond_length!r}"
         if env_id and candidates:
-            if bond_order:
-                ordered = _bond_order_candidates(candidates, bond_order)
-                if ordered:
-                    return _unique_parameter(_prefer_generic_bond_context(ordered), description)
             if bond_length is not None:
                 distance = min(abs(b.equilibrium - bond_length) for b in candidates)
-                candidates = [b for b in candidates if abs(b.equilibrium - bond_length) == distance]
+                candidates = [
+                    b
+                    for b in candidates
+                    if isclose(abs(b.equilibrium - bond_length), distance, rel_tol=1e-12, abs_tol=1e-12)
+                ]
             return _unique_parameter(_prefer_generic_bond_context(candidates), description)
         return self.get_bond(elements[0], elements[1], prefer_generic_context=True)
 
@@ -510,9 +522,10 @@ class ForceField:
 
         Returns all Fourier components at the best environment tier, without
         combining generic and exact environments. Proper and improper terms
-        are selected independently. Multiple element-only environments are
-        ambiguous and raise ``ValueError``. Returns an empty list if no match
-        is found.
+        are selected independently. When neither environment tier matches,
+        retain all element-matching components. Periodicity filters the
+        selected collection without reviving lower-priority environments.
+        Returns an empty list if no match is found.
 
         Args:
             elements: Element symbols of the four torsion atoms.
@@ -536,9 +549,7 @@ class ForceField:
         candidates = [
             t
             for t in self.torsions
-            if t.elements in (target, target_rev)
-            and (is_improper is None or t.is_improper == is_improper)
-            and (periodicity is None or t.periodicity == periodicity)
+            if t.elements in (target, target_rev) and (is_improper is None or t.is_improper == is_improper)
         ]
         selected: set[TorsionParam] = set()
         for improper in (False, True):
@@ -548,13 +559,8 @@ class ForceField:
                 canonicalize_torsion_env_id,
                 element_fallback=True,
             )
-            environments = {canonicalize_torsion_env_id(t.env_id.split("-")) for t in matches}
-            if len(environments) > 1:
-                raise ValueError(
-                    f"Ambiguous torsion environments for {elements!r}, env_id={env_id!r}: {sorted(environments)!r}"
-                )
             selected.update(matches)
-        return [t for t in candidates if t in selected]
+        return [t for t in candidates if t in selected and (periodicity is None or t.periodicity == periodicity)]
 
     @property
     def proper_torsions(self) -> list[TorsionParam]:

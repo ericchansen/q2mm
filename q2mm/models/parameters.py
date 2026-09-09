@@ -320,10 +320,12 @@ def _membership_identity(family: str, param: Any) -> tuple[Any, ...]:
 
     Source rows are meaningful only within a shared source file. Bond
     identity otherwise retains the same chemical discriminators as the
-    layout, without its source-row field.
+    layout, without its source-row field. Generic context aliases are
+    equivalent here without changing layout identity or fingerprints.
     """
     if family == "bond":
-        return (family, *_bond_identity(param)[:-1])
+        context = "" if param.context == "0000 0000" else param.context
+        return (family, *_bond_identity(param)[:-2], _identity_field(context))
     if family == "vdw":
         return (family, param.atom_type, param.element)
     if family == "torsion":
