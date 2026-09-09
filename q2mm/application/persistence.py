@@ -1,10 +1,10 @@
-"""Atomic semantic persistence for application outputs."""
+"""Staged semantic persistence with rollback for application outputs."""
 
 from __future__ import annotations
 
+import logging
 import os
-from collections.abc import Callable
-from contextlib import suppress
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -23,6 +23,7 @@ from .models import (
 )
 
 MANIFEST_SUFFIX = ".manifest.json"
+logger = logging.getLogger(__name__)
 
 _EXTENSIONS = {
     ".fld": "mm3_fld",
@@ -203,6 +204,18 @@ def _temp_sibling(path: Path, label: str) -> Path:
     return path.with_name(f".{path.name}.q2mm-{label}-{uuid4().hex}.tmp")
 
 
+def _cleanup_files(paths: Iterable[Path], *, phase: str) -> None:
+    """Remove only caller-owned paths, reporting cleanup without rollback."""
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("%s failed for %s: %s", phase, path, exc)
+        except BaseException:
+            logger.error("%s interrupted at %s; cleanup does not roll back installation", phase, path)
+            raise
+
+
 def _write_manifest(path: Path, run: OptimizationRun, format_name: str) -> None:
     blob = canonical_json(_manifest_payload(run, format_name), strict=True, screen_secrets=True)
     path.write_bytes((blob + "\n").encode("ascii"))
@@ -213,16 +226,17 @@ def _replace_transaction(
     *,
     overwrite: bool,
 ) -> None:
-    backups: list[tuple[Path, Path]] = []
+    backups: dict[Path, Path] = {}
     reservations: list[Path] = []
-    installed: list[Path] = []
+    attempted: list[Path] = []
+    phase = "snapshot" if overwrite else "reservation"
     try:
         if overwrite:
             for _temporary, target in staged:
                 if target.exists():
                     backup = _temp_sibling(target, "backup")
+                    backups[target] = backup
                     os.replace(target, backup)
-                    backups.append((backup, target))
         else:
             for _temporary, target in staged:
                 try:
@@ -230,27 +244,33 @@ def _replace_transaction(
                 except FileExistsError:
                     raise OutputExistsError(f"Refusing to overwrite existing output: {target}") from None
                 else:
-                    os.close(descriptor)
                     reservations.append(target)
+                    os.close(descriptor)
+        phase = "installation"
         for temporary, target in staged:
+            # Record intent first so an interrupt after replace still rolls back.
+            attempted.append(target)
             os.replace(temporary, target)
-            installed.append(target)
-            with suppress(ValueError):
-                reservations.remove(target)
-    except Exception:
-        for target in reversed(installed):
-            with suppress(OSError):
-                target.unlink(missing_ok=True)
-        for reservation in reversed(reservations):
-            with suppress(OSError):
-                reservation.unlink(missing_ok=True)
-        for backup, target in reversed(backups):
-            if backup.exists():
-                os.replace(backup, target)
+    except BaseException as exc:
+        logger.error("Save failed during %s; attempting rollback: %s", phase, exc)
+        _cleanup_files(
+            (target for target in reversed(dict.fromkeys(reservations + attempted)) if target not in backups),
+            phase="Save not committed; rollback removal",
+        )
+        for target, backup in reversed(backups.items()):
+            try:
+                if backup.exists():
+                    os.replace(backup, target)
+            except OSError as recovery_error:
+                logger.error(
+                    "Save not committed; rollback failed for %s; recovery backup %s retained: %s",
+                    target,
+                    backup,
+                    recovery_error,
+                )
         raise
     else:
-        for backup, _target in backups:
-            backup.unlink(missing_ok=True)
+        _cleanup_files(backups.values(), phase="Save committed; backup cleanup")
 
 
 def save(
@@ -260,10 +280,13 @@ def save(
     format: str | None = None,
     overwrite: bool = False,
 ) -> SavedOutput:
-    """Atomically save a force field and, for a run, its deterministic manifest.
+    """Save a force field and, for a run, its deterministic manifest.
 
     The manifest path is ``<force-field-path>.manifest.json``. Bare force
-    fields intentionally produce no manifest.
+    fields intentionally produce no manifest. Catchable installation failures
+    trigger rollback; failed recovery retains backups and is logged. Cleanup
+    errors after installation are logged as committed, without rollback.
+    User interruptions propagate. Sequential replacements are not crash-atomic.
     """
     if not isinstance(value, (OptimizationRun, ForceField)):
         raise PersistenceError("save accepts an OptimizationRun or ForceField.")
@@ -313,8 +336,7 @@ def save(
     except Exception as exc:
         raise PersistenceError(f"Could not save {target}: {exc}") from exc
     finally:
-        for temporary in temporaries:
-            temporary.unlink(missing_ok=True)
+        _cleanup_files(temporaries, phase="Save staging cleanup")
     return SavedOutput(path=target, format=selected_format, manifest_path=manifest_target)
 
 

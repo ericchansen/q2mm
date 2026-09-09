@@ -439,6 +439,282 @@ class TestPromotion:
         assert not list((tmp_path / "accepted").glob("*.tmp-*"))
         assert not list((tmp_path / "accepted").glob("*.bak-*"))
 
+    @pytest.mark.parametrize("snapshot_number", [1, 2])
+    @pytest.mark.parametrize("failure_type", [OSError, KeyboardInterrupt])
+    def test_promotion_snapshot_failure_cleans_partial_copy_and_allows_retry(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        snapshot_number: int,
+        failure_type: type[BaseException],
+    ) -> None:
+        import shutil
+
+        candidate = _candidate(CandidateStatus.ACCEPTED)
+        paths = promote_candidate(tmp_path, candidate, {})
+        old = {path: path.read_bytes() for path in paths.values()}
+        error = failure_type("snapshot failed")
+        real_copy = shutil.copy2
+        calls = 0
+
+        def fail_copy(source: Path, destination: Path) -> str:
+            nonlocal calls
+            calls += 1
+            if calls == snapshot_number:
+                destination.write_bytes(b"partial snapshot")
+                raise error
+            return real_copy(source, destination)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(shutil, "copy2", fail_copy)
+            with pytest.raises(failure_type) as raised:
+                promote_candidate(tmp_path, candidate, {"attempt": "new"})
+        assert raised.value is error
+        assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == old
+        assert "failed during snapshot" in caplog.text
+        promote_candidate(tmp_path, candidate, {"attempt": "new"})
+        assert paths["result"].read_bytes() != old[paths["result"]]
+
+    @pytest.mark.parametrize("backup_number", [1, 2])
+    @pytest.mark.parametrize("failure_type", [OSError, KeyboardInterrupt])
+    def test_promotion_backup_cleanup_failure_keeps_committed_pair(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        backup_number: int,
+        failure_type: type[BaseException],
+    ) -> None:
+        candidate = _candidate(CandidateStatus.ACCEPTED)
+        paths = promote_candidate(tmp_path, candidate, {})
+        expected = {path: path.read_bytes() for path in paths.values()}
+        for path in paths.values():
+            path.write_bytes(b"old " + path.suffix.encode())
+        old = {path: path.read_bytes() for path in paths.values()}
+        real_unlink = Path.unlink
+        failed: list[Path] = []
+        calls = 0
+        failure = failure_type("backup cleanup failed")
+
+        def fail_cleanup(path: Path, missing_ok: bool = False) -> None:
+            nonlocal calls
+            if ".q2mm-backup-" in path.name:
+                calls += 1
+                if calls == backup_number:
+                    failed.append(path)
+                    raise failure
+            real_unlink(path, missing_ok=missing_ok)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "unlink", fail_cleanup)
+            if failure_type is OSError:
+                assert promote_candidate(tmp_path, candidate, {}) == paths
+            else:
+                with pytest.raises(KeyboardInterrupt) as raised:
+                    promote_candidate(tmp_path, candidate, {})
+                assert raised.value is failure
+        assert len(failed) == 1
+        assert failed[0].read_bytes() in old.values()
+        assert {path: path.read_bytes() for path in paths.values()} == expected
+        assert "Promotion committed; cleanup" in caplog.text
+        assert "attempting rollback" not in caplog.text
+        if failure_type is OSError:
+            assert "backup cleanup failed" in caplog.text
+        # A later promotion must not overwrite a retained recovery file.
+        recovery = failed[0].read_bytes()
+        promote_candidate(tmp_path, candidate, {"attempt": "retry"})
+        assert failed[0].read_bytes() == recovery
+
+    @pytest.mark.parametrize("prior", [False, True])
+    @pytest.mark.parametrize("install_number", [1, 2])
+    @pytest.mark.parametrize("failure_type", [OSError, KeyboardInterrupt])
+    @pytest.mark.parametrize("after_replace", [False, True])
+    def test_promotion_install_failure_restores_pair_and_preserves_opposite_form(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        prior: bool,
+        install_number: int,
+        failure_type: type[BaseException],
+        after_replace: bool,
+    ) -> None:
+        candidate = _candidate(CandidateStatus.ACCEPTED)
+        paths = promote_candidate(tmp_path, candidate, {})
+        for path in paths.values():
+            if prior:
+                path.write_bytes(b"old " + path.suffix.encode())
+            else:
+                path.unlink()
+        stale = paths["force_field"].with_suffix(".fld")
+        stale.write_bytes(b"old opposite form")
+        unrelated = tmp_path / "unrelated.txt"
+        unrelated.write_bytes(b"not transaction owned")
+        old = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()}
+        real_replace = os.replace
+        failure = failure_type("install failed")
+        failed_target = (paths["result"], paths["force_field"])[install_number - 1]
+
+        def fail_install(source: Path, destination: Path) -> None:
+            if destination == failed_target and ".q2mm-output-" in source.name:
+                if after_replace:
+                    real_replace(source, destination)
+                raise failure
+            real_replace(source, destination)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "replace", fail_install)
+            with pytest.raises(failure_type) as raised:
+                promote_candidate(tmp_path, candidate, {})
+        assert raised.value is failure
+        assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == old
+        assert "failed during installation" in caplog.text
+        assert "Promotion committed;" not in caplog.text
+        promote_candidate(tmp_path, candidate, {})
+        assert not stale.exists()
+        assert unrelated.read_bytes() == old[unrelated]
+
+    @pytest.mark.parametrize("restore_number", [1, 2])
+    @pytest.mark.parametrize("failure_type", [OSError, KeyboardInterrupt])
+    def test_promotion_failed_recovery_retains_backup_and_original_failure(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        restore_number: int,
+        failure_type: type[BaseException],
+    ) -> None:
+        candidate = _candidate(CandidateStatus.ACCEPTED)
+        paths = promote_candidate(tmp_path, candidate, {})
+        for path in paths.values():
+            path.write_bytes(b"old " + path.suffix.encode())
+        old = {path: path.read_bytes() for path in paths.values()}
+        real_replace = os.replace
+        failure = failure_type("install failed")
+        failed_target = (paths["result"], paths["force_field"])[restore_number - 1]
+
+        def fail_install_and_recovery(source: Path, destination: Path) -> None:
+            if destination == paths["force_field"] and ".q2mm-output-" in source.name:
+                raise failure
+            if destination == failed_target and ".q2mm-backup-" in source.name:
+                raise OSError("restore failed")
+            real_replace(source, destination)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "replace", fail_install_and_recovery)
+            with pytest.raises(failure_type) as raised:
+                promote_candidate(tmp_path, candidate, {})
+        assert raised.value is failure
+        recovery = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file() and path not in old}
+        assert len(recovery) == 1
+        backup = next(iter(recovery))
+        assert recovery[backup] == old[failed_target]
+        assert str(backup) in caplog.text
+        assert "not committed; rollback failed" in caplog.text
+        for path in old:
+            if path != failed_target:
+                assert path.read_bytes() == old[path]
+        promote_candidate(tmp_path, candidate, {})
+        assert backup.read_bytes() == old[failed_target]
+
+    def test_promotion_opposite_form_cleanup_failure_is_committed_and_retryable(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        candidate = _candidate(CandidateStatus.ACCEPTED)
+        paths = promote_candidate(tmp_path, candidate, {})
+        expected = {path: path.read_bytes() for path in paths.values()}
+        for path in paths.values():
+            path.write_bytes(b"old " + path.suffix.encode())
+        stale = paths["force_field"].with_suffix(".fld")
+        stale.write_bytes(b"old opposite form")
+        real_unlink = Path.unlink
+
+        def fail_cleanup(path: Path, missing_ok: bool = False) -> None:
+            if path == stale:
+                raise OSError("opposite-form cleanup failed")
+            real_unlink(path, missing_ok=missing_ok)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "unlink", fail_cleanup)
+            assert promote_candidate(tmp_path, candidate, {}) == paths
+        assert {path: path.read_bytes() for path in paths.values()} == expected
+        assert stale.read_bytes() == b"old opposite form"
+        assert "Promotion committed; cleanup failed" in caplog.text
+        assert "attempting rollback" not in caplog.text
+        promote_candidate(tmp_path, candidate, {})
+        assert not stale.exists()
+        assert {path for path in tmp_path.rglob("*") if path.is_file()} == set(paths.values())
+
+    @pytest.mark.parametrize("stage", ["json", "force_field"])
+    def test_promotion_staging_failure_cleans_partial_files(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        caplog: pytest.LogCaptureFixture,
+        stage: str,
+    ) -> None:
+        import q2mm.benchmarks.runner as runner
+
+        candidate = _candidate(CandidateStatus.ACCEPTED)
+        paths = promote_candidate(tmp_path, candidate, {})
+        old = {path: path.read_bytes() for path in paths.values()}
+        failure = OSError("serialization failed")
+
+        def fail_json(payload: object, handle: Any, **kwargs: object) -> None:
+            handle.write("partial JSON")
+            raise failure
+
+        def fail_ff(ff: ForceField, path: Path) -> None:
+            path.write_bytes(b"partial force field")
+            raise failure
+
+        with monkeypatch.context() as patch:
+            if stage == "json":
+                patch.setattr(runner.json, "dump", fail_json)
+            else:
+                patch.setattr(runner, "_serialize_ff", fail_ff)
+            with pytest.raises(OSError) as raised:
+                promote_candidate(tmp_path, candidate, {})
+        assert raised.value is failure
+        assert {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file()} == old
+        assert "failed during serialization" in caplog.text
+        promote_candidate(tmp_path, candidate, {})
+
+    def test_promotion_snapshot_cleanup_failure_does_not_block_retry(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        import shutil
+
+        candidate = _candidate(CandidateStatus.ACCEPTED)
+        paths = promote_candidate(tmp_path, candidate, {})
+        old = {path: path.read_bytes() for path in paths.values()}
+        real_unlink = Path.unlink
+        failure = OSError("snapshot failed")
+
+        def fail_copy(source: Path, destination: Path) -> str:
+            destination.write_bytes(b"partial snapshot")
+            raise failure
+
+        def fail_cleanup(path: Path, missing_ok: bool = False) -> None:
+            if ".q2mm-" in path.name:
+                raise OSError("transaction cleanup failed")
+            real_unlink(path, missing_ok=missing_ok)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(shutil, "copy2", fail_copy)
+            patch.setattr(Path, "unlink", fail_cleanup)
+            with pytest.raises(OSError) as raised:
+                promote_candidate(tmp_path, candidate, {})
+        assert raised.value is failure
+        assert {path: path.read_bytes() for path in old} == old
+        leftovers = {path: path.read_bytes() for path in tmp_path.rglob("*") if path.is_file() and path not in old}
+        assert len(leftovers) == 3
+        assert "Promotion not committed; snapshot cleanup failed" in caplog.text
+        assert "Promotion not committed; staging cleanup failed" in caplog.text
+        promote_candidate(tmp_path, candidate, {})
+        assert {path: path.read_bytes() for path in leftovers} == leftovers
+
 
 # ---------------------------------------------------------------------------
 # run_profile: every requested profile is exactly one classified candidate
