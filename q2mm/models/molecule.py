@@ -141,8 +141,8 @@ class Molecule:
     Topology is resolved exactly once, at construction time. There is no
     mutable cache-invalidation API: callers that need a molecule with
     different geometry, atom types, or scalar fields use one of the
-    ``with_*`` methods, which construct a new, independently-resolved
-    :class:`Molecule`.
+    ``with_*`` methods. These preserve the resolved graph unless topology
+    re-inference is explicitly requested through ``bond_tolerance``.
 
     Equality is identity-based (``eq=False``): geometry/Hessian arrays are
     NumPy arrays, which do not support the elementwise ``==`` that a
@@ -383,15 +383,9 @@ class Molecule:
         return tuple(impropers)
 
     # ---- Pure "with_*" replacements ----
-    #
-    # Molecule is immutable; these return a new Molecule rather than
-    # mutating self. Each preserves whichever bonds/angles/torsions
-    # category was explicit (re-supplying that exact tuple, still
-    # authoritative) and re-infers whichever category was not (from the
-    # possibly-updated geometry/atom_types/bond_tolerance), matching PR #309
-    # semantics for every derived Molecule, not just the first one built.
 
-    def _replace(self, **overrides: Any) -> Molecule:
+    def _replace(self, *, reinfer_topology: bool = False, **overrides: Any) -> Molecule:
+        """Replace fields, preserving resolved topology unless re-inference is requested."""
         kwargs: dict[str, Any] = {
             "symbols": self.symbols,
             "geometry": self.geometry,
@@ -403,12 +397,17 @@ class Molecule:
             "hessian": self.hessian,
             "hessian_provenance": self.hessian_provenance,
             "partial_charges": self.partial_charges,
-            "bonds": self.bonds if self.bonds_explicit else None,
-            "angles": self.angles if self.angles_explicit else None,
-            "torsions": self.torsions if self.torsions_explicit else None,
+            "bonds": self.bonds if self.bonds_explicit or not reinfer_topology else None,
+            "angles": self.angles if self.angles_explicit or not reinfer_topology else None,
+            "torsions": self.torsions if self.torsions_explicit or not reinfer_topology else None,
         }
         kwargs.update(overrides)
-        return Molecule(**kwargs)
+        molecule = Molecule(**kwargs)
+        if not reinfer_topology:
+            object.__setattr__(molecule, "bonds_explicit", self.bonds_explicit)
+            object.__setattr__(molecule, "angles_explicit", self.angles_explicit)
+            object.__setattr__(molecule, "torsions_explicit", self.torsions_explicit)
+        return molecule
 
     def _replace_preserving_topology(self, **overrides: Any) -> Molecule:
         """Replace fields while preserving connectivity and refreshing geometry metadata."""
@@ -465,26 +464,14 @@ class Molecule:
         )
 
         kwargs: dict[str, Any] = {
-            "symbols": self.symbols,
             "geometry": geometry,
             "atom_types": atom_types,
-            "charge": self.charge,
-            "multiplicity": self.multiplicity,
-            "name": self.name,
-            "bond_tolerance": self.bond_tolerance,
-            "hessian": self.hessian,
-            "hessian_provenance": self.hessian_provenance,
-            "partial_charges": self.partial_charges,
             "bonds": bonds,
             "angles": tuple(angles),
             "torsions": torsions,
         }
         kwargs.update(overrides)
-        molecule = Molecule(**kwargs)
-        object.__setattr__(molecule, "bonds_explicit", self.bonds_explicit)
-        object.__setattr__(molecule, "angles_explicit", self.angles_explicit)
-        object.__setattr__(molecule, "torsions_explicit", self.torsions_explicit)
-        return molecule
+        return self._replace(**kwargs)
 
     def __deepcopy__(self, memo: dict[int, object]) -> Molecule:
         """Return this immutable value unchanged while preserving read-only arrays."""
@@ -550,9 +537,11 @@ class Molecule:
     ) -> Molecule:
         """Return a copy with the given scalar fields replaced.
 
-        Only the fields passed (non-``None``) are changed. Inferred
-        bonds/angles/torsions are recomputed when *bond_tolerance* changes;
-        any explicitly-supplied categories are preserved unchanged.
+        Only the fields passed (non-``None``) are changed. Supplying
+        *bond_tolerance* explicitly re-infers inferred bonds/angles/torsions
+        from the current geometry, even if the tolerance is unchanged.
+        Explicitly-supplied categories are preserved unchanged. Without
+        *bond_tolerance*, the resolved topology is preserved.
         """
         overrides: dict[str, Any] = {}
         if charge is not None:
@@ -563,7 +552,7 @@ class Molecule:
             overrides["bond_tolerance"] = bond_tolerance
         if name is not None:
             overrides["name"] = name
-        return self._replace(**overrides)
+        return self._replace(reinfer_topology=bond_tolerance is not None, **overrides)
 
     def __repr__(self) -> str:
         formula = "".join(f"{s}{self.symbols.count(s)}" for s in dict.fromkeys(self.symbols))
