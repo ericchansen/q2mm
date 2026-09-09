@@ -196,6 +196,84 @@ NO_CHARGES
         self.assertEqual(bond.bond_order, "")
         self.assertEqual(bond.source_bond_order, "am")
 
+    def test_mol2_element_comes_from_type_not_atom_name(self) -> None:
+        for atom_type, element in (
+            ("C.3", "C"),
+            ("C.ar", "C"),
+            ("C.cat", "C"),
+            ("N.am", "N"),
+            ("N.pl3", "N"),
+            ("O.co2", "O"),
+            ("S.o2", "S"),
+            ("Cl", "Cl"),
+            ("Br", "Br"),
+            ("Ca", "Ca"),
+            ("Co", "Co"),
+            ("Si", "Si"),
+            ("Rh", "Rh"),
+            ("C1", "C"),
+            ("C2", "C"),
+            ("C3", "C"),
+            ("H1", "H"),
+            ("H3", "H"),
+            ("N1", "N"),
+            ("N2", "N"),
+            ("O2", "O"),
+            ("P3", "P"),
+            ("HC", "H"),
+            ("HX", "H"),
+            ("PX", "P"),
+            ("RH", "Rh"),
+        ):
+            with self.subTest(atom_type=atom_type):
+                molecule = self._molecule_from_two_atom_mol2("1", type1=atom_type, name1="CA")
+                self.assertEqual(molecule.symbols, (element, "C"))
+                self.assertEqual(molecule.atom_types, (atom_type, "C.2"))
+                self.assertEqual(molecule.bonds[0].elements, (element, "C"))
+                self.assertEqual(molecule.partial_charges, (0.0, 0.0))
+
+    def test_mol2_unsupported_atom_types_fail_without_name_fallback(self) -> None:
+        for atom_type in ("Du", "Du.C", "X", "LP", "Any", "Hal", "Het", "Unknown", "ca", "na", "os", "CA", "CO", "123"):
+            with self.subTest(atom_type=atom_type), self.assertRaisesRegex(ValueError, "Unsupported Mol2 atom type"):
+                self._molecule_from_two_atom_mol2("1", type1=atom_type, name1="C1")
+
+    def test_mol2_structure_names_are_stable_and_distinct(self) -> None:
+        chunks = [
+            self._MOL2_TWO_ATOM_TEMPLATE.format(name1="CA", type1=atom_type, name2="H1", type2="H", order="1")
+            for atom_type in ("C.3", "N.3", "O.3")
+        ]
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "multi.mol2"
+            path.write_text("# Multiple structures with the same header name\n" + "".join(chunks), encoding="utf-8")
+            parser = Mol2(str(path))
+            molecules = parser.molecules
+            expected_names = ["multi.mol20", "multi.mol21", "multi.mol22"]
+            self.assertEqual([m.name for m in molecules], expected_names)
+            self.assertEqual([m.symbols[0] for m in molecules], ["C", "N", "O"])
+            self.assertEqual([m.name for m in parser.molecules], expected_names)
+            self.assertEqual([m.name for m in Mol2(str(path)).molecules], expected_names)
+            renamed = molecules[1].with_overrides(name="explicit-case").with_hessian(np.eye(6))
+            self.assertEqual(renamed.name, "explicit-case")
+            self.assertEqual(molecules[1].name, "multi.mol21")
+
+            path.write_text(chunks[0], encoding="utf-8")
+            self.assertEqual(Mol2(str(path)).molecules[0].name, "multi.mol2")
+
+    def test_mol2_invalid_input_does_not_cache_partial_structures(self) -> None:
+        valid = self._MOL2_TWO_ATOM_TEMPLATE.format(name1="C1", type1="C.3", name2="H1", type2="H", order="1")
+        invalid = valid.replace("C.3", "Du ")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "invalid.mol2"
+            for text, error in (
+                (valid + invalid, "Unsupported Mol2 atom type"),
+                ("# No molecule records\n", "No @<TRIPOS>MOLECULE"),
+            ):
+                path.write_text(text, encoding="utf-8")
+                parser = Mol2(str(path))
+                for _ in range(2):
+                    with self.assertRaisesRegex(ValueError, error):
+                        _ = parser.molecules
+
 
 @unittest.skipUnless(RH_JAGUAR_OUT.exists(), "Jaguar fixture not found")
 class TestJaguarConversion(unittest.TestCase):
