@@ -267,6 +267,15 @@ def execute_optimization(
         raise ApplicationOptimizationError("Optimization result initial vector does not match the problem baseline.")
     if not np.array_equal(result.final_params[inactive], baseline[inactive]):
         raise ApplicationOptimizationError("Optimization result changed frozen parameter slots.")
+    # A single-stage SciPy run has one known bound box. Multistage workflows
+    # can rebase fractional bounds and deliberately replace locked parameters.
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer, _is_feasible
+
+    if isinstance(optimizer, ScipyOptimizer) and isinstance(workflow, SingleStageWorkflow):
+        space = problem.active_space
+        bounds = optimizer._resolve_bounds(space, space.pack(baseline))
+        if not _is_feasible(space.pack(result.final_params), bounds):
+            raise ApplicationOptimizationError("Optimization result violates the effective SciPy active bounds.")
     return result, problem.layout.replace(problem.starting_force_field, result.final_params)
 
 
