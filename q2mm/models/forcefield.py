@@ -16,15 +16,18 @@ for anything else (file I/O lives in ``q2mm.io``, not here).
 
 from __future__ import annotations
 
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 import numpy as np
 
 from q2mm.models.identifiers import (
     _extract_element,
+    canonicalize_angle_env_id,
+    canonicalize_bond_env_id,
     canonicalize_torsion_env_id,
 )
 
@@ -175,6 +178,49 @@ class VdwParam:
             object.__setattr__(self, "element", _extract_element(self.atom_type))
 
 
+_EnvironmentParam = TypeVar("_EnvironmentParam", BondParam, AngleParam, StretchBendParam, TorsionParam)
+
+
+def _environment_candidates(
+    candidates: list[_EnvironmentParam],
+    env_id: str,
+    canonicalize: Callable[[Sequence[str]], str],
+    *,
+    element_fallback: bool = False,
+) -> list[_EnvironmentParam]:
+    """Keep only the most specific available environment tier."""
+    if env_id:
+        target = canonicalize(env_id.split("-"))
+        exact = [p for p in candidates if p.env_id and canonicalize(p.env_id.split("-")) == target]
+        if exact:
+            return exact
+    generic = [p for p in candidates if not p.env_id]
+    if generic:
+        return generic
+    return candidates if not env_id or element_fallback else []
+
+
+def _unique_parameter(candidates: list[_EnvironmentParam], description: str) -> _EnvironmentParam | None:
+    """Return a singular match, rejecting unresolved ties with row diagnostics."""
+    if len(candidates) > 1:
+        raise ValueError(f"Ambiguous {description}: {len(candidates)} candidates: {candidates!r}")
+    return candidates[0] if candidates else None
+
+
+def _prefer_generic_bond_context(candidates: list[BondParam]) -> list[BondParam]:
+    """Prefer unrestricted context when the caller cannot supply a context."""
+    generic = [p for p in candidates if p.context in ("", "0000 0000")]
+    return generic or candidates
+
+
+def _bond_order_candidates(candidates: list[BondParam], bond_order: str) -> list[BondParam]:
+    """Prefer the requested order to unknown-order fallback rows."""
+    if not bond_order:
+        return candidates
+    exact = [p for p in candidates if p.bond_order == bond_order]
+    return exact or [p for p in candidates if not p.bond_order]
+
+
 @dataclass(frozen=True)
 class CmapGrid:
     """A CMAP (correction map) energy grid for backbone φ/ψ dihedrals.
@@ -222,9 +268,10 @@ class CmapGrid:
 class ForceField:
     """Format-agnostic, immutable force field representation.
 
-    Parameters are identified by element tuples, not format-specific
-    atom types or line numbers. This eliminates matching bugs between
-    different I/O backends.
+    Parameters are matched by source row when supplied, otherwise by
+    canonical typed environment before generic and element-only fallbacks.
+    Unresolved singular matches raise ``ValueError`` rather than selecting
+    a row by file order.
 
     Every collection is a tuple; there is no in-place mutation API.
     Building a force field with different parameter values is done via
@@ -306,28 +353,15 @@ class ForceField:
 
         When *prefer_generic_context* is True and multiple candidates
         match, prefer the one with empty context (generic ``0000 0000``
-        fallback) over context-specific entries.
+        fallback) over context-specific entries. Exact environments outrank
+        empty environments. Remaining ties raise ``ValueError``.
         """
         key = tuple(sorted([elem1, elem2]))
-        candidates: list[BondParam] = []
-        for b in self.bonds:
-            if b.key != key:
-                continue
-            if env_id and b.env_id and b.env_id != env_id:
-                continue
-            if bond_order and b.bond_order and b.bond_order != bond_order:
-                continue
-            candidates.append(b)
-        if not candidates:
-            return None
-        if len(candidates) == 1:
-            return candidates[0]
-        # Multiple matches — prefer generic context if requested
+        candidates = _environment_candidates([b for b in self.bonds if b.key == key], env_id, canonicalize_bond_env_id)
+        candidates = _bond_order_candidates(candidates, bond_order)
         if prefer_generic_context:
-            generic = [c for c in candidates if not c.context]
-            if generic:
-                return generic[0]
-        return candidates[0]
+            candidates = _prefer_generic_bond_context(candidates)
+        return _unique_parameter(candidates, f"bond match for {key!r}, env_id={env_id!r}, order={bond_order!r}")
 
     def get_bonds(self, elem1: str, elem2: str) -> list[BondParam]:
         """Find ALL bond parameters matching an element pair."""
@@ -335,15 +369,13 @@ class ForceField:
         return [b for b in self.bonds if b.key == key]
 
     def get_angle(self, elem1: str, elem_center: str, elem2: str, env_id: str = "") -> AngleParam | None:
-        """Find angle parameter by element triple and optional environment ID."""
+        """Find an angle by elements and environment, rejecting unresolved ties."""
         outer = tuple(sorted([elem1, elem2]))
         key = (outer[0], elem_center, outer[1])
-        for a in self.angles:
-            if a.key == key:
-                if env_id and a.env_id and a.env_id != env_id:
-                    continue
-                return a
-        return None
+        candidates = _environment_candidates(
+            [a for a in self.angles if a.key == key], env_id, canonicalize_angle_env_id
+        )
+        return _unique_parameter(candidates, f"angle match for {key!r}, env_id={env_id!r}")
 
     def get_vdw(self, atom_type: str = "", element: str = "") -> VdwParam | None:
         """Find vdW parameter by atom type or element.
@@ -371,18 +403,26 @@ class ForceField:
     def get_torsion(
         self, elem1: str, elem2: str, elem3: str, elem4: str, periodicity: int | None = None, env_id: str = ""
     ) -> TorsionParam | None:
-        """Find torsion parameter by element quad and optional periodicity/env_id."""
+        """Find one torsion at the best environment tier.
+
+        With no periodicity requested, use the first matching component's
+        periodicity, as before. Multiple rows at that periodicity are
+        ambiguous; use :meth:`match_torsion` to retrieve a Fourier collection.
+        """
         target = (elem1, elem2, elem3, elem4)
         target_rev = (elem4, elem3, elem2, elem1)
-        for t in self.torsions:
-            if t.elements not in (target, target_rev):
-                continue
-            if periodicity is not None and t.periodicity != periodicity:
-                continue
-            if env_id and t.env_id and t.env_id != env_id:
-                continue
-            return t
-        return None
+        candidates = _environment_candidates(
+            [
+                t
+                for t in self.torsions
+                if t.elements in (target, target_rev) and (periodicity is None or t.periodicity == periodicity)
+            ],
+            env_id,
+            canonicalize_torsion_env_id,
+        )
+        if candidates and periodicity is None:
+            candidates = [t for t in candidates if t.periodicity == candidates[0].periodicity]
+        return _unique_parameter(candidates, f"torsion match for {target!r}, env_id={env_id!r}")
 
     # --- Parameter matching with ff_row → env_id → element fallback ---
 
@@ -397,13 +437,11 @@ class ForceField:
     ) -> BondParam | None:
         """Match a bond parameter using a priority chain.
 
-        Priority:
-        1. Exact ``ff_row`` match (highest — used by MacroModel path).
-        2. ``env_id`` + ``bond_order`` (typed atom pair + order).
-        3. ``env_id`` + closest ``equilibrium`` to ``bond_length``
-           (when bond_order is unknown but length is available).
-        4. ``env_id`` only, prefer generic context.
-        5. Element-only, prefer generic context (lowest).
+        Exact ``ff_row`` wins. Otherwise exact canonical environments precede
+        empty environments and then element-only fallback. Within a typed or
+        empty-environment tier, bond order precedes nearest equilibrium length;
+        generic context resolves remaining context variants. Element-only
+        fallback prefers generic context. Unresolved ties raise ``ValueError``.
         """
         # Tier 1: exact ff_row
         if ff_row is not None:
@@ -411,35 +449,24 @@ class ForceField:
                 if bond.ff_row == ff_row:
                     return bond
 
-        e0, e1 = elements[0], elements[1]
-
-        # Tier 2: env_id + bond_order
-        if env_id and bond_order:
-            matched = self.get_bond(e0, e1, env_id=env_id, bond_order=bond_order, prefer_generic_context=True)
-            if matched is not None:
-                return matched
-
-        # Tier 3: env_id + closest r₀ to bond_length
-        if env_id and bond_length is not None:
-            key = tuple(sorted([e0, e1]))
-            candidates = [b for b in self.bonds if b.key == key and (not b.env_id or b.env_id == env_id)]
-            if candidates:
-                best = min(candidates, key=lambda b: abs(b.equilibrium - bond_length))
-                return best
-
-        # Tier 4: env_id only, prefer generic context
-        if env_id:
-            matched = self.get_bond(e0, e1, env_id=env_id, prefer_generic_context=True)
-            if matched is not None:
-                return matched
-
-        # Tier 5: element-only, prefer generic context
-        return self.get_bond(e0, e1, prefer_generic_context=True)
+        key = tuple(sorted(elements))
+        candidates = _environment_candidates([b for b in self.bonds if b.key == key], env_id, canonicalize_bond_env_id)
+        description = f"bond match for {key!r}, env_id={env_id!r}, order={bond_order!r}, length={bond_length!r}"
+        if env_id and candidates:
+            if bond_order:
+                ordered = _bond_order_candidates(candidates, bond_order)
+                if ordered:
+                    return _unique_parameter(_prefer_generic_bond_context(ordered), description)
+            if bond_length is not None:
+                distance = min(abs(b.equilibrium - bond_length) for b in candidates)
+                candidates = [b for b in candidates if abs(b.equilibrium - bond_length) == distance]
+            return _unique_parameter(_prefer_generic_bond_context(candidates), description)
+        return self.get_bond(elements[0], elements[1], prefer_generic_context=True)
 
     def match_angle(
         self, elements: tuple[str, str, str], env_id: str = "", ff_row: int | None = None
     ) -> AngleParam | None:
-        """Match an angle parameter using ff_row, then env_id, then elements."""
+        """Match an angle by source row, then environment specificity, rejecting ties."""
         if ff_row is not None:
             for angle in self.angles:
                 if angle.ff_row == ff_row:
@@ -456,21 +483,20 @@ class ForceField:
         env_id: str = "",
         ff_row: int | None = None,
     ) -> StretchBendParam | None:
-        """Match stretch-bend parameter using ff_row, then env_id, then elements."""
+        """Match a stretch-bend by source row, then environment specificity, rejecting ties."""
         if ff_row is not None:
             for sb in self.stretch_bends:
                 if sb.ff_row == ff_row:
                     return sb
         outer = tuple(sorted([elements[0], elements[2]]))
         target_key = (outer[0], elements[1], outer[1])
-        if env_id:
-            for sb in self.stretch_bends:
-                if sb.key == target_key and sb.env_id == env_id:
-                    return sb
-        for sb in self.stretch_bends:
-            if sb.key == target_key:
-                return sb
-        return None
+        candidates = _environment_candidates(
+            [sb for sb in self.stretch_bends if sb.key == target_key],
+            env_id,
+            canonicalize_angle_env_id,
+            element_fallback=True,
+        )
+        return _unique_parameter(candidates, f"stretch-bend match for {target_key!r}, env_id={env_id!r}")
 
     def match_torsion(
         self,
@@ -482,8 +508,11 @@ class ForceField:
     ) -> list[TorsionParam]:
         """Match torsion parameters using ff_row, then env_id, then elements.
 
-        Returns all matching ``TorsionParam`` entries (one per periodicity
-        component).  Returns an empty list if no match is found.
+        Returns all Fourier components at the best environment tier, without
+        combining generic and exact environments. Proper and improper terms
+        are selected independently. Multiple element-only environments are
+        ambiguous and raise ``ValueError``. Returns an empty list if no match
+        is found.
 
         Args:
             elements: Element symbols of the four torsion atoms.
@@ -504,25 +533,28 @@ class ForceField:
                 return matches
         target = elements
         target_rev = (elements[3], elements[2], elements[1], elements[0])
-        results: list[TorsionParam] = []
-        for t in self.torsions:
-            if t.elements not in (target, target_rev):
-                continue
-            if is_improper is not None and t.is_improper != is_improper:
-                continue
-            if env_id and t.env_id:
-                canon_env = canonicalize_torsion_env_id(env_id.split("-"))
-                canon_t = canonicalize_torsion_env_id(t.env_id.split("-"))
-                if canon_t != canon_env:
-                    continue
-            if periodicity is not None and t.periodicity != periodicity:
-                continue
-            results.append(t)
-        if not results and env_id:
-            return self.match_torsion(
-                elements, periodicity=periodicity, env_id="", ff_row=None, is_improper=is_improper
+        candidates = [
+            t
+            for t in self.torsions
+            if t.elements in (target, target_rev)
+            and (is_improper is None or t.is_improper == is_improper)
+            and (periodicity is None or t.periodicity == periodicity)
+        ]
+        selected: set[TorsionParam] = set()
+        for improper in (False, True):
+            matches = _environment_candidates(
+                [t for t in candidates if t.is_improper == improper],
+                env_id,
+                canonicalize_torsion_env_id,
+                element_fallback=True,
             )
-        return results
+            environments = {canonicalize_torsion_env_id(t.env_id.split("-")) for t in matches}
+            if len(environments) > 1:
+                raise ValueError(
+                    f"Ambiguous torsion environments for {elements!r}, env_id={env_id!r}: {sorted(environments)!r}"
+                )
+            selected.update(matches)
+        return [t for t in candidates if t in selected]
 
     @property
     def proper_torsions(self) -> list[TorsionParam]:

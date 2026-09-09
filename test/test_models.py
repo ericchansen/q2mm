@@ -2307,15 +2307,9 @@ class TestBondOrderMatching:
         assert result.bond_order == "-"
 
     def test_match_bond_tier3_skipped_without_length(self, ff_with_bond_orders: ForceField) -> None:
-        """Tier 3 is skipped when bond_length is None — falls through to tier 4."""
-        result = ff_with_bond_orders.match_bond(
-            ("C", "C"),
-            env_id="C2-C2",
-        )
-        assert result is not None
-        # Without bond_order or bond_length, tier 4 (env_id + prefer generic) applies
-        # The first match with env_id="C2-C2" that's generic should be returned
-        # (depends on implementation — either first match or generic-preferred)
+        """Without order or length, generic single/double variants are ambiguous."""
+        with pytest.raises(ValueError, match="Ambiguous bond"):
+            ff_with_bond_orders.match_bond(("C", "C"), env_id="C2-C2")
 
     def test_match_bond_tier4_env_id_prefers_generic(self, ff_with_bond_orders: ForceField) -> None:
         """Tier 4: env_id-only match prefers generic context entry."""
@@ -2355,6 +2349,135 @@ class TestBondOrderMatching:
         )
         result = ff.match_bond(("N", "H"), env_id="N3-H1")
         assert result is None
+
+
+class TestTypedMatching:
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    def test_exact_bond_order_precedes_unknown_order(self, reverse_rows: bool) -> None:
+        unknown = BondParam(("C", "C"), 1.5, 10.0, env_id="C1-C1")
+        exact = replace(unknown, force_constant=20.0, bond_order="=")
+        ff = ForceField(
+            bonds=(exact, unknown) if reverse_rows else (unknown, exact),
+            functional_form=FunctionalForm.MM3,
+        )
+        assert ff.get_bond("C", "C", env_id="C1-C1", bond_order="=") is exact
+        assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_order="=") is exact
+        assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_order="-") is unknown
+
+    def test_nearest_bond_length_tie_raises(self) -> None:
+        first = BondParam(("C", "C"), 1.0, 10.0, env_id="C1-C1")
+        second = replace(first, force_constant=20.0, equilibrium=2.0)
+        ff = ForceField(bonds=(first, second), functional_form=FunctionalForm.MM3)
+        with pytest.raises(ValueError, match="Ambiguous bond"):
+            ff.match_bond(("C", "C"), env_id="C1-C1", bond_length=1.5)
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("env_id", ["c3-h2", "h2-c3"])
+    def test_exact_bond_environment_precedes_generic(self, reverse_rows: bool, env_id: str) -> None:
+        generic = BondParam(("C", "H"), 1.0, 10.0, bond_order="-")
+        exact = replace(generic, force_constant=20.0, equilibrium=1.1, env_id="c3-h2")
+        ff = ForceField(
+            bonds=(exact, generic) if reverse_rows else (generic, exact),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        assert ff.get_bond("H", "C", env_id=env_id) is exact
+        assert ff.match_bond(("H", "C"), env_id=env_id) is exact
+        assert ff.match_bond(("H", "C"), env_id=env_id, bond_order="-") is exact
+        assert ff.match_bond(("H", "C"), env_id=env_id, bond_length=1.0) is exact
+        assert ff.match_bond(("H", "C"), env_id="c3-h9") is generic
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("env_id", ["c2-c3-h2", "h2-c3-c2"])
+    def test_exact_angle_environment_precedes_generic(self, reverse_rows: bool, env_id: str) -> None:
+        generic = AngleParam(("C", "C", "H"), 110.0, 10.0)
+        exact = replace(generic, force_constant=20.0, env_id="c2-c3-h2")
+        ff = ForceField(
+            angles=(exact, generic) if reverse_rows else (generic, exact),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        assert ff.get_angle("H", "C", "C", env_id=env_id) is exact
+        assert ff.match_angle(("H", "C", "C"), env_id=env_id) is exact
+        assert ff.match_angle(("H", "C", "C"), env_id="c2-c3-h9") is generic
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("env_id", ["c2-c3-h2", "h2-c3-c2"])
+    def test_exact_stretch_bend_environment_precedes_generic(self, reverse_rows: bool, env_id: str) -> None:
+        generic = StretchBendParam(("C", "C", "H"), 10.0)
+        exact = replace(generic, force_constant=20.0, env_id="c2-c3-h2")
+        ff = ForceField(
+            stretch_bends=(exact, generic) if reverse_rows else (generic, exact),
+            functional_form=FunctionalForm.MM3,
+        )
+        assert ff.match_stretch_bend(("H", "C", "C"), env_id=env_id) is exact
+        assert ff.match_stretch_bend(("H", "C", "C"), env_id="c2-c3-h9") is generic
+
+    @pytest.mark.parametrize("env_id", ["c3-h2", "", "c3-h9"])
+    def test_ambiguous_bonds_require_more_identity(self, env_id: str) -> None:
+        first = BondParam(("C", "H"), 1.0, 10.0, env_id="c3-h2", ff_row=1)
+        second = replace(first, force_constant=20.0, ff_row=2)
+        ff = ForceField(bonds=(first, second), functional_form=FunctionalForm.HARMONIC)
+        with pytest.raises(ValueError, match="Ambiguous bond"):
+            ff.match_bond(("C", "H"), env_id=env_id)
+        assert ff.match_bond(("C", "H"), env_id=env_id, ff_row=2) is second
+
+    @pytest.mark.parametrize("env_id", ["c2-c3-h2", "", "c2-c3-h9"])
+    def test_ambiguous_angles_require_more_identity(self, env_id: str) -> None:
+        first = AngleParam(("C", "C", "H"), 110.0, 10.0, env_id="c2-c3-h2", ff_row=1)
+        second = replace(first, force_constant=20.0, ff_row=2)
+        ff = ForceField(angles=(first, second), functional_form=FunctionalForm.HARMONIC)
+        with pytest.raises(ValueError, match="Ambiguous angle"):
+            ff.match_angle(("C", "C", "H"), env_id=env_id)
+        assert ff.match_angle(("C", "C", "H"), env_id=env_id, ff_row=2) is second
+
+    @pytest.mark.parametrize("env_id", ["c2-c3-h2", "", "c2-c3-h9"])
+    def test_ambiguous_stretch_bends_require_more_identity(self, env_id: str) -> None:
+        first = StretchBendParam(("C", "C", "H"), 10.0, env_id="c2-c3-h2", ff_row=1)
+        second = replace(first, force_constant=20.0, ff_row=2)
+        ff = ForceField(stretch_bends=(first, second), functional_form=FunctionalForm.MM3)
+        with pytest.raises(ValueError, match="Ambiguous stretch-bend"):
+            ff.match_stretch_bend(("C", "C", "H"), env_id=env_id)
+        assert ff.match_stretch_bend(("C", "C", "H"), env_id=env_id, ff_row=2) is second
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("env_id", ["h1-c3-c2-h2", "h2-c2-c3-h1"])
+    def test_torsion_environment_selects_complete_fourier_collection(self, reverse_rows: bool, env_id: str) -> None:
+        generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0, ff_row=1)
+        first = replace(generic, env_id="h1-c3-c2-h2", force_constant=20.0, ff_row=2)
+        second = replace(first, periodicity=2, force_constant=30.0)
+        phased = replace(first, phase=180.0, force_constant=40.0)
+        exact = (first, second, phased)
+        ff = ForceField(
+            torsions=(*exact, generic) if reverse_rows else (generic, *exact),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id=env_id) == list(exact)
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id=env_id, periodicity=1) == [first, phased]
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id=env_id, ff_row=1) == [generic]
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id="h9-c3-c2-h9") == [generic]
+        assert ff.get_torsion("H", "C", "C", "H", env_id=env_id, periodicity=2) is second
+        with pytest.raises(ValueError, match="Ambiguous torsion"):
+            ff.get_torsion("H", "C", "C", "H", env_id=env_id, periodicity=1)
+
+    def test_singular_torsion_keeps_default_component(self) -> None:
+        generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0)
+        first = replace(generic, periodicity=2, env_id="h1-c3-c2-h2", force_constant=20.0)
+        second = replace(first, periodicity=1, force_constant=30.0)
+        ff = ForceField(torsions=(generic, first, second), functional_form=FunctionalForm.HARMONIC)
+        assert ff.get_torsion("H", "C", "C", "H", env_id="h2-c2-c3-h1") is first
+
+    def test_torsion_fallback_does_not_mix_unrelated_environments(self) -> None:
+        first = TorsionParam(("H", "C", "C", "H"), 1, 10.0, env_id="h1-c3-c2-h1")
+        second = replace(first, env_id="h2-c3-c2-h2", force_constant=20.0)
+        ff = ForceField(torsions=(first, second), functional_form=FunctionalForm.HARMONIC)
+        with pytest.raises(ValueError, match="Ambiguous torsion environments"):
+            ff.match_torsion(("H", "C", "C", "H"), env_id="h9-c3-c2-h9")
+
+    def test_torsion_environment_ranking_preserves_proper_and_improper(self) -> None:
+        generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0)
+        exact = replace(generic, env_id="h1-c3-c2-h2", force_constant=20.0)
+        improper = replace(generic, is_improper=True, force_constant=30.0)
+        ff = ForceField(torsions=(improper, generic, exact), functional_form=FunctionalForm.HARMONIC)
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id=exact.env_id) == [improper, exact]
 
 
 class TestDetectedBondOrder:
@@ -2490,6 +2613,35 @@ UPSTREAM_FRCMOD = Path(__file__).resolve().parent / "fixtures" / "upstream_q2mm.
 
 
 class TestAmberFrcmod:
+    @pytest.mark.parametrize("reverse_types", [False, True])
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    def test_typed_bond_and_angle_orientation(self, tmp_path: Path, reverse_types: bool, reverse_rows: bool) -> None:
+        bond_types = [("h1", "c3"), ("h2", "c3")]
+        angle_types = [("h1", "c3", "c2"), ("h2", "c3", "c2")]
+        if reverse_types:
+            bond_types = [tuple(reversed(types)) for types in bond_types]
+            angle_types = [tuple(reversed(types)) for types in angle_types]
+        bond_rows = [f"{'-'.join(types)}  {k} 1.1" for types, k in zip(bond_types, (100, 200))]
+        angle_rows = [f"{'-'.join(types)}  {k} 110.0" for types, k in zip(angle_types, (10, 20))]
+        if reverse_rows:
+            bond_rows.reverse()
+            angle_rows.reverse()
+        source = tmp_path / "typed.frcmod"
+        source.write_text(
+            "Synthetic\nBOND\n" + "\n".join(bond_rows) + "\n\nANGLE\n" + "\n".join(angle_rows) + "\n\n",
+            encoding="utf-8",
+        )
+        ff = load_amber_frcmod(source)
+
+        assert {b.env_id for b in ff.bonds} == {"c3-h1", "c3-h2"}
+        assert {a.env_id for a in ff.angles} == {"c2-c3-h1", "c2-c3-h2"}
+        bond = ff.match_bond(("C", "H"), env_id="c3-h2")
+        angle = ff.match_angle(("C", "C", "H"), env_id="c2-c3-h2")
+        assert bond is not None and bond.force_constant == 200.0
+        assert angle is not None and angle.force_constant == 20.0
+        assert bond.ff_row == (3 if reverse_rows else 4)
+        assert angle.ff_row == (7 if reverse_rows else 8)
+
     def test_load_bonds(self) -> None:
         ff = load_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.bonds) == 3
