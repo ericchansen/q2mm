@@ -526,6 +526,34 @@ class _RosenbrockEvaluator(QuadraticEvaluator):
 
 
 class TestDivergenceTermination:
+    @pytest.mark.parametrize(("factor", "initial_score"), [(None, 1.0), (3.0, 0.0), (3.0, -1.0)])
+    def test_inactive_x_only_callback_does_not_evaluate(self, factor: float | None, initial_score: float) -> None:
+        obj = _MockObjective()
+        value_at = MagicMock(wraps=obj.value)
+        callback = ScipyOptimizer(divergence_factor=factor, verbose=False)._make_callback(obj, initial_score, value_at)
+
+        for x in ([1.0, 2.0], [0.5, 1.5]):
+            callback(np.asarray(x))
+
+        value_at.assert_not_called()
+        assert obj.n_evaluations == 0
+        assert obj.history == []
+
+    def test_x_only_callback_still_evaluates_for_verbose_logging(self, caplog: pytest.LogCaptureFixture) -> None:
+        obj = _MockObjective()
+        for _ in range(9):
+            obj.record_evaluation(0.5)
+        value_at = MagicMock(wraps=obj.value)
+        callback = ScipyOptimizer(divergence_factor=None, verbose=True)._make_callback(obj, 1.0, value_at)
+        caplog.set_level("INFO", logger="q2mm.optimizers.scipy_opt")
+
+        callback(np.array([0.5, 1.5]))
+
+        value_at.assert_called_once()
+        assert obj.n_evaluations == 10
+        assert obj.history[-1] == 0.0
+        assert "eval   10  score 0.000000" in caplog.text
+
     @pytest.mark.parametrize("method", ["L-BFGS-B", "Nelder-Mead", "Powell", "trust-constr"])
     def test_real_solver_stops_before_iteration_limit(self, method: str) -> None:
         obj = _RosenbrockEvaluator(np.zeros(2), bounds=[(-5.0, 5.0)] * 2, initial=np.array([-1.2, 1.3]))
@@ -566,6 +594,78 @@ class TestDivergenceTermination:
         monkeypatch.setattr("scipy.optimize.minimize", stop_from_objective)
         with pytest.raises(StopIteration, match="objective interruption"):
             ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+
+    @pytest.mark.parametrize("through_workflow", [False, True])
+    def test_old_fixed_variable_callback_preserves_objective_interruption(
+        self, monkeypatch: pytest.MonkeyPatch, through_workflow: bool
+    ) -> None:
+        from scipy import optimize
+
+        from q2mm.models.problem import OptimizationProblem, TrainingCase
+        from q2mm.workflows import SingleStageWorkflow
+
+        obj = QuadraticEvaluator(np.array([0.5, 1.5]), bounds=[(1.0, 1.0), (0.0, 10.0)], initial=np.array([1.0, 2.0]))
+        obj._gradient_mode = GradientMode.NONE
+        interruption = StopIteration("objective interruption during accepted-iterate evaluation")
+        original_value = obj.value
+        calls = 0
+        in_callback = False
+
+        def interrupted_value(x: np.ndarray) -> float:
+            nonlocal calls
+            calls += 1
+            if calls == 8:
+                assert in_callback
+                raise interruption
+            return original_value(x)
+
+        monkeypatch.setattr(obj, "value", interrupted_value)
+        sample = MagicMock(side_effect=AssertionError("endpoint sampling must not run"))
+        evaluate = MagicMock(side_effect=AssertionError("endpoint evaluation must not run"))
+        monkeypatch.setattr(obj, "sample", sample)
+        monkeypatch.setattr(obj, "evaluate", evaluate)
+        original_minimize = optimize.minimize
+
+        def old_fixed_variable_minimize(fun, x0, *, callback, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            np.testing.assert_array_equal(kwargs["bounds"], [(1.0, 1.0), (0.0, 10.0)])
+            assert kwargs["jac"] is None
+
+            # SciPy 1.15's fixed-variable adapter hides the rich callback
+            # signature; emulate it while keeping the real solver/stop handler.
+            def x_only(xk: np.ndarray) -> None:
+                nonlocal in_callback
+                in_callback = True
+                try:
+                    callback(xk)
+                finally:
+                    in_callback = False
+
+            return original_minimize(fun, x0, callback=x_only, **kwargs)
+
+        monkeypatch.setattr(optimize, "minimize", old_fixed_variable_minimize)
+        optimizer = ScipyOptimizer(verbose=False)
+        with pytest.raises(StopIteration) as caught:
+            if through_workflow:
+                problem = OptimizationProblem(
+                    cases=(
+                        TrainingCase(
+                            case_id="0",
+                            molecule=obj.plan.molecules[0],
+                            stationary_point=StationaryPointKind.GROUND_STATE,
+                        ),
+                    ),
+                    starting_force_field=obj.forcefield,
+                    layout=obj.space.layout,
+                    active_space=obj.space,
+                    observations=obj.plan.observations,
+                )
+                SingleStageWorkflow().run(problem, lambda _plan: obj, optimizer)
+            else:
+                optimizer.optimize(obj, obj.space)
+        assert caught.value is interruption
+        assert calls == 8
+        sample.assert_not_called()
+        evaluate.assert_not_called()
 
     def test_callback_uses_accepted_score_and_resets_patience(self) -> None:
         from scipy.optimize import OptimizeResult

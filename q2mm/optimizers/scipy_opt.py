@@ -60,6 +60,14 @@ class _DivergenceStop(StopIteration):
         self.nit = nit
 
 
+class _CallbackObjectiveStop(RuntimeError):
+    """Transport objective interruptions past SciPy's callback stop handler."""
+
+    def __init__(self, original: StopIteration) -> None:
+        super().__init__(str(original))
+        self.original = original
+
+
 class ScipyOptimizer:
     """Force field optimizer using :mod:`scipy.optimize`.
 
@@ -323,6 +331,8 @@ class ScipyOptimizer:
                 options=options,
                 callback=callback,
             )
+        except _CallbackObjectiveStop as stop:
+            raise stop.original from None
         except _DivergenceStop as stop:
             # TNC propagates callback exceptions rather than consuming
             # StopIteration as the other minimize solvers do.
@@ -419,6 +429,7 @@ class ScipyOptimizer:
         diverge_count = 0
         iterations = 0
         factor = self.divergence_factor
+        check_divergence = factor is not None and initial_score > 0
         patience = self.divergence_patience
         verbose = self.verbose
         state = {"abandoned": False}
@@ -429,12 +440,19 @@ class ScipyOptimizer:
             # SciPy recognizes this parameter name and supplies the accepted
             # iterate's value, not the last line-search or finite-difference probe.
             if isinstance(intermediate_result, np.ndarray):
+                if not check_divergence and not verbose:
+                    return
                 # TNC (and older SLSQP) only provides xk. Evaluate that exact
                 # iterate through the same coordinate map and incumbent tracker.
                 if value_at is None:
                     raise ValueError("An x-only SciPy callback requires an accepted-iterate evaluator.")
                 x = intermediate_result
-                score = value_at(x)
+                try:
+                    score = value_at(x)
+                except StopIteration as exc:
+                    # Only our divergence signal may be consumed as a normal
+                    # callback stop; objective interruptions must escape intact.
+                    raise _CallbackObjectiveStop(exc) from exc
             else:
                 x = intermediate_result.x
                 score = float(intermediate_result.fun)
