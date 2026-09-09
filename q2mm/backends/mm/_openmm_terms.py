@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-@dataclass
+@dataclass(frozen=True)
 class _BondTerm:
     """Internal record mapping a molecule bond to its OpenMM force index.
 
@@ -19,18 +19,14 @@ class _BondTerm:
         force_index: Index of this bond in the OpenMM bond force object.
         atom_i: First atom index.
         atom_j: Second atom index.
-        elements: Element symbols for the two atoms.
-        env_id: Chemical environment identifier for parameter matching.
-        ff_row: Row index in the source force field file, if applicable.
+        parameter_index: Index of the originally matched row in ``ForceField.bonds``.
 
     """
 
     force_index: int
     atom_i: int
     atom_j: int
-    elements: tuple[str, str]
-    env_id: str = ""
-    ff_row: int | None = None
+    parameter_index: int
 
 
 @dataclass

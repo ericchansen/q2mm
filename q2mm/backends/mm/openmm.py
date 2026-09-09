@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -102,7 +102,8 @@ class _OpenMMState:
     """Reusable OpenMM system/context pair for fast parameter updates.
 
     Attributes:
-        molecule: Deep copy of the input molecule.
+        molecule: Input molecule instance, shared by identity for bond reuse;
+            replaced with a new molecule after minimization.
         system: The ``openmm.System`` object.
         integrator: The ``openmm.Integrator`` used by the context.
         context: The ``openmm.Context`` for energy evaluation.
@@ -113,6 +114,7 @@ class _OpenMMState:
         ub_force: The OpenMM HarmonicBondForce for Urey-Bradley terms, or ``None``.
         cmap_force: The OpenMM CMAPTorsionForce, or ``None`` if no CMAP terms.
         bond_terms: Mapping of molecule bonds to force indices.
+        bond_parameters: Original ordered bond rows, retained to validate reuse.
         angle_terms: Mapping of molecule angles to force indices.
         torsion_terms: Mapping of molecule torsions to force indices.
         vdw_terms: Mapping of atoms to vdW particle indices.
@@ -134,6 +136,7 @@ class _OpenMMState:
     ub_force: object | None
     cmap_force: object | None
     bond_terms: list[_BondTerm]
+    bond_parameters: tuple[BondParam, ...]
     angle_terms: list[_AngleTerm]
     torsion_terms: list[_TorsionTerm]
     vdw_terms: list[_VdwTerm]
@@ -273,6 +276,25 @@ def _collect_bond_assignments(
         if param is not None:
             assignments.append((bond, param))
     return assignments
+
+
+def _bound_bond_assignments(state: _OpenMMState, forcefield: ForceField) -> list[tuple[_BondTerm, BondParam]]:
+    """Resolve prepared bonds by source index, allowing only scalar updates."""
+    if forcefield.functional_form != state.functional_form:
+        raise ValueError(
+            f"Force field functional form {forcefield.functional_form!r} does not match "
+            f"the state's form {state.functional_form!r}. "
+            "Create a new context instead of reusing this state."
+        )
+    if len(forcefield.bonds) != len(state.bond_parameters) or any(
+        replace(updated, equilibrium=original.equilibrium, force_constant=original.force_constant) != original
+        for original, updated in zip(state.bond_parameters, forcefield.bonds, strict=True)
+    ):
+        raise ValueError(
+            "Updated force field changes the prepared bond parameter structure. "
+            "Only bond force constants and equilibria may change; prepare a new session for different bond rows."
+        )
+    return [(term, forcefield.bonds[term.parameter_index]) for term in state.bond_terms]
 
 
 def _collect_angle_assignments(
@@ -750,6 +772,7 @@ class OpenMMBackend:
         forcefield: ForceField,
         *,
         precision: str | None = None,
+        bond_source: _OpenMMState | None = None,
     ) -> _OpenMMState:
         """Build an OpenMM system and context for a molecule + force field.
 
@@ -762,6 +785,9 @@ class OpenMMBackend:
             precision: Override GPU precision (``"single"``, ``"mixed"``,
                 ``"double"``).  When ``None`` (default) uses the
                 engine-level setting.
+            bond_source: Prepared bond bindings to reuse in a throwaway state.
+                Must own *molecule*. If omitted, match bonds against
+                *forcefield* once.
 
         Returns:
             _OpenMMState: Reusable native state for energy evaluation and
@@ -774,6 +800,8 @@ class OpenMMBackend:
 
         """
         self._validate_forcefield(forcefield)
+        if bond_source is not None and molecule is not bond_source.molecule:
+            raise ValueError("Prepared bond bindings belong to a different molecule; prepare a new session.")
 
         if forcefield.stretch_bends:
             raise NotImplementedError(
@@ -844,7 +872,14 @@ class OpenMMBackend:
             vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
 
         # --- Assign bond parameters ---
-        bond_assignments = _collect_bond_assignments(molecule, forcefield)
+        bond_assignments = (
+            _collect_bond_assignments(molecule, forcefield)
+            if bond_source is None
+            else _bound_bond_assignments(bond_source, forcefield)
+        )
+        bond_indices = {id(param): index for index, param in enumerate(forcefield.bonds)}
+        if len(bond_indices) != len(forcefield.bonds):
+            raise ValueError("Cannot bind repeated bond parameter objects to a unique source index.")
         bond_terms: list[_BondTerm] = []
         for bond, param in bond_assignments:
             if use_harmonic:
@@ -865,9 +900,7 @@ class OpenMMBackend:
                     force_index=force_index,
                     atom_i=bond.atom_i,
                     atom_j=bond.atom_j,
-                    elements=bond.elements,
-                    env_id=bond.env_id,
-                    ff_row=bond.ff_row,
+                    parameter_index=bond_indices[id(param)],
                 )
             )
 
@@ -1075,6 +1108,7 @@ class OpenMMBackend:
             ub_force=ub_force,
             cmap_force=cmap_force,
             bond_terms=bond_terms,
+            bond_parameters=forcefield.bonds,
             angle_terms=angle_terms,
             torsion_terms=torsion_terms,
             vdw_terms=vdw_terms,
@@ -1097,29 +1131,15 @@ class OpenMMBackend:
 
         Raises:
             ValueError: If the force field's functional form does not match
-                the state's form, or if a required parameter is missing.
+                the state's form, its ordered bond metadata changes, or a
+                required parameter is missing.
 
         """
-        incoming_form = forcefield.functional_form
-        if incoming_form != state.functional_form:
-            raise ValueError(
-                f"Force field functional form {incoming_form!r} does not match "
-                f"the state's form {state.functional_form!r}. "
-                f"Create a new context instead of reusing this state."
-            )
+        bond_assignments = _bound_bond_assignments(state, forcefield)
         use_harmonic = state.functional_form == FunctionalForm.HARMONIC
 
         if state.bond_force is not None:
-            for term in state.bond_terms:
-                param = forcefield.match_bond(
-                    term.elements,
-                    env_id=term.env_id,
-                    ff_row=term.ff_row,
-                    bond_order=getattr(term, "bond_order", ""),
-                    bond_length=getattr(term, "length", None),
-                )
-                if param is None:
-                    raise ValueError(f"Updated force field is missing bond parameter for {term.elements}.")
+            for term, param in bond_assignments:
                 if use_harmonic:
                     state.bond_force.setBondParameters(
                         term.force_index,
@@ -1245,7 +1265,7 @@ class OpenMMBackend:
     # Analytical parameter gradients via addEnergyParameterDerivative
     # ------------------------------------------------------------------
 
-    def _build_diff_state(self, molecule: Molecule, forcefield: ForceField) -> _OpenMMDiffState:
+    def _build_diff_state(self, state: _OpenMMState, forcefield: ForceField) -> _OpenMMDiffState:
         """Build an OpenMM system with global parameters for analytical gradients.
 
         Each unique FF parameter becomes a named global parameter on the
@@ -1259,7 +1279,7 @@ class OpenMMBackend:
         is available.
 
         Args:
-            molecule: Molecular structure.
+            state: Prepared molecule and original bond bindings.
             forcefield: Force field with canonical-unit parameters.
 
         Returns:
@@ -1267,6 +1287,8 @@ class OpenMMBackend:
 
         """
         self._validate_forcefield(forcefield)
+        bond_assignments = _bound_bond_assignments(state, forcefield)
+        molecule = state.molecule
         ff_form = forcefield.functional_form
         use_harmonic = ff_form == FunctionalForm.HARMONIC
 
@@ -1279,9 +1301,10 @@ class OpenMMBackend:
         grad_unit_factors: list[float] = []
         pv_idx = 0  # tracks position in flat param vector
 
-        # Precompute assignments and build reverse indices for O(n) lookups.
-        bond_assignments = _collect_bond_assignments(molecule, forcefield)
-        bonds_by_param = _index_by_param_id(bond_assignments)
+        # Reuse the original selection even when fitted equilibria cross.
+        bonds_by_param: dict[int, list[_BondTerm]] = {}
+        for term, _param in bond_assignments:
+            bonds_by_param.setdefault(term.parameter_index, []).append(term)
 
         # --- Bonds: each bond param contributes (k, r0) ---
         bond_global_map: dict[int, tuple[str, str]] = {}
@@ -1318,7 +1341,7 @@ class OpenMMBackend:
             bf.addEnergyParameterDerivative(k_name)
             bf.addEnergyParameterDerivative(r0_name)
 
-            for bond in bonds_by_param.get(id(bp), []):
+            for bond in bonds_by_param.get(bp_idx, []):
                 bf.addBond(bond.atom_i, bond.atom_j)
             system.addForce(bf)
 
@@ -1503,7 +1526,7 @@ class OpenMMBackend:
             functional_form=forcefield.functional_form,
         )
 
-    def _evaluate_param_grad(self, molecule: Molecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
+    def _evaluate_param_grad(self, state: _OpenMMState, forcefield: ForceField) -> tuple[float, np.ndarray]:
         """Compute energy and analytical gradient w.r.t. FF parameters.
 
         Uses OpenMM's ``addEnergyParameterDerivative()`` on ``CustomForce``
@@ -1513,7 +1536,7 @@ class OpenMMBackend:
         computed via central finite differences automatically.
 
         Args:
-            molecule: Molecule to evaluate.
+            state: Prepared molecule and original bond bindings.
             forcefield: Force field parameters.
 
         Returns:
@@ -1526,11 +1549,11 @@ class OpenMMBackend:
                 "OpenMMBackend does not support stretch-bend cross terms. "
                 "Use the JAX backend for force fields with stretch-bend parameters."
             )
-        diff = self._build_diff_state(molecule, forcefield)
+        diff = self._build_diff_state(state, forcefield)
 
-        state = diff.context.getState(getEnergy=True, getParameterDerivatives=True)
-        energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
-        derivs = state.getEnergyParameterDerivatives()
+        result = diff.context.getState(getEnergy=True, getParameterDerivatives=True)
+        energy = float(result.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
+        derivs = result.getEnergyParameterDerivatives()
 
         from q2mm.models.parameters import ParameterKind, ParameterLayout
 
@@ -1554,14 +1577,14 @@ class OpenMMBackend:
             vdw_start = min(vdw_radius_indices)
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
             step = 1e-4
-            state = self._build_state(molecule, forcefield, precision="double")
+            fd_state = self._build_state(state.molecule, forcefield, precision="double", bond_source=state)
             for i in range(vdw_start, vdw_end):
                 pv_plus = param_vector.copy()
                 pv_plus[i] += step
                 pv_minus = param_vector.copy()
                 pv_minus[i] -= step
-                e_plus = self._evaluate_energy(state, layout.replace(forcefield, pv_plus))
-                e_minus = self._evaluate_energy(state, layout.replace(forcefield, pv_minus))
+                e_plus = self._evaluate_energy(fd_state, layout.replace(forcefield, pv_plus))
+                e_minus = self._evaluate_energy(fd_state, layout.replace(forcefield, pv_minus))
                 grad[i] = (e_plus - e_minus) / (2.0 * step)
 
         return energy, grad
@@ -1655,9 +1678,11 @@ class PreparedOpenMM(AbstractPreparedBackend):
 
     Owns the molecule, base force field, parameter layout, and one reusable
     private :class:`_OpenMMState`.  Energy, Hessian, and frequency evaluations
-    update the state's global parameters in place (reusing native state), while
+    update the state's per-term parameters in place (reusing native state), while
     minimization and analytical parameter gradients build a throwaway state so
-    they never mutate the reusable energy/Hessian state.
+    they never mutate the reusable energy/Hessian state. All paths retain the
+    bond-to-source-row binding selected at preparation, including when fitted
+    equilibrium lengths change which row would be the nearest length match.
     """
 
     def __init__(
@@ -1708,7 +1733,7 @@ class PreparedOpenMM(AbstractPreparedBackend):
         try:
             # Build a fresh throwaway native state so minimization does not
             # pollute the reusable energy/Hessian state's positions.
-            fresh = self._backend._build_state(self.molecule, ff)
+            fresh = self._backend._build_state(self.molecule, ff, bond_source=self._state)
             energy, atoms, coords = self._backend._evaluate_minimize(
                 fresh, tolerance=tolerance, max_iterations=max_iterations
             )
@@ -1751,7 +1776,7 @@ class PreparedOpenMM(AbstractPreparedBackend):
     def _parameter_gradient(self, request: ParameterGradientRequest) -> ParameterGradientResult:  # type: ignore[override]
         ff = self._ff_for(request.parameters)
         try:
-            energy, grad = self._backend._evaluate_param_grad(self.molecule, ff)
+            energy, grad = self._backend._evaluate_param_grad(self._state, ff)
         except Exception as exc:  # noqa: BLE001
             raise EvaluationError(f"OpenMM parameter-gradient evaluation failed: {exc}") from exc
         return ParameterGradientResult(
