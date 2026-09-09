@@ -15,6 +15,7 @@ from q2mm.models.forcefield import (
     TorsionParam,
     VdwParam,
 )
+from q2mm.models.identifiers import canonicalize_angle_env_id, canonicalize_bond_env_id
 
 if TYPE_CHECKING:
     pass
@@ -206,7 +207,7 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
                         elements=elems,
                         equilibrium=vals[1],
                         force_constant=vals[0],
-                        env_id="-".join(types),
+                        env_id=canonicalize_bond_env_id(types),
                         ff_row=row,
                         label=f"frcmod row {row}",
                     )
@@ -222,7 +223,7 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
                         elements=elems,
                         equilibrium=vals[1],
                         force_constant=vals[0],
-                        env_id="-".join(types),
+                        env_id=canonicalize_angle_env_id(types),
                         ff_row=row,
                         label=f"frcmod row {row}",
                     )
