@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from importlib.util import find_spec
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -444,8 +445,7 @@ class _OvershootEvaluator(QuadraticEvaluator):
     Step 0 evaluates x0=[1.0] (score 1.0) and steps to [0.6]; step 1 evaluates
     [0.6] (score 0.36 — the best evaluated iterate) then a scripted gradient
     sends the post-update point to [2.6] (score 6.76).  The best *evaluated*
-    iterate is [0.6]; the never-evaluated post-step point [2.6] must not be
-    returned.
+    iterate is [0.6]; the worse post-step point [2.6] must not be returned.
     """
 
     def __init__(self) -> None:
@@ -493,13 +493,16 @@ class TestOptaxBestIterateAndProvenance:
         scores = [float(np.sum(p**2)) for p in obj.evaluated]
         best_idx = int(np.argmin(scores))
         # Returned vector is the best EVALUATED iterate (x=0.6), not the
-        # never-evaluated post-step overshoot (x=2.6).
+        # post-step overshoot (x=2.6).
         np.testing.assert_allclose(result.final_params, obj.evaluated[best_idx], atol=1e-9)
         assert result.final_score == pytest.approx(min(scores), rel=1e-9, abs=1e-9)
         # Score identifies the same vector it is reported against.
         assert result.final_score == pytest.approx(float(np.sum(result.final_params**2)), abs=1e-9)
         # And it is strictly better than the discarded post-step point (6.76).
         assert result.final_score < 1.0
+        assert result.history[-2] == pytest.approx(6.76)
+        assert result.n_iterations == 2
+        assert result.n_evaluations == len(result.history) == 5
 
     def test_reports_fd_step_for_fd_evaluator(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
@@ -520,3 +523,134 @@ class TestOptaxBestIterateAndProvenance:
         ).optimize(obj, obj.space)
         assert result.gradient_mode == "analytical"
         assert result.fd_step is None
+
+
+@pytest.fixture
+def applied_updates(monkeypatch: pytest.MonkeyPatch) -> Mock:
+    from q2mm.optimizers import optax as optax_module
+
+    optax_module.ensure_optax()
+    spy = Mock(wraps=optax_module.optax.apply_updates)
+    monkeypatch.setattr(optax_module.optax, "apply_updates", spy)
+    return spy
+
+
+class TestOptaxEndpointAndStops:
+    def test_progress_logs_completed_updates(self, caplog: pytest.LogCaptureFixture) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        obj = QuadraticEvaluator(target=np.array([1.0]))
+        with caplog.at_level("INFO", logger="q2mm.optimizers.optax"):
+            result = OptaxOptimizer(
+                optimizer="sgd", learning_rate=0.1, momentum=0.0, max_steps=2, log_interval=1
+            ).optimize(obj, obj.space)
+
+        progress = [record.message.split() for record in caplog.records if "grad_norm" in record.message]
+        assert [parts[:3] for parts in progress] == [["updates", "0", "score"], ["updates", "1", "score"]]
+        assert f"({result.n_iterations} updates)" in caplog.records[-1].message
+
+    @pytest.mark.parametrize("max_steps", [0, 1, 2])
+    def test_final_allowed_update_is_eligible(self, max_steps: int, applied_updates: Mock) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        obj = QuadraticEvaluator(
+            target=np.array([1.0, 5.0]), initial=np.array([0.0, 5.0]), active_indices=np.array([0])
+        )
+        result = OptaxOptimizer(
+            optimizer="sgd", learning_rate=0.1, momentum=0.0, max_steps=max_steps, verbose=False
+        ).optimize(obj, obj.space)
+
+        np.testing.assert_allclose(result.final_params, [1.0 - 0.8**max_steps, 5.0], atol=1e-12)
+        assert result.final_score == pytest.approx(0.64**max_steps)
+        assert result.n_iterations == applied_updates.call_count == max_steps
+        assert result.n_evaluations == len(result.history) == obj.n_evaluations
+        assert result.n_evaluations == (max_steps + 3 if max_steps else 2)
+        assert result.history[-1] == result.final_score
+        assert not result.success
+        assert result.message == f"Max steps ({max_steps}) reached"
+
+    def test_final_update_is_scored_after_bound_projection(self, applied_updates: Mock) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        obj = QuadraticEvaluator(target=np.array([1.0]), bounds=[(0.0, 0.1)])
+        result = OptaxOptimizer(optimizer="sgd", learning_rate=0.5, momentum=0.0, max_steps=1, verbose=False).optimize(
+            obj, obj.space
+        )
+
+        np.testing.assert_allclose(result.final_params, [0.1])
+        assert result.final_score == pytest.approx(0.81)
+        assert result.n_iterations == applied_updates.call_count == 1
+        assert not result.success
+
+    @pytest.mark.parametrize("initial, expected_updates", [(1.0, 0), (0.0, 1)])
+    def test_gradient_stop_does_not_apply_another_update(
+        self, initial: float, expected_updates: int, applied_updates: Mock
+    ) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        obj = QuadraticEvaluator(target=np.array([1.0]), initial=np.array([initial]))
+        result = OptaxOptimizer(optimizer="sgd", learning_rate=0.5, momentum=0.0, max_steps=5, verbose=False).optimize(
+            obj, obj.space
+        )
+
+        assert result.success
+        assert "gradient norm" in result.message
+        assert result.n_iterations == applied_updates.call_count == expected_updates
+        np.testing.assert_array_equal(result.final_params, [1.0])
+        assert result.final_score == 0.0
+
+    def test_plateau_counts_updates_not_duplicate_initial_evaluation(self, applied_updates: Mock) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        obj = QuadraticEvaluator(target=np.array([1.0]))
+        result = OptaxOptimizer(optimizer="sgd", learning_rate=0.0, max_steps=5, patience=1, verbose=False).optimize(
+            obj, obj.space
+        )
+
+        assert result.success
+        assert "score plateau for 1 steps" in result.message
+        assert result.n_iterations == applied_updates.call_count == 1
+        assert result.n_evaluations == len(result.history) == 4
+        np.testing.assert_array_equal(result.final_params, [0.0])
+        assert result.final_score == 1.0
+
+    def test_divergence_stops_before_another_update(self, applied_updates: Mock) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        obj = QuadraticEvaluator(target=np.array([0.0]), initial=np.array([1.0]))
+        result = OptaxOptimizer(
+            optimizer="sgd",
+            learning_rate=2.0,
+            momentum=0.0,
+            max_steps=5,
+            divergence_patience=1,
+            use_bounds=False,
+            verbose=False,
+        ).optimize(obj, obj.space)
+
+        assert not result.success
+        assert "Abandoned" in result.message
+        assert result.n_iterations == applied_updates.call_count == 1
+        np.testing.assert_array_equal(result.final_params, [1.0])
+        assert result.final_score == 1.0
+
+    def test_convergence_at_worse_point_does_not_certify_recovered_best(self, applied_updates: Mock) -> None:
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        obj = _OvershootEvaluator()
+        obj._script = [np.array([0.4]), np.array([-2.0]), np.array([0.0])]
+        result = OptaxOptimizer(
+            optimizer="sgd",
+            learning_rate=1.0,
+            momentum=0.0,
+            max_steps=5,
+            use_bounds=False,
+            divergence_factor=None,
+            verbose=False,
+        ).optimize(obj, obj.space)
+
+        assert not result.success
+        assert "Recovered best evaluated point" in result.message
+        assert result.n_iterations == applied_updates.call_count == 2
+        np.testing.assert_allclose(result.final_params, [0.6])
+        assert result.final_score == pytest.approx(0.36)

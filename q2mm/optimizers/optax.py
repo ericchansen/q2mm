@@ -121,7 +121,13 @@ class OptaxOptimizer:
         raise ValueError(f"Unknown schedule '{self.schedule}'. Choose from: 'cosine', 'exponential', or None.")
 
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
-        """Run the optimization and return the canonical result."""
+        """Run at most ``max_steps`` updates, returning the best evaluated point.
+
+        ``n_iterations`` counts applied updates, not stopping checks. The
+        final budgeted update is scored before recovery; convergence checks
+        happen before each update and cannot certify a different recovered
+        point.
+        """
         ensure_optax()
         if evaluator.gradient_mode is GradientMode.NONE:
             raise ObjectiveGradientError(
@@ -198,37 +204,29 @@ class OptaxOptimizer:
         stall_count = 0
         diverge_count = 0
         prev_score = initial_score
-        step = 0
+        n_updates = 0
 
         for step in range(self.max_steps):
             params_np = np.asarray(params, dtype=np.float64)
             score, grad_active = value_and_grad(params_np)
             grad_np = np.asarray(grad_active, dtype=np.float64)
-            grad = jnp.array(grad_np, dtype=jnp.float64)
-
-            updates, opt_state = opt.update(grad, opt_state, params)
-            params = optax.apply_updates(params, updates)
-            if lower is not None:
-                params = jnp.clip(params, lower, upper)
 
             if score < best_score:
                 best_score = score
-                # ``score``/``grad`` were evaluated at the PRE-update iterate
-                # (``params_np``); store that same vector so best_score and
-                # best_params identify the identical evaluated point (not the
-                # post-update, possibly-overshot iterate).
                 best_params = params_np.copy()
 
             grad_norm = float(np.linalg.norm(grad_np))
             if self.verbose and (step + 1) % self.log_interval == 0:
-                logger.info("  step %4d  score %.6f  grad_norm %.2e  best %.6f", step + 1, score, grad_norm, best_score)
+                logger.info(
+                    "  updates %4d  score %.6f  grad_norm %.2e  best %.6f", n_updates, score, grad_norm, best_score
+                )
 
             if grad_norm < self.grad_norm_tol:
                 converged = True
                 message = f"Converged: gradient norm {grad_norm:.2e} < {self.grad_norm_tol:.2e}"
                 break
 
-            if prev_score > 0:
+            if n_updates > 0 and prev_score > 0:
                 rel_change = abs(prev_score - score) / prev_score
                 if rel_change < self.ftol:
                     stall_count += 1
@@ -255,17 +253,34 @@ class OptaxOptimizer:
                     diverge_count = 0
 
             prev_score = score
+            grad = jnp.array(grad_np, dtype=jnp.float64)
+            updates, opt_state = opt.update(grad, opt_state, params)
+            params = optax.apply_updates(params, updates)
+            if lower is not None:
+                params = jnp.clip(params, lower, upper)
+            n_updates += 1
+        else:
+            if n_updates > 0:
+                params_np = np.asarray(params, dtype=np.float64)
+                score = value_only(params_np)
+                if score < best_score:
+                    best_score = score
+                    best_params = params_np.copy()
+
+        if converged and not np.array_equal(best_params, params_np):
+            converged = False
+            message = f"Recovered best evaluated point; convergence not established there. Stopping check: {message}"
 
         final_params = space.expand(best_params, base=baseline)
         final_score = float(value_only(best_params))
 
         if self.verbose:
             logger.info(
-                "Optimization %s: score %.6f → %.6f (%d steps)",
+                "Optimization %s: score %.6f → %.6f (%d updates)",
                 "converged" if converged else "stopped",
                 initial_score,
                 final_score,
-                step + 1,
+                n_updates,
             )
 
         return OptimizationResult(
@@ -273,7 +288,7 @@ class OptaxOptimizer:
             message=message,
             initial_score=initial_score,
             final_score=final_score,
-            n_iterations=step + 1 if self.max_steps > 0 else 0,
+            n_iterations=n_updates,
             n_evaluations=evaluator.n_evaluations - n_eval_before,
             n_params=n_params,
             layout_fingerprint=fingerprint,
