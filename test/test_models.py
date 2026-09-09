@@ -2353,6 +2353,37 @@ class TestBondOrderMatching:
 
 class TestTypedMatching:
     @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("generic_order", ["=", ""])
+    def test_compatible_generic_bond_order_precedes_incompatible_typed_row(
+        self, reverse_rows: bool, generic_order: str
+    ) -> None:
+        single = BondParam(("C", "C"), 1.5, 100.0, env_id="C2-C2", bond_order="-", ff_row=1)
+        double = BondParam(("C", "C"), 1.2, 200.0, bond_order=generic_order, ff_row=2)
+        ff = ForceField(
+            bonds=(double, single) if reverse_rows else (single, double),
+            functional_form=FunctionalForm.MM3,
+        )
+        assert ff.get_bond("C", "C", env_id="C2-C2", bond_order="=") is double
+        assert ff.match_bond(("C", "C"), env_id="C2-C2", bond_order="=", bond_length=1.2) is double
+        assert ff.match_bond(("C", "C"), env_id="C2-C2", bond_order="=") is double
+        assert ff.match_bond(("C", "C"), env_id="C2-C2", bond_order="=", ff_row=1) is single
+        assert ff.match_bond(("C", "C"), env_id="C2-C2") is single
+
+    @pytest.mark.parametrize("env_id", ["C2-C2", "C9-C9", ""])
+    def test_explicit_bond_order_never_returns_contradictory_row(self, env_id: str) -> None:
+        single = BondParam(("C", "C"), 1.5, 100.0, env_id="C2-C2", bond_order="-")
+        ff = ForceField(bonds=(single,), functional_form=FunctionalForm.MM3)
+        assert ff.get_bond("C", "C", env_id=env_id, bond_order="=") is None
+        assert ff.match_bond(("C", "C"), env_id=env_id, bond_order="=", bond_length=1.5) is None
+
+    def test_explicit_bond_order_uses_compatible_element_fallback(self) -> None:
+        single = BondParam(("C", "C"), 1.5, 100.0, env_id="C2-C2", bond_order="-")
+        double = replace(single, env_id="C1-C1", bond_order="=", equilibrium=1.2, force_constant=200.0)
+        ff = ForceField(bonds=(single, double), functional_form=FunctionalForm.MM3)
+        assert ff.get_bond("C", "C", env_id="C2-C2", bond_order="=") is None
+        assert ff.match_bond(("C", "C"), env_id="C2-C2", bond_order="=", bond_length=1.5) is double
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
     def test_exact_bond_order_precedes_unknown_order(self, reverse_rows: bool) -> None:
         unknown = BondParam(("C", "C"), 1.5, 10.0, env_id="C1-C1")
         exact = replace(unknown, force_constant=20.0, bond_order="=")
@@ -2364,12 +2395,15 @@ class TestTypedMatching:
         assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_order="=") is exact
         assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_order="-") is unknown
 
-    def test_nearest_bond_length_tie_raises(self) -> None:
-        first = BondParam(("C", "C"), 1.0, 10.0, env_id="C1-C1")
-        second = replace(first, force_constant=20.0, equilibrium=2.0)
+    @pytest.mark.parametrize(("lower", "upper", "midpoint"), [(1.0, 2.0, 1.5), (1.3, 1.5, 1.4)])
+    def test_nearest_bond_length_tie_raises(self, lower: float, upper: float, midpoint: float) -> None:
+        first = BondParam(("C", "C"), lower, 10.0, env_id="C1-C1")
+        second = replace(first, force_constant=20.0, equilibrium=upper)
         ff = ForceField(bonds=(first, second), functional_form=FunctionalForm.MM3)
         with pytest.raises(ValueError, match="Ambiguous bond"):
-            ff.match_bond(("C", "C"), env_id="C1-C1", bond_length=1.5)
+            ff.match_bond(("C", "C"), env_id="C1-C1", bond_length=midpoint)
+        assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_length=midpoint - 1e-5) is first
+        assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_length=midpoint + 1e-5) is second
 
     @pytest.mark.parametrize("reverse_rows", [False, True])
     @pytest.mark.parametrize("env_id", ["c3-h2", "h2-c3"])
@@ -2465,12 +2499,41 @@ class TestTypedMatching:
         ff = ForceField(torsions=(generic, first, second), functional_form=FunctionalForm.HARMONIC)
         assert ff.get_torsion("H", "C", "C", "H", env_id="h2-c2-c3-h1") is first
 
-    def test_torsion_fallback_does_not_mix_unrelated_environments(self) -> None:
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("is_improper", [False, True])
+    def test_torsion_periodicity_filters_winning_environment_collection(
+        self, reverse_rows: bool, is_improper: bool
+    ) -> None:
+        generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0, is_improper=is_improper, ff_row=1)
+        exact = replace(generic, env_id="h1-c3-c2-h2", periodicity=2, force_constant=20.0, ff_row=2)
+        ff = ForceField(
+            torsions=(exact, generic) if reverse_rows else (generic, exact),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        for env_id in (exact.env_id, "h2-c2-c3-h1"):
+            all_terms = ff.match_torsion(generic.elements, env_id=env_id, is_improper=is_improper)
+            assert all_terms == [exact]
+            for periodicity in (1, 2, 3):
+                assert ff.match_torsion(
+                    generic.elements, env_id=env_id, periodicity=periodicity, is_improper=is_improper
+                ) == [t for t in all_terms if t.periodicity == periodicity]
+                assert ff.get_torsion(*generic.elements, env_id=env_id, periodicity=periodicity) is (
+                    exact if periodicity == 2 else None
+                )
+            assert ff.get_torsion(*generic.elements, env_id=env_id) is exact
+            assert ff.match_torsion(generic.elements, env_id=env_id, periodicity=1, ff_row=1) == [generic]
+
+    def test_torsion_element_fallback_preserves_all_components(self) -> None:
         first = TorsionParam(("H", "C", "C", "H"), 1, 10.0, env_id="h1-c3-c2-h1")
         second = replace(first, env_id="h2-c3-c2-h2", force_constant=20.0)
-        ff = ForceField(torsions=(first, second), functional_form=FunctionalForm.HARMONIC)
-        with pytest.raises(ValueError, match="Ambiguous torsion environments"):
-            ff.match_torsion(("H", "C", "C", "H"), env_id="h9-c3-c2-h9")
+        third = replace(second, periodicity=2, phase=180.0)
+        ff = ForceField(torsions=(first, second, third), functional_form=FunctionalForm.HARMONIC)
+        for env_id in ("", "h9-c3-c2-h9"):
+            assert ff.match_torsion(first.elements, env_id=env_id) == [first, second, third]
+            assert ff.match_torsion(first.elements, env_id=env_id, periodicity=1) == [first, second]
+            assert ff.match_torsion(first.elements, env_id=env_id, periodicity=2) == [third]
+        with pytest.raises(ValueError, match="Ambiguous torsion"):
+            ff.get_torsion(*first.elements, periodicity=1)
 
     def test_torsion_environment_ranking_preserves_proper_and_improper(self) -> None:
         generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0)

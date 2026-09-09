@@ -462,6 +462,30 @@ class TestActiveParameterSpace:
 
 
 class TestOptSubstructureMembership:
+    @pytest.mark.parametrize(("context", "opt_context"), [("", "0000 0000"), ("0000 0000", "")])
+    def test_generic_bond_context_alias_preserves_membership(self, context: str, opt_context: str) -> None:
+        selected = BondParam(("C", "C"), 1.5, 100.0, env_id="C1-C1", bond_order="-", context=context)
+        unrelated = replace(selected, force_constant=200.0, context="O200 0000")
+        composed = ForceField(
+            bonds=(selected, unrelated), source_path=Path("composed.fld"), functional_form=FunctionalForm.MM3
+        )
+        opt_only = ForceField(
+            bonds=(replace(selected, context=opt_context),),
+            source_path=Path("opt.fld"),
+            functional_form=FunctionalForm.MM3,
+        )
+        layout = ParameterLayout.from_force_field(composed)
+        membership = opt_substructure_membership(composed, opt_only)
+        assert membership.bonds == frozenset({0})
+        space = ActiveParameterSpace.from_membership(layout, composed, membership)
+        np.testing.assert_array_equal(space.active_indices, [0, 1])
+        updated = layout.replace(composed, space.expand(space.pack(layout.vector(composed)) + 0.1))
+        assert updated.bonds[1] == unrelated
+        aliased = replace(composed, bonds=(replace(selected, context=opt_context), unrelated))
+        assert layout.fingerprint != ParameterLayout.from_force_field(aliased).fingerprint
+        assert composed.bonds[0].context == context
+        assert opt_only.bonds[0].context == opt_context
+
     @pytest.mark.parametrize(
         ("bond_order", "context"),
         [("=", ""), ("-", "O200 0000"), ("=", "O200 0000")],
