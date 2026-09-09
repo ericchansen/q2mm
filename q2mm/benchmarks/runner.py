@@ -1242,17 +1242,22 @@ def _opposite_ext(ext: str) -> str:
 
 
 def promote_candidate(output_dir: Path, candidate: CandidateResult, provenance: Mapping[str, Any]) -> dict[str, Path]:
-    """Atomically promote an accepted candidate to canonical output names.
+    """Promote an accepted candidate with rollback on installation failure.
 
     Refuses any non-accepted candidate.  The accepted result JSON and the
     optimized force field are serialised to temporary siblings first (a
     serialisation failure changes nothing).  Pre-existing canonical artifacts
-    are snapshotted, then committed with ``os.replace``; a failure at **any**
-    commit step (including the second replace) restores every pre-existing
-    canonical JSON / force field byte-identically, and leaves nothing behind
-    when there was no prior artifact.  The stale opposite-form force field is
-    removed only after a fully successful commit.
+    are snapshotted, then installed with ``os.replace``. Catchable failures
+    attempt to restore the old pair; failed recovery retains backups and is
+    logged without replacing the original exception. After installation,
+    cleanup of backups and the stale opposite-form force field only warns on
+    OSError and never rolls back the committed pair. User interruptions
+    propagate. Sequential replacements are not crash-atomic.
     """
+    import shutil
+
+    from q2mm.application.persistence import _cleanup_files, _temp_sibling
+
     if not candidate.accepted:
         raise ValueError(
             f"refusing to promote non-accepted candidate {candidate.candidate_id!r} ({candidate.status.value})."
@@ -1267,65 +1272,63 @@ def promote_candidate(output_dir: Path, candidate: CandidateResult, provenance: 
     ff = candidate.final_force_field
     ext = _ff_extension(ff) if ff is not None else None
     ff_path = ff_dir / f"{candidate.candidate_id}{ext}" if ext is not None else None
-    tmp_ff = ff_path.with_name(f"{ff_path.name}.tmp-{os.getpid()}") if ff_path is not None else None
-    tmp_json = result_path.with_name(f"{result_path.name}.tmp-{os.getpid()}")
-
-    # ---- serialise both temporaries first (failure here changes nothing) --
-    with tmp_json.open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, allow_nan=False, sort_keys=True)
-        fh.write("\n")
-    try:
-        if ff is not None and tmp_ff is not None:
-            ff_dir.mkdir(parents=True, exist_ok=True)
-            _serialize_ff(ff, tmp_ff)
-    except BaseException:
-        tmp_json.unlink(missing_ok=True)
-        raise
-
-    # ---- snapshot pre-existing canonical targets, then commit -----------
-    import shutil
-
+    tmp_ff = _temp_sibling(ff_path, "output") if ff_path is not None else None
+    tmp_json = _temp_sibling(result_path, "output")
     targets: list[tuple[Path, Path]] = [(tmp_json, result_path)]
     if ff is not None and tmp_ff is not None and ff_path is not None:
         targets.append((tmp_ff, ff_path))
 
-    backups: list[tuple[Path, Path | None]] = []
-    committed: list[Path] = []
-    for _tmp, target in targets:
-        if target.exists():
-            backup_path = target.with_name(f"{target.name}.bak-{os.getpid()}")
-            shutil.copy2(target, backup_path)
-            backups.append((target, backup_path))
-        else:
-            backups.append((target, None))
-
+    backups: dict[Path, Path] = {}
+    attempted: list[Path] = []
+    committed = False
+    phase = "serialization"
     try:
+        with tmp_json.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, allow_nan=False, sort_keys=True)
+            fh.write("\n")
+        if ff is not None and tmp_ff is not None:
+            ff_dir.mkdir(parents=True, exist_ok=True)
+            _serialize_ff(ff, tmp_ff)
+        phase = "snapshot"
+        for _tmp, target in targets:
+            if target.exists():
+                backup = _temp_sibling(target, "backup")
+                # A failed copy can leave a partial file that also needs cleanup.
+                backups[target] = backup
+                shutil.copy2(target, backup)
+        phase = "installation"
         for tmp, target in targets:
+            attempted.append(target)
             os.replace(tmp, target)
-            committed.append(target)
-        # Fully committed: drop the opposite-form stale file and the backups.
-        if ff_path is not None and ext is not None:
-            stale = ff_dir / f"{candidate.candidate_id}{_opposite_ext(ext)}"
-            stale.unlink(missing_ok=True)
-        for _target, bak in backups:
-            if bak is not None:
-                bak.unlink(missing_ok=True)
-    except BaseException:
-        # Roll back every committed replace to its pre-existing bytes (or
-        # remove it when there was no prior artifact).
-        for target, bak in backups:
-            if target in committed:
-                if bak is not None:
-                    os.replace(bak, target)
+        committed = True
+    except BaseException as exc:
+        logger.error("Promotion failed during %s; attempting rollback: %s", phase, exc)
+        for target in reversed(attempted):
+            recovery_backup = backups.pop(target, None)
+            try:
+                if recovery_backup is not None:
+                    os.replace(recovery_backup, target)
                 else:
                     target.unlink(missing_ok=True)
-            elif bak is not None:
-                bak.unlink(missing_ok=True)
+            except OSError as recovery_error:
+                logger.error(
+                    "Promotion not committed; rollback failed for %s (recovery backup: %s): %s",
+                    target,
+                    recovery_backup,
+                    recovery_error,
+                )
+        _cleanup_files(backups.values(), phase="Promotion not committed; snapshot cleanup")
         raise
+    else:
+        cleanup = list(backups.values())
+        if ff_path is not None and ext is not None:
+            cleanup.insert(0, ff_dir / f"{candidate.candidate_id}{_opposite_ext(ext)}")
+        _cleanup_files(cleanup, phase="Promotion committed; cleanup")
     finally:
-        tmp_json.unlink(missing_ok=True)
-        if tmp_ff is not None:
-            tmp_ff.unlink(missing_ok=True)
+        _cleanup_files(
+            (tmp for tmp, _target in targets),
+            phase=f"Promotion {'committed' if committed else 'not committed'}; staging cleanup",
+        )
 
     promoted: dict[str, Path] = {"result": result_path}
     if ff_path is not None:
