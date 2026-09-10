@@ -22,7 +22,6 @@ session's private ``_energy_kernel``) and the observable extraction used by
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -40,12 +39,15 @@ from q2mm.models.observations import (
 from q2mm.objectives._base import BaseObjectiveExecutor
 from q2mm.objectives._observables import extract_calc_value, geometry_computed
 from q2mm.objectives.plan import ObjectivePlan
-from q2mm.objectives.protocols import GradientMode, ObjectiveConvergenceError, UnsupportedObservationError
+from q2mm.objectives.protocols import (
+    GradientMode,
+    ObjectiveConvergenceError,
+    ObjectiveGradientError,
+    UnsupportedObservationError,
+)
 
 if TYPE_CHECKING:
     from q2mm.backends.mm.jax_engine import JaxBackend, PreparedJax
-
-logger = logging.getLogger(__name__)
 
 __all__ = ["JaxObjectiveExecutor"]
 
@@ -590,7 +592,13 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
         return float(total)
 
     def value_and_grad_jax(self, full_vector: object):  # noqa: ANN201
-        """Aggregate value and gradient as JAX-native types (per-case dispatch)."""
+        """Aggregate JAX-native value/gradient, marking numerical failure with NaNs.
+
+        If the total value or any full-gradient component is nonfinite,
+        both returned outputs are entirely NaN. This trace-compatible
+        invalid outcome must not be interpreted as a stationary point.
+        Finite invalid-geometry trial barriers are retained unchanged.
+        """
         import jax.numpy as jnp
 
         p = jnp.array(full_vector, dtype=jnp.float64)
@@ -604,16 +612,22 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
             reg_loss, reg_grad = self._compiled_reg_vag_fn(p)
             total_loss = total_loss + reg_loss
             total_grad = total_grad + reg_grad
-        return total_loss, total_grad
+        finite = jnp.isfinite(total_loss) & jnp.all(jnp.isfinite(total_grad))
+        # Active-only projection must not hide an invalid frozen derivative.
+        return jnp.where(finite, total_loss, jnp.nan), jnp.where(finite, total_grad, jnp.nan)
 
     def loss_and_grad(self, full_vector: np.ndarray) -> tuple[float, np.ndarray]:
-        """Host-typed value+gradient with a finite penalty on NaN/Inf."""
+        """Return host-typed value/gradient or raise on numerical failure.
+
+        Raises:
+            ObjectiveGradientError: If the loss or full gradient is nonfinite.
+
+        """
         loss_jax, grad_jax = self.value_and_grad_jax(full_vector)
         loss = float(loss_jax)
         grad = np.asarray(grad_jax, dtype=float)
         if not np.isfinite(loss) or not np.all(np.isfinite(grad)):
-            logger.warning("JaxObjectiveExecutor returned non-finite values; substituting penalty")
-            return 1e30, np.zeros_like(grad)
+            raise ObjectiveGradientError("JaxObjectiveExecutor returned a non-finite loss or full gradient.")
         return loss, grad
 
     def value_and_gradient(self, full_vector: np.ndarray) -> tuple[float, np.ndarray]:
