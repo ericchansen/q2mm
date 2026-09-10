@@ -86,6 +86,19 @@ def test_native_integer_zero_spellings_are_not_exact_atom_classes(
 
 
 @pytest.mark.parametrize("key,form", _TARGETS)
+@pytest.mark.parametrize("token", ["-0", "-00"])
+def test_signed_zero_type_ids_cannot_hide_behind_concrete_elements(
+    monkeypatch: pytest.MonkeyPatch, key: str, form: FunctionalForm, token: str
+) -> None:
+    backend, builder = _unit_backend(key, monkeypatch)
+    tor = TorsionParam(("H", "C", "C", "H"), force_constant=2.0, env_id=f"{token}-c3-c3-{token}")
+    ff = replace(_base_ff(form), torsions=(tor,))
+    with pytest.raises(PreparationError, match="wildcard torsions"):
+        backend.prepare(PreparationRequest(case_id="signed-zero-types", molecule=_molecule(), force_field=ff))
+    builder.assert_not_called()
+
+
+@pytest.mark.parametrize("key,form", _TARGETS)
 @pytest.mark.parametrize("token", ["X1", "Xe", "CX", "00A", "100", "x", "*", "c*", "unknown"])
 def test_explicit_nonwild_types_are_not_reclassified_by_inferred_elements(
     monkeypatch: pytest.MonkeyPatch, key: str, form: FunctionalForm, token: str

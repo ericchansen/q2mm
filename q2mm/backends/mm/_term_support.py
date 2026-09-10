@@ -15,10 +15,10 @@ _Term = Literal[
 
 def _has_wildcard_types(torsion: TorsionParam) -> bool:
     """Recognize native X/zero tokens, not substrings or inferred unknown elements."""
-    types = tuple(part.strip() for part in torsion.env_id.split("-"))
+    types = tuple(part.strip() for part in torsion.env_id.split("-") if part.strip())
     # An ordinary type such as X1 can have an inferred element X. A complete
     # native type quadruplet is authoritative; generic terms use elements.
-    if len(types) != 4 or not all(types):
+    if len(types) != 4:
         types = torsion.elements
     return any(token.strip() == "X" or re.fullmatch(r"[+-]?0+", token.strip()) is not None for token in types)
 
