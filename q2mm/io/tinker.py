@@ -117,8 +117,24 @@ def _format_tinker_vdw_line(atom_type: str, radius: float, epsilon: float, reduc
 # ---------------------------------------------------------------------------
 
 
+def _tinker_data(line: str) -> str:
+    """Return data before the first unquoted # or ! comment delimiter."""
+    for match in re.finditer(r""""[^"]*"|'[^']*'|[#!]""", line):
+        if match.group() in ("#", "!"):
+            return line[: match.start()]
+    return line
+
+
 def _tinker_tokens(line: str) -> list[str]:
-    return line.partition("#")[0].split()
+    return _tinker_data(line).split()
+
+
+def _validate_tinker_record_lengths(lines: Sequence[str]) -> None:
+    # getprm.f reads A240 records; readprm.f also uses CHARACTER*240.
+    # Comments may extend beyond that limit, but required data must not.
+    for row, line in enumerate(lines, start=1):
+        if len(_tinker_data(line).rstrip().encode("utf-8")) > 240:
+            raise ValueError(f"Tinker row {row}: data exceeds the native 240-byte record limit")
 
 
 def _tinker_float(token: str, row: int) -> float:
@@ -145,6 +161,13 @@ def _tinker_torsion_unit(lines: Sequence[str]) -> float:
             if unit == 0.0:
                 raise ValueError(f"Tinker row {row}: zero torsionunit is not invertible")
     return unit
+
+
+def _tinker_scaled_torsion(amplitude: float, unit: float, row: int) -> float:
+    coefficient = unit * amplitude
+    if not math.isfinite(coefficient) or (amplitude != 0.0 and coefficient == 0.0):
+        raise ValueError(f"Tinker row {row}: torsion scaling overflow or underflow")
+    return coefficient
 
 
 def _tinker_torsion_terms(parts: list[str], row: int) -> list[tuple[float, float, int]]:
@@ -334,9 +357,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
             amplitude, phase, periodicity = _tinker_torsion_terms(_tinker_tokens(lines[row.ff_row - 1]), row.ff_row)[
                 row.ff_col - 1
             ]
-            coefficient = torsion_unit * amplitude
-            if not math.isfinite(coefficient) or (amplitude != 0.0 and coefficient == 0.0):
-                raise ValueError(f"Tinker row {row.ff_row}: torsion scaling overflow or underflow")
+            coefficient = _tinker_scaled_torsion(amplitude, torsion_unit, row.ff_row)
             torsions.append(
                 TorsionParam(
                     elements=elems,
@@ -413,7 +434,7 @@ def _tinker_replace_token(lines: list[str], row: int, column: int, value: float)
     if not math.isfinite(value):
         raise ValueError(f"Tinker row {row}: exported value must be finite")
     line = lines[row - 1]
-    tokens = list(re.finditer(r"\S+", line.partition("#")[0]))
+    tokens = list(re.finditer(r"\S+", _tinker_data(line)))
     if column == len(tokens):
         # An omitted vdW reduction can be appended without moving the comment.
         end = tokens[-1].end()
@@ -458,6 +479,8 @@ def _tinker_template_lines(ff: ForceField, template: Path) -> list[str]:
             if after.force_constant != 0.0 and amplitude == 0.0:
                 raise ValueError(f"Tinker row {before.ff_row}: torsion scaling underflow")
             _tinker_replace_token(lines, before.ff_row, 5 + 3 * slot, amplitude)
+            serialized = _tinker_tokens(lines[before.ff_row - 1])[5 + 3 * slot]
+            _tinker_scaled_torsion(_tinker_float(serialized, before.ff_row), unit, before.ff_row)
         if before.phase != after.phase:
             _tinker_replace_token(lines, before.ff_row, 6 + 3 * slot, after.phase)
     for before, after in _tinker_template_pairs(
@@ -486,6 +509,9 @@ def save_tinker_prm(
     bindings, additions/removals and non-scalar edits (including changing
     a torsion fold) fail before output is opened. Torsion phase edits are
     supported, and amplitudes are divided by the template's torsionunit.
+    Serialized amplitudes must reconstruct finite coefficients without
+    underflow; required data must fit Tinker's 240-byte records. Comment
+    tails beginning with # or ! may extend beyond that limit.
     Otherwise, a minimal Q2MM bond/angle/vdW section is written; proper
     torsions require a template. This is not a complete Tinker FF writer.
     """
@@ -497,6 +523,7 @@ def save_tinker_prm(
 
     if template is not None:
         lines = _tinker_template_lines(ff, template)
+        _validate_tinker_record_lengths(lines)
         with output_path.open("w", encoding="utf-8", newline="") as f:
             f.writelines(lines)
         return output_path
@@ -522,5 +549,6 @@ def save_tinker_prm(
         )
     for vdw in ff.vdws:
         lines.append(_format_tinker_vdw_line(vdw.atom_type, vdw.radius, vdw.epsilon, vdw.reduction))
+    _validate_tinker_record_lengths(lines)
     output_path.write_text("".join(lines), encoding="utf-8")
     return output_path
