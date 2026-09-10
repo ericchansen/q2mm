@@ -59,6 +59,7 @@ before parameter-layout or native-state construction:
 | [JAX](jax-engine.md#preparation-gates) | CMAP, nondefault vdW reduction, and [known wildcard torsions](#wildcard-torsion-boundary) in both forms; stretch-bend and bond dipoles in harmonic mode |
 | [OpenMM](openmm.md#preparation-gates) | Bond dipoles, nondefault vdW reduction, and [known wildcard torsions](#wildcard-torsion-boundary) in both forms |
 | [JAX-MD](jax-md.md#preparation-gates) | Urey-Bradley, CMAP, improper torsions, bond dipoles, and nondefault vdW reduction |
+| [Tinker](tinker.md#parameter-export-coverage) | Canonical stretch-bend, Urey-Bradley, bond dipoles, bond-order/non-generic-context selectors, improper torsions, CMAP, and nonbonded exclusions; standalone also rejects nondefault vdW reduction, placeholders, invalid/conflicting molecule or vdW type bindings, nonfinite raw/converted scalars, duplicate native identities, invalid torsion folds, and overlong records |
 
 Populated zero-valued grids, stretch-bend/improper records, and Urey-Bradley
 fields still declare terms. Either Urey-Bradley field being supplied is
@@ -66,10 +67,16 @@ enough to require support. Bond dipoles are populated when their moment is
 nonzero; vdW reduction is nondefault when it differs from `0.0`, even if
 the current epsilon is zero.
 
-These gates inspect canonical force-field parameters, not source labels,
+The populated-term gates inspect canonical force-field parameters, not source labels,
 opaque template records, or molecular reference partial charges. Reference
 charges are not automatically a request for point-charge MM energy.
 Existing supported terms and native functional models are unchanged.
+Tinker additionally preflights actual molecule type assignments and XYZ
+coordinates, and its standalone preparation stages the native records.
+Numeric-only vdW labels are interpreted against the actual molecule map;
+the public standalone serializer instead requires a nonempty type token.
+Native wildcard template pass-through and the different public/template
+reduction boundary remain supported; see [Tinker export coverage](tinker.md#parameter-export-coverage).
 
 `test/test_backend_term_coverage.py` separates dependency-light preparation
 checks from backend-marked runtime cases. In particular, its mocked JAX-MD

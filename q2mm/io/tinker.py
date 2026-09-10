@@ -105,11 +105,13 @@ def _require_finite_tinker_values(*values: float) -> None:
 
 
 def _format_tinker_bond_line(atom_types: list[str], force_constant: float, equilibrium: float) -> str:
+    _require_tinker_atom_types(atom_types, 2, "bond")
     _require_finite_tinker_values(force_constant, equilibrium)
     return f"bond   {atom_types[0]:>4} {atom_types[1]:>4} {force_constant:10.4f} {equilibrium:10.4f}\n"
 
 
 def _format_tinker_angle_line(atom_types: list[str], force_constant: float, equilibrium: float) -> str:
+    _require_tinker_atom_types(atom_types, 3, "angle")
     _require_finite_tinker_values(force_constant, equilibrium)
     return (
         f"angle  {atom_types[0]:>4} {atom_types[1]:>4} {atom_types[2]:>4} {force_constant:10.4f} {equilibrium:10.4f}\n"
@@ -117,6 +119,7 @@ def _format_tinker_angle_line(atom_types: list[str], force_constant: float, equi
 
 
 def _format_tinker_vdw_line(atom_type: str, radius: float, epsilon: float, reduction: float = 0.0) -> str:
+    _require_tinker_token(atom_type, "vdW atom type")
     _require_finite_tinker_values(radius, epsilon, reduction)
     return f"vdw    {atom_type:>4} {radius:10.4f} {epsilon:10.4f} {reduction:10.4f}\n"
 
@@ -136,6 +139,18 @@ def _tinker_data(line: str) -> str:
 
 def _tinker_tokens(line: str) -> list[str]:
     return _tinker_data(line).split()
+
+
+def _require_tinker_token(token: str, label: str) -> None:
+    if _tinker_tokens(token) != [token] or '"' in token or "'" in token:
+        raise ValueError(f"Tinker {label} must be one nonempty unquoted token.")
+
+
+def _require_tinker_atom_types(atom_types: Sequence[str], count: int, label: str) -> None:
+    if len(atom_types) != count:
+        raise ValueError(f"Tinker {label} requires exactly {count} atom types.")
+    for atom_type in atom_types:
+        _require_tinker_token(atom_type, f"{label} atom type")
 
 
 def _validate_tinker_record_lengths(lines: Sequence[str]) -> None:
@@ -302,6 +317,83 @@ def _tinker_import_ff(path: str | Path) -> tuple[list[_TinkerParameterRow], list
 # ---------------------------------------------------------------------------
 
 
+def _tinker_atom_type_number(atom_type: str) -> int | None:
+    """Use the native writer's numeric conversion, not a textual wildcard guess."""
+    try:
+        return int(atom_type)
+    except ValueError:
+        return None
+
+
+def _require_unique_tinker_types(
+    identities: set[tuple[str, tuple[str, ...]]], label: str, atom_types: Sequence[str | int]
+) -> None:
+    """Reject duplicate generated identities without rewriting emitted tokens.
+
+    Integer aliases share a class; symbolic labels remain case-sensitive.
+    Full reversal handles bond pairs and angle terminal equivalence.
+    Template rows deliberately do not use this standalone-only guard.
+    """
+    normalized = []
+    for atom_type in atom_types:
+        token = str(atom_type)
+        number = _tinker_atom_type_number(token)
+        normalized.append(str(number) if number is not None else token)
+    types = tuple(normalized)
+    identity = (label, min(types, types[::-1]))
+    if identity in identities:
+        raise ValueError(f"Tinker standalone cannot represent duplicate native {label} records for {tuple(atom_types)}")
+    identities.add(identity)
+
+
+def _validate_tinker_export_terms(
+    ff: ForceField,
+    *,
+    supports_reduction: bool,
+    supports_placeholder_elements: bool = True,
+    error_type: type[Exception] = ValueError,
+) -> None:
+    """Reject populated canonical terms that the selected writer cannot emit.
+
+    Opaque native template records are preserved, not matched to canonical
+    terms: e.g. a native opbend is not a canonical Fourier improper.
+    Reduction is supported by public serialization and backend templates,
+    but not by the backend's distinct standalone writer, which also cannot
+    map placeholder elements to molecular atom types. Callers select their
+    boundary's error type without coupling I/O to backend contracts.
+    """
+    unsupported = []
+    if ff.stretch_bends:
+        unsupported.append("stretch-bend")
+    if any(a.ub_force_constant is not None or a.ub_equilibrium is not None for a in ff.angles):
+        unsupported.append("Urey-Bradley")
+    if any(b.dipole_moment != 0.0 for b in ff.bonds):
+        unsupported.append("bond dipole")
+    if any(b.bond_order for b in ff.bonds):
+        unsupported.append("bond order")
+    if any(b.context not in ("", "0000 0000") for b in ff.bonds):
+        unsupported.append("bond context")
+    if any(t.is_improper for t in ff.torsions):
+        unsupported.append("improper torsion")
+    if ff.cmaps:
+        unsupported.append("CMAP")
+    if ff.nonbonded_excluded_atom_types:
+        unsupported.append("nonbonded_excluded_atom_types")
+    if not supports_reduction and any(v.reduction != 0.0 for v in ff.vdws):
+        unsupported.append("vdW reduction")
+    if not supports_placeholder_elements and (
+        any("00" in p.elements for terms in (ff.bonds, ff.angles, ff.torsions) for p in terms)
+        or any(v.element == "00" or _tinker_atom_type_number(v.atom_type) == 0 for v in ff.vdws)
+    ):
+        unsupported.append("placeholder elements")
+    if not supports_placeholder_elements and any(
+        not v.element and _tinker_atom_type_number(v.atom_type) is None for v in ff.vdws
+    ):
+        unsupported.append("vdW atom type without a numeric class or element")
+    if unsupported:
+        raise error_type(f"Tinker export cannot represent populated {', '.join(unsupported)}")
+
+
 def load_tinker_prm(path: str | Path) -> ForceField:
     """Load supported bond, angle, proper torsion and vdW parameters.
 
@@ -438,7 +530,12 @@ def _tinker_template_pairs(
             raise ValueError("Tinker template parameter has missing or ambiguous source-row identity")
         index, original = candidates[0]
         expected = dataclasses.replace(original, **{field: getattr(update, field) for field in editable})
-        if dataclasses.replace(update, label=original.label, ff_row=original.ff_row) != expected:
+        comparison = dataclasses.replace(update, label=original.label, ff_row=original.ff_row)
+        if isinstance(comparison, BondParam) and isinstance(expected, BondParam):
+            if comparison.context in ("", "0000 0000") and expected.context in ("", "0000 0000"):
+                # Compare generic aliases without changing either bound parameter.
+                comparison = dataclasses.replace(comparison, context=expected.context)
+        if comparison != expected:
             raise ValueError(f"Tinker row {original.ff_row}: template cannot represent non-scalar parameter edits")
         for field in editable:
             if not math.isfinite(getattr(update, field)):
@@ -479,8 +576,6 @@ def _tinker_template_lines(ff: ForceField, template: Path) -> list[str]:
     with template.open(encoding="utf-8", newline="") as f:
         lines = f.readlines()
     unit = _tinker_torsion_unit(lines)
-    if ff.stretch_bends or ff.cmaps or ff.nonbonded_excluded_atom_types:
-        raise ValueError("Tinker template cannot represent stretch-bend, CMAP or nonbonded exclusion edits")
 
     for before, after in _tinker_template_pairs(
         original.bonds, ff.bonds, lambda p: p.env_id, ("force_constant", "equilibrium")
@@ -542,6 +637,9 @@ def save_tinker_prm(
     by environment, source row and fold, not tuple position or object edit
     history. Missing/ambiguous identities, additions/removals and non-scalar
     differences within a bound identity fail before output is opened.
+    Only the existing generic bond contexts ``""`` and ``"0000 0000"``
+    compare as equivalent; bound parameters and source columns are not
+    rewritten for this alias.
     A row's original fold set and column order are retained; balanced
     permutations of the requested components serialize by those identities.
     Torsion phase edits are supported, and amplitudes are divided by the
@@ -553,9 +651,26 @@ def save_tinker_prm(
     tails beginning with # or ! may extend beyond that limit.
     Otherwise, a minimal Q2MM bond/angle/vdW section is written; proper
     torsions require a template. Every emitted standalone scalar must be
-    finite after conversion. This is not a complete Tinker FF writer.
+    finite before and after conversion. Generated bond/angle atom types
+    must have the expected arity and each be a nonempty unquoted token.
+    Their existing environment/default-element inference is unchanged.
+    vdW types obey the same token rule but do not infer a class from an element.
+    Native wildcard class 0 remains supported.
+    Generated standalone bond/angle/vdW identities must be unique, including
+    reversal and integer-class aliases. Metadata and scalar differences do
+    not distinguish duplicate native rows. Symbolic labels stay case-sensitive,
+    emitted tokens stay unchanged, and template row binding is unaffected.
+    This is not a complete Tinker FF writer.
+
+    Populated canonical stretch-bend, Urey-Bradley, bond dipole, bond order,
+    non-generic bond context, improper, CMAP and nonbonded exclusion content
+    raises ``ValueError`` before writing. Opaque native template records
+    remain untouched; they do not establish support for corresponding
+    canonical terms. vdW reduction is supported both with and without a
+    template.
     """
     _validate_form_for_format(ff, "tinker_prm")
+    _validate_tinker_export_terms(ff, supports_reduction=True)
     output_path = Path(path)
     template = Path(template_path) if template_path is not None else None
     if template is None and ff.source_format == "tinker_prm" and ff.source_path is not None:
@@ -571,24 +686,23 @@ def save_tinker_prm(
     if ff.torsions:
         raise ValueError("Tinker torsion export requires a source template")
     lines = ["# Q2MM\n", f"# OPT {section_name}\n"]
+    identities: set[tuple[str, tuple[str, ...]]] = set()
     for bond in ff.bonds:
-        lines.append(
-            _format_tinker_bond_line(
-                _tinker_atom_types(bond.env_id, bond.elements),
-                canonical_to_mm3_bond_k(bond.force_constant),
-                bond.equilibrium,
-            )
-        )
+        _require_finite_tinker_values(bond.force_constant, bond.equilibrium)
+        atom_types = _tinker_atom_types(bond.env_id, bond.elements)
+        line = _format_tinker_bond_line(atom_types, canonical_to_mm3_bond_k(bond.force_constant), bond.equilibrium)
+        _require_unique_tinker_types(identities, "bond", atom_types)
+        lines.append(line)
     for angle in ff.angles:
-        lines.append(
-            _format_tinker_angle_line(
-                _tinker_atom_types(angle.env_id, angle.elements),
-                canonical_to_mm3_angle_k(angle.force_constant),
-                angle.equilibrium,
-            )
-        )
+        _require_finite_tinker_values(angle.force_constant, angle.equilibrium)
+        atom_types = _tinker_atom_types(angle.env_id, angle.elements)
+        line = _format_tinker_angle_line(atom_types, canonical_to_mm3_angle_k(angle.force_constant), angle.equilibrium)
+        _require_unique_tinker_types(identities, "angle", atom_types)
+        lines.append(line)
     for vdw in ff.vdws:
-        lines.append(_format_tinker_vdw_line(vdw.atom_type, vdw.radius, vdw.epsilon, vdw.reduction))
+        line = _format_tinker_vdw_line(vdw.atom_type, vdw.radius, vdw.epsilon, vdw.reduction)
+        _require_unique_tinker_types(identities, "vdW", (vdw.atom_type,))
+        lines.append(line)
     _validate_tinker_record_lengths(lines)
     output_path.write_text("".join(lines), encoding="utf-8")
     return output_path

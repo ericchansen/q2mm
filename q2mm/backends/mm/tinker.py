@@ -19,6 +19,7 @@ import re
 import subprocess
 import tempfile
 import shutil
+from numbers import Integral
 
 import numpy as np
 
@@ -55,7 +56,16 @@ from q2mm.constants import (
     TINKER_BONDUNIT,
     TINKER_ANGLEUNIT,
 )
-from q2mm.models.forcefield import ForceField
+from q2mm.io.tinker import (
+    _require_finite_tinker_values,
+    _require_tinker_token,
+    _require_unique_tinker_types,
+    _tinker_atom_type_number,
+    _tinker_torsion_terms,
+    _validate_tinker_export_terms,
+    _validate_tinker_record_lengths,
+)
+from q2mm.models.forcefield import ForceField, TorsionParam
 from q2mm.models.molecule import Molecule
 from q2mm.models.parameters import ParameterLayout
 from q2mm.models.units import canonical_to_mm3_bond_k, canonical_to_mm3_angle_k
@@ -152,6 +162,11 @@ def _validate_form(forcefield: ForceField, info: BackendInfo) -> None:
         )
 
 
+def _require_positive_tinker_type(number: int) -> None:
+    if isinstance(number, bool) or not isinstance(number, Integral) or number <= 0:
+        raise ValueError(f"Tinker molecule atom types must be positive integers, got {number!r}")
+
+
 class TinkerBackend:
     """Molecular mechanics backend using the Tinker executables.
 
@@ -229,17 +244,28 @@ class TinkerBackend:
 
         Raises:
             PreparationError: If no force field is supplied or its functional
-                form is unsupported.
+                form or populated terms are unsupported.
 
         """
         if request.force_field is None:
             raise PreparationError("Tinker requires a base ForceField in the PreparationRequest.")
-        if request.force_field.nonbonded_excluded_atom_types:
-            raise PreparationError(
-                "Tinker cannot represent ForceField.nonbonded_excluded_atom_types; "
-                "use a backend with explicit zero-center support."
-            )
         _validate_form(request.force_field, _TINKER_INFO)
+        use_template = request.force_field.source_format == "tinker_prm" and bool(
+            request.force_field.source_path or self._params_file
+        )
+        _validate_tinker_export_terms(
+            request.force_field,
+            supports_reduction=use_template,
+            supports_placeholder_elements=use_template,
+            error_type=PreparationError,
+        )
+        try:
+            atom_types = self._molecule_type_numbers(request.molecule)
+            self._tinker_xyz_lines(request.molecule, atom_types)
+            if not use_template:
+                self._standalone_prm_lines(request.force_field, list(request.molecule.symbols), atom_types)
+        except ValueError as exc:
+            raise PreparationError(f"Tinker preparation failed: {exc}") from exc
         layout = ParameterLayout.from_force_field(request.force_field)
         return PreparedTinker(
             backend=self,
@@ -264,37 +290,24 @@ class TinkerBackend:
 
         """
         _validate_form(forcefield, _TINKER_INFO)
-
-        # Default MM3 atom type mapping (fallback for atoms without numeric types).
-        _default_type_map = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
+        use_template = forcefield.source_format == "tinker_prm" and bool(forcefield.source_path or self._params_file)
+        _validate_tinker_export_terms(
+            forcefield,
+            supports_reduction=use_template,
+            supports_placeholder_elements=use_template,
+            error_type=PreparationError,
+        )
 
         atoms = list(molecule.symbols)
-        coords = np.asarray(molecule.geometry, dtype=float).tolist()
-        n_atoms = len(atoms)
-        bonds: dict[int, list[int]] = {i: [] for i in range(n_atoms)}
-        for bond in molecule.bonds:
-            bonds[bond.atom_i].append(bond.atom_j)
-            bonds[bond.atom_j].append(bond.atom_i)
-        atom_type_numbers = []
-        for atom, atom_type in zip(atoms, molecule.atom_types, strict=False):
-            try:
-                atom_type_numbers.append(int(atom_type))
-            except (TypeError, ValueError):
-                atom_type_numbers.append(_default_type_map.get(atom, 1))
+        atom_type_numbers = self._molecule_type_numbers(molecule)
+        xyz_lines = self._tinker_xyz_lines(molecule, atom_type_numbers)
 
-        # Write Tinker XYZ
-        txyz_path = os.path.join(workdir, "molecule.xyz")
-        with open(txyz_path, "w") as f:
-            f.write(f"     {n_atoms}  Q2MM Tinker input\n")
-            for i, (atom, (x, y, z), atype) in enumerate(zip(atoms, coords, atom_type_numbers, strict=False)):
-                bonded = [str(j + 1) for j in bonds.get(i, [])]
-                bond_str = "     ".join(bonded)
-                f.write(f"     {i + 1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}    {atype:2d}     {bond_str}\n")
-
-        # Export the force field's (possibly modified) parameters to a workdir .prm
-        # so Tinker evaluates the updated values.
         exported_prm = os.path.join(workdir, "molecule.prm")
-        if forcefield.source_format == "tinker_prm" and (forcefield.source_path or self._params_file):
+        key_lines = [f"parameters {exported_prm}\n"]
+        _validate_tinker_record_lengths(key_lines)
+        # All XYZ/key formatting precedes parameter export; both parameter
+        # writers stage and validate their records before opening output.
+        if use_template:
             # FF came from a .prm file — use template-based export
             from q2mm.io.tinker import save_tinker_prm
 
@@ -307,12 +320,50 @@ class TinkerBackend:
             # Programmatic FF — write standalone .prm with atom defs
             self._write_standalone_prm(forcefield, exported_prm, atoms, atom_type_numbers)
 
+        # Write Tinker XYZ
+        txyz_path = os.path.join(workdir, "molecule.xyz")
+        with open(txyz_path, "w", encoding="utf-8") as f:
+            f.writelines(xyz_lines)
+
         # Write key file
         key_path = os.path.join(workdir, "molecule.key")
-        with open(key_path, "w") as f:
-            f.write(f"parameters {exported_prm}\n")
+        with open(key_path, "w", encoding="utf-8") as f:
+            f.writelines(key_lines)
 
         return txyz_path
+
+    @staticmethod
+    def _molecule_type_numbers(molecule: Molecule) -> list[int]:
+        """Resolve actual XYZ types without guessing an unknown element's class."""
+        default_types = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
+        numbers = []
+        for atom, atom_type in zip(molecule.symbols, molecule.atom_types, strict=True):
+            number = _tinker_atom_type_number(atom_type)
+            if number is None:
+                if atom not in default_types:
+                    raise ValueError(f"Tinker has no default atom type for element {atom!r}")
+                number = default_types[atom]
+            _require_positive_tinker_type(number)
+            numbers.append(number)
+        return numbers
+
+    @staticmethod
+    def _tinker_xyz_lines(molecule: Molecule, atom_type_numbers: list[int]) -> list[str]:
+        """Stage XYZ records so invalid coordinates cannot replace any inputs."""
+        bonds: dict[int, list[int]] = {i: [] for i in range(molecule.n_atoms)}
+        for bond in molecule.bonds:
+            bonds[bond.atom_i].append(bond.atom_j)
+            bonds[bond.atom_j].append(bond.atom_i)
+        lines = [f"     {molecule.n_atoms}  Q2MM Tinker input\n"]
+        for i, (atom, (x, y, z), atype) in enumerate(
+            zip(molecule.symbols, molecule.geometry, atom_type_numbers, strict=True)
+        ):
+            _require_tinker_token(atom, "XYZ atom symbol")
+            _require_finite_tinker_values(x, y, z)
+            bond_str = "     ".join(str(j + 1) for j in bonds[i])
+            lines.append(f"     {i + 1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}    {atype:2d}     {bond_str}\n")
+        _validate_tinker_record_lengths(lines)
+        return lines
 
     # Atomic numbers and masses for standalone .prm generation
     _ATOMIC_DATA: dict[str, tuple[int, float, int]] = {
@@ -332,11 +383,13 @@ class TinkerBackend:
     def _write_standalone_prm(
         self, ff: ForceField, prm_path: str, atoms: list[str], atom_type_numbers: list[int]
     ) -> None:
-        """Write a complete standalone Tinker .prm for a programmatic ForceField.
+        """Write the supported standalone Tinker model for a programmatic ForceField.
 
         Generates a self-contained parameter file with atom definitions,
-        MM3 functional form headers, and bond/angle/torsion/vdW terms
-        defined in the ForceField.
+        native MM3 functional form headers, and bond/angle/proper-torsion/vdW
+        terms. Unsupported populated terms raise ``PreparationError``.
+        Invalid native bindings, scalars and records raise ``ValueError``.
+        All validation and formatting completes before output is opened.
 
         Args:
             ff: ForceField model with bonds, angles, torsions, and vdws.
@@ -350,115 +403,122 @@ class TinkerBackend:
         template-based export path (source_format="tinker_prm").
 
         """
-        # Build element → type_number map from the actual atoms + type numbers
-        # used in the .xyz file (guarantees XYZ ↔ PRM consistency).
+        lines = self._standalone_prm_lines(ff, atoms, atom_type_numbers)
+        with open(prm_path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
+
+    def _standalone_prm_lines(self, ff: ForceField, atoms: list[str], atom_type_numbers: list[int]) -> list[str]:
+        """Stage the complete native model with molecule-authoritative classes."""
+        _validate_tinker_export_terms(
+            ff, supports_reduction=False, supports_placeholder_elements=False, error_type=PreparationError
+        )
         elem_to_type: dict[str, int] = {}
-        for elem, tnum in zip(atoms, atom_type_numbers, strict=False):
+        type_to_elem: dict[int, str] = {}
+        for elem, tnum in zip(atoms, atom_type_numbers, strict=True):
+            _require_positive_tinker_type(tnum)
+            if elem not in self._ATOMIC_DATA:
+                raise ValueError(f"Tinker standalone has no atomic data for element {elem!r}")
             if elem in elem_to_type and elem_to_type[elem] != tnum:
                 raise ValueError(
                     f"Inconsistent type assignment for element {elem}: "
                     f"got {tnum} but previously assigned {elem_to_type[elem]}"
                 )
+            if tnum in type_to_elem and type_to_elem[tnum] != elem:
+                raise ValueError(
+                    f"Inconsistent element assignment for type {tnum}: got {elem} but previously assigned {type_to_elem[tnum]}"
+                )
             elem_to_type[elem] = tnum
+            type_to_elem[tnum] = elem
 
-        # Only skip FF parameters whose elements are known MM3 placeholder
-        # labels (e.g. "00" for wildcard atom types).  Real elements that
-        # aren't in the molecule are genuine errors — raise immediately so
-        # they aren't silently hidden.
-        _KNOWN_PLACEHOLDERS = {"00"}
-
-        def _check_elements(elements: tuple[str, ...], label: str) -> bool:
-            """Return True if all *elements* are in elem_to_type.
-
-            Skips (with a debug log) if a placeholder is detected.
-            Raises ValueError for real elements missing from the molecule.
-            """
+        def _check_elements(elements: tuple[str, ...], label: str) -> None:
             for el in elements:
-                if el in elem_to_type:
-                    continue
-                if el in _KNOWN_PLACEHOLDERS:
-                    logger.debug("Skipping %s with placeholder element '%s'", label, el)
-                    return False
-                raise ValueError(
-                    f"FF {label} references element '{el}' not present in molecule atoms (and not a known placeholder)"
-                )
-            return True
+                if el not in elem_to_type:
+                    raise ValueError(f"FF {label} references element '{el}' not present in molecule atoms")
 
-        bonds = [b for b in ff.bonds if _check_elements(b.elements, "bond")]
-        angles = [a for a in ff.angles if _check_elements(a.elements, "angle")]
-        vdws = []
+        for label, terms, size in (("bond", ff.bonds, 2), ("angle", ff.angles, 3), ("torsion", ff.torsions, 4)):
+            for param in terms:
+                if len(param.elements) != size:
+                    raise ValueError(f"FF {label} requires {size} elements")
+                _check_elements(param.elements, label)
+        vdw_type_numbers = []
         for v in ff.vdws:
-            if not v.element or v.element in elem_to_type:
-                vdws.append(v)
-            elif v.element in _KNOWN_PLACEHOLDERS:
-                logger.debug("Skipping vdW with placeholder element '%s'", v.element)
+            number = _tinker_atom_type_number(v.atom_type)
+            if number is None:
+                _check_elements((v.element,), "vdW")
+                number = elem_to_type[v.element]
             else:
-                raise ValueError(
-                    f"FF vdW references element '{v.element}' not present "
-                    f"in molecule atoms (and not a known placeholder)"
-                )
+                if number not in type_to_elem:
+                    raise ValueError(f"FF vdW class {number} is not assigned to any molecule atom")
+                # Numeric-only labels infer a numeric element in VdwParam.
+                # The model does not retain explicit-vs-inferred provenance;
+                # an equivalent numeric element is a class label, not chemistry.
+                if v.element and _tinker_atom_type_number(v.element) != number and v.element != type_to_elem[number]:
+                    raise ValueError(
+                        f"FF vdW class {number} belongs to element {type_to_elem[number]!r}, not {v.element!r}"
+                    )
+            vdw_type_numbers.append(number)
 
-        with open(prm_path, "w") as f:
-            # MM3 functional form header (matches mm3.prm conventions)
-            f.write("forcefield          Q2MM-Custom\n\n")
-            f.write(f"bondunit                {TINKER_BONDUNIT}\n")
-            f.write(f"bond-cubic              {-MM3_BOND_C3}\n")
-            f.write(f"bond-quartic            {MM3_BOND_C4}\n")
-            f.write(f"angleunit               {TINKER_ANGLEUNIT}\n")
-            f.write(f"angle-cubic             {MM3_ANGLE_C3}\n")
-            f.write(f"angle-quartic           {MM3_ANGLE_C4:.6f}\n")
-            f.write(f"angle-pentic            {MM3_ANGLE_C5:.7f}\n")
-            # Tinker's angle-sextic (2.2e-8) differs from the MM3 polynomial
-            # coefficient C6 (9.0e-10) — this is the Tinker-specific value.
-            f.write("angle-sextic            0.000000022\n\n")
+        # Each string is one physical record for the native 240-byte guard.
+        lines = [
+            "forcefield          Q2MM-Custom\n",
+            "\n",
+            f"bondunit                {TINKER_BONDUNIT}\n",
+            f"bond-cubic              {-MM3_BOND_C3}\n",
+            f"bond-quartic            {MM3_BOND_C4}\n",
+            f"angleunit               {TINKER_ANGLEUNIT}\n",
+            f"angle-cubic             {MM3_ANGLE_C3}\n",
+            f"angle-quartic           {MM3_ANGLE_C4:.6f}\n",
+            f"angle-pentic            {MM3_ANGLE_C5:.7f}\n",
+            # Tinker's angle-sextic differs from the canonical MM3 coefficient.
+            "angle-sextic            0.000000022\n",
+            "\n",
+        ]
+        for elem, tnum in sorted(elem_to_type.items(), key=lambda x: x[1]):
+            anum, mass, valence = self._ATOMIC_DATA[elem]
+            lines.append(f'atom   {tnum:5d}    {elem:2s}    "{elem:<20s}"{anum:7d}   {mass:8.3f}    {valence}\n')
+        lines.append("\n")
 
-            # Atom definitions (MM3 format: type, symbol, "description", anum, mass, valence)
-            for elem, tnum in sorted(elem_to_type.items(), key=lambda x: x[1]):
-                anum, mass, valence = self._ATOMIC_DATA.get(elem, (0, 0.0, 1))
-                f.write(f'atom   {tnum:5d}    {elem:2s}    "{elem:<20s}"{anum:7d}   {mass:8.3f}    {valence}\n')
-            f.write("\n")
+        identities: set[tuple[str, tuple[str, ...]]] = set()
 
-            # Bond parameters
-            for bond in bonds:
-                t1 = elem_to_type[bond.elements[0]]
-                t2 = elem_to_type[bond.elements[1]]
-                f.write(
-                    f"bond   {t1:5d} {t2:5d}         {canonical_to_mm3_bond_k(bond.force_constant):8.4f}   {bond.equilibrium:8.4f}\n"
-                )
+        for bond in ff.bonds:
+            types = tuple(elem_to_type[e] for e in bond.elements)
+            _require_unique_tinker_types(identities, "bond", types)
+            t1, t2 = types
+            _require_finite_tinker_values(bond.force_constant, bond.equilibrium)
+            native_k = canonical_to_mm3_bond_k(bond.force_constant)
+            _require_finite_tinker_values(native_k)
+            lines.append(f"bond   {t1:5d} {t2:5d}         {native_k:8.4f}   {bond.equilibrium:8.4f}\n")
 
-            # Angle parameters
-            for angle in angles:
-                t1 = elem_to_type[angle.elements[0]]
-                t2 = elem_to_type[angle.elements[1]]
-                t3 = elem_to_type[angle.elements[2]]
-                f.write(
-                    f"angle  {t1:5d} {t2:5d} {t3:5d}         {canonical_to_mm3_angle_k(angle.force_constant):8.4f}   {angle.equilibrium:8.4f}\n"
-                )
+        for angle in ff.angles:
+            types = tuple(elem_to_type[e] for e in angle.elements)
+            _require_unique_tinker_types(identities, "angle", types)
+            t1, t2, t3 = types
+            _require_finite_tinker_values(angle.force_constant, angle.equilibrium)
+            native_k = canonical_to_mm3_angle_k(angle.force_constant)
+            _require_finite_tinker_values(native_k)
+            lines.append(f"angle  {t1:5d} {t2:5d} {t3:5d}         {native_k:8.4f}   {angle.equilibrium:8.4f}\n")
 
-            # Torsion parameters — group by element quad, one line per quad
-            # Format: torsion T1 T2 T3 T4 k1 phase1 n1 [k2 phase2 n2] [k3 phase3 n3]
-            proper_torsions = [t for t in ff.torsions if not t.is_improper and _check_elements(t.elements, "torsion")]
-            torsion_groups: dict[tuple[str, ...], list] = {}
-            for tp in proper_torsions:
-                torsion_groups.setdefault(tp.elements, []).append(tp)
-            for elems, tps in torsion_groups.items():
-                types = [elem_to_type[e] for e in elems]
-                # Sort by periodicity for consistent output
-                tps_sorted = sorted(tps, key=lambda t: t.periodicity)
-                parts = []
-                for tp in tps_sorted:
-                    parts.extend([f"{tp.force_constant:8.4f}", f"{tp.phase:6.1f}", f" {tp.periodicity}"])
-                f.write(f"torsion {types[0]:4d} {types[1]:4d} {types[2]:4d} {types[3]:4d}  {'  '.join(parts)}\n")
+        torsion_groups: dict[tuple[int, ...], list[TorsionParam]] = {}
+        for tp in ff.torsions:
+            types = tuple(elem_to_type[e] for e in tp.elements)
+            torsion_groups.setdefault(min(types, types[::-1]), []).append(tp)
+        for types, tps in torsion_groups.items():
+            raw_parts = ["torsion", *(str(t) for t in types)]
+            for tp in tps:
+                _require_finite_tinker_values(tp.force_constant, tp.phase)
+                raw_parts.extend((str(tp.force_constant), str(tp.phase), str(tp.periodicity)))
+            terms = _tinker_torsion_terms(raw_parts, len(lines) + 1)
+            parts = []
+            for amplitude, phase, fold in sorted(terms, key=lambda term: term[2]):
+                parts.extend([f"{amplitude:8.4f}", f"{phase:6.1f}", f" {fold}"])
+            lines.append(f"torsion {types[0]:4d} {types[1]:4d} {types[2]:4d} {types[3]:4d}  {'  '.join(parts)}\n")
 
-            # vdW parameters
-            for vdw in vdws:
-                # atom_type is a string (element or Tinker type label);
-                # convert to numeric Tinker type via elem_to_type
-                try:
-                    t = int(vdw.atom_type)
-                except (ValueError, TypeError):
-                    t = elem_to_type[vdw.element]
-                f.write(f"vdw    {t:5d}         {vdw.radius:8.4f}   {vdw.epsilon:8.4f}\n")
+        for vdw, t in zip(ff.vdws, vdw_type_numbers, strict=True):
+            _require_unique_tinker_types(identities, "vdW", (t,))
+            _require_finite_tinker_values(vdw.radius, vdw.epsilon)
+            lines.append(f"vdw    {t:5d}         {vdw.radius:8.4f}   {vdw.epsilon:8.4f}\n")
+        _validate_tinker_record_lengths(lines)
+        return lines
 
     def _run_tinker(
         self, exe_name: str, xyz_path: str, args: list | None = None, stdin: str | None = None
