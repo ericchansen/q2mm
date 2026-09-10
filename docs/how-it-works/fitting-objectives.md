@@ -49,7 +49,7 @@ flowchart TD
     New --> Problem["Immutable fitting problem"]
     Frozen --> Problem
     Problem --> Run["Evaluate or optimize"]
-    Run --> Saved["Saved run: observations and preparation identity"]
+    Run --> Saved["Saved manifest: recipe and input fingerprints"]
 ```
 
 | Route | Observation identity and behavior |
