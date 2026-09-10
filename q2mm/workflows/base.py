@@ -110,8 +110,9 @@ class Workflow(Protocol):
             problem: The immutable optimization problem.
             make_evaluator: Factory that builds an executor from a plan.
             optimizer: Pre-configured optimizer.
-            n_evals: Real-objective samples at the initial and final
-                parameters for noise-floor quantification (``0`` skips).
+            n_evals: Configured-executor samples at the initial and final
+                parameters (``0`` skips). Multi-stage workflows may sample
+                different objective plans at the two endpoints.
             regularization: Non-negative L2 penalty threaded into every
                 :class:`~q2mm.objectives.plan.ObjectivePlan` the workflow
                 compiles, so optimization and reporting share one objective.

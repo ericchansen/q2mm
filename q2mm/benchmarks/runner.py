@@ -364,20 +364,36 @@ def _mean_ci95(samples: Sequence[float]) -> tuple[float, float]:
     return mean, ci95
 
 
-def _score_interval_summary(initial: Sequence[float], final: Sequence[float]) -> dict[str, Any]:
+def _score_interval_summary(
+    initial: Sequence[float],
+    final: Sequence[float],
+    *,
+    executor: Literal["python", "jax"],
+    compare_endpoints: bool = True,
+) -> dict[str, Any]:
+    """Describe workflow samples without attributing them to the score of record."""
     if not initial or not final:
         return {}
     initial_mean, initial_ci95 = _mean_ci95(initial)
     final_mean, final_ci95 = _mean_ci95(final)
-    improvement = 100.0 * (1.0 - final_mean / initial_mean) if initial_mean > 0 else 0.0
-    return {
-        "initial_obj_score_mean": initial_mean,
-        "initial_obj_score_ci95": initial_ci95,
-        "final_obj_score_mean": final_mean,
-        "final_obj_score_ci95": final_ci95,
-        "improvement_pct_mean": improvement,
-        "improvement_significant": bool(abs(final_mean - initial_mean) > (initial_ci95 + final_ci95)),
+    statistics: dict[str, Any] = {
+        "initial_optimizer_score_mean": initial_mean,
+        "initial_optimizer_score_ci95": initial_ci95,
+        "final_optimizer_score_mean": final_mean,
+        "final_optimizer_score_ci95": final_ci95,
+        "optimizer_samples_executor": executor,
+        "optimizer_initial_sample_count": len(initial),
+        "optimizer_final_sample_count": len(final),
+        "optimizer_sample_statistics_version": 1,
     }
+    if not compare_endpoints:
+        statistics["optimizer_sample_comparison_omitted"] = "multiple_workflow_stages"
+        return statistics
+    statistics["optimizer_improvement_pct_mean"] = (
+        100.0 * (1.0 - final_mean / initial_mean) if initial_mean > 0 else 0.0
+    )
+    statistics["optimizer_improvement_significant"] = bool(abs(final_mean - initial_mean) > (initial_ci95 + final_ci95))
+    return statistics
 
 
 # ---------------------------------------------------------------------------
@@ -1116,7 +1132,10 @@ def _execute(
     final_category_scores = dict(final_evaluation.category_scores)
     optimized_categories = category_metrics(record_plan, final_evaluation)
     improvement_pct = improvement_percent(initial_score, final_score)
-    final_executor_ratio = float(result.final_score) / final_score if final_score > 0 else float("nan")
+    compare_endpoints = len(result.stages) <= 1
+    final_executor_ratio = (
+        (float(result.final_score) / final_score if final_score > 0 else float("nan")) if compare_endpoints else None
+    )
 
     # Fail closed on a gradient-provenance mismatch: a successful executed
     # candidate must report the expected gradient mode.  A disagreement means
@@ -1145,13 +1164,23 @@ def _execute(
             "result_fd_step": result.fd_step,
             "opt_time_s": elapsed,
             "optimized": optimized_categories,
-            "final_executor_ratio": final_executor_ratio,
             "stages": sanitize_for_json(
                 [_benchmark_scalars(stage_payload(stage), stage=True) for stage in result.stages]
             ),
         }
     )
-    summary.update(_score_interval_summary(list(result.initial_samples), list(result.final_samples)))
+    if compare_endpoints:
+        summary["final_executor_ratio"] = final_executor_ratio
+    else:
+        summary["final_executor_ratio_omitted"] = "multiple_workflow_stages"
+    summary.update(
+        _score_interval_summary(
+            result.initial_samples,
+            result.final_samples,
+            executor=executor_kind,
+            compare_endpoints=compare_endpoints,
+        )
+    )
 
     if analyze:
         freq = _frequency_analysis(backend, case, initial_ff, final_ff)

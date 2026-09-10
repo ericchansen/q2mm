@@ -172,7 +172,7 @@ class RunProfile:
         regularization: Non-negative L2 penalty strength applied to the
             objective plan (overrides the optimizer catalog's default when
             > 0; otherwise the catalog's value is used).
-        n_evals: Non-negative post-hoc real-objective samples per endpoint.
+        n_evals: Non-negative post-hoc configured-executor samples per endpoint.
         executor_ratio_tol: Non-negative JAX/Python score-ratio gate
             tolerance; ``None`` disables the gate.
         skip_optimization: Compute the baseline only; never optimize.

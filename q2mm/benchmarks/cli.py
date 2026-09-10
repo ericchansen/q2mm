@@ -366,7 +366,7 @@ def _add_optimizer_knobs(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--convergence", type=float, default=0.01, help="Cycling optimizer: fractional-improvement threshold."
     )
-    parser.add_argument("--n-evals", type=int, default=1, help="Post-hoc real-objective samples at each endpoint.")
+    parser.add_argument("--n-evals", type=int, default=1, help="Post-hoc configured-executor samples at each endpoint.")
     parser.add_argument(
         "--executor-ratio-tol",
         type=_ratio_tol,

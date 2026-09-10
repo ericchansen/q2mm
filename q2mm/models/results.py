@@ -228,7 +228,10 @@ class OptimizationResult:
         fd_step: Finite-difference step when finite differences were used.
         candidates: Multi-start candidate records (successes and failures).
         stages: Workflow stage records.
-        initial_samples / final_samples: Repeated real-objective samples.
+        initial_samples / final_samples: Repeated samples from the workflow's
+            optimization executor, not necessarily an independently evaluated
+            objective of record. Multi-stage workflows may use different
+            objective plans at the initial and final endpoints.
         category_metrics: Deeply-frozen per-category fit metrics.
 
     """

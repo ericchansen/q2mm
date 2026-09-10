@@ -2,7 +2,7 @@
 
 Compiles an :class:`~q2mm.objectives.plan.ObjectivePlan` from the problem,
 builds an executor via the injected factory, runs one optimizer pass, and
-samples the real objective at the endpoints for noise quantification —
+samples that configured executor at both endpoints of the same plan —
 returning the one canonical :class:`~q2mm.models.results.OptimizationResult`
 with a single :class:`~q2mm.models.results.StageRecord`.
 """
