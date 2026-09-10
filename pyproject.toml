@@ -156,9 +156,9 @@ addopts = ""
 markers = [
     "benchmark: performance benchmark tests (requires pytest-benchmark; use --benchmark-enable to collect timing)",
     "cross_backend: parity tests that execute two or more backend implementations",
-    "integration: backend integration tests ~1-10s each (requires --run-integration)",
-    "validation: correctness validation with no optimizer loops ~1-30s each (requires --run-validation)",
-    "nightly: heavy tests with optimizer loops or large systems ~1-10min each (requires --run-nightly)",
+    "integration: real backend, workflow, and CLI pipelines (requires --run-integration)",
+    "validation: scientific comparisons without outer optimizer loops (requires --run-validation)",
+    "nightly: full convergence and heavy scientific workloads (requires --run-nightly)",
 ]
 
 [tool.ruff]

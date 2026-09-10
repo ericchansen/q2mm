@@ -234,6 +234,7 @@ class TestKnobThreading:
 
 
 @pytest.mark.jax
+@pytest.mark.integration
 class TestSingleRealRun:
     def test_single_ch3f_accepted(self, tmp_path: Path) -> None:
         rc = main(

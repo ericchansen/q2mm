@@ -589,6 +589,7 @@ class TestRunOutcomeOk:
 
 
 @pytest.mark.jax
+@pytest.mark.integration
 class TestRunProfilePipeline:
     def test_accepted_run_persists_full_result_and_promotes(self, tmp_path: Path) -> None:
         profile = RunProfile(

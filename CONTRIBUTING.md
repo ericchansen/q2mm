@@ -25,14 +25,23 @@ pip install -e ".[dev,all]"               # everything (OpenMM, JAX, scipy, etc.
 
 ### Test tiers
 
-Tests are organized into four tiers so you can iterate quickly:
+Tests are organized into four tiers so pull requests get fast feedback
+without repeatedly running full scientific workloads:
 
 ```bash
-pytest                        # core only (~13s, no backends)
-pytest --run-integration      # core + integration (~49s)
-pytest --run-validation       # core + integration + validation (~80s)
-pytest --run-nightly          # everything (~330s+, optimizer loops)
+pytest                        # fast unit and small backend contract checks
+pytest --run-integration      # also run real backend/workflow/CLI pipelines
+pytest --run-validation       # also run publication and scientific comparisons
+pytest --run-nightly          # include full optimizer convergence workloads
 ```
+
+Backend markers describe dependencies, not execution tiers. A JAX test
+that runs a full 200-iteration convergence experiment must also carry
+`nightly`; publication-system parity belongs in `validation`. Keep small
+deterministic numerical and failure-contract regressions in the default
+tier. Do not remove assertions or hide failures to meet a runtime budget.
+The opt-in flags retain the complete coverage; they do not schedule runs
+or change GPU policy.
 
 By default, all tests run on **CPU only** — no GPU memory is allocated.
 Use `--gpu` or set `Q2MM_USE_GPU=1` to opt into GPU execution for

@@ -513,6 +513,7 @@ def rh_enamide_plan() -> Any:
     return JaxBackend(), problem, plan
 
 
+@pytest.mark.validation
 def test_rh_enamide_publication_geometry_eigenmatrix_parity(rh_enamide_plan: Any) -> None:
     """Python/JAX total + category parity on the published Rh-enamide TS system."""
     from q2mm.objectives.jax import JaxObjectiveExecutor
