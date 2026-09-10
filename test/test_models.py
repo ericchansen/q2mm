@@ -1153,9 +1153,9 @@ class TestForceField:
         active_mask = np.zeros(len(layout), dtype=bool)
         active_mask[space.active_indices] = True
 
-        assert len(layout) == 2742
+        assert len(layout) == 4249
         assert space.n_active == 182
-        assert active_mask.shape == (2742,)
+        assert active_mask.shape == (4249,)
         assert len(space.pack(layout.vector(ff))) == 182
         assert 0 < len(space.active_owner_indices("bonds")) < len(ff.bonds)
 
@@ -1357,8 +1357,16 @@ class TestBondOrderParsing:
     def test_standard_section_bond_order_single(self) -> None:
         """Standard section: '-' at column 7 is parsed as single bond."""
         ff = load_mm3_fld(RH_MM3)
+        lines = RH_MM3.read_text(encoding="utf-8").splitlines()
+        first_substructure_row = next(
+            i + 1
+            for i, (header, pattern) in enumerate(zip(lines, lines[1:]))
+            if header.startswith(" C") and pattern.startswith(" 9")
+        )
         # C3-C3 single bonds exist in the standard section
-        c3c3_bonds = [b for b in ff.bonds if b.env_id == "C3-C3"]
+        c3c3_bonds = [
+            b for b in ff.bonds if b.env_id == "C3-C3" and b.ff_row is not None and b.ff_row < first_substructure_row
+        ]
         assert len(c3c3_bonds) > 0
         assert all(b.bond_order == "-" for b in c3c3_bonds)
 

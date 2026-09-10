@@ -81,8 +81,8 @@ class _Mm3ParameterRow:
         ff_row: 1-based row number in the ``.fld`` file.
         ff_col: Column index within the row (1-6 depending on *ptype*;
             torsion V4/V5/V6 continuation values use 4-6).
-        atom_types: Resolved atom-type strings for this row (digit
-            references already resolved to concrete types).
+        atom_types: Source atom-type or pattern tokens for this row
+            (digit references resolved; literal tokens are not expanded).
         bond_order: Bond-order symbol from the file (``"-"`` single,
             ``"="`` double, ``"*"`` aromatic, ``"%"`` triple); only ever
             set for bond ptypes (``"be"``/``"bf"``/``"q"``).
@@ -111,7 +111,7 @@ P_3_END = 55
 # Context flags occupy cols 56–65 (two 4-char codes separated by space)
 CTX_START = 56
 CTX_END = 66
-# Bond-order symbol is at col 7 in standard section, col 6 in OPT
+# Bond-order symbol is at col 7 in standard rows, col 6 in substructures.
 _BOND_ORDER_CHARS = frozenset({"-", "=", "*", "%"})
 _GENERIC_CONTEXT = "0000 0000"
 
@@ -400,6 +400,12 @@ def _convert_smiles_to_types(smiles: str) -> list[str]:
 
 def _convert_to_types(atom_labels: list[str], atom_types: list[str]) -> list[str]:
     """Convert atom labels (which may be digit references) to atom types."""
+    for label in atom_labels:
+        token = label.strip()
+        if not token or token == "-":
+            raise ValueError("Empty atom label.")
+        if token.isdigit() and token != "00" and not 1 <= int(token) <= len(atom_types):
+            raise ValueError(f"Atom reference {token!r} is outside 1..{len(atom_types)}.")
     return [atom_types[int(x) - 1] if x.strip().isdigit() and x != "00" else x for x in atom_labels]
 
 
@@ -448,11 +454,12 @@ def _mm3_import_ff(
 
     Args:
         path: Path to the mm3.fld file.
-        sub_search: Substructure name to look for (default ``"OPT"``).
-        include_standard: When ``True`` (the default), also parse standard
-            MM3 bond, angle, torsion and stretch-bend parameters from the
-            main body of the file (outside the substructure section).  These
-            serve as the base layer that substructure parameters override.
+        sub_search: Case-sensitive substring selecting substructure names
+            when ``include_standard=False`` (default ``"OPT"``).
+        include_standard: When ``True`` (the default), parse supported
+            standard rows and all physical substructure blocks, including
+            non-OPT blocks. When ``False``, import only matching blocks.
+            Selection never changes a block's column layout or source rows.
 
     Returns a ``(rows, lines)`` tuple where *rows* is the list of
     :class:`_Mm3ParameterRow` objects and *lines* is the raw file content
@@ -461,9 +468,6 @@ def _mm3_import_ff(
     """
     path = str(path)
     rows: list[_Mm3ParameterRow] = []
-    smiles_list: list[str] = []
-    sub_names: list[str] = []
-    atom_types_list: list[list[str]] = []
     atom_type_equivalencies: dict[str, str] = {}
 
     with open(path) as f:
@@ -473,45 +477,69 @@ def _mm3_import_ff(
     section_sub = False
     section_smiles = False
     section_atm_eqv = False
+    sub_name = ""
+    include_sub = False
+    atom_types: list[str] = []
+    last_torsion_types: list[str] | None = None
+
+    def substructure_types(labels: list[str], row_number: int) -> list[str]:
+        try:
+            return _convert_to_types(labels, atom_types)
+        except ValueError as exc:
+            raise ValueError(f"{path}: row {row_number}, substructure {sub_name!r}: {exc}") from exc
 
     for i, line in enumerate(all_lines):
         if section_atm_eqv:
             if line.startswith(" C") and len(atom_type_equivalencies) > 0:
                 section_atm_eqv = False
-                continue
             elif not line.startswith(" C") and not line.startswith("-5"):
                 equivalency = [typ.strip() for typ in line.split()[1:]]
                 for typ in equivalency[1:]:
                     atom_type_equivalencies[typ] = equivalency[0]
                 continue
 
-        # Substructure header
-        if not section_sub and sub_search in line and line.startswith(" C"):
-            matched = re.match(rf"\sC\s+({co.RE_SUB})\s+", line)
-            assert matched is not None, f"[L{i + 1}] Can't read substructure name: {line}"
-            if matched is not None:
-                section_sub = True
-                sub_name = matched.group(1).strip()
-                sub_names.append(sub_name)
-                logger.log(15, f"[L{i + 1}] Start of substructure: {sub_name}")
-                section_smiles = True
-                continue
-        elif section_smiles is True:
-            matched = re.match(rf"\s9\s+({co.RE_SMILES})\s", line)
-            assert matched is not None, f"[L{i + 1}] Can't read substructure SMILES: {line}"
-            smi = matched.group(1)
-            smiles_list.append(smi)
-            atom_types_list.append(_convert_smiles_to_types(smi))
-            logger.log(15, f"  -- SMILES: {smiles_list[-1]}")
-            logger.log(15, "  -- Atom types: {}".format(" ".join(atom_types_list[-1])))
+        # A name plus a pattern opens a physical block, regardless of selection.
+        if line.startswith(" C") and i + 1 < len(all_lines) and all_lines[i + 1].startswith(" 9"):
+            if section_sub:
+                raise ValueError(f"{path}: row {i + 1}, substructure {sub_name!r}: missing -3 before next block.")
+            sub_name = line[2:].strip()
+            section_sub = True
+            include_sub = include_standard or sub_search in sub_name
+            atom_types = []
+            last_torsion_types = None
+            section_smiles = True
+            logger.log(15, f"[L{i + 1}] Start of substructure: {sub_name}")
+            continue
+        elif section_smiles:
+            if include_sub:
+                matched = re.match(rf"\s9\s+({co.RE_SMILES})\s", line)
+                if matched is None:
+                    raise ValueError(f"{path}: row {i + 1}, substructure {sub_name!r}: unsupported or missing pattern.")
+                try:
+                    atom_types = _convert_smiles_to_types(matched.group(1))
+                    if not atom_types:
+                        raise ValueError("Pattern contains no atom labels.")
+                except ValueError as exc:
+                    raise ValueError(f"{path}: row {i + 1}, substructure {sub_name!r}: {exc}") from exc
+                logger.log(15, "  -- Atom types: %s", " ".join(atom_types))
             section_smiles = False
             continue
         elif section_sub and line.startswith("-3"):
-            logger.log(15, f"[L{i}] End of substructure: {sub_names[-1]}")
+            logger.log(15, f"[L{i + 1}] End of substructure: {sub_name}")
             section_sub = False
+            include_sub = False
+            atom_types = []
+            last_torsion_types = None
             continue
 
-        if sub_search in line or section_sub or include_standard:
+        if (
+            line.startswith("-")
+            or match_mm3_vdw(line)
+            or (match_mm3_label(line) and not match_mm3_higher_torsion(line))
+        ):
+            last_torsion_types = None
+
+        if include_sub or (include_standard and not section_sub):
             # Bonds
             if match_mm3_bond(line):
                 logger.log(5, "[L{}] Found bond:\n{}".format(i + 1, line.strip("\n")))
@@ -519,14 +547,12 @@ def _mm3_import_ff(
                 context = ""
                 if section_sub:
                     atm_lbls = [line[4:6], line[8:10]]
-                    atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
-                    # OPT sections: bond-order symbol at col 6 (between atoms)
+                    atm_typs = substructure_types(atm_lbls, i + 1)
+                    # Substructure sections: bond-order symbol between labels.
                     if len(line) > 6 and line[6] in _BOND_ORDER_CHARS:
                         bond_order = line[6]
                 else:
                     atm_typs = [line[4:6], line[9:11]]
-                    comment = line[COM_POS_START:].strip()
-                    sub_names.append(comment)
                     # Standard section: bond-order symbol at col 7
                     if len(line) > 7 and line[7] in _BOND_ORDER_CHARS:
                         bond_order = line[7]
@@ -582,11 +608,9 @@ def _mm3_import_ff(
                 logger.log(5, "[L{}] Found angle:\n{}".format(i + 1, line.strip("\n")))
                 if section_sub:
                     atm_lbls = [line[4:6], line[8:10], line[12:14]]
-                    atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
+                    atm_typs = substructure_types(atm_lbls, i + 1)
                 else:
                     atm_typs = [line[4:6], line[9:11], line[14:16]]
-                    comment = line[COM_POS_START:].strip()
-                    sub_names.append(comment)
                 try:
                     parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 except ValueError:
@@ -618,11 +642,9 @@ def _mm3_import_ff(
                 logger.log(5, "[L{}] Found stretch-bend:\n{}".format(i + 1, line.strip("\n")))
                 if section_sub:
                     atm_lbls = [line[4:6], line[8:10], line[12:14]]
-                    atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
+                    atm_typs = substructure_types(atm_lbls, i + 1)
                 else:
                     atm_typs = [line[4:6], line[9:11], line[14:16]]
-                    comment = line[COM_POS_START:].strip()
-                    sub_names.append(comment)
                 try:
                     parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 except ValueError:
@@ -645,17 +667,16 @@ def _mm3_import_ff(
                 logger.log(5, "[L{}] Found torsion:\n{}".format(i + 1, line.strip("\n")))
                 if section_sub:
                     atm_lbls = [line[4:6], line[8:10], line[12:14], line[16:18]]
-                    atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
+                    atm_typs = substructure_types(atm_lbls, i + 1)
                 else:
                     atm_typs = [line[4:6], line[9:11], line[14:16], line[19:21]]
-                    comment = line[COM_POS_START:].strip()
-                    sub_names.append(comment)
                 try:
                     parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 except ValueError:
                     continue
                 if len(parm_cols) < 3:
                     continue
+                last_torsion_types = atm_typs
                 rows.extend(
                     (
                         _Mm3ParameterRow(
@@ -685,13 +706,15 @@ def _mm3_import_ff(
 
             # Higher order torsions (4th through 6th)
             elif match_mm3_higher_torsion(line):
-                if not rows or rows[-1].ptype != "df":
-                    continue
+                if last_torsion_types is None:
+                    raise ValueError(
+                        f"{path}: row {i + 1}, substructure {sub_name!r}: torsion continuation has no lower torsion in this scope."
+                    )
                 logger.log(
                     5,
                     "[L{}] Found higher order torsion:\n{}".format(i + 1, line.strip("\n")),
                 )
-                atm_typs = rows[-1].atom_types
+                atm_typs = last_torsion_types
                 try:
                     parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 except ValueError:
@@ -730,11 +753,9 @@ def _mm3_import_ff(
                 logger.log(5, "[L{}] Found torsion:\n{}".format(i + 1, line.strip("\n")))
                 if section_sub:
                     atm_lbls = [line[4:6], line[8:10], line[12:14], line[16:18]]
-                    atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
+                    atm_typs = substructure_types(atm_lbls, i + 1)
                 else:
                     atm_typs = [line[4:6], line[9:11], line[14:16], line[19:21]]
-                    comment = line[COM_POS_START:].strip()
-                    sub_names.append(comment)
                 try:
                     parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 except ValueError:
@@ -767,7 +788,7 @@ def _mm3_import_ff(
                 if not section_sub:
                     continue
                 atm_lbls = [line[4:6], line[8:10]]
-                atm_typs = _convert_to_types(atm_lbls, atom_types_list[-1])
+                atm_typs = substructure_types(atm_lbls, i + 1)
                 try:
                     parm_cols = [float(x) for x in line[P_1_START:P_3_END].split()]
                 except ValueError:
@@ -801,6 +822,8 @@ def _mm3_import_ff(
             section_atm_eqv = True
             continue
 
+    if section_sub:
+        raise ValueError(f"{path}: row {len(all_lines)}, substructure {sub_name!r}: unterminated block (missing -3).")
     logger.log(15, f"  -- Read {len(rows)} parameters.")
     return rows, all_lines
 
@@ -837,11 +860,12 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
 
     Args:
         path: Path to the mm3.fld file.
-        include_standard: When ``True`` (the default), load standard MM3
-            parameters from the main body of the file in addition to the
-            substructure section.  Standard parameters serve as the base
-            layer that substructure parameters override.  Set to ``False``
-            to load only substructure parameters.
+        include_standard: When ``True`` (the default), load supported
+            standard parameters and all physical substructure blocks,
+            including non-OPT blocks. Set to ``False`` to load only
+            ``OPT``-named blocks' bonded parameters. The global vdW table
+            is loaded in either mode; this flag does not define its
+            active/frozen partition.
 
     Returns:
         ForceField: A force field with bond, angle, torsion and vdW
