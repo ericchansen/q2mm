@@ -153,6 +153,7 @@ class TestJaxOptOptimizerValidation:
 class TestJaxOptOptimizerConvergence:
     """Convergence tests on simple systems."""
 
+    @pytest.mark.nightly
     def test_lbfgs_h2_energy(self) -> None:
         """L-BFGS converges on H2 energy optimization."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -176,6 +177,7 @@ class TestJaxOptOptimizerConvergence:
         assert result.gradient_mode == "analytical"
         assert result.fd_step is None
 
+    @pytest.mark.nightly
     def test_lbfgsb_h2_energy(self) -> None:
         """L-BFGS-B converges with box constraints."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -226,6 +228,7 @@ class TestJaxOptOptimizerConvergence:
         assert result.initial_score == pytest.approx(true_initial, rel=1e-6, abs=1e-9)
         assert result.final_score == pytest.approx(true_final, rel=1e-6, abs=1e-9)
 
+    @pytest.mark.integration
     def test_result_format(self) -> None:
         """OptimizationResult has all expected fields."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -254,6 +257,7 @@ class TestJaxOptOptimizerConvergence:
         assert isinstance(result.final_params, np.ndarray)
         assert isinstance(result.history, tuple)
 
+    @pytest.mark.nightly
     def test_water_energy_convergence(self) -> None:
         """Water (bond + angle) energy converges with L-BFGS."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -273,6 +277,7 @@ class TestJaxOptOptimizerConvergence:
 
         assert result.final_score <= result.initial_score
 
+    @pytest.mark.nightly
     def test_forcefield_updated(self) -> None:
         """After optimization, final_params can be materialized into a new force field."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -299,6 +304,7 @@ class TestJaxOptOptimizerConvergence:
         if result.final_score < result.initial_score:
             assert not np.allclose(final_params, initial_params)
 
+    @pytest.mark.nightly
     def test_inactive_param_stays_fixed(self) -> None:
         """Inactive parameters are held constant while active ones optimize."""
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -325,6 +331,7 @@ class TestJaxOptOptimizerConvergence:
         assert result.final_score <= result.initial_score
 
 
+@pytest.mark.nightly
 class TestJaxOptFrequencyConvergence:
     """Frequency-based optimization convergence."""
 
@@ -397,6 +404,7 @@ class TestJaxOptFrequencyConvergence:
         )
 
 
+@pytest.mark.nightly
 class TestJaxOptBoundsActive:
     """L-BFGS-B active constraint enforcement."""
 
