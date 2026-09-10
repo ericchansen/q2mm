@@ -32,8 +32,7 @@ from .models import (
     ResolvedExecutorConfiguration,
     ResolvedOptimizerConfiguration,
     ResolvedWorkflowConfiguration,
-    problem_fingerprint,
-    problem_input_fingerprints,
+    _problem_fingerprints,
 )
 
 Recipe = Literal["recommended", "explicit"]
@@ -477,13 +476,14 @@ def optimize(
         run_provenance["publication_metadata_fingerprint"] = problem.publication_metadata.fingerprint
         run_provenance["objective_profile"] = problem.publication_metadata.objective_profile.identifier
         run_provenance["reproduction_status"] = problem.publication_metadata.status.value
+    fingerprint, input_fingerprints = _problem_fingerprints(problem)
     return OptimizationRun(
         result=result,
         final_force_field=final_force_field,
         configuration=configuration,
-        problem_fingerprint=problem_fingerprint(problem),
+        problem_fingerprint=fingerprint,
         layout_fingerprint=problem.layout.fingerprint,
-        input_fingerprints=problem_input_fingerprints(problem),
+        input_fingerprints=input_fingerprints,
         active_indices=tuple(int(index) for index in problem.active_space.active_indices),
         baseline=problem.active_space.baseline,
         provenance=run_provenance,
