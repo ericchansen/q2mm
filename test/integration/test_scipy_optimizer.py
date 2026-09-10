@@ -214,7 +214,7 @@ class TestObjectiveExecutor:
         assert score == pytest.approx(0.0, abs=1e-6)
 
     def test_out_of_range_data_idx_raises(self) -> None:
-        """Out-of-range data_idx raises IndexError, not silent zero."""
+        """Out-of-range data_idx is rejected before executor preparation."""
         mol = _diatomic(0.74)
         ff = _h2_ff(359.7, 0.74)
         backend = load_backend("openmm")
@@ -222,9 +222,8 @@ class TestObjectiveExecutor:
         ref = ObservationSet()
         ref = ref.with_frequency(1000.0, data_idx=999)
 
-        obj, layout, _space = _build_objective(ff, backend, [mol], ref)
-        with pytest.raises(IndexError, match="data_idx=999 out of range"):
-            obj.value(layout.vector(ff))
+        with pytest.raises(ValueError, match="data_idx=999 out of range"):
+            _build_objective(ff, backend, [mol], ref)
 
 
 # ---- ParameterLayout.bounds ----

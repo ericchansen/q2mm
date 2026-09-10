@@ -25,6 +25,7 @@ from q2mm.backends.contracts import (
 from q2mm.models.observations import Observation, ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace
 from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives._observables import extract_calc_value
 from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.protocols import GradientMode, ObjectiveGradientError
 from q2mm.objectives.python import PythonObjectiveExecutor
@@ -179,15 +180,13 @@ class TestHessianElementExtract:
 
     def test_extract_out_of_range_raises(self, small_hessian: np.ndarray) -> None:
         ref = ObservationSet(values=(Observation(kind="hessian_element", value=0.0, atom_indices=(5, 0), label="bad"),))
-        obj, x = _executor(_FakePrepared(hessian=small_hessian), ref)
         with pytest.raises(IndexError, match="out of range"):
-            obj.evaluate(x)
+            extract_calc_value({"raw_hessian": small_hessian}, ref.values[0])
 
     def test_extract_missing_atom_indices_raises(self, small_hessian: np.ndarray) -> None:
         ref = ObservationSet(values=(Observation(kind="hessian_element", value=0.0),))
-        obj, x = _executor(_FakePrepared(hessian=small_hessian), ref)
         with pytest.raises(ValueError, match="requires atom_indices"):
-            obj.evaluate(x)
+            extract_calc_value({"raw_hessian": small_hessian}, ref.values[0])
 
 
 class TestHessianElementResiduals:

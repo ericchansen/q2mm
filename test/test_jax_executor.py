@@ -36,7 +36,7 @@ from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.problem import StationaryPointKind
 from q2mm.objectives.jax import JaxObjectiveExecutor
 from q2mm.objectives.plan import ObjectivePlan
-from q2mm.objectives.protocols import ObjectiveConvergenceError
+from q2mm.objectives.protocols import GradientMode, ObjectiveConvergenceError
 from q2mm.objectives.python import PythonObjectiveExecutor
 
 # Module-level globals populated by autouse fixture
@@ -164,6 +164,32 @@ class TestObjectivePlan:
         assert spec.active_space.bounds.shape == (2, 2)
         np.testing.assert_allclose(spec.active_space.bounds, spec.layout.bounds)
 
+    @pytest.mark.parametrize("kind", ["frequency", "eig_diagonal", "hessian_element", "eig_offdiagonal"])
+    @pytest.mark.parametrize("index", [6, 99])
+    def test_invalid_indices_rejected_before_executor_preparation(
+        self, monkeypatch: pytest.MonkeyPatch, kind: str, index: int
+    ) -> None:
+        from q2mm.models.observations import Observation, ObservationSet
+
+        mol = make_diatomic(distance=0.9, bond_tolerance=1.5)
+        ff = _h2_ff()
+        backend = load_backend("jax")
+        prepare_calls = []
+
+        def forbidden_prepare(*args: object, **kwargs: object) -> None:
+            prepare_calls.append((args, kwargs))
+            pytest.fail("Invalid references reached backend preparation")
+
+        monkeypatch.setattr(backend, "prepare", forbidden_prepare)
+        if kind in ("frequency", "eig_diagonal"):
+            obs = Observation(kind=kind, value=0.0, data_idx=index)
+        else:
+            obs = Observation(kind=kind, value=0.0, atom_indices=(0, index))
+        with pytest.raises(ValueError, match="out of range"):
+            py = _make_objective(ff, backend, [mol], ObservationSet((obs,)))
+            JaxObjectiveExecutor(py.plan, backend, ff)
+        assert prepare_calls == []
+
 
 class TestJaxObjectiveExecutor:
     """Tests for JaxObjectiveExecutor compiled loss function."""
@@ -278,6 +304,68 @@ class TestJaxObjectiveExecutor:
 
         # Both scores are effectively zero at equilibrium; use absolute tolerance
         np.testing.assert_allclose(jax_score, python_score, atol=1e-10)
+
+    def test_valid_boundary_scalar_residual_and_gradient_parity(self) -> None:
+        from q2mm.models.observations import ObservationSet
+
+        mol = make_diatomic(distance=0.9, bond_tolerance=1.5)
+        ff = _h2_ff(bond_k=100.0)
+        backend = load_backend("jax")
+        hessian = prepare_case(backend, mol, ff).hessian(HessianRequest(parameters=_params(ff))).hessian
+        mol = mol.with_hessian(hessian)
+        refs = (
+            ObservationSet()
+            .with_energy(1.0, weight=2.0)
+            .with_hessian_eigenvalue(0.01, mode_idx=5, weight=3.0)
+            .with_hessian_offdiagonal(0.01, row=0, col=5, weight=2.0)
+            .with_hessian_offdiagonal(0.01, row=5, col=0, weight=2.0)
+            .with_hessian_element(0.01, row=5, col=5, weight=3.0)
+            .with_hessian_element(0.01, row=0, col=5, weight=2.0)
+        )
+        scalar_py = _make_objective(ff, backend, [mol], refs, regularization=0.1)
+        py = PythonObjectiveExecutor(scalar_py.plan, backend, ff, gradient_mode=GradientMode.ANALYTICAL)
+        jx = JaxObjectiveExecutor(py.plan, backend, ff)
+        params = _params(ff) + np.array([0.5, 0.01])
+        value, gradient = jx.value_and_gradient(params)
+        py_value, py_gradient = py.value_and_gradient(params)
+        assert value > 0.0
+        assert value == pytest.approx(py_value, rel=1e-10)
+        assert value == pytest.approx(jx.value(params), rel=1e-10)
+        for executor in (py, jx):
+            evaluation = executor.evaluate(params)
+            assert value == pytest.approx(evaluation.total, rel=1e-10)
+            assert value == pytest.approx(np.sum(executor.least_squares_residuals(params) ** 2), rel=1e-10)
+        np.testing.assert_allclose(py.evaluate(params).calculated, jx.evaluate(params).calculated, atol=1e-8)
+        np.testing.assert_allclose(
+            py.evaluate(params).weighted_residuals, jx.evaluate(params).weighted_residuals, atol=1e-8
+        )
+        np.testing.assert_allclose(gradient, py_gradient, atol=1e-7)
+        fd = np.zeros_like(params)
+        for index in range(params.size):
+            step = np.zeros_like(params)
+            step[index] = 1e-5
+            fd[index] = (py.value(params + step) - py.value(params - step)) / (2e-5)
+        np.testing.assert_allclose(gradient, fd, atol=1e-5, rtol=1e-5)
+
+    def test_last_cartesian_frequency_scalar_and_residual_parity(self) -> None:
+        from q2mm.models.observations import ObservationSet
+
+        mol = make_diatomic(distance=0.9, bond_tolerance=1.5)
+        ff = _h2_ff()
+        backend = load_backend("jax")
+        refs = ObservationSet().with_frequency(100.0, data_idx=5, weight=1e-3)
+        py = _make_objective(ff, backend, [mol], refs)
+        jx = JaxObjectiveExecutor(py.plan, backend, ff)
+        params = _params(ff)
+        frequencies = prepare_case(backend, mol, ff).frequencies(FrequencyRequest(parameters=params)).frequencies
+        assert frequencies.shape == (6,)
+        expected = (1e-3 * (100.0 - frequencies[5])) ** 2
+        for executor in (py, jx):
+            assert executor.value(params) == pytest.approx(expected, rel=1e-10)
+            evaluation = executor.evaluate(params)
+            assert evaluation.calculated[0] == pytest.approx(frequencies[5], rel=1e-10)
+            assert evaluation.total == pytest.approx(expected, rel=1e-10)
+            assert evaluation.weighted_residuals[0] ** 2 == pytest.approx(expected, rel=1e-10)
 
 
 def _water_with_qm_refs(backend: object) -> tuple:

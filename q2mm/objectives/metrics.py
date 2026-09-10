@@ -110,17 +110,25 @@ def r2(ref: np.ndarray, calc: np.ndarray) -> float:
     return 1.0 - ss_res / ss_tot
 
 
-def category_stats(ref_values: np.ndarray, calc_values: np.ndarray) -> dict[str, float]:
-    """Per-category ``n_refs`` / ``r2`` / ``rmsd`` / ``mae``."""
+def category_stats(ref_values: np.ndarray, calc_values: np.ndarray, *, kind: str | None = None) -> dict[str, float]:
+    """Per-category ``n_refs`` / ``r2`` / ``rmsd`` / ``mae``.
+
+    ``kind="torsion_angle"`` uses the objective's circular residual in degrees
+    for RMSD/MAE. Its R2 is undefined (``nan``): the linear reference mean and
+    variance depend on the angular branch cut, and no circular R2 is defined
+    here. Other kinds, including the default, retain ordinary linear statistics.
+    """
     ref_values = np.asarray(ref_values, dtype=float)
     calc_values = np.asarray(calc_values, dtype=float)
     n = int(ref_values.size)
     if n == 0:
         return {"n_refs": 0, "r2": float("nan"), "rmsd": float("nan"), "mae": float("nan")}
     residuals = ref_values - calc_values
+    if kind == "torsion_angle":
+        residuals = (residuals + 180.0) % 360.0 - 180.0
     return {
         "n_refs": n,
-        "r2": r2(ref_values, calc_values),
+        "r2": float("nan") if kind == "torsion_angle" else r2(ref_values, calc_values),
         "rmsd": float(np.sqrt(np.mean(residuals**2))),
         "mae": float(np.mean(np.abs(residuals))),
     }
@@ -132,6 +140,8 @@ def category_metrics(plan: ObjectivePlan, evaluation: Evaluation) -> dict[str, d
     References with ``weight == 0.0`` are skipped (e.g. the imaginary mode
     in TS eigenmatrix fits).  Grouping is by ``observation.kind`` — the
     same buckets the historical ``_per_category_metrics`` produced.
+    Torsion RMSD/MAE use circular distances; torsion R2 is reported as ``nan``
+    rather than applying linear variance to angles.
     """
     buckets: dict[str, list[tuple[float, float]]] = defaultdict(list)
     for obs, calc in zip(plan.observations.values, evaluation.calculated, strict=True):
@@ -142,6 +152,7 @@ def category_metrics(plan: ObjectivePlan, evaluation: Evaluation) -> dict[str, d
         kind: category_stats(
             np.array([p[0] for p in pairs]),
             np.array([p[1] for p in pairs]),
+            kind=kind,
         )
         for kind, pairs in buckets.items()
     }
