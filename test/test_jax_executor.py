@@ -855,32 +855,187 @@ class TestJaxObjectiveExecutorGeometryParity:
         np.testing.assert_allclose(loss, 4.0, atol=1e-6)
 
     def test_nonconvergence_penalizes_loss_and_blocks_observables(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """An unconverged inner solve cannot masquerade as a valid objective."""
-        import jax.numpy as jnp
-
+        """A failed trial retreats toward a valid anchor but is not a valid endpoint."""
         import q2mm.objectives.jax as jax_objective
         from q2mm.models.observations import ObservationSet
 
         monkeypatch.setattr(jax_objective, "_GEOM_INNER_MAXITER", 1)
-        monkeypatch.setattr(jax_objective, "_GEOM_INNER_TOL", 1e-30)
-        mol = make_diatomic(distance=3.0, bond_tolerance=5.0)
-        ff = _h2_ff(bond_k=359.7, bond_r0=0.74)
+        mol = make_water(bond_length=0.96, angle_deg=104.5)
+        ff = _water_ff()
         backend = load_backend("jax")
+        ref = (
+            ObservationSet().with_bond_length(0.96, atom_indices=(0, 1)).with_bond_angle(104.5, atom_indices=(1, 0, 2))
+        )
+        obj = _make_objective(ff, backend, [mol], ref)
+        jax_loss = JaxObjectiveExecutor(obj.plan, backend, ff)
+        baseline = obj.plan.active_space.baseline
+        assert jax_loss.evaluate(baseline).total == pytest.approx(0.0, abs=1e-15)
+        assert jax_loss.value(baseline) == pytest.approx(0.0, abs=1e-15)
 
-        ref = ObservationSet()
-        ref = ref.with_bond_length(value=0.74, case_id="0", atom_indices=(0, 1), weight=1.0)
-
-        obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        spec = obj.plan
-        jax_loss = JaxObjectiveExecutor(spec, backend, ff)
-
-        params = jnp.array(_params(ff), dtype=jnp.float64).at[0].multiply(1.01)
-        loss, _grad = jax_loss.loss_and_grad(params)
-        loss = float(loss)
+        params = _params(_water_ff(bond_r0=1.2, angle_eq=80.0))
+        loss, grad = jax_loss.value_and_gradient(params)
         assert loss > jax_objective._GEOM_NONCONVERGENCE_PENALTY
-        assert _grad[0] > 0.0
+        assert jax_loss.value(params) == pytest.approx(loss)
+        native_loss, native_grad = jax_loss.value_and_grad_jax(params)
+        assert float(native_loss) == pytest.approx(loss)
+        np.testing.assert_allclose(native_grad, grad)
+        scales = np.maximum(np.abs(baseline), 1.0)
+        expected_grad = 2 * jax_objective._GEOM_NONCONVERGENCE_BARRIER_SCALE * (params - baseline) / scales**2
+        np.testing.assert_allclose(grad, expected_grad, atol=1e-10)
+        assert np.dot(grad, params - baseline) > 0.0
         with pytest.raises(ObjectiveConvergenceError, match="did not converge"):
-            jax_loss.evaluate(np.asarray(params))
+            jax_loss.evaluate(params)
+        with pytest.raises(ObjectiveConvergenceError, match="did not converge"):
+            jax_loss.least_squares_residuals(params)
+
+    @pytest.mark.parametrize("weight", [1.0, 0.0])
+    def test_capped_baseline_rejected_before_building_barrier(
+        self, monkeypatch: pytest.MonkeyPatch, weight: float
+    ) -> None:
+        """A later case's failed anchor must reject the entire executor."""
+        import q2mm.objectives.jax as jax_objective
+        from q2mm.models.observations import ObservationSet
+
+        monkeypatch.setattr(jax_objective, "_GEOM_INNER_MAXITER", 1)
+        ff = _water_ff()
+        backend = load_backend("jax")
+        mols = [
+            make_water(bond_length=0.96, angle_deg=104.5),
+            make_water(bond_length=1.2, angle_deg=80.0),
+        ]
+        refs = (
+            ObservationSet()
+            .with_bond_length(0.96, case_id="0", atom_indices=(0, 1))
+            .with_bond_length(0.96, case_id="1", atom_indices=(0, 1), weight=weight)
+            .with_bond_angle(104.5, case_id="1", atom_indices=(1, 0, 2), weight=weight)
+        )
+        obj = _make_objective(ff, backend, mols, refs)
+        with pytest.raises(ObjectiveConvergenceError, match="baseline.*case '1'.*did not converge") as exc:
+            JaxObjectiveExecutor(obj.plan, backend, ff)
+        assert "maximum force" in str(exc.value)
+        assert f"tolerance {jax_objective._GEOM_INNER_TOL:.6g}" in str(exc.value)
+        assert "iteration cap 1" in str(exc.value)
+
+    def test_baseline_validation_uses_active_space_not_preparation_values(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The supplied FF provides structure, not the barrier's parameter anchor."""
+        import q2mm.objectives.jax as jax_objective
+        from q2mm.models.observations import ObservationSet
+
+        monkeypatch.setattr(jax_objective, "_GEOM_INNER_MAXITER", 1)
+        mol = make_water(bond_length=0.96, angle_deg=104.5)
+        structural_ff = _water_ff()
+        baseline_ff = _water_ff(bond_r0=1.2, angle_eq=80.0)
+        backend = load_backend("jax")
+        refs = ObservationSet().with_bond_angle(104.5, atom_indices=(1, 0, 2))
+        obj = _make_objective(baseline_ff, backend, [mol], refs)
+        with pytest.raises(ObjectiveConvergenceError, match="baseline.*case '0'.*did not converge"):
+            JaxObjectiveExecutor(obj.plan, backend, structural_ff)
+
+    def test_valid_baselines_checked_once_with_reused_preparations(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Preparation and anchor validation are per case, not per evaluation."""
+        from unittest.mock import patch
+
+        import jax
+        import q2mm.objectives.jax as jax_objective
+        from q2mm.models.observations import ObservationSet
+
+        ff = _h2_ff()
+        backend = load_backend("jax")
+        mols = [make_diatomic(distance=d, bond_tolerance=5.0) for d in (0.9, 1.0, 3.0)]
+        refs = (
+            ObservationSet()
+            .with_bond_length(0.8, case_id="0", atom_indices=(0, 1), weight=2.0)
+            .with_bond_length(0.85, case_id="1", atom_indices=(0, 1), weight=3.0)
+            .with_energy(0.0, case_id="2")
+        )
+        obj = _make_objective(ff, backend, mols, refs, regularization=0.1)
+        relax_coords = jax_objective._relax_coords
+        baseline_calls = []
+
+        def track_relaxation(energy_fn: object, params: object, coords: object) -> object:
+            if not isinstance(params, jax.core.Tracer) and np.array_equal(params, obj.plan.active_space.baseline):
+                baseline_calls.append((energy_fn, np.asarray(coords)))
+            return relax_coords(energy_fn, params, coords)
+
+        monkeypatch.setattr(jax_objective, "_relax_coords", track_relaxation)
+        with patch.object(backend, "prepare", wraps=backend.prepare) as prepare:
+            jax_loss = JaxObjectiveExecutor(obj.plan, backend, ff)
+            assert prepare.call_count == 3
+            assert len(baseline_calls) == 2
+            for index, (energy_fn, coords) in enumerate(baseline_calls):
+                assert energy_fn is jax_loss._sessions[str(index)]._energy_kernel()
+                np.testing.assert_array_equal(coords, mols[index].geometry)
+            assert len(jax_loss._compiled_value_fns) == 3
+            assert len(jax_loss._compiled_vag_fns) == 3
+            assert jax_loss.n_evaluations == 0
+            assert jax_loss.history == ()
+
+            params = _params(_h2_ff(bond_k=350.0, bond_r0=0.76))
+            for _ in range(2):
+                scalar = jax_loss.value(params)
+                value, grad = jax_loss.value_and_gradient(params)
+                assert value == pytest.approx(scalar)
+                assert jax_loss.evaluate(params).total == pytest.approx(scalar)
+                assert np.all(np.isfinite(grad))
+                jax_loss.reset()
+            assert prepare.call_count == 3
+            assert len(baseline_calls) == 2
+
+    def test_valid_geometry_scalar_and_gradient_preserved(self) -> None:
+        """Baseline validation leaves weighted geometry and regularization unchanged."""
+        from q2mm.models.observations import ObservationSet
+
+        mol = make_diatomic(distance=0.9, bond_tolerance=1.5)
+        ff = _h2_ff()
+        backend = load_backend("jax")
+        refs = ObservationSet().with_bond_length(0.8, atom_indices=(0, 1), weight=2.0)
+        obj = _make_objective(ff, backend, [mol], refs, regularization=0.1)
+        jax_loss = JaxObjectiveExecutor(obj.plan, backend, ff)
+        baseline = obj.plan.active_space.baseline.copy()
+        params = _params(_h2_ff(bond_k=350.0, bond_r0=0.76))
+        expected = (2 * (0.8 - params[1])) ** 2 + 0.1 * np.sum((params - baseline) ** 2)
+        expected_grad = 0.2 * (params - baseline)
+        expected_grad[1] += 8 * (params[1] - 0.8)
+        assert jax_loss.value(params) == pytest.approx(expected, abs=1e-10)
+        assert jax_loss.evaluate(params).total == pytest.approx(expected, abs=1e-10)
+        assert np.sum(jax_loss.least_squares_residuals(params) ** 2) == pytest.approx(expected, abs=1e-10)
+        for value, gradient in (jax_loss.value_and_gradient(params), jax_loss.value_and_grad_jax(params)):
+            assert float(value) == pytest.approx(expected, abs=1e-10)
+            np.testing.assert_allclose(gradient, expected_grad, atol=1e-8)
+        np.testing.assert_array_equal(obj.plan.active_space.baseline, baseline)
+        np.testing.assert_array_equal(_params(ff), baseline)
+
+
+def test_nongeometry_plan_never_relaxes(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An invalid geometry anchor is irrelevant to fixed-coordinate objectives."""
+    import q2mm.objectives.jax as jax_objective
+    from q2mm.models.observations import ObservationSet
+
+    def forbidden_relaxation(*args: object, **kwargs: object) -> None:
+        pytest.fail("Non-geometry objective attempted a geometry relaxation")
+
+    monkeypatch.setattr(jax_objective, "_relax_coords", forbidden_relaxation)
+    mol = make_water(bond_length=1.2, angle_deg=80.0).with_hessian(np.eye(9))
+    ff = _water_ff()
+    backend = load_backend("jax")
+    refs = (
+        ObservationSet()
+        .with_energy(1.0, weight=0.1)
+        .with_frequency(100.0, data_idx=8, weight=0.001)
+        .with_hessian_element(0.0, row=8, col=8)
+        .with_hessian_eigenvalue(0.0, mode_idx=8)
+        .with_hessian_offdiagonal(0.0, row=7, col=8)
+    )
+    obj = _make_objective(ff, backend, [mol], refs, regularization=0.1)
+    jax_loss = JaxObjectiveExecutor(obj.plan, backend, ff)
+    params = _params(ff)
+    value, gradient = jax_loss.value_and_gradient(params)
+    assert value == pytest.approx(obj.value(params), rel=1e-8)
+    assert jax_loss.value(params) == pytest.approx(value, rel=1e-10)
+    assert jax_loss.evaluate(params).total == pytest.approx(value, rel=1e-10)
+    assert np.all(np.isfinite(gradient))
 
 
 class TestJaxObjectiveExecutorTopologyBatching:
