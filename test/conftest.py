@@ -2,24 +2,25 @@
 
 Test tiers
 ----------
-Tests are categorized by purpose and time budget:
+Tests are categorized by purpose rather than a machine-dependent runtime:
 
-- **core** (unmarked): < 1 second. Unit tests, parsers, models. Always run.
-- **integration** (``@pytest.mark.integration``): 1–10 seconds. Backend
-  integration: backend contracts, optimizer convergence, parity checks.
-- **validation** (``@pytest.mark.validation``): 1–30 seconds. Correctness
-  validation with *no* optimizer loops — QFUERZA estimation, published
-  FF evaluation, ethane TS.
-- **nightly** (``@pytest.mark.nightly``): 1–10 minutes. Heavy tests with
-  optimizer loops (L-BFGS-B 200 iterations), Rh-enamide full loops, gradient
-  speedup.
+- **core** (unmarked): fast unit tests, parsers, models, and small
+  deterministic backend contracts. Always run.
+- **integration** (``@pytest.mark.integration``): real backend, workflow,
+  and CLI pipelines. Explicit opt-in.
+- **validation** (``@pytest.mark.validation``): scientific correctness
+  comparisons without outer optimizer loops, including publication-system
+  parity. Runtime depends on dataset size. Explicit opt-in.
+- **nightly** (``@pytest.mark.nightly``): full optimizer convergence,
+  repeated multi-start solves, and other heavy scientific workloads.
+  Explicit opt-in; the marker does not schedule an automatic run.
 
 By default, ``pytest`` runs only core tests::
 
-    pytest                        # core only (~13s)
-    pytest --run-integration      # core + integration (~49s)
-    pytest --run-validation       # core + integration + validation (~80s)
-    pytest --run-nightly          # everything (~330s+)
+    pytest                        # fast default checks
+    pytest --run-integration      # also run real pipelines
+    pytest --run-validation       # also run scientific comparisons
+    pytest --run-nightly          # include full convergence workloads
 
 GPU enforcement
 ---------------
@@ -95,19 +96,19 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         "--run-integration",
         action="store_true",
         default=False,
-        help="Include integration tests (backend contracts, parity, ~1-10s each)",
+        help="Include real backend, workflow, and CLI integration tests",
     )
     parser.addoption(
         "--run-validation",
         action="store_true",
         default=False,
-        help="Include validation tests (no optimizer loops, ~1-30s each); implies --run-integration",
+        help="Include scientific validation (no outer optimizer loops); implies --run-integration",
     )
     parser.addoption(
         "--run-nightly",
         action="store_true",
         default=False,
-        help="Include nightly tests (optimizer loops, heavy computation, ~1-10min each); implies --run-validation",
+        help="Include full convergence and heavy scientific tests; implies --run-validation",
     )
     parser.addoption(
         "--gpu",
@@ -120,9 +121,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    config.addinivalue_line("markers", "integration: backend integration tests (~1-10s each)")
-    config.addinivalue_line("markers", "validation: correctness validation, no optimizer loops (~1-30s each)")
-    config.addinivalue_line("markers", "nightly: heavy tests with optimizer loops (~1-10min each)")
+    config.addinivalue_line("markers", "integration: real backend, workflow, and CLI pipelines")
+    config.addinivalue_line("markers", "validation: scientific comparisons without outer optimizer loops")
+    config.addinivalue_line("markers", "nightly: full convergence and heavy scientific workloads")
     config.addinivalue_line("markers", "cross_backend: parity tests executing two or more backends")
     config.addinivalue_line(
         "markers",

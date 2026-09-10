@@ -153,6 +153,7 @@ class TestJaxMultiStartValidation:
             optimizer.optimize(obj, _all_active_space(obj))
 
 
+@pytest.mark.nightly
 class TestJaxMultiStartConvergence:
     """End-to-end optimization tests."""
 

@@ -183,6 +183,7 @@ class TestStageRecordDataclass:
 
 
 @pytest.mark.jax
+@pytest.mark.integration
 class TestSingleStageWorkflowParity:
     """``SingleStageWorkflow.run()`` must match the direct optimizer call."""
 
