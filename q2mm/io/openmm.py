@@ -2,22 +2,55 @@
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from q2mm.io._helpers import _validate_form_for_format
 from q2mm.models.forcefield import ForceField
 
-logger = logging.getLogger(__name__)
-
-# MM3/Tinker wildcard atom type — means "any atom".  OpenMM XML has no
-# wildcard concept, so terms containing this type must be skipped.
+# This exporter does not translate MM3/Tinker wildcard atom types.
 _WILDCARD_TYPES = frozenset({"00"})
 
 if TYPE_CHECKING:
     from q2mm.backends.mm.openmm import PreparedOpenMM
     from q2mm.models.molecule import Molecule
+
+
+def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
+    unsupported = []
+    if any(angle.ub_force_constant is not None or angle.ub_equilibrium is not None for angle in ff.angles):
+        unsupported.append("Urey-Bradley terms")
+    if ff.stretch_bends:
+        unsupported.append("stretch-bend terms")
+    if ff.cmaps:
+        unsupported.append("CMAP grids")
+    if any(torsion.is_improper for torsion in ff.torsions):
+        unsupported.append("improper torsions")
+    if any(bond.dipole_moment != 0.0 for bond in ff.bonds):
+        unsupported.append("bond dipoles")
+    if any(vdw.reduction not in (0.0, 1.0) for vdw in ff.vdws):
+        unsupported.append("reduced vdW sites")
+    if unsupported:
+        raise ValueError(f"Standalone OpenMM XML cannot represent {', '.join(unsupported)}.")
+
+    for terms in (ff.bonds, ff.angles, ff.torsions):
+        for term in terms:
+            classes = term.env_id.split("-") if term.env_id else term.elements
+            if len(classes) != len(term.elements) or any(not value for value in classes):
+                raise ValueError(f"Standalone OpenMM XML requires complete atom classes, got {classes!r}.")
+            if _WILDCARD_TYPES.intersection(classes):
+                raise ValueError(f"Standalone OpenMM XML cannot represent wildcard atom types in {classes!r}.")
+
+    torsion_classes: set[tuple[str, ...]] = set()
+    for torsion in ff.torsions:
+        classes = tuple(torsion.env_id.split("-")) if torsion.env_id else torsion.elements
+        key = min(classes, classes[::-1])
+        if key in torsion_classes:
+            raise ValueError(
+                "Standalone OpenMM XML cannot represent multiple Fourier components for the same torsion "
+                f"classes {classes!r}; OpenMM selects only the first matching CustomTorsionForce definition."
+            )
+        torsion_classes.add(key)
 
 
 def save_openmm_system_xml(prepared: PreparedOpenMM, path: str | Path) -> Path:
@@ -74,11 +107,16 @@ def save_openmm_xml(
     """Write the force field to a standalone OpenMM ForceField XML file.
 
     Produces a ``<ForceField>`` XML document loadable by
-    ``openmm.app.ForceField(path)``.  Custom force definitions use MM3
-    functional forms (cubic bond stretch, sextic angle bend, buffered
-    14-7 vdW) so the resulting system is physically equivalent to what
-    :class:`~q2mm.backends.mm.openmm.OpenMMBackend` builds
-    programmatically.
+    ``openmm.app.ForceField(path)`` for the supported MM3 subset: bond
+    stretch, angle bend, one proper Fourier component per torsion class
+    tuple, and unreduced Buckingham vdW sites. This is not a general
+    serialization of a prepared backend system or a claim of full
+    backend physical equivalence.
+
+    Unsupported populated terms and wildcard types are rejected before
+    writing, including Urey-Bradley, stretch-bend, CMAP, improper torsions,
+    bond dipoles, reduced vdW sites, and multiple proper components for
+    the same class tuple.
 
     A *molecule* (or iterable of molecules) can be provided to generate
     ``<Residues>`` and ``<AtomTypes>`` sections.  If omitted, only the
@@ -96,8 +134,13 @@ def save_openmm_xml(
     Returns:
         The resolved output path.
 
+    Raises:
+        ValueError: If the functional form or populated terms cannot be
+            represented by this exporter.
+
     """
     _validate_form_for_format(ff, "openmm_xml")
+    _validate_forcefield_xml_coverage(ff)
     import xml.etree.ElementTree as ET
 
     from q2mm.constants import (
@@ -197,9 +240,6 @@ def save_openmm_xml(
             env_parts = bond.env_id.split("-") if bond.env_id else list(bond.elements)
             class1 = env_parts[0] if len(env_parts) >= 2 else bond.elements[0]
             class2 = env_parts[1] if len(env_parts) >= 2 else bond.elements[1]
-            if _WILDCARD_TYPES & {class1, class2}:
-                logger.debug("Skipping bond %s — wildcard type '00' has no OpenMM equivalent", bond.env_id)
-                continue
             bond_el = ET.SubElement(bond_force_el, "Bond")
             bond_el.set("class1", class1)
             bond_el.set("class2", class2)
@@ -232,9 +272,6 @@ def save_openmm_xml(
             class1 = env_parts[0] if len(env_parts) >= 3 else angle.elements[0]
             class2 = env_parts[1] if len(env_parts) >= 3 else angle.elements[1]
             class3 = env_parts[2] if len(env_parts) >= 3 else angle.elements[2]
-            if _WILDCARD_TYPES & {class1, class2, class3}:
-                logger.debug("Skipping angle %s — wildcard type '00' has no OpenMM equivalent", angle.env_id)
-                continue
             angle_el = ET.SubElement(angle_force_el, "Angle")
             angle_el.set("class1", class1)
             angle_el.set("class2", class2)
@@ -261,10 +298,7 @@ def save_openmm_xml(
             class2 = env_parts[1] if len(env_parts) >= 4 else torsion.elements[1]
             class3 = env_parts[2] if len(env_parts) >= 4 else torsion.elements[2]
             class4 = env_parts[3] if len(env_parts) >= 4 else torsion.elements[3]
-            if _WILDCARD_TYPES & {class1, class2, class3, class4}:
-                logger.debug("Skipping torsion %s — wildcard type '00' has no OpenMM equivalent", torsion.env_id)
-                continue
-            tor_el = ET.SubElement(torsion_force_el, "Torsion")
+            tor_el = ET.SubElement(torsion_force_el, "Proper")
             tor_el.set("class1", class1)
             tor_el.set("class2", class2)
             tor_el.set("class3", class3)
@@ -273,7 +307,7 @@ def save_openmm_xml(
             tor_el.set("n", str(torsion.periodicity))
             tor_el.set("phase", f"{deg_to_rad(torsion.phase):.6f}")
 
-    # ---- Custom nonbonded vdW force (MM3 buffered 14-7) ----
+    # ---- Custom nonbonded vdW force (MM3 Buckingham exp-6) ----
     if ff.vdws:
         vdw_expr = "epsilon*(-2.25*(rv/r)^6+184000*exp(-12*r/rv));rv=radius1+radius2;epsilon=sqrt(epsilon1*epsilon2)"
         vdw_force_el = ET.SubElement(
