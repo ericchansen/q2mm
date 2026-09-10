@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -44,8 +45,12 @@ from q2mm.models.observations import ObservationSet
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.problem import OptimizationProblem, StationaryPointKind, TrainingCase
 from q2mm.models.results import OptimizationResult
+from q2mm.objectives._base import BaseObjectiveExecutor
 from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator
 from q2mm.objectives.python import PythonObjectiveExecutor
+from q2mm.optimizers.catalog import OptimizerSpec
+from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 
 def _force_field(form: FunctionalForm = FunctionalForm.HARMONIC) -> ForceField:
@@ -340,6 +345,239 @@ def test_explicit_executor_gradient_conflicts_are_typed() -> None:
             executor="python",
             gradient_mode="none",
         )
+
+
+@pytest.mark.parametrize(
+    ("method", "catalog_key", "as_object"),
+    [
+        ("L-BFGS-B", "scipy-lbfgsb", False),
+        ("Nelder-Mead", "scipy-nm", False),
+        ("Powell", "scipy-powell", False),
+        ("L-BFGS-B", "scipy-lbfgsb", True),
+        ("Nelder-Mead", "scipy-nm", True),
+        ("Powell", "scipy-powell", True),
+        ("least_squares", "scipy-ls", True),
+    ],
+)
+@pytest.mark.parametrize("mode", ["none", "finite_difference", "analytical"])
+def test_scipy_gradient_provenance(
+    method: str,
+    catalog_key: str,
+    mode: str,
+    as_object: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    problem = _problem()
+    executor = "jax" if mode == "analytical" else "python"
+    expected_gradient = "none" if method in ScipyOptimizer.DERIVATIVE_FREE_METHODS else mode
+    if method == "least_squares" or (mode == "none" and method == "L-BFGS-B"):
+        expected_gradient = "finite_difference"
+    expected_step = (
+        (1e-3 if mode == "none" or method == "least_squares" else 1e-4)
+        if expected_gradient == "finite_difference"
+        else None
+    )
+    backend = _EnergyBackend()
+    if executor == "jax":
+
+        class _JaxIdentityBackend(_EnergyBackend):
+            info = replace(
+                _EnergyBackend.info,
+                name="jax",
+                provenance=BackendProvenance(backend="jax", role=BackendRole.MM),
+            )
+
+        backend = _JaxIdentityBackend()
+
+        class _AnalyticalEnergyExecutor(BaseObjectiveExecutor):
+            @property
+            def gradient_mode(self) -> GradientMode:
+                return GradientMode.ANALYTICAL
+
+            def _calculated(self, full_vector: np.ndarray) -> np.ndarray:
+                return np.array([np.sum(full_vector)])
+
+            def _data_gradient(self, full_vector: np.ndarray) -> np.ndarray:
+                residual = np.sum(full_vector) - problem.observations.values[0].value
+                return np.full(full_vector.size, 2.0 * residual)
+
+        def fake_factory(*args: Any, **kwargs: Any) -> type[_AnalyticalEnergyExecutor]:
+            assert kwargs["executor"] == "jax"
+            return _AnalyticalEnergyExecutor
+
+        monkeypatch.setattr("q2mm.application.optimization.make_evaluator_factory", fake_factory)
+    spec = OptimizerSpec(key=catalog_key, label="SciPy", method=method, evaluator=executor, gradient_mode=mode)
+    run = optimize(
+        problem,
+        backend,
+        recipe="explicit",
+        optimizer=ScipyOptimizer(method=method, maxiter=1, verbose=False) if as_object else spec,
+        optimizer_options=None if as_object else {"maxiter": 1},
+        workflow="single-stage",
+        executor=executor,
+        gradient_mode=mode,
+        n_evals=0,
+    )
+    assert run.executor_configuration.gradient_mode == mode
+    assert run.executor_configuration.fd_step == (1e-4 if mode == "finite_difference" else None)
+    assert run.optimizer_configuration.expected_result_gradient_mode == expected_gradient
+    assert run.result.gradient_mode == expected_gradient
+    assert run.result.fd_step == expected_step
+    np.testing.assert_array_equal(run.result.final_params[1:], problem.active_space.baseline[1:])
+    saved = save(run, tmp_path / "gradient.frcmod")
+    assert saved.manifest_path is not None
+    manifest = json.loads(saved.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["configuration"]["executor"]["gradient_mode"] == mode
+    assert manifest["configuration"]["optimizer"]["expected_result_gradient_mode"] == expected_gradient
+    assert manifest["result"]["gradient_mode"] == expected_gradient
+    assert manifest["result"]["fd_step"] == expected_step
+
+
+@pytest.mark.parametrize("method", ["L-BFGS-B", "least_squares"])
+@pytest.mark.parametrize("mode", [None, "finite_difference"])
+def test_scipy_object_internal_fd_step(method: str, mode: str | None, tmp_path: Path) -> None:
+    run = optimize(
+        _problem(),
+        _EnergyBackend(),
+        recipe="explicit",
+        optimizer=ScipyOptimizer(method=method, eps=0.03, maxiter=1, verbose=False),
+        workflow="single-stage",
+        executor="python",
+        gradient_mode=mode,
+        **({} if mode is None else {"fd_step": 0.02}),
+        n_evals=0,
+    )
+    expected_step = 0.03 if method == "least_squares" or mode is None else 0.02
+    assert run.executor_configuration.gradient_mode == (mode or "none")
+    assert run.executor_configuration.fd_step == (None if mode is None else 0.02)
+    assert run.optimizer_configuration.expected_result_gradient_mode == "finite_difference"
+    assert run.result.gradient_mode == "finite_difference"
+    assert run.result.fd_step == expected_step
+    assert run.result.stages[0].fd_step == expected_step
+    saved = save(run, tmp_path / "internal-fd.frcmod")
+    assert saved.manifest_path is not None
+    manifest = json.loads(saved.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["configuration"]["executor"]["fd_step"] == (None if mode is None else 0.02)
+    assert manifest["result"]["fd_step"] == expected_step
+
+
+@pytest.mark.parametrize("source", ["spec", "catalog", "object"])
+@pytest.mark.parametrize("override", [None, 1e-4, 0.04], ids=["omitted", "explicit-default", "explicit-other"])
+def test_executor_fd_step_precedence(source: str, override: float | None, tmp_path: Path) -> None:
+    optimizer: str | OptimizerSpec | ScipyOptimizer
+    if source == "spec":
+        optimizer = OptimizerSpec(
+            key="custom-fd",
+            label="Custom FD",
+            method="L-BFGS-B",
+            evaluator="python",
+            gradient_mode="finite_difference",
+            fd_step=0.02,
+        )
+    elif source == "catalog":
+        optimizer = "scipy-lbfgsb-fd"
+    else:
+        optimizer = ScipyOptimizer(maxiter=1, verbose=False)
+    effective_step = override if override is not None else (0.02 if source == "spec" else 1e-4)
+    run = optimize(
+        _problem(),
+        _EnergyBackend(),
+        recipe="explicit",
+        optimizer=optimizer,
+        optimizer_options=None if source == "object" else {"maxiter": 1},
+        workflow="single-stage",
+        executor="python",
+        gradient_mode="finite_difference",
+        **({} if override is None else {"fd_step": override}),
+        n_evals=0,
+    )
+    assert run.executor_configuration.fd_step == effective_step
+    assert run.result.fd_step == effective_step
+    assert run.result.stages[0].fd_step == effective_step
+    assert ("fd_step" in run.configuration.overrides) is (override is not None)
+    saved = save(run, tmp_path / "executor-fd.frcmod")
+    assert saved.manifest_path is not None
+    manifest = json.loads(saved.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["configuration"]["executor"]["fd_step"] == effective_step
+    assert manifest["result"]["fd_step"] == effective_step
+
+
+@pytest.mark.parametrize("as_object", [False, True], ids=["catalog", "object"])
+@pytest.mark.parametrize("mode", ["none", "analytical"])
+@pytest.mark.parametrize("step", [1e-4, 0.02])
+def test_explicit_fd_step_rejects_incompatible_modes_before_execution(
+    as_object: bool, mode: str, step: float, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def unexpected_execute(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("An incompatible FD step must fail before execution.")
+
+    monkeypatch.setattr("q2mm.application.optimization.execute_optimization", unexpected_execute)
+    executor = "jax" if mode == "analytical" else "python"
+    with pytest.raises(ApplicationConfigurationError, match="fd_step applies only"):
+        optimize(
+            _problem(),
+            _EnergyBackend(),
+            recipe="explicit",
+            optimizer=ScipyOptimizer(verbose=False)
+            if as_object
+            else ("scipy-lbfgsb-jax" if mode == "analytical" else "scipy-lbfgsb"),
+            workflow="single-stage",
+            executor=executor,
+            gradient_mode=mode,
+            fd_step=step,
+            n_evals=0,
+        )
+
+
+@pytest.mark.parametrize("as_object", [False, True], ids=["catalog", "object"])
+@pytest.mark.parametrize("step", [0.0, -0.01, float("nan"), float("inf")])
+def test_executor_fd_step_rejects_invalid_values(as_object: bool, step: float, monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_execute(*args: Any, **kwargs: Any) -> None:
+        pytest.fail("An invalid FD step must fail before execution.")
+
+    monkeypatch.setattr("q2mm.application.optimization.execute_optimization", unexpected_execute)
+    with pytest.raises(ApplicationConfigurationError, match="fd_step must be positive and finite"):
+        optimize(
+            _problem(),
+            _EnergyBackend(),
+            recipe="explicit",
+            optimizer=ScipyOptimizer(verbose=False) if as_object else "scipy-lbfgsb-fd",
+            workflow="single-stage",
+            executor="python",
+            gradient_mode="finite_difference",
+            fd_step=step,
+            n_evals=0,
+        )
+
+
+@pytest.mark.parametrize("reported_mode", ["none", "finite_difference"])
+def test_unknown_optimizer_keeps_explicit_gradient_contract(reported_mode: str) -> None:
+    problem = _problem()
+
+    class CustomOptimizer:
+        method = "L-BFGS-B"
+
+        def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
+            assert evaluator.gradient_mode is GradientMode.NONE
+            return _result(problem, gradient_mode=reported_mode)
+
+    def run() -> OptimizationRun:
+        return optimize(
+            problem,
+            _EnergyBackend(),
+            recipe="explicit",
+            optimizer=CustomOptimizer(),
+            workflow="single-stage",
+            executor="python",
+            n_evals=0,
+        )
+
+    if reported_mode == "none":
+        assert run().optimizer_configuration.expected_result_gradient_mode == "none"
+    else:
+        with pytest.raises(ApplicationOptimizationError, match="expected 'none'"):
+            run()
 
 
 def test_explicit_optimization_materializes_result_and_preserves_frozen_slots() -> None:
