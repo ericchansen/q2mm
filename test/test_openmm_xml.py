@@ -197,3 +197,45 @@ def test_nonbonded_excluded_types_are_not_silently_lost(tmp_path: Path, existing
         save_openmm_xml(ff, path)
 
     assert path.read_bytes() == b"existing XML" if existing else not path.exists()
+
+
+def test_nonzero_unit_reduction_is_not_silently_discarded(tmp_path: Path) -> None:
+    ff = ForceField(vdws=(VdwParam("H", 1.2, 0.02, reduction=1.0),), functional_form=FunctionalForm.MM3)
+    path = tmp_path / "reduction.xml"
+    with pytest.raises(ValueError, match="reduc"):
+        save_openmm_xml(ff, path)
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("family", ["bonds", "angles", "torsions"])
+@pytest.mark.parametrize("length_delta", [-1, 1])
+@pytest.mark.parametrize("typed", [False, True])
+def test_fixed_element_and_class_arities_are_required(
+    tmp_path: Path, family: str, length_delta: int, typed: bool
+) -> None:
+    arity = {"bonds": 2, "angles": 3, "torsions": 4}[family]
+    elements = ("C",) * (arity + length_delta)
+    env_id = "-".join(("C",) * arity) if typed else ""
+    if family == "bonds":
+        parameters = {"bonds": (BondParam(elements, 1.5, 100.0, env_id=env_id),)}
+    elif family == "angles":
+        parameters = {"angles": (AngleParam(elements, 109.5, 30.0, env_id=env_id),)}
+    else:
+        parameters = {"torsions": (TorsionParam(elements, force_constant=1.0, env_id=env_id),)}
+    ff = ForceField(functional_form=FunctionalForm.MM3, **parameters)
+    path = tmp_path / "arity.xml"
+    path.write_bytes(b"existing XML")
+    with pytest.raises(ValueError, match="elements|atom classes"):
+        save_openmm_xml(ff, path)
+    assert path.read_bytes() == b"existing XML"
+
+
+def test_whitespace_does_not_disguise_a_native_zero_class(tmp_path: Path) -> None:
+    ff = ForceField(
+        bonds=(BondParam(("C", "C"), 1.5, 100.0, env_id="00 -C"),),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = tmp_path / "wildcard.xml"
+    with pytest.raises(ValueError, match="wildcard"):
+        save_openmm_xml(ff, path)
+    assert not path.exists()

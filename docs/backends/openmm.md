@@ -126,7 +126,8 @@ limited MM3 subset, not an arbitrary prepared system. Unsupported
 Urey-Bradley, stretch-bend, CMAP, improper, bond-dipole, reduced-site,
 nonbonded-exclusion, and wildcard content raises `ValueError` before the
 destination is replaced. Native integer-zero wildcard types are rejected
-in vdW records as well as bonded terms.
+in vdW records as well as bonded terms. Every nonzero vdW reduction,
+including 1.0, is rejected because this format does not retain that declaration.
 
 Proper torsions use OpenMM's `<Proper>` schema. Only one Fourier component
 per atom-class tuple is supported: OpenMM's custom torsion loader selects

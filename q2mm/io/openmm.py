@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 def _is_wildcard_atom_type(atom_type: str) -> bool:
     """Recognize MM3 00 and native integer-zero wildcard spellings."""
-    return re.fullmatch(r"[+-]?0+", atom_type) is not None
+    return re.fullmatch(r"[+-]?0+", atom_type.strip()) is not None
 
 
 def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
@@ -31,7 +31,7 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
         unsupported.append("improper torsions")
     if any(bond.dipole_moment != 0.0 for bond in ff.bonds):
         unsupported.append("bond dipoles")
-    if any(vdw.reduction not in (0.0, 1.0) for vdw in ff.vdws):
+    if any(vdw.reduction != 0.0 for vdw in ff.vdws):
         unsupported.append("reduced vdW sites")
     if any(_is_wildcard_atom_type(vdw.atom_type or vdw.element) for vdw in ff.vdws):
         unsupported.append("wildcard vdW atom types")
@@ -40,10 +40,16 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
     if unsupported:
         raise ValueError(f"Standalone OpenMM XML cannot represent {', '.join(unsupported)}.")
 
-    for terms in (ff.bonds, ff.angles, ff.torsions):
+    for terms, arity in ((ff.bonds, 2), (ff.angles, 3), (ff.torsions, 4)):
         for term in terms:
+            if (
+                not isinstance(term.elements, (tuple, list))
+                or len(term.elements) != arity
+                or any(not isinstance(element, str) or not element.strip() for element in term.elements)
+            ):
+                raise ValueError(f"Standalone OpenMM XML requires exactly {arity} nonempty string elements.")
             classes = term.env_id.split("-") if term.env_id else term.elements
-            if len(classes) != len(term.elements) or any(not value for value in classes):
+            if len(classes) != arity or any(not isinstance(value, str) or not value.strip() for value in classes):
                 raise ValueError(f"Standalone OpenMM XML requires complete atom classes, got {classes!r}.")
             if any(_is_wildcard_atom_type(atom_type) for atom_type in classes):
                 raise ValueError(f"Standalone OpenMM XML cannot represent wildcard atom types in {classes!r}.")
