@@ -38,12 +38,19 @@ pip install jax[cuda12]
 | Bonds (harmonic + MM3) | ✅ |
 | Angles (harmonic + MM3) | ✅ |
 | Torsions (cosine) | ✅ |
-| Improper torsions | ❌ |
+| Improper torsions | Existing cosine model |
 | vdW (LJ 12-6 + Buckingham exp-6) | ✅ |
-| Electrostatics | ❌ |
+| Electrostatics | MM3 bond dipoles only; no general point-charge term |
 | 1-4 scaling | ❌ Not implemented |
 
 **Functional forms:** Harmonic and MM3.
+
+### Preparation gates
+
+Populated CMAP and nondefault vdW reduction raise `PreparationError` in
+both forms. Harmonic stretch-bend and bond dipoles are also rejected; existing MM3
+stretch-bend and bond-dipole energy, Urey-Bradley, and cosine improper terms
+are not disabled by these gates. See the [shared term-presence rules](index.md#populated-term-preparation-gates).
 
 ---
 

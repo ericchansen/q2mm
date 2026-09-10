@@ -37,9 +37,9 @@ full feature set of jax-md.
    forward-compatible.
 
 .. note::
-   Improper torsions are not yet supported. The topology arrays are
-   allocated empty. Support will be added when the Q2MM data model
-   includes improper parameters.
+   Populated Urey-Bradley, CMAP and improper torsion parameters are
+   rejected during preparation. They are not implemented by this adapter;
+   the empty native improper arrays do not establish support.
 """
 
 from __future__ import annotations
@@ -81,6 +81,7 @@ from q2mm.backends.contracts import (
     PreparationRequest,
     readonly_array,
 )
+from q2mm.backends.mm._term_support import _validate_term_support
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Molecule
@@ -657,7 +658,7 @@ class JaxMdBackend:
 
         Raises:
             PreparationError: If no force field is supplied or its functional
-                form is unsupported.
+                form or populated terms are unsupported.
 
         """
         from q2mm.models.parameters import ParameterLayout
@@ -670,6 +671,11 @@ class JaxMdBackend:
             raise PreparationError(
                 f"JAX-MD does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
             )
+        _validate_term_support(
+            request.force_field,
+            backend="JAX-MD",
+            unsupported=frozenset({"Urey-Bradley", "CMAP", "improper torsions", "bond dipoles", "vdW reduction"}),
+        )
         layout = ParameterLayout.from_force_field(request.force_field)
         try:
             state = self._build_state(request.molecule, request.force_field)

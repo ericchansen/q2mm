@@ -27,10 +27,10 @@ included in the MM comparison tables below.
 | **Functional forms** | Harmonic, MM3 | MM3 | Harmonic, MM3 | Harmonic |
 | **Bond/angle terms** | ✅ | ✅ | ✅ | ✅ |
 | **Torsions** | ✅ | ✅ | ✅ | ✅ |
-| **Improper torsions** | ❌ | ❌ | ❌ | ❌ |
+| **Improper torsions** | [Cosine model](openmm.md#supported-energy-terms) | ❌ | [Cosine model](jax-engine.md#supported-energy-terms) | [Rejected](jax-md.md#preparation-gates) |
 | **vdW (LJ 12-6)** | ✅ Harmonic mode | ❌ | ✅ | ✅ |
 | **vdW (Buckingham exp-6)** | ✅ MM3 mode | ✅ | ✅ MM3 mode | ❌ |
-| **Electrostatics** | ❌ | Tinker default | ❌ | Infrastructure only (charges zeroed) |
+| **Electrostatics** | ❌ | Tinker default | [MM3 bond dipoles](jax-engine.md#preparation-gates) | Infrastructure only (charges zeroed) |
 | **1-4 scaling** | ✅ AMBER (ε/2) in Harmonic | MM3 default | ❌ Not implemented | ✅ Configurable (default AMBER) |
 | **Periodic boundaries** | ❌ | ❌ | ❌ | ✅ |
 | **Neighbor lists** | ❌ | ❌ | ❌ | ✅ (jax-md native) |
@@ -45,6 +45,34 @@ included in the MM comparison tables below.
 
 Each backend only accepts force fields whose `functional_form` is in its
 supported set.  Attempting to use an unsupported form raises an error.
+
+### Populated-term preparation gates
+
+A supported functional-form name does not imply that every supplied term is
+implemented. The following unsupported content raises `PreparationError`
+before parameter-layout or native-state construction:
+
+| Backend | Rejected populated content |
+|---------|----------------------------|
+| [JAX](jax-engine.md#preparation-gates) | CMAP and nondefault vdW reduction in both forms; stretch-bend and bond dipoles in harmonic mode |
+| [OpenMM](openmm.md#preparation-gates) | Bond dipoles and nondefault vdW reduction in both forms |
+| [JAX-MD](jax-md.md#preparation-gates) | Urey-Bradley, CMAP, improper torsions, bond dipoles, and nondefault vdW reduction |
+
+Populated zero-valued grids, stretch-bend/improper records, and Urey-Bradley
+fields still declare terms. Either Urey-Bradley field being supplied is
+enough to require support. Bond dipoles are populated when their moment is
+nonzero; vdW reduction is nondefault when it differs from `0.0`, even if
+the current epsilon is zero.
+
+These gates inspect canonical force-field parameters, not source labels,
+opaque template records, or molecular reference partial charges. Reference
+charges are not automatically a request for point-charge MM energy.
+Existing supported terms and native functional models are unchanged.
+
+`test/test_backend_term_coverage.py` separates dependency-light preparation
+checks from backend-marked runtime cases. In particular, its mocked JAX-MD
+preparation checks are not JAX-MD runtime evidence; the `jax_md` cases require
+an available supported-platform installation.
 
 ### Harmonic
 
