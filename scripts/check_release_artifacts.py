@@ -405,6 +405,9 @@ class SmokeBackend:
 
 
 class SmokeOptimizer:
+    def configuration_settings(self):
+        return {"mode": "one-evaluation"}
+
     def optimize(self, evaluator, space):
         parameters = np.array(space.baseline, copy=True)
         score = evaluator.value(parameters)

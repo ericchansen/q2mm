@@ -83,6 +83,10 @@ class _Backend:
 
 
 class _OneEvaluationOptimizer:
+    def configuration_settings(self) -> dict[str, str]:
+        """Declare the installed smoke optimizer's fixed behavior."""
+        return {"mode": "one-evaluation"}
+
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         initial = np.array(space.baseline, copy=True)
         score = evaluator.value(initial)
