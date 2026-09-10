@@ -89,7 +89,9 @@ full wildcard matching and its precedence rules remain deferred.
 | Integer zero (`0`, including padded or signed zero spellings) | [Tinker native torsion assignment](https://github.com/TinkerTools/tinker/blob/c9698d2101c5f66ce1d413f4aa2d5f62e4c22df2/source/ktors.f) uses zero atom classes for terminal wildcard matching; the loader retains their labels |
 
 A complete dash-separated type quadruplet in `TorsionParam.env_id` takes
-precedence over inferred elements. If no complete quadruplet is available,
+precedence over inferred elements. Empty delimiter fields are discarded as
+in existing identifier cleaning, so signed zero cannot hide a wildcard.
+If no complete quadruplet is available,
 the canonical element labels are inspected instead. This avoids turning
 ordinary type names such as `X1` or `Xe` into wildcards merely because an
 element inference produced `X`. Substrings, lowercase `x`, asterisks, and
