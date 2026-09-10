@@ -24,6 +24,7 @@ from .models import (
 )
 
 _LAZY_EXPORTS = {
+    "ConfigurationProvider": ("q2mm.application.configuration", "ConfigurationProvider"),
     "evaluate": ("q2mm.application.evaluation", "evaluate"),
     "evaluate_problem": ("q2mm.application.evaluation", "evaluate_problem"),
     "evaluate_property": ("q2mm.application.evaluation", "evaluate_property"),
@@ -48,6 +49,7 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "MANIFEST_SUFFIX",
+    "ConfigurationProvider",
     "ApplicationConfigurationError",
     "ApplicationError",
     "ApplicationEvaluationError",

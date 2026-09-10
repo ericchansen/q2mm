@@ -88,6 +88,10 @@ class _OneEvaluationOptimizer:
     def __init__(self) -> None:
         self.entered = False
 
+    def configuration_settings(self) -> dict[str, str]:
+        """Declare the SDK fixture's fixed one-evaluation behavior."""
+        return {"mode": "one-evaluation"}
+
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         self.entered = True
         initial = np.array(space.baseline, copy=True)

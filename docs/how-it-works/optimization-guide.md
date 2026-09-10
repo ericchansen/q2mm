@@ -76,6 +76,64 @@ objects, third-party internal defaults, or adaptive solver state.
 
 ---
 
+## Configuration of supplied objects
+
+Passing an optimizer or workflow object executes that same object, but
+the application must first capture enough configuration to distinguish
+different effective runs. Exact built-in types are supported automatically:
+SciPy, Optax, JaxOpt, basin-hopping, both multi-start constructors, the
+catalog's deferred cycling optimizer, `SingleStageWorkflow`, and
+`MethodE2Workflow`. Capture reads their current settings rather than
+reconstructing them from defaults. Nested optimizer objects are captured
+recursively; deferred inner-solver settings reuse the catalog capture.
+Non-finite numeric controls, including values mutated after construction,
+are rejected before normalization rather than recorded as string sentinels.
+
+Other types, **including subclasses of built-ins**, must implement the
+separate `q2mm.application.ConfigurationProvider` protocol. Its one method
+is:
+
+```python
+def configuration_settings(self) -> dict[str, object]:
+    return {
+        "maxiter": self.maxiter,
+        "damping": self.damping,
+        "implementation_version": "1",
+    }
+```
+
+The example illustrates the hook, not a complete optimizer. Keep the
+existing `optimize(evaluator, space)` implementation, or a workflow's
+`name` and `run(...)` implementation. The provider must describe **all**
+consequential settings of its concrete type, including inherited and
+nested controls. It must not run an optimization or mutate the component.
+Return string-keyed mappings, ordered JSON arrays, and finite JSON scalar
+values; convert other representations explicitly. Unknown objects, paths,
+sets, circular data, nonfinite numbers, and secret-like fields are rejected.
+
+This is a deliberate compatibility change: an unsupported supplied object
+no longer proceeds with only class/module provenance. Missing, noncallable,
+or invalid capture raises `ApplicationConfigurationError` before
+optimization. The execution protocols and backend API v1 gain no mandatory
+method.
+
+Ordinary exceptions raised while looking up or calling the provider hook
+become `ApplicationConfigurationError` with the original exception as their
+cause, before backend preparation or execution. Already-typed configuration
+errors are preserved, and `KeyboardInterrupt`, `SystemExit`, and other
+`BaseException` control signals propagate unchanged.
+
+Captured object records retain `class` and `module`, with controls under
+`parameters`. Built-ins reuse the available Q2MM `version`; custom providers
+should include relevant implementation/version context explicitly. There
+is no new custom dependency-version discovery or Git-revision inference;
+the available version may be a development placeholder. Settings are validated and
+deeply snapshotted, so later object or returned-mapping mutation cannot
+change a run's configuration. Gradient/finite-difference precedence,
+workflow science, and schema/fingerprint algorithms are unchanged.
+
+---
+
 ## Workflow A: Small + Smooth
 
 **When:** ≤ 10 parameters, harmonic functional form, analytical gradients
