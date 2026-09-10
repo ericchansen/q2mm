@@ -55,6 +55,7 @@ from q2mm.constants import (
     TINKER_BONDUNIT,
     TINKER_ANGLEUNIT,
 )
+from q2mm.io.tinker import _validate_tinker_export_terms
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Molecule
 from q2mm.models.parameters import ParameterLayout
@@ -229,17 +230,18 @@ class TinkerBackend:
 
         Raises:
             PreparationError: If no force field is supplied or its functional
-                form is unsupported.
+                form or populated terms are unsupported.
 
         """
         if request.force_field is None:
             raise PreparationError("Tinker requires a base ForceField in the PreparationRequest.")
-        if request.force_field.nonbonded_excluded_atom_types:
-            raise PreparationError(
-                "Tinker cannot represent ForceField.nonbonded_excluded_atom_types; "
-                "use a backend with explicit zero-center support."
-            )
         _validate_form(request.force_field, _TINKER_INFO)
+        _validate_tinker_export_terms(
+            request.force_field,
+            supports_reduction=request.force_field.source_format == "tinker_prm"
+            and bool(request.force_field.source_path or self._params_file),
+            error_type=PreparationError,
+        )
         layout = ParameterLayout.from_force_field(request.force_field)
         return PreparedTinker(
             backend=self,
@@ -264,6 +266,8 @@ class TinkerBackend:
 
         """
         _validate_form(forcefield, _TINKER_INFO)
+        use_template = forcefield.source_format == "tinker_prm" and bool(forcefield.source_path or self._params_file)
+        _validate_tinker_export_terms(forcefield, supports_reduction=use_template, error_type=PreparationError)
 
         # Default MM3 atom type mapping (fallback for atoms without numeric types).
         _default_type_map = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
@@ -282,19 +286,11 @@ class TinkerBackend:
             except (TypeError, ValueError):
                 atom_type_numbers.append(_default_type_map.get(atom, 1))
 
-        # Write Tinker XYZ
-        txyz_path = os.path.join(workdir, "molecule.xyz")
-        with open(txyz_path, "w") as f:
-            f.write(f"     {n_atoms}  Q2MM Tinker input\n")
-            for i, (atom, (x, y, z), atype) in enumerate(zip(atoms, coords, atom_type_numbers, strict=False)):
-                bonded = [str(j + 1) for j in bonds.get(i, [])]
-                bond_str = "     ".join(bonded)
-                f.write(f"     {i + 1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}    {atype:2d}     {bond_str}\n")
-
         # Export the force field's (possibly modified) parameters to a workdir .prm
-        # so Tinker evaluates the updated values.
+        # before replacing XYZ/key files, so unrepresentable template edits
+        # leave every existing input untouched.
         exported_prm = os.path.join(workdir, "molecule.prm")
-        if forcefield.source_format == "tinker_prm" and (forcefield.source_path or self._params_file):
+        if use_template:
             # FF came from a .prm file — use template-based export
             from q2mm.io.tinker import save_tinker_prm
 
@@ -306,6 +302,15 @@ class TinkerBackend:
         else:
             # Programmatic FF — write standalone .prm with atom defs
             self._write_standalone_prm(forcefield, exported_prm, atoms, atom_type_numbers)
+
+        # Write Tinker XYZ
+        txyz_path = os.path.join(workdir, "molecule.xyz")
+        with open(txyz_path, "w") as f:
+            f.write(f"     {n_atoms}  Q2MM Tinker input\n")
+            for i, (atom, (x, y, z), atype) in enumerate(zip(atoms, coords, atom_type_numbers, strict=False)):
+                bonded = [str(j + 1) for j in bonds.get(i, [])]
+                bond_str = "     ".join(bonded)
+                f.write(f"     {i + 1}  {atom:2s}  {x:12.6f} {y:12.6f} {z:12.6f}    {atype:2d}     {bond_str}\n")
 
         # Write key file
         key_path = os.path.join(workdir, "molecule.key")
@@ -332,11 +337,12 @@ class TinkerBackend:
     def _write_standalone_prm(
         self, ff: ForceField, prm_path: str, atoms: list[str], atom_type_numbers: list[int]
     ) -> None:
-        """Write a complete standalone Tinker .prm for a programmatic ForceField.
+        """Write the supported standalone Tinker model for a programmatic ForceField.
 
         Generates a self-contained parameter file with atom definitions,
-        MM3 functional form headers, and bond/angle/torsion/vdW terms
-        defined in the ForceField.
+        native MM3 functional form headers, and bond/angle/proper-torsion/vdW
+        terms. Unsupported populated terms, including nondefault vdW
+        reduction, raise ``PreparationError`` before the output is opened.
 
         Args:
             ff: ForceField model with bonds, angles, torsions, and vdws.
@@ -350,6 +356,7 @@ class TinkerBackend:
         template-based export path (source_format="tinker_prm").
 
         """
+        _validate_tinker_export_terms(ff, supports_reduction=False, error_type=PreparationError)
         # Build element → type_number map from the actual atoms + type numbers
         # used in the .xyz file (guarantees XYZ ↔ PRM consistency).
         elem_to_type: dict[str, int] = {}

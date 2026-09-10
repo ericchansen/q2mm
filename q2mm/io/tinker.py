@@ -288,6 +288,39 @@ def _tinker_import_ff(path: str | Path) -> tuple[list[_TinkerParameterRow], list
 # ---------------------------------------------------------------------------
 
 
+def _validate_tinker_export_terms(
+    ff: ForceField,
+    *,
+    supports_reduction: bool,
+    error_type: type[Exception] = ValueError,
+) -> None:
+    """Reject populated canonical terms that the selected writer cannot emit.
+
+    Opaque native template records are preserved, not matched to canonical
+    terms: e.g. a native opbend is not a canonical Fourier improper.
+    Reduction is supported by public serialization and backend templates,
+    but not by the backend's distinct standalone writer. Callers select
+    their boundary's error type without coupling I/O to backend contracts.
+    """
+    unsupported = []
+    if ff.stretch_bends:
+        unsupported.append("stretch-bend")
+    if any(a.ub_force_constant is not None or a.ub_equilibrium is not None for a in ff.angles):
+        unsupported.append("Urey-Bradley")
+    if any(b.dipole_moment != 0.0 for b in ff.bonds):
+        unsupported.append("bond dipole")
+    if any(t.is_improper for t in ff.torsions):
+        unsupported.append("improper torsion")
+    if ff.cmaps:
+        unsupported.append("CMAP")
+    if ff.nonbonded_excluded_atom_types:
+        unsupported.append("nonbonded_excluded_atom_types")
+    if not supports_reduction and any(v.reduction != 0.0 for v in ff.vdws):
+        unsupported.append("vdW reduction")
+    if unsupported:
+        raise error_type(f"Tinker export cannot represent populated {', '.join(unsupported)}")
+
+
 def load_tinker_prm(path: str | Path) -> ForceField:
     """Load supported bond, angle, proper torsion and vdW parameters.
 
@@ -449,8 +482,6 @@ def _tinker_template_lines(ff: ForceField, template: Path) -> list[str]:
     with template.open(encoding="utf-8", newline="") as f:
         lines = f.readlines()
     unit = _tinker_torsion_unit(lines)
-    if ff.stretch_bends or ff.cmaps or ff.nonbonded_excluded_atom_types:
-        raise ValueError("Tinker template cannot represent stretch-bend, CMAP or nonbonded exclusion edits")
 
     for before, after in _tinker_template_pairs(
         original.bonds, ff.bonds, lambda p: p.env_id, ("force_constant", "equilibrium")
@@ -514,8 +545,15 @@ def save_tinker_prm(
     tails beginning with # or ! may extend beyond that limit.
     Otherwise, a minimal Q2MM bond/angle/vdW section is written; proper
     torsions require a template. This is not a complete Tinker FF writer.
+
+    Populated canonical stretch-bend, Urey-Bradley, bond dipole, improper,
+    CMAP and nonbonded exclusion content raises ``ValueError`` before
+    writing. Opaque native template records remain untouched; they do not
+    establish support for corresponding canonical terms. vdW reduction
+    is supported both with and without a template.
     """
     _validate_form_for_format(ff, "tinker_prm")
+    _validate_tinker_export_terms(ff, supports_reduction=True)
     output_path = Path(path)
     template = Path(template_path) if template_path is not None else None
     if template is None and ff.source_format == "tinker_prm" and ff.source_path is not None:

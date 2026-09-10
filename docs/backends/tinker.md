@@ -42,10 +42,43 @@ The backend searches for Tinker executables in this order:
 | Torsions | ✅ |
 | Improper torsions | ❌ |
 | vdW (Buckingham exp-6) | ✅ |
-| Electrostatics | ✅ (Tinker default) |
+| Electrostatics | Existing native template records only; canonical bond dipoles are rejected |
 | 1-4 scaling | MM3 default |
 
 **Functional forms:** MM3 only.
+
+### Parameter export coverage
+
+The public `save_tinker_prm()` serializer and the backend's standalone
+writer have different supported subsets. Both reject populated canonical
+stretch-bend, Urey-Bradley, bond dipole, improper torsion, CMAP, and
+`nonbonded_excluded_atom_types` content rather than silently discard it.
+This includes zero-valued stretch-bend/improper records and Urey-Bradley
+fields supplied individually or with zero values.
+
+| Writer path | Proper torsions | vdW reduction |
+|-------------|-----------------|---------------|
+| Public standalone section | Requires a template | Written |
+| Public or backend template | Existing rows retain scale, phase and periodicity; scalar edits supported | Retained and editable, including an omitted source field |
+| Backend standalone model | Written using its existing native convention | Nondefault values rejected |
+
+Template export preserves unmodeled native records (such as `strbnd`,
+`ureybrad`, `dipole`, `imptors`, and `opbend`) byte-for-byte alongside
+supported scalar edits. This is opaque pass-through, not canonical term
+support: supplying a canonical dipole or improper is still rejected even
+if the template has a numerically similar native record. Native
+out-of-plane and canonical Fourier improper models are not interchangeable.
+
+Public loss gates raise `ValueError`; backend preparation and writer
+loss gates raise `PreparationError`. Template row-binding and scalar
+representability errors remain `ValueError`. These failures happen before
+parameter output is opened or existing XYZ/key inputs are replaced.
+The backend's native headers and coefficient conventions are unchanged;
+sharing the loss policy does not unify distinct functional models.
+
+CPU-only writer tests in `test/test_tinker_writers.py` cover rejection,
+destination preservation, and supported file roundtrips. They do not
+execute Tinker or establish native energy, geometry, or Hessian parity.
 
 ---
 
@@ -96,8 +129,9 @@ makes Tinker significantly slower per evaluation than in-process backends
   and spawns a subprocess.
 - **No analytical gradients** — `parameter_gradient()` is not implemented.
 - **Standalone PRM limitations** — `_write_standalone_prm()` writes
-  bond, angle, torsion, and vdW terms but lacks improper torsions and
-  cross-terms. Template-based export is preferred for full `.prm` fidelity.
+  bond, angle, proper torsion, and unreduced vdW terms. Unsupported
+  populated content fails explicitly; see [parameter export coverage](#parameter-export-coverage)
+  for the distinction between canonical terms and opaque template records.
 - **No GPU support** — runs entirely on CPU.
 - **External dependency** — requires Tinker executables to be installed
   and discoverable.
