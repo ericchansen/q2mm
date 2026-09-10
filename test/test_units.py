@@ -172,6 +172,15 @@ class TestLengthAngleRoundTrips:
 class TestHessianRoundTrips:
     """Hessian unit conversion round-trips."""
 
+    @pytest.mark.parametrize("curvature", _TEST_VALUES)
+    def test_kcal_paths_share_conversion(self, curvature: float) -> None:
+        from q2mm import constants
+
+        assert constants.KCALMOLA2_TO_HESSIAN_AU * curvature == hessian_kcalmola2_to_au(curvature)
+        assert constants.HESSIAN_AU_TO_KCALMOLA2 * curvature == pytest.approx(
+            hessian_au_to_kcalmola2(curvature), rel=1e-15, abs=0.0
+        )
+
     def test_kcalmola2_au(self) -> None:
         _assert_roundtrip(hessian_kcalmola2_to_au, hessian_au_to_kcalmola2)
 

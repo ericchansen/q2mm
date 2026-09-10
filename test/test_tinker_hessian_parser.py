@@ -24,6 +24,7 @@ from q2mm.backends.contracts import (
 from q2mm.backends.mm import tinker
 from q2mm.constants import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
+from q2mm.models.units import hessian_kcalmola2_to_au
 from test._shared import make_diatomic
 
 
@@ -79,6 +80,11 @@ def test_complete_native_hessian(evaluate_hessian: Callable[[str], HessianResult
     np.testing.assert_allclose(result.hessian, _EXPECTED * KCALMOLA2_TO_HESSIAN_AU)
     np.testing.assert_array_equal(result.hessian, result.hessian.T)
     assert not result.hessian.flags.writeable
+
+
+def test_parser_uses_canonical_hessian_conversion(evaluate_hessian: Callable[[str], HessianResult]) -> None:
+    result = evaluate_hessian("\n" + _DIAGONAL + "\n".join(_BLOCKS))
+    np.testing.assert_allclose(result.hessian, _EXPECTED * hessian_kcalmola2_to_au(1.0), rtol=1e-12, atol=0.0)
 
 
 @pytest.mark.parametrize("width", [4, 5, 6])
