@@ -13,7 +13,8 @@ from q2mm.backends.contracts import Backend
 from q2mm.benchmarks.acceptance import CandidateStatus
 from q2mm.benchmarks.cases import BenchmarkCase
 from q2mm.benchmarks.profiles import RunProfile
-from q2mm.benchmarks.runner import CandidateResult, _score_interval_summary, persist_candidate, run_profile
+from q2mm.benchmarks.analysis import _score_interval_summary
+from q2mm.benchmarks.runner import CandidateResult, persist_candidate, run_profile
 from q2mm.models.observations import ObservationSet
 from q2mm.models.results import StageRecord
 from test.test_application import _EnergyBackend, _problem, _result

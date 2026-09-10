@@ -28,6 +28,10 @@ concrete resolved form and the full resolved fingerprint).
 
 All fingerprints use canonical, cross-process-deterministic JSON — never
 Python's salted ``hash`` or dict iteration order.
+
+Profile-level runtime adapters construct backends/optimizers/workflows and
+resolve loader arguments through the existing catalog and data-root helpers.
+They are called by the coordinator, never during module import.
 """
 
 from __future__ import annotations
@@ -35,6 +39,8 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from q2mm._canonical import canonical_fingerprint as _canonical_fingerprint
@@ -60,7 +66,9 @@ __all__ = [
     "EVALUATORS",
     "GRADIENT_MODES",
     "DATA_ROOT_KEYS",
+    "DATA_DIR_FOR_SYSTEM",
     "KNOWN_OBJECTIVE_PROFILES",
+    "ConfigurationError",
     "RunProfile",
     "ResolvedProfile",
     "canonical_json",
@@ -69,6 +77,7 @@ __all__ = [
     "device_info",
     "resolve",
     "recommended_publication_profile",
+    "resolve_optimizer",
 ]
 
 
@@ -135,6 +144,24 @@ WORKFLOWS: frozenset[str] = frozenset({"single-stage", "method-e2"})
 #: packaged-resource ``data_dir`` override; the others map to
 #: :class:`~q2mm.benchmarks.systems._paths.ExternalDataRoots` fields.
 DATA_ROOT_KEYS: frozenset[str] = frozenset({"ch3f", "rh_enamide", "supporting_info", "mm3_base"})
+
+#: Registry key -> canonical q2mm-data directory name.
+DATA_DIR_FOR_SYSTEM: Mapping[str, str] = MappingProxyType(
+    {
+        "ch3f": "ch3f",
+        "ch3f-sn2": "ch3f-sn2",
+        "rh-enamide": "rh-enamide",
+        "heck-relay": "heck-relay",
+        "pd-allyl": "pd-allyl-amination",
+        "pd-conjugate": "pd-1,4-conjugate-addition",
+        "rh-conjugate": "rh-1,4-conjugate-addition",
+        "ferrocene": "ferrocene",
+    }
+)
+
+
+class ConfigurationError(RuntimeError):
+    """A profile referenced something that does not exist (typo / bad config)."""
 
 
 # ---------------------------------------------------------------------------
@@ -672,3 +699,139 @@ def resolve(
         seed=int(profile.seed),
         settings=profile.canonical_dict(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Runtime configuration adapters
+# ---------------------------------------------------------------------------
+
+
+def resolve_optimizer(profile: RunProfile) -> tuple[Any, dict[str, Any]]:
+    """Compatibility adapter over :mod:`q2mm.optimizers.catalog`."""
+    from q2mm.optimizers.catalog import optimizer_option_names, resolve_optimizer as _resolve
+
+    options = {
+        "maxiter": profile.maxiter,
+        "ftol": profile.ftol,
+        "fc_fraction": profile.fc_fraction,
+        "eq_fraction": profile.eq_fraction,
+        "learning_rate": profile.learning_rate,
+        "max_params": profile.max_params,
+        "max_cycles": profile.max_cycles,
+        "convergence": profile.convergence,
+        "seed": profile.seed,
+    }
+    allowed = optimizer_option_names(profile.optimizer_spec)
+    return _resolve(profile.optimizer_spec, {key: value for key, value in options.items() if key in allowed})
+
+
+def _resolve_workflow(profile: RunProfile) -> tuple[Any, dict[str, Any]]:
+    from q2mm.workflows import MethodE2Workflow, SingleStageWorkflow
+
+    if profile.workflow == "method-e2":
+        wf = MethodE2Workflow()
+        settings = {
+            "name": "method-e2",
+            "negative_fc_threshold": wf.negative_fc_threshold,
+            "replace_with_round2": wf.replace_with_round2,
+            "allow_negative": wf.allow_negative,
+            "near_zero_replace_with": dict(wf.near_zero_replace_with),
+        }
+        return wf, settings
+    return SingleStageWorkflow(), {"name": "single-stage"}
+
+
+def _classify_backend(profile: RunProfile) -> tuple[Any, Any]:
+    """Return ``(descriptor, backend)``.
+
+    Raises :class:`ConfigurationError` for an unknown backend key (typo) or a
+    broken/misconfigured factory; a registered backend whose cheap probe is
+    unhealthy raises :class:`~q2mm.backends.contracts.BackendUnavailableError`
+    (a graceful skip).
+    """
+    from q2mm.backends.contracts import BackendUnavailableError
+    from q2mm.backends.registry import BackendNotRegistered, get_descriptor
+
+    try:
+        descriptor = get_descriptor(profile.backend)
+    except BackendNotRegistered as exc:
+        raise ConfigurationError(f"unknown backend {profile.backend!r}: {exc}") from exc
+
+    healthy, reason = descriptor.is_available()
+    if not healthy:
+        raise BackendUnavailableError(f"backend {profile.backend!r} unavailable: {reason}")
+
+    load_kwargs: dict[str, Any] = {}
+    if profile.backend == "openmm" and profile.platform is not None:
+        load_kwargs["platform_name"] = profile.platform
+    try:
+        backend = descriptor.load(**load_kwargs)
+    except BackendUnavailableError:
+        raise
+    except Exception as exc:  # broken/misconfigured factory -> configuration error
+        raise ConfigurationError(f"backend {profile.backend!r} failed to construct: {exc!r}") from exc
+    return descriptor, backend
+
+
+def _norm_path(raw: str) -> Path:
+    """Normalize a user-supplied data-root path: expand ~ and resolve."""
+    return Path(raw).expanduser().resolve()
+
+
+def _load_kwargs(profile: RunProfile, form: str) -> tuple[dict[str, Any], dict[str, str]]:
+    """Build ``load_system`` kwargs and the *actually resolved* data-root map.
+
+    Explicit roots are normalized with ``expanduser().resolve()``.  When a
+    root is omitted, the actual location the loader will use is still
+    recorded — the packaged ``sn2_reference_dir()`` for CH3F, or the
+    environment-fallback ``ExternalDataRoots`` for publication systems — so
+    provenance never claims ``{}`` while an environment root was in force.
+    """
+    kwargs: dict[str, Any] = {
+        "functional_form": form,
+        "starting_point": profile.starting_point,
+        "qfuerza_replace_with": profile.qfuerza_replace_with,
+    }
+    roots = dict(profile.data_roots)
+    resolved: dict[str, str] = {}
+
+    if profile.system in ("ch3f", "ch3f-sn2"):
+        if "ch3f" in roots:
+            data_dir = _norm_path(roots["ch3f"])
+            kwargs["data_dir"] = data_dir
+            resolved["ch3f"] = str(data_dir)
+        else:
+            # Record the packaged resource directory the loader will use.
+            from q2mm.resources import sn2_reference_dir
+
+            resolved["ch3f"] = str(_norm_path(str(sn2_reference_dir())))
+        return kwargs, resolved
+
+    objective_profile = profile.effective_objective_profile
+    if objective_profile is None:
+        raise ConfigurationError(f"Publication system {profile.system!r} has no resolved objective profile.")
+    kwargs["objective_profile"] = objective_profile
+
+    from q2mm.benchmarks.systems._paths import ExternalDataRoots, resolve_external_roots
+
+    explicit = ExternalDataRoots(
+        rh_enamide=_norm_path(roots["rh_enamide"]) if "rh_enamide" in roots else None,
+        supporting_info=_norm_path(roots["supporting_info"]) if "supporting_info" in roots else None,
+        mm3_base=_norm_path(roots["mm3_base"]) if "mm3_base" in roots else None,
+    )
+    # Fold explicit overrides together with the documented environment
+    # fallbacks so provenance reflects exactly what the loader resolves.
+    effective = resolve_external_roots(explicit)
+    kwargs["data_roots"] = effective
+    for key in ("rh_enamide", "supporting_info", "mm3_base"):
+        value = getattr(effective, key)
+        if value is not None:
+            resolved[key] = str(Path(value).expanduser().resolve())
+    return kwargs, resolved
+
+
+def _default_form(system: str) -> str:
+    from q2mm.benchmarks.systems import system_metadata
+
+    forms = system_metadata(system).default_forms
+    return forms[0] if forms else "mm3"
