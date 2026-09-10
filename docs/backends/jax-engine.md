@@ -51,6 +51,8 @@ Populated CMAP and nondefault vdW reduction raise `PreparationError` in
 both forms. Harmonic stretch-bend and bond dipoles are also rejected; existing MM3
 stretch-bend and bond-dipole energy, Urey-Bradley, and cosine improper terms
 are not disabled by these gates. See the [shared term-presence rules](index.md#populated-term-preparation-gates).
+Proper and improper terms containing [known native wildcard tokens](index.md#wildcard-torsion-boundary)
+are rejected rather than silently omitted; exact matching is unchanged.
 
 ---
 
