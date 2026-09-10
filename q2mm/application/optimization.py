@@ -144,13 +144,27 @@ def _resolve_workflow(
     raise ApplicationConfigurationError("Unknown workflow; expected 'single-stage', 'method-e2', or a Workflow object.")
 
 
+def _result_gradient_mode(optimizer: _Optimizer, executor_gradient: str, spec: OptimizerSpec | None = None) -> str:
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+    # Unknown implementations (including subclasses) retain the explicit
+    # custom-component contract; method-like attributes are not capabilities.
+    if type(optimizer) is not ScipyOptimizer:
+        return expected_result_gradient(spec) if spec is not None else executor_gradient
+    if optimizer.method in ScipyOptimizer.DERIVATIVE_FREE_METHODS:
+        return "none"
+    if optimizer.method == "least_squares" or executor_gradient == "none":
+        return "finite_difference"
+    return executor_gradient
+
+
 def _resolve_optimizer(
     value: str | OptimizerSpec | _Optimizer,
     options: Mapping[str, Any] | None,
     *,
     executor: Executor,
     requested_gradient_mode: GradientMode | str | None,
-    requested_fd_step: float,
+    requested_fd_step: float | None,
 ) -> tuple[_Optimizer, ResolvedOptimizerConfiguration, Literal["python", "jax"], str, float]:
     try:
         requested_mode = None if requested_gradient_mode is None else GradientMode(requested_gradient_mode)
@@ -171,7 +185,7 @@ def _resolve_optimizer(
                 f"gradient_mode={requested_mode.value!r} conflicts with optimizer "
                 f"{spec.key!r}, which requires {spec.gradient_mode!r}."
             )
-        if requested_fd_step != 1e-4 and spec.gradient_mode != "finite_difference":
+        if requested_fd_step is not None and spec.gradient_mode != "finite_difference":
             raise ApplicationConfigurationError("fd_step applies only to finite-difference executor configurations.")
         return (
             optimizer,
@@ -180,11 +194,11 @@ def _resolve_optimizer(
                 label=spec.label,
                 method=spec.method,
                 settings=settings,
-                expected_result_gradient_mode=expected_result_gradient(spec),
+                expected_result_gradient_mode=_result_gradient_mode(optimizer, spec.gradient_mode, spec),
             ),
             cast(Literal["python", "jax"], spec.evaluator),
             spec.gradient_mode,
-            requested_fd_step if spec.gradient_mode == "finite_difference" else spec.fd_step,
+            spec.fd_step if requested_fd_step is None else requested_fd_step,
         )
     if options:
         raise ApplicationConfigurationError("optimizer_options cannot be applied to an optimizer object.")
@@ -201,7 +215,7 @@ def _resolve_optimizer(
     )
     if executor == "jax" and requested_mode not in (None, GradientMode.ANALYTICAL):
         raise ApplicationConfigurationError("A custom JAX optimizer requires analytical gradient mode.")
-    if requested_fd_step != 1e-4 and gradient != "finite_difference":
+    if requested_fd_step is not None and gradient != "finite_difference":
         raise ApplicationConfigurationError("fd_step applies only to finite-difference executor configurations.")
     settings = _custom_component_settings(value)
     return (
@@ -211,11 +225,11 @@ def _resolve_optimizer(
             label=type(value).__qualname__,
             method=type(value).__qualname__,
             settings=settings,
-            expected_result_gradient_mode=gradient,
+            expected_result_gradient_mode=_result_gradient_mode(value, gradient),
         ),
         executor,
         gradient,
-        requested_fd_step,
+        1e-4 if requested_fd_step is None else requested_fd_step,
     )
 
 
@@ -267,6 +281,15 @@ def execute_optimization(
         raise ApplicationOptimizationError("Optimization result initial vector does not match the problem baseline.")
     if not np.array_equal(result.final_params[inactive], baseline[inactive]):
         raise ApplicationOptimizationError("Optimization result changed frozen parameter slots.")
+    # A single-stage SciPy run has one known bound box. Multistage workflows
+    # can rebase fractional bounds and deliberately replace locked parameters.
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer, _is_feasible
+
+    if isinstance(optimizer, ScipyOptimizer) and isinstance(workflow, SingleStageWorkflow):
+        space = problem.active_space
+        bounds = optimizer._resolve_bounds(space, space.pack(baseline))
+        if not _is_feasible(space.pack(result.final_params), bounds):
+            raise ApplicationOptimizationError("Optimization result violates the effective SciPy active bounds.")
     return result, problem.layout.replace(problem.starting_force_field, result.final_params)
 
 
@@ -281,7 +304,7 @@ def optimize(
     workflow_options: Mapping[str, Any] | None = None,
     executor: Executor = "auto",
     gradient_mode: GradientMode | str | None = None,
-    fd_step: float = 1e-4,
+    fd_step: float | None = None,
     backend_options: Mapping[str, object] | None = None,
     regularization: float | None = None,
     n_evals: int = 1,
@@ -292,6 +315,19 @@ def optimize(
     built-in JAX backend and unambiguously all-ground-state or all-transition-
     state problems. Passing explicit optimizer/workflow components records and
     applies those overrides.
+
+    ``fd_step`` configures executor-owned finite differences only. ``None``
+    inherits the optimizer spec's step, or ``1e-4`` for an optimizer object.
+    Any numeric value is an explicit override, including ``1e-4``, and is
+    rejected unless the executor declares finite-difference gradients.
+    SciPy-owned differences instead use the optimizer's ``eps``.
+
+    Built-in SciPy instances use their method's declared gradient policy:
+    derivative-free methods report ``none``; ``least_squares`` and scalar-only
+    gradient-based methods report SciPy-owned finite differences. Other custom
+    optimizer objects must report the executor's declared gradient mode; their
+    solver capabilities are not inferred from attributes or probed at runtime.
+    Arbitrary object settings are not captured beyond class/module identity.
     """
     if not isinstance(problem, OptimizationProblem):
         raise ApplicationConfigurationError("optimize requires an OptimizationProblem.")
@@ -319,7 +355,7 @@ def optimize(
         overrides.append("executor")
     if gradient_mode is not None:
         overrides.append("gradient_mode")
-    if fd_step != 1e-4:
+    if fd_step is not None:
         overrides.append("fd_step")
     if regularization is not None:
         overrides.append("regularization")

@@ -19,6 +19,10 @@
 | **RMSD** | Root-mean-square deviation — average error between QM and MM values |
 | **R²** | Coefficient of determination — 1.0 means perfect agreement, 0.0 means no correlation, negative means worse than the mean |
 
+For the generic observation recipe, rigid-mode accounting and the distinct
+repository compatibility profile used by publication case loaders, see
+[Fitting objectives and reference data](fitting-objectives.md).
+
 ---
 
 ## The pipeline at a glance
@@ -109,17 +113,18 @@ The implementation lives in
 
 ## Stage 2: transition state eigenvalue treatment
 
-For ground-state molecules, Seminario estimation is straightforward — all
-eigenvalues are positive, and the force constants are physically meaningful.
+At a ground-state minimum, physical vibrational curvatures are positive;
+ideal rigid motions have zero curvature. Approximate stationary geometries
+can also carry small residual rotational curvature.
 Transition states (TSs) are different: they have exactly one negative
 eigenvalue in their Hessian, corresponding to the reaction coordinate.
 
 This creates a fundamental tension. MM force fields represent TSs as energy
-*minima* — all eigenvalues must be positive. How do you fit MM parameters
+*minima* — physical vibrational curvatures must be positive. How do you fit MM parameters
 to a QM Hessian that has a negative eigenvalue the MM model can't
 reproduce?
 
-Limé & Norrby (*J. Comput. Chem.* **2015**, 36, 244–250,
+Limé & Norrby (*J. Comput. Chem.* **2014**, vol. 36, 244–250, published 2015,
 [DOI:10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797)) systematically
 tested five methods for handling this, labeled A through E. These methods
 address two independent choices: *what data to fit* (A vs B) and *how to
@@ -159,7 +164,8 @@ projection needs all-positive eigenvalues to produce valid force constants.
 Q2MM supports **curvature inversion**: decompose the Hessian,
 replace the negative eigenvalue with a large positive value
 (1.0 Hartree/Bohr²), and reconstruct.  This is based on Limé & Norrby's
-eigenvalue replacement approach (J. Comput. Chem. 2015, 36, 244–250).
+eigenvalue replacement approach (J. Comput. Chem. 2014, vol. 36, 244–250,
+published 2015).
 
 ### What Q2MM implements
 
@@ -204,11 +210,12 @@ With initial parameters in hand, Q2MM needs a way to measure how good a
 force field is. The objective function computes:
 
 $$
-\chi^2 = \sum_i w_i \bigl(x_{\text{ref},i} - x_{\text{calc},i}\bigr)^2
+\chi^2 = \sum_i \bigl[w_i \bigl(x_{\text{ref},i} - x_{\text{calc},i}\bigr)\bigr]^2
 $$
 
 where $x_{\text{ref},i}$ is a QM reference value, $x_{\text{calc},i}$ is
-the corresponding MM-computed value, and $w_i$ is a weight.
+the corresponding MM-computed value, and $w_i$ multiplies the residual
+before squaring. This is the data term; optional regularization is separate.
 
 Each evaluation runs the MM backend (OpenMM, Tinker, JAX, or JAX-MD) with
 the current parameters, computes the requested observables, and compares

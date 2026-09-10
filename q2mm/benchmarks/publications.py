@@ -669,9 +669,11 @@ class PublicationOptimizationSuccessSpec:
         optimizer_converged: bool,
         accepted: bool,
     ) -> dict[str, object]:
-        """Evaluate the measurable canonical-run gate."""
+        """Evaluate the canonical-run gate, failing nonfinite supplied evidence."""
         failures: list[str] = []
-        if improvement_percent < self.minimum_absolute_improvement_percent:
+        if not math.isfinite(improvement_percent):
+            failures.append(f"improvement={improvement_percent!r} is not finite")
+        elif improvement_percent < self.minimum_absolute_improvement_percent:
             failures.append(
                 f"improvement={improvement_percent:.3f}% < {self.minimum_absolute_improvement_percent:.3f}%"
             )
@@ -690,7 +692,8 @@ class PublicationOptimizationSuccessSpec:
             initial = float(initial_category_scores.get(category, 0.0))
             final = float(final_category_scores.get(category, 0.0))
             increase = final - initial
-            passes = increase <= regression_budget
+            finite_scores = math.isfinite(initial) and math.isfinite(final)
+            passes = finite_scores and increase <= regression_budget
             category_regressions[category] = {
                 "initial": initial,
                 "final": final,
@@ -698,7 +701,11 @@ class PublicationOptimizationSuccessSpec:
                 "allowed_increase": regression_budget,
                 "passes": passes,
             }
-            if not passes:
+            if not finite_scores:
+                for name, score in (("initial", initial), ("final", final)):
+                    if not math.isfinite(score):
+                        failures.append(f"{category} {name} weighted objective={score!r} is not finite")
+            elif not passes:
                 failures.append(
                     f"{category} weighted objective regressed by {increase:.6g}, "
                     f"exceeding {regression_budget:.6g} "

@@ -315,14 +315,17 @@ def _vdw_identity(vdw: Any) -> tuple[str, ...]:
     return (vdw.atom_type, vdw.element, _identity_field(vdw.ff_row))
 
 
-def _legacy_param_identity(family: str, param: Any) -> tuple[Any, ...]:
-    """Reproduce the legacy ``ForceField._param_identity`` matching key.
+def _membership_identity(family: str, param: Any) -> tuple[Any, ...]:
+    """Chemical identity for cross-source OPT membership matching.
 
-    Used only by :func:`opt_substructure_membership` to replicate
-    ``freeze_standard_params``' multiset matching; ``ParameterId``
-    identity tuples are string-only and computed independently by
-    ``_build_layout``.
+    Source rows are meaningful only within a shared source file. Bond
+    identity otherwise retains the same chemical discriminators as the
+    layout, without its source-row field. Generic context aliases are
+    equivalent here without changing layout identity or fingerprints.
     """
+    if family == "bond":
+        context = "" if param.context == "0000 0000" else param.context
+        return (family, *_bond_identity(param)[:-2], _identity_field(context))
     if family == "vdw":
         return (family, param.atom_type, param.element)
     if family == "torsion":
@@ -835,11 +838,11 @@ class OptSubstructureMembership:
 def opt_substructure_membership(force_field: ForceField, opt_force_field: ForceField) -> OptSubstructureMembership:
     """Identify which of *force_field*'s parameters belong to *opt_force_field*.
 
-    Reproduces the legacy ``ForceField.freeze_standard_params`` matching
-    algorithm exactly, as a pure function: parameters are matched first
+    Parameters are matched first
     by shared ``ff_row`` (only when both force fields share the same
     resolved ``source_path``), then by semantic chemical-identity
-    multiset matching (occurrence-order, not value-based).  Used by the
+    multiset matching (occurrence-order, not value-based), including bond
+    order and context for bonds. Used by the
     QFUERZA publication-system loaders to build an
     :class:`ActiveParameterSpace` via :meth:`ActiveParameterSpace.from_membership`
     that keeps the literature MM3 backbone frozen and only the
@@ -855,7 +858,7 @@ def opt_substructure_membership(force_field: ForceField, opt_force_field: ForceF
         collection = getattr(force_field, attr)
         opt_collection = getattr(opt_force_field, attr)
         opt_rows = Counter(p.ff_row for p in opt_collection if p.ff_row is not None)
-        opt_ids = Counter(_legacy_param_identity(family, p) for p in opt_collection)
+        opt_ids = Counter(_membership_identity(family, p) for p in opt_collection)
         active: set[int] = set()
         for i, param in enumerate(collection):
             if same_source and param.ff_row is not None:
@@ -863,7 +866,7 @@ def opt_substructure_membership(force_field: ForceField, opt_force_field: ForceF
                     active.add(i)
                     opt_rows[param.ff_row] -= 1
                 continue
-            ident = _legacy_param_identity(family, param)
+            ident = _membership_identity(family, param)
             if opt_ids[ident] > 0:
                 active.add(i)
                 opt_ids[ident] -= 1
@@ -877,7 +880,7 @@ def opt_substructure_membership(force_field: ForceField, opt_force_field: ForceF
         ]
         opt_ub = [a for a in opt_force_field.angles if a.ub_force_constant is not None and a.ub_equilibrium is not None]
         opt_ub_rows = Counter(a.ff_row for a in opt_ub if a.ff_row is not None)
-        opt_ub_ids = Counter(_legacy_param_identity("angle", a) for a in opt_ub)
+        opt_ub_ids = Counter(_membership_identity("angle", a) for a in opt_ub)
         active: set[int] = set()
         for i, angle in ub_indexed:
             if same_source and angle.ff_row is not None:
@@ -885,7 +888,7 @@ def opt_substructure_membership(force_field: ForceField, opt_force_field: ForceF
                     active.add(i)
                     opt_ub_rows[angle.ff_row] -= 1
                 continue
-            ident = _legacy_param_identity("angle", angle)
+            ident = _membership_identity("angle", angle)
             if opt_ub_ids[ident] > 0:
                 active.add(i)
                 opt_ub_ids[ident] -= 1

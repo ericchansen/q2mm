@@ -293,6 +293,77 @@ class TestMoleculeFromStructure:
         assert molecule.bonds[0].source_bond_order == "2"
         assert molecule.bonds[0].ff_row == 42
 
+    @pytest.mark.parametrize("metadata_update", ["hessian", "name"])
+    @pytest.mark.parametrize(("initial_distance", "new_distance", "n_bonds"), [(0.74, 5.0, 1), (5.0, 0.74, 0)])
+    def test_metadata_update_preserves_moved_inferred_graph(
+        self, metadata_update: str, initial_distance: float, new_distance: float, n_bonds: int
+    ) -> None:
+        original = Molecule(
+            symbols=("H", "H"),
+            geometry=np.array([[0.0, 0.0, 0.0], [initial_distance, 0.0, 0.0]]),
+            hessian=np.eye(6),
+            name="hydrogen",
+        )
+        moved = original.with_geometry(np.array([[0.0, 0.0, 0.0], [new_distance, 0.0, 0.0]]))
+        if metadata_update == "hessian":
+            updated = moved.with_hessian(np.eye(6) * 2)
+            np.testing.assert_array_equal(updated.hessian, np.eye(6) * 2)
+        else:
+            updated = moved.with_overrides(name="renamed", charge=1, multiplicity=2)
+            assert updated.name == "renamed"
+            assert (updated.charge, updated.multiplicity) == (1, 2)
+            assert updated.hessian is None
+
+        assert len(updated.bonds) == n_bonds
+        assert updated.bonds == moved.bonds
+        assert not updated.bonds_explicit
+        if n_bonds:
+            assert updated.bonds[0].length == pytest.approx(new_distance)
+        assert moved.hessian is None
+        assert moved.hessian_provenance is None
+        assert original.name == "hydrogen"
+        np.testing.assert_array_equal(original.hessian, np.eye(6))
+        assert updated.with_hessian(None).bonds == moved.bonds
+
+        reinferred = updated.with_overrides(bond_tolerance=original.bond_tolerance)
+        assert len(reinferred.bonds) == 1 - n_bonds
+        assert not reinferred.bonds_explicit
+
+    @pytest.mark.parametrize("empty_category", [None, "bonds", "angles", "torsions"])
+    def test_geometry_and_metadata_updates_preserve_each_topology_category(self, empty_category: str | None) -> None:
+        topology = {} if empty_category is None else {empty_category: ()}
+        original = Molecule(
+            symbols=("C",) * 4,
+            geometry=np.array([[0.0, 1.5, 0.0], [0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [1.5, 0.0, 1.5]]),
+            hessian=np.eye(12),
+            **topology,
+        )
+        geometry = np.array([[0.0, 5.0, 0.0], [0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [8.0, 3.0, 4.0]])
+        moved = original.with_geometry(geometry)
+        updated = moved.with_hessian(np.eye(12)).with_overrides(name="chain").with_atom_types(["C1"] * 4)
+
+        for category in ("bonds", "angles", "torsions"):
+            assert getattr(updated, f"{category}_explicit") == (category == empty_category)
+            assert len(getattr(updated, category)) == len(getattr(original, category))
+            if category == empty_category:
+                assert getattr(updated, category) == ()
+        assert moved.hessian is None
+        assert moved.hessian_provenance is None
+        assert updated.with_geometry(original.geometry).hessian is None
+        if updated.bonds:
+            assert [b.length for b in updated.bonds] == pytest.approx([5.0, 5.0, np.sqrt(34.0)])
+            assert all(b.env_id == "C1-C1" for b in updated.bonds)
+        if updated.angles:
+            assert [a.value for a in updated.angles] == pytest.approx(
+                [90.0, np.degrees(np.arccos(-3.0 / np.sqrt(34.0)))]
+            )
+        if updated.torsions:
+            assert updated.torsions[0].value == pytest.approx(-np.degrees(np.arctan2(4.0, 3.0)))
+        if empty_category is not None:
+            reinferred = updated.with_overrides(bond_tolerance=0.5)
+            assert getattr(reinferred, empty_category) == ()
+            assert getattr(reinferred, f"{empty_category}_explicit")
+
 
 # ---- Torsion detection ----
 
@@ -1153,9 +1224,9 @@ class TestForceField:
         active_mask = np.zeros(len(layout), dtype=bool)
         active_mask[space.active_indices] = True
 
-        assert len(layout) == 2742
+        assert len(layout) == 4249
         assert space.n_active == 182
-        assert active_mask.shape == (2742,)
+        assert active_mask.shape == (4249,)
         assert len(space.pack(layout.vector(ff))) == 182
         assert 0 < len(space.active_owner_indices("bonds")) < len(ff.bonds)
 
@@ -1303,7 +1374,7 @@ class TestForceField:
     def test_tinker_export_preserves_vdw_reduction(self, tmp_path: Path) -> None:
         """Verify Tinker export preserves VDW reduction factor.
 
-        Regression: _update_tinker_vdw_lines must write match.reduction,
+        Regression: template edits must write the requested reduction,
         not copy the old tail from the file.
         """
         prm_path = tmp_path / "vdw_reduction.prm"
@@ -1351,14 +1422,457 @@ class TestForceField:
 # ---- Bond order parsing and matching ----
 
 
+class TestTinkerTemplateFidelity:
+    @pytest.fixture(params=["", "# Q2MM\n# OPT Synthetic\n"], ids=["unmarked", "marked"])
+    def source(self, tmp_path: Path, request: pytest.FixtureRequest) -> Path:
+        path = tmp_path / "source.prm"
+        path.write_text(
+            '# Synthetic template\natom 1 C "carbon" 6 12.0 4\n'
+            'atom 2 H "hydrogen" 1 1.0 1\n'
+            "torsionunit 0.5\n" + request.param + "bond\t1 2 5.0 1.1   # bond comment mentions torsion\n"
+            "angle 2 1 2 0.5 200.0 111.0 222.0 # angle comment\n"
+            "torsion 2 1 1 2 1.0 30 4 -2.0 180 2 3.0 -450 6 # bond angle\n"
+            "vdw 2 1.5 0.02 # no reduction\n"
+            "charge 1 0.0\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def test_noop_preserves_all_bytes_and_parameters(self, source: Path, tmp_path: Path) -> None:
+        expected = source.read_bytes()
+        ff = load_tinker_prm(source)
+        output = tmp_path / "roundtrip.prm"
+        for _ in range(3):
+            save_tinker_prm(ff, output)
+            assert output.read_bytes() == expected
+            again = load_tinker_prm(output)
+            for category in ("bonds", "angles", "torsions", "vdws"):
+                assert getattr(again, category) == getattr(ff, category)
+            ff = again
+        assert [t.force_constant for t in ff.torsions] == [0.5, -1.0, 1.5]
+        assert [t.phase for t in ff.torsions] == [30.0, 180.0, -450.0]
+        assert [t.periodicity for t in ff.torsions] == [4, 2, 6]
+        assert ff.angles[0].equilibrium == 160.0
+
+    def test_scalar_edits_survive_and_preserve_template(self, source: Path, tmp_path: Path) -> None:
+        ff = load_tinker_prm(source)
+        edited = replace(
+            ff,
+            bonds=(
+                replace(
+                    ff.bonds[0], force_constant=ff.bonds[0].force_constant * 400, equilibrium=np.float64(1.234567891)
+                ),
+            ),
+            angles=(replace(ff.angles[0], force_constant=ff.angles[0].force_constant * 8, equilibrium=108.123456789),),
+            torsions=tuple(
+                replace(t, force_constant=t.force_constant * 2000, phase=t.phase + 12.5) for t in ff.torsions
+            ),
+            vdws=(replace(ff.vdws[0], radius=1.654321, epsilon=0.03456789, reduction=0.923),),
+        )
+        output = tmp_path / "edited.prm"
+        save_tinker_prm(edited, output)
+        again = load_tinker_prm(output)
+        for category, fields in (
+            ("bonds", ("force_constant", "equilibrium")),
+            ("angles", ("force_constant", "equilibrium")),
+            ("torsions", ("force_constant", "phase", "periodicity")),
+            ("vdws", ("radius", "epsilon", "reduction")),
+        ):
+            for expected, actual in zip(getattr(edited, category), getattr(again, category), strict=True):
+                for field in fields:
+                    assert getattr(actual, field) == pytest.approx(getattr(expected, field), rel=1e-14)
+                assert actual.ff_row == expected.ff_row
+        before = source.read_text().splitlines()
+        after = output.read_text().splitlines()
+        changed_rows = {p.ff_row for p in (*ff.bonds, *ff.angles, *ff.torsions, *ff.vdws)}
+        for row, (old, new) in enumerate(zip(before, after, strict=True), start=1):
+            if row not in changed_rows:
+                assert new == old
+            else:
+                assert new.partition("#")[2] == old.partition("#")[2]
+        assert "bond\t1 2 2000.0 1.234567891   #" in output.read_text()
+        assert " 111.0 222.0 # angle comment" in output.read_text()
+        assert " 0.923 # no reduction" in output.read_text()
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_original_torsion_regression_and_line_endings(self, tmp_path: Path, newline: str) -> None:
+        source = tmp_path / "source.prm"
+        text = newline.join(("# Q2MM", "# OPT Test", "torsion C1 C2 C3 C4 1.0 0 1 2.0 180 2 3.0 0 3"))
+        source.write_bytes(text.encode())
+        ff = load_tinker_prm(source)
+        output = tmp_path / "output.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+        assert [(t.force_constant, t.phase, t.periodicity) for t in load_tinker_prm(output).torsions] == [
+            (1.0, 0.0, 1),
+            (2.0, 180.0, 2),
+            (3.0, 0.0, 3),
+        ]
+        save_tinker_prm(replace(ff, torsions=(replace(ff.torsions[0], phase=12.5), *ff.torsions[1:])), output)
+        assert output.read_bytes() == text.replace("1.0 0 1", "1.0 12.5 1").encode()
+
+    @pytest.mark.parametrize("unit", [1.0, 0.5, 2.75, -0.5])
+    def test_torsion_coefficient_matches_official_formula(self, tmp_path: Path, unit: float) -> None:
+        # TinkerTools/tinker@87050685: etors.f etors0a expands cos(n*phi-phase)
+        # into cos(n*phi)*cos(phase) + sin(n*phi)*sin(phase), then applies torsunit.
+        # This is an algebraic coefficient check, not native geometry/sign parity.
+        source = tmp_path / "formula.prm"
+        triples = [(1.0, 37.0, 6), (-2.0, -45.0, 2), (3.0, 180.0, 4), (0.0, 90.0, 1), (0.1, 720.0, 5), (4.0, 0.0, 3)]
+        source.write_text(
+            "torsion 1 2 3 4 "
+            + " ".join(f"{a} {phase} {n}" for a, phase, n in triples)
+            + "\n"
+            + (f"torsionunit {unit}\n" if unit != 1.0 else ""),
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        phi = np.linspace(-np.pi, np.pi, 61)
+        expected = unit * sum(
+            amplitude * (1 + np.cos(n * phi) * np.cos(np.deg2rad(phase)) + np.sin(n * phi) * np.sin(np.deg2rad(phase)))
+            for amplitude, phase, n in triples
+        )
+        actual = sum(t.force_constant * (1 + np.cos(t.periodicity * phi - np.deg2rad(t.phase))) for t in ff.torsions)
+        np.testing.assert_allclose(actual, expected, atol=1e-12)
+        output = tmp_path / "formula-edited.prm"
+        edited = replace(ff, torsions=tuple(replace(t, force_constant=t.force_constant + 0.125) for t in ff.torsions))
+        save_tinker_prm(edited, output)
+        assert [t.force_constant for t in load_tinker_prm(output).torsions] == pytest.approx(
+            [t.force_constant for t in edited.torsions]
+        )
+
+    def test_last_unit_override_and_fortran_exponents(self, tmp_path: Path) -> None:
+        source = tmp_path / "unit.prm"
+        source.write_text(
+            "torsionunit 2.0\n# Q2MM\n# OPT Test\nTORSION 1 2 3 4 2D0 3d1 6\nTORSIONUNIT 0.5 # last\n",
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        assert [(t.force_constant, t.phase, t.periodicity) for t in ff.torsions] == [(1.0, 30.0, 6)]
+        save_tinker_prm(ff, source)
+        assert "2D0 3d1 6" in source.read_text()
+
+    @pytest.mark.parametrize(
+        "record",
+        [
+            "torsion 1 2 3 4",
+            "torsion 1 2 3 4 1 0",
+            "torsion 1 2 3 4 1 0 1 2",
+            "torsion 1 2 3 4 " + "1 0 1 " * 7,
+            "torsion 1 2 3 4 1 0 1 2 180 1",
+            "torsion 1 2 3 4 1 0 0",
+            "torsion 1 2 3 4 1 0 7",
+            "torsion 1 2 3 4 1 0 -1",
+            "torsion 1 2 3 4 1 0 2.5",
+            "torsion 1 2 3 4 nan 0 1",
+            "torsion 1 2 3 4 1 inf 1",
+            "torsion 1 2 3 4 x 0 1",
+            "torsion 1 2 3 4 1_0 0 1",
+            "torsion 1 2 3 4 1e308 0 1\ntorsionunit 2",
+            "torsion 1 2 3 4 1e-300 0 1\ntorsionunit 1e-300",
+            "torsion4 1 2 3 4 1 0 1",
+            "torsion5 1 2 3 4 1 0 1",
+            "torsionunit 0",
+            "torsionunit nan",
+            "torsionunit inf",
+            "torsionunit",
+            "torsionunit 1 2",
+            "bond 1 2 5 1.1 99",
+            "bond 1 2 5",
+            "angle 1 2 3 5 110 120 130 140",
+            "anglep 1 2 3 5 110",
+            "anglef 1 2 3 5 110 2",
+            "vdw 1 1.0 0.1 0.9 123",
+        ],
+    )
+    @pytest.mark.parametrize("header", ["", "# Q2MM\n# OPT Test\n"])
+    def test_rejects_malformed_or_unsupported_fields(self, tmp_path: Path, record: str, header: str) -> None:
+        source = tmp_path / "invalid.prm"
+        source.write_text(header + record + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="Tinker row"):
+            load_tinker_prm(source)
+
+    @pytest.mark.parametrize("destination", ["new", "existing", "source"])
+    @pytest.mark.parametrize(
+        "edit",
+        [
+            lambda ff: replace(ff, bonds=()),
+            lambda ff: replace(ff, bonds=(*ff.bonds, ff.bonds[0])),
+            lambda ff: replace(ff, bonds=(replace(ff.bonds[0], ff_row=999),)),
+            lambda ff: replace(ff, bonds=(replace(ff.bonds[0], elements=("C", "F")),)),
+            lambda ff: replace(ff, bonds=(replace(ff.bonds[0], force_constant=float("nan")),)),
+            lambda ff: replace(ff, angles=(replace(ff.angles[0], ub_force_constant=1.0),)),
+            lambda ff: replace(ff, torsions=(replace(ff.torsions[0], periodicity=5), *ff.torsions[1:])),
+            lambda ff: replace(ff, torsions=(replace(ff.torsions[0], is_improper=True), *ff.torsions[1:])),
+            lambda ff: replace(ff, torsions=(replace(ff.torsions[0], phase=float("inf")), *ff.torsions[1:])),
+            lambda ff: replace(ff, torsions=(replace(ff.torsions[0], force_constant=1e308), *ff.torsions[1:])),
+            lambda ff: replace(ff, vdws=(replace(ff.vdws[0], reduction=float("nan")),)),
+            lambda ff: replace(ff, stretch_bends=(StretchBendParam(("H", "C", "H"), 1.0),)),
+            lambda ff: replace(ff, nonbonded_excluded_atom_types=("1",)),
+        ],
+    )
+    def test_rejected_edits_never_touch_output(
+        self, source: Path, tmp_path: Path, destination: str, edit: Callable[[ForceField], ForceField]
+    ) -> None:
+        ff = edit(load_tinker_prm(source))
+        output = source if destination == "source" else tmp_path / f"{destination}.prm"
+        if destination == "existing":
+            output.write_bytes(b"keep me")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="Tinker"):
+            save_tinker_prm(ff, output)
+        if before is None:
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    def test_duplicate_environments_use_exact_rows(self, source: Path, tmp_path: Path) -> None:
+        with source.open("a", encoding="utf-8") as f:
+            f.write("bond 1 2 7.0 1.4\n")
+        ff = load_tinker_prm(source)
+        edited = replace(ff, bonds=tuple(replace(b, equilibrium=1.2 + i) for i, b in enumerate(ff.bonds)))
+        output = tmp_path / "duplicates.prm"
+        save_tinker_prm(replace(edited, bonds=tuple(reversed(edited.bonds))), output)
+        assert [b.equilibrium for b in load_tinker_prm(output).bonds] == pytest.approx([1.2, 2.2])
+        ambiguous = replace(ff, bonds=tuple(replace(b, ff_row=None) for b in ff.bonds))
+        with pytest.raises(ValueError, match="ambiguous source-row"):
+            save_tinker_prm(ambiguous, output)
+
+    def test_unique_environment_fallback(self, source: Path, tmp_path: Path) -> None:
+        ff = load_tinker_prm(source)
+        edited = replace(ff, bonds=(replace(ff.bonds[0], ff_row=None, equilibrium=1.25),))
+        output = tmp_path / "fallback.prm"
+        save_tinker_prm(edited, output)
+        assert load_tinker_prm(output).bonds[0].equilibrium == 1.25
+
+    def test_duplicate_torsion_rows_keep_fold_identity(self, tmp_path: Path) -> None:
+        source = tmp_path / "torsions.prm"
+        source.write_text(
+            "torsion 1 2 3 4 1 30 4 2 60 2\ntorsion 1 2 3 4 3 45 2 4 90 4\n",
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        edited = replace(
+            ff, torsions=tuple(replace(t, force_constant=t.force_constant + 10) for t in reversed(ff.torsions))
+        )
+        output = tmp_path / "torsions-out.prm"
+        save_tinker_prm(edited, output)
+        actual = load_tinker_prm(output)
+        assert [(t.ff_row, t.periodicity, t.force_constant, t.phase) for t in actual.torsions] == [
+            (1, 4, 11.0, 30.0),
+            (1, 2, 12.0, 60.0),
+            (2, 2, 13.0, 45.0),
+            (2, 4, 14.0, 90.0),
+        ]
+
+    def test_unrepresentable_scaled_edit_does_not_replace_output(self, tmp_path: Path) -> None:
+        source = tmp_path / "scaled.prm"
+        source.write_text("torsionunit 1e300\ntorsion 1 2 3 4 1e-300 0 1\n", encoding="utf-8")
+        ff = load_tinker_prm(source)
+        edited = replace(ff, torsions=(replace(ff.torsions[0], force_constant=1e-300),))
+        expected = source.read_bytes()
+        with pytest.raises(ValueError, match="underflow"):
+            save_tinker_prm(edited, source)
+        assert source.read_bytes() == expected
+
+    @pytest.mark.parametrize("destination", ["new", "existing", "source"])
+    @pytest.mark.parametrize("failure", ["record-length", "reconstructed-overflow", "scaling-underflow"])
+    def test_native_record_failures_preserve_destination(
+        self, source: Path, tmp_path: Path, destination: str, failure: str
+    ) -> None:
+        if failure == "record-length":
+            with source.open("a", encoding="utf-8") as f:
+                f.write("torsion 1 2 3 4 " + " ".join(f"{n} 0 {n}" for n in range(1, 7)) + "\n")
+            ff = load_tinker_prm(source)
+            edited = replace(
+                ff,
+                torsions=tuple(
+                    replace(t, force_constant=t.force_constant + 0.1234567890123456, phase=123.12345678901234)
+                    if t.env_id == "1-2-3-4"
+                    else t
+                    for t in ff.torsions
+                ),
+            )
+            unit = 0.5
+            data = "torsion 1 2 3 4 " + " ".join(
+                f"{t.force_constant / unit!r} {t.phase!r} {t.periodicity}"
+                for t in edited.torsions
+                if t.env_id == "1-2-3-4"
+            )
+            assert len(data) > 240
+            message = "240"
+        else:
+            with source.open("a", encoding="utf-8") as f:
+                f.write("torsionunit 3\n" if failure == "reconstructed-overflow" else "torsionunit 1e300\n")
+            ff = load_tinker_prm(source)
+            coefficient = float.fromhex("0x1.fffffffffffffp+1023") if failure == "reconstructed-overflow" else 1e-300
+            edited = replace(ff, torsions=(replace(ff.torsions[0], force_constant=coefficient), *ff.torsions[1:]))
+            message = "overflow|underflow"
+        output = source if destination == "source" else tmp_path / f"{destination}.prm"
+        if destination == "existing":
+            output.write_bytes(b"preserve existing output")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match=message):
+            save_tinker_prm(edited, output)
+        if before is None:
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    @pytest.mark.parametrize("comment", ["! fitted # parameter", "# fitted ! parameter"])
+    def test_both_comment_boundaries_preserve_noop_and_edits(self, source: Path, tmp_path: Path, comment: str) -> None:
+        text = source.read_text().replace("# bond comment mentions torsion", comment)
+        text = text.replace("# angle comment", comment).replace("# bond angle", comment)
+        text = text.replace("# no reduction", comment).replace("torsionunit 0.5", f"torsionunit 0.5 {comment}")
+        source.write_text(text, encoding="utf-8")
+        ff = load_tinker_prm(source)
+        output = tmp_path / "comments.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+        edited = replace(
+            ff,
+            bonds=(replace(ff.bonds[0], equilibrium=1.25),),
+            angles=(replace(ff.angles[0], equilibrium=108.5),),
+            torsions=(replace(ff.torsions[0], phase=45.0), *ff.torsions[1:]),
+            vdws=(replace(ff.vdws[0], reduction=0.9),),
+        )
+        save_tinker_prm(edited, output)
+        again = load_tinker_prm(output)
+        assert again.bonds[0].equilibrium == 1.25
+        assert again.angles[0].equilibrium == 108.5
+        assert again.torsions[0].phase == 45.0
+        assert again.vdws[0].reduction == 0.9
+        assert output.read_text() == (
+            text.replace("5.0 1.1", "5.0 1.25")
+            .replace("0.5 200.0", "0.5 108.5")
+            .replace("1.0 30 4", "1.0 45.0 4")
+            .replace("vdw 2 1.5 0.02 ", "vdw 2 1.5 0.02 0.9 ")
+        )
+
+    @pytest.mark.parametrize("comment", ["#", "!"])
+    @pytest.mark.parametrize("width", [239, 240, 241])
+    def test_native_record_boundary_excludes_comment_tail(self, tmp_path: Path, comment: str, width: int) -> None:
+        source = tmp_path / "boundary.prm"
+        data = "torsion 1 2 3 4 1 30 6"
+        text = data.rjust(width) + f"   {comment} " + "comment " * 50 + "\n"
+        source.write_text(text, encoding="utf-8")
+        ff = load_tinker_prm(source)
+        output = tmp_path / "boundary-out.prm"
+        if width > 240:
+            with pytest.raises(ValueError, match="240"):
+                save_tinker_prm(ff, output)
+            assert not output.exists()
+        else:
+            save_tinker_prm(ff, output)
+            assert output.read_bytes() == source.read_bytes()
+            assert load_tinker_prm(output).torsions == ff.torsions
+
+    @pytest.mark.parametrize("destination", ["new", "existing", "source"])
+    @pytest.mark.parametrize("comment", ["#", "!"])
+    def test_numeric_triplet_tail_is_not_a_comment(self, tmp_path: Path, destination: str, comment: str) -> None:
+        source = tmp_path / "malformed.prm"
+        source.write_text(f"torsion 1 2 3 4 1 30 6 2.0 45 {comment} missing fold\n", encoding="utf-8")
+        output = source if destination == "source" else tmp_path / f"{destination}.prm"
+        if destination == "existing":
+            output.write_bytes(b"preserve output")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="complete.*triplets"):
+            save_tinker_prm(ForceField(functional_form=FunctionalForm.MM3), output, template_path=source)
+        if before is None:
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    def test_reconstructed_coefficient_valid_control(self, tmp_path: Path) -> None:
+        source = tmp_path / "scaled-control.prm"
+        source.write_text("torsionunit 3\ntorsion 1 2 3 4 1 0 6\n", encoding="utf-8")
+        ff = load_tinker_prm(source)
+        coefficient = 1.7e308
+        edited = replace(ff, torsions=(replace(ff.torsions[0], force_constant=coefficient),))
+        save_tinker_prm(edited, source)
+        assert load_tinker_prm(source).torsions[0].force_constant == pytest.approx(coefficient)
+
+    @pytest.mark.parametrize("destination_exists", [False, True])
+    @pytest.mark.parametrize("record", ["bond", "angle", "vdw"])
+    def test_standalone_required_data_must_fit_native_record(
+        self, tmp_path: Path, destination_exists: bool, record: str
+    ) -> None:
+        atom_type = "C" * 241
+        ff = ForceField(
+            bonds=(BondParam(("C", "H"), 1.1, 100.0, env_id=f"{atom_type}-H1"),) if record == "bond" else (),
+            angles=(AngleParam(("H", "C", "H"), 109.0, 50.0, env_id=f"H1-{atom_type}-H1"),)
+            if record == "angle"
+            else (),
+            vdws=(VdwParam(atom_type, 1.5, 0.02),) if record == "vdw" else (),
+            functional_form=FunctionalForm.MM3,
+        )
+        output = tmp_path / "standalone.prm"
+        if destination_exists:
+            output.write_bytes(b"preserve output")
+        with pytest.raises(ValueError, match="240"):
+            save_tinker_prm(ff, output)
+        if destination_exists:
+            assert output.read_bytes() == b"preserve output"
+        else:
+            assert not output.exists()
+
+    def test_record_limit_does_not_treat_quoted_markers_as_comments(self, tmp_path: Path) -> None:
+        source = tmp_path / "quoted.prm"
+        source.write_text(
+            'atom 1 C "quoted # ! description" 6 12.0 4\natom 2 H "H" 1 1.0 1\nbond 1 2 5.0 1.1\n',
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        output = tmp_path / "quoted-out.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+        source.write_text(
+            source.read_text().replace('"quoted # ! description"', '"' + "#" * 240 + '"'), encoding="utf-8"
+        )
+        before = output.read_bytes()
+        with pytest.raises(ValueError, match="240"):
+            save_tinker_prm(ff, output)
+        assert output.read_bytes() == before
+
+    def test_marked_save_leaves_unselected_rows_untouched(self, tmp_path: Path) -> None:
+        source = tmp_path / "marked.prm"
+        source.write_text(
+            "vdw 1 9.9 8.8\nbond 1 2 5.0 1.2\n# Q2MM\n# OPT Test\n"
+            "vdw 1 1.0 0.2\nbond 1 2 6.0 1.3\n# Fixed\nbond 1 2 7.0 1.4\n",
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        assert len(ff.bonds) == len(ff.vdws) == 1
+        edited = replace(ff, vdws=(replace(ff.vdws[0], epsilon=0.3),), bonds=(replace(ff.bonds[0], equilibrium=1.5),))
+        output = tmp_path / "marked-out.prm"
+        save_tinker_prm(edited, output)
+        assert output.read_text() == source.read_text().replace("vdw 1 1.0 0.2", "vdw 1 1.0 0.3").replace(
+            "bond 1 2 6.0 1.3", "bond 1 2 6.0 1.5"
+        )
+
+    def test_torsions_require_template_for_standalone_save(self, source: Path, tmp_path: Path) -> None:
+        ff = replace(load_tinker_prm(source), source_path=None)
+        output = tmp_path / "standalone.prm"
+        with pytest.raises(ValueError, match="torsion export requires a source template"):
+            save_tinker_prm(ff, output)
+        assert not output.exists()
+
+
 class TestBondOrderParsing:
     """Test bond-order and context parsing from .fld files."""
 
     def test_standard_section_bond_order_single(self) -> None:
         """Standard section: '-' at column 7 is parsed as single bond."""
         ff = load_mm3_fld(RH_MM3)
+        lines = RH_MM3.read_text(encoding="utf-8").splitlines()
+        first_substructure_row = next(
+            i + 1
+            for i, (header, pattern) in enumerate(zip(lines, lines[1:]))
+            if header.startswith(" C") and pattern.startswith(" 9")
+        )
         # C3-C3 single bonds exist in the standard section
-        c3c3_bonds = [b for b in ff.bonds if b.env_id == "C3-C3"]
+        c3c3_bonds = [
+            b for b in ff.bonds if b.env_id == "C3-C3" and b.ff_row is not None and b.ff_row < first_substructure_row
+        ]
         assert len(c3c3_bonds) > 0
         assert all(b.bond_order == "-" for b in c3c3_bonds)
 
@@ -1646,15 +2160,9 @@ class TestBondOrderMatching:
         assert result.bond_order == "-"
 
     def test_match_bond_tier3_skipped_without_length(self, ff_with_bond_orders: ForceField) -> None:
-        """Tier 3 is skipped when bond_length is None — falls through to tier 4."""
-        result = ff_with_bond_orders.match_bond(
-            ("C", "C"),
-            env_id="C2-C2",
-        )
-        assert result is not None
-        # Without bond_order or bond_length, tier 4 (env_id + prefer generic) applies
-        # The first match with env_id="C2-C2" that's generic should be returned
-        # (depends on implementation — either first match or generic-preferred)
+        """Without order or length, generic single/double variants are ambiguous."""
+        with pytest.raises(ValueError, match="Ambiguous bond"):
+            ff_with_bond_orders.match_bond(("C", "C"), env_id="C2-C2")
 
     def test_match_bond_tier4_env_id_prefers_generic(self, ff_with_bond_orders: ForceField) -> None:
         """Tier 4: env_id-only match prefers generic context entry."""
@@ -1694,6 +2202,198 @@ class TestBondOrderMatching:
         )
         result = ff.match_bond(("N", "H"), env_id="N3-H1")
         assert result is None
+
+
+class TestTypedMatching:
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("generic_order", ["=", ""])
+    def test_compatible_generic_bond_order_precedes_incompatible_typed_row(
+        self, reverse_rows: bool, generic_order: str
+    ) -> None:
+        single = BondParam(("C", "C"), 1.5, 100.0, env_id="C2-C2", bond_order="-", ff_row=1)
+        double = BondParam(("C", "C"), 1.2, 200.0, bond_order=generic_order, ff_row=2)
+        ff = ForceField(
+            bonds=(double, single) if reverse_rows else (single, double),
+            functional_form=FunctionalForm.MM3,
+        )
+        assert ff.get_bond("C", "C", env_id="C2-C2", bond_order="=") is double
+        assert ff.match_bond(("C", "C"), env_id="C2-C2", bond_order="=", bond_length=1.2) is double
+        assert ff.match_bond(("C", "C"), env_id="C2-C2", bond_order="=") is double
+        assert ff.match_bond(("C", "C"), env_id="C2-C2", bond_order="=", ff_row=1) is single
+        assert ff.match_bond(("C", "C"), env_id="C2-C2") is single
+
+    @pytest.mark.parametrize("env_id", ["C2-C2", "C9-C9", ""])
+    def test_explicit_bond_order_never_returns_contradictory_row(self, env_id: str) -> None:
+        single = BondParam(("C", "C"), 1.5, 100.0, env_id="C2-C2", bond_order="-")
+        ff = ForceField(bonds=(single,), functional_form=FunctionalForm.MM3)
+        assert ff.get_bond("C", "C", env_id=env_id, bond_order="=") is None
+        assert ff.match_bond(("C", "C"), env_id=env_id, bond_order="=", bond_length=1.5) is None
+
+    def test_explicit_bond_order_uses_compatible_element_fallback(self) -> None:
+        single = BondParam(("C", "C"), 1.5, 100.0, env_id="C2-C2", bond_order="-")
+        double = replace(single, env_id="C1-C1", bond_order="=", equilibrium=1.2, force_constant=200.0)
+        ff = ForceField(bonds=(single, double), functional_form=FunctionalForm.MM3)
+        assert ff.get_bond("C", "C", env_id="C2-C2", bond_order="=") is None
+        assert ff.match_bond(("C", "C"), env_id="C2-C2", bond_order="=", bond_length=1.5) is double
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    def test_exact_bond_order_precedes_unknown_order(self, reverse_rows: bool) -> None:
+        unknown = BondParam(("C", "C"), 1.5, 10.0, env_id="C1-C1")
+        exact = replace(unknown, force_constant=20.0, bond_order="=")
+        ff = ForceField(
+            bonds=(exact, unknown) if reverse_rows else (unknown, exact),
+            functional_form=FunctionalForm.MM3,
+        )
+        assert ff.get_bond("C", "C", env_id="C1-C1", bond_order="=") is exact
+        assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_order="=") is exact
+        assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_order="-") is unknown
+
+    @pytest.mark.parametrize(("lower", "upper", "midpoint"), [(1.0, 2.0, 1.5), (1.3, 1.5, 1.4)])
+    def test_nearest_bond_length_tie_raises(self, lower: float, upper: float, midpoint: float) -> None:
+        first = BondParam(("C", "C"), lower, 10.0, env_id="C1-C1")
+        second = replace(first, force_constant=20.0, equilibrium=upper)
+        ff = ForceField(bonds=(first, second), functional_form=FunctionalForm.MM3)
+        with pytest.raises(ValueError, match="Ambiguous bond"):
+            ff.match_bond(("C", "C"), env_id="C1-C1", bond_length=midpoint)
+        assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_length=midpoint - 1e-5) is first
+        assert ff.match_bond(("C", "C"), env_id="C1-C1", bond_length=midpoint + 1e-5) is second
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("env_id", ["c3-h2", "h2-c3"])
+    def test_exact_bond_environment_precedes_generic(self, reverse_rows: bool, env_id: str) -> None:
+        generic = BondParam(("C", "H"), 1.0, 10.0, bond_order="-")
+        exact = replace(generic, force_constant=20.0, equilibrium=1.1, env_id="c3-h2")
+        ff = ForceField(
+            bonds=(exact, generic) if reverse_rows else (generic, exact),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        assert ff.get_bond("H", "C", env_id=env_id) is exact
+        assert ff.match_bond(("H", "C"), env_id=env_id) is exact
+        assert ff.match_bond(("H", "C"), env_id=env_id, bond_order="-") is exact
+        assert ff.match_bond(("H", "C"), env_id=env_id, bond_length=1.0) is exact
+        assert ff.match_bond(("H", "C"), env_id="c3-h9") is generic
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("env_id", ["c2-c3-h2", "h2-c3-c2"])
+    def test_exact_angle_environment_precedes_generic(self, reverse_rows: bool, env_id: str) -> None:
+        generic = AngleParam(("C", "C", "H"), 110.0, 10.0)
+        exact = replace(generic, force_constant=20.0, env_id="c2-c3-h2")
+        ff = ForceField(
+            angles=(exact, generic) if reverse_rows else (generic, exact),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        assert ff.get_angle("H", "C", "C", env_id=env_id) is exact
+        assert ff.match_angle(("H", "C", "C"), env_id=env_id) is exact
+        assert ff.match_angle(("H", "C", "C"), env_id="c2-c3-h9") is generic
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("env_id", ["c2-c3-h2", "h2-c3-c2"])
+    def test_exact_stretch_bend_environment_precedes_generic(self, reverse_rows: bool, env_id: str) -> None:
+        generic = StretchBendParam(("C", "C", "H"), 10.0)
+        exact = replace(generic, force_constant=20.0, env_id="c2-c3-h2")
+        ff = ForceField(
+            stretch_bends=(exact, generic) if reverse_rows else (generic, exact),
+            functional_form=FunctionalForm.MM3,
+        )
+        assert ff.match_stretch_bend(("H", "C", "C"), env_id=env_id) is exact
+        assert ff.match_stretch_bend(("H", "C", "C"), env_id="c2-c3-h9") is generic
+
+    @pytest.mark.parametrize("env_id", ["c3-h2", "", "c3-h9"])
+    def test_ambiguous_bonds_require_more_identity(self, env_id: str) -> None:
+        first = BondParam(("C", "H"), 1.0, 10.0, env_id="c3-h2", ff_row=1)
+        second = replace(first, force_constant=20.0, ff_row=2)
+        ff = ForceField(bonds=(first, second), functional_form=FunctionalForm.HARMONIC)
+        with pytest.raises(ValueError, match="Ambiguous bond"):
+            ff.match_bond(("C", "H"), env_id=env_id)
+        assert ff.match_bond(("C", "H"), env_id=env_id, ff_row=2) is second
+
+    @pytest.mark.parametrize("env_id", ["c2-c3-h2", "", "c2-c3-h9"])
+    def test_ambiguous_angles_require_more_identity(self, env_id: str) -> None:
+        first = AngleParam(("C", "C", "H"), 110.0, 10.0, env_id="c2-c3-h2", ff_row=1)
+        second = replace(first, force_constant=20.0, ff_row=2)
+        ff = ForceField(angles=(first, second), functional_form=FunctionalForm.HARMONIC)
+        with pytest.raises(ValueError, match="Ambiguous angle"):
+            ff.match_angle(("C", "C", "H"), env_id=env_id)
+        assert ff.match_angle(("C", "C", "H"), env_id=env_id, ff_row=2) is second
+
+    @pytest.mark.parametrize("env_id", ["c2-c3-h2", "", "c2-c3-h9"])
+    def test_ambiguous_stretch_bends_require_more_identity(self, env_id: str) -> None:
+        first = StretchBendParam(("C", "C", "H"), 10.0, env_id="c2-c3-h2", ff_row=1)
+        second = replace(first, force_constant=20.0, ff_row=2)
+        ff = ForceField(stretch_bends=(first, second), functional_form=FunctionalForm.MM3)
+        with pytest.raises(ValueError, match="Ambiguous stretch-bend"):
+            ff.match_stretch_bend(("C", "C", "H"), env_id=env_id)
+        assert ff.match_stretch_bend(("C", "C", "H"), env_id=env_id, ff_row=2) is second
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("env_id", ["h1-c3-c2-h2", "h2-c2-c3-h1"])
+    def test_torsion_environment_selects_complete_fourier_collection(self, reverse_rows: bool, env_id: str) -> None:
+        generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0, ff_row=1)
+        first = replace(generic, env_id="h1-c3-c2-h2", force_constant=20.0, ff_row=2)
+        second = replace(first, periodicity=2, force_constant=30.0)
+        phased = replace(first, phase=180.0, force_constant=40.0)
+        exact = (first, second, phased)
+        ff = ForceField(
+            torsions=(*exact, generic) if reverse_rows else (generic, *exact),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id=env_id) == list(exact)
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id=env_id, periodicity=1) == [first, phased]
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id=env_id, ff_row=1) == [generic]
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id="h9-c3-c2-h9") == [generic]
+        assert ff.get_torsion("H", "C", "C", "H", env_id=env_id, periodicity=2) is second
+        with pytest.raises(ValueError, match="Ambiguous torsion"):
+            ff.get_torsion("H", "C", "C", "H", env_id=env_id, periodicity=1)
+
+    def test_singular_torsion_keeps_default_component(self) -> None:
+        generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0)
+        first = replace(generic, periodicity=2, env_id="h1-c3-c2-h2", force_constant=20.0)
+        second = replace(first, periodicity=1, force_constant=30.0)
+        ff = ForceField(torsions=(generic, first, second), functional_form=FunctionalForm.HARMONIC)
+        assert ff.get_torsion("H", "C", "C", "H", env_id="h2-c2-c3-h1") is first
+
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("is_improper", [False, True])
+    def test_torsion_periodicity_filters_winning_environment_collection(
+        self, reverse_rows: bool, is_improper: bool
+    ) -> None:
+        generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0, is_improper=is_improper, ff_row=1)
+        exact = replace(generic, env_id="h1-c3-c2-h2", periodicity=2, force_constant=20.0, ff_row=2)
+        ff = ForceField(
+            torsions=(exact, generic) if reverse_rows else (generic, exact),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        for env_id in (exact.env_id, "h2-c2-c3-h1"):
+            all_terms = ff.match_torsion(generic.elements, env_id=env_id, is_improper=is_improper)
+            assert all_terms == [exact]
+            for periodicity in (1, 2, 3):
+                assert ff.match_torsion(
+                    generic.elements, env_id=env_id, periodicity=periodicity, is_improper=is_improper
+                ) == [t for t in all_terms if t.periodicity == periodicity]
+                assert ff.get_torsion(*generic.elements, env_id=env_id, periodicity=periodicity) is (
+                    exact if periodicity == 2 else None
+                )
+            assert ff.get_torsion(*generic.elements, env_id=env_id) is exact
+            assert ff.match_torsion(generic.elements, env_id=env_id, periodicity=1, ff_row=1) == [generic]
+
+    def test_torsion_element_fallback_preserves_all_components(self) -> None:
+        first = TorsionParam(("H", "C", "C", "H"), 1, 10.0, env_id="h1-c3-c2-h1")
+        second = replace(first, env_id="h2-c3-c2-h2", force_constant=20.0)
+        third = replace(second, periodicity=2, phase=180.0)
+        ff = ForceField(torsions=(first, second, third), functional_form=FunctionalForm.HARMONIC)
+        for env_id in ("", "h9-c3-c2-h9"):
+            assert ff.match_torsion(first.elements, env_id=env_id) == [first, second, third]
+            assert ff.match_torsion(first.elements, env_id=env_id, periodicity=1) == [first, second]
+            assert ff.match_torsion(first.elements, env_id=env_id, periodicity=2) == [third]
+        with pytest.raises(ValueError, match="Ambiguous torsion"):
+            ff.get_torsion(*first.elements, periodicity=1)
+
+    def test_torsion_environment_ranking_preserves_proper_and_improper(self) -> None:
+        generic = TorsionParam(("H", "C", "C", "H"), 1, 10.0)
+        exact = replace(generic, env_id="h1-c3-c2-h2", force_constant=20.0)
+        improper = replace(generic, is_improper=True, force_constant=30.0)
+        ff = ForceField(torsions=(improper, generic, exact), functional_form=FunctionalForm.HARMONIC)
+        assert ff.match_torsion(("H", "C", "C", "H"), env_id=exact.env_id) == [improper, exact]
 
 
 class TestDetectedBondOrder:
@@ -1829,6 +2529,35 @@ UPSTREAM_FRCMOD = Path(__file__).resolve().parent / "fixtures" / "upstream_q2mm.
 
 
 class TestAmberFrcmod:
+    @pytest.mark.parametrize("reverse_types", [False, True])
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    def test_typed_bond_and_angle_orientation(self, tmp_path: Path, reverse_types: bool, reverse_rows: bool) -> None:
+        bond_types = [("h1", "c3"), ("h2", "c3")]
+        angle_types = [("h1", "c3", "c2"), ("h2", "c3", "c2")]
+        if reverse_types:
+            bond_types = [tuple(reversed(types)) for types in bond_types]
+            angle_types = [tuple(reversed(types)) for types in angle_types]
+        bond_rows = [f"{'-'.join(types)}  {k} 1.1" for types, k in zip(bond_types, (100, 200))]
+        angle_rows = [f"{'-'.join(types)}  {k} 110.0" for types, k in zip(angle_types, (10, 20))]
+        if reverse_rows:
+            bond_rows.reverse()
+            angle_rows.reverse()
+        source = tmp_path / "typed.frcmod"
+        source.write_text(
+            "Synthetic\nBOND\n" + "\n".join(bond_rows) + "\n\nANGLE\n" + "\n".join(angle_rows) + "\n\n",
+            encoding="utf-8",
+        )
+        ff = load_amber_frcmod(source)
+
+        assert {b.env_id for b in ff.bonds} == {"c3-h1", "c3-h2"}
+        assert {a.env_id for a in ff.angles} == {"c2-c3-h1", "c2-c3-h2"}
+        bond = ff.match_bond(("C", "H"), env_id="c3-h2")
+        angle = ff.match_angle(("C", "C", "H"), env_id="c2-c3-h2")
+        assert bond is not None and bond.force_constant == 200.0
+        assert angle is not None and angle.force_constant == 20.0
+        assert bond.ff_row == (3 if reverse_rows else 4)
+        assert angle.ff_row == (7 if reverse_rows else 8)
+
     def test_load_bonds(self) -> None:
         ff = load_amber_frcmod(SAMPLE_FRCMOD)
         assert len(ff.bonds) == 3

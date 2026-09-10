@@ -32,6 +32,7 @@ nav:
   - Platform Support: platform-support.md
   - How It Works:
     - Theory & Methods: how-it-works/theory.md
+    - Fitting Objectives: how-it-works/fitting-objectives.md
     - Architecture: how-it-works/architecture.md
     - Data Types: how-it-works/data-types.md
     - Optimization Guide: how-it-works/optimization-guide.md

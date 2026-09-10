@@ -37,7 +37,7 @@ import shlex
 import subprocess
 import sys
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +49,7 @@ import numpy as np
 from q2mm.benchmarks.acceptance import AcceptanceDecision, AcceptancePolicy, CandidateStatus, improvement_percent
 from q2mm.benchmarks.profiles import RunProfile
 from q2mm._canonical import json_value
+from q2mm._result_serialization import result_payload
 from q2mm.constants import REAL_FREQUENCY_THRESHOLD
 from q2mm.models.results import deep_freeze
 from q2mm.objectives.metrics import category_metrics, category_stats
@@ -383,66 +384,37 @@ def _score_interval_summary(initial: Sequence[float], final: Sequence[float]) ->
 # ---------------------------------------------------------------------------
 
 
-def _candidate_record_to_dict(rec: Any) -> dict[str, Any]:
-    return {
-        "index": int(rec.index),
-        "status": rec.status,
-        "n_params": int(rec.n_params),
-        "layout_fingerprint": rec.layout_fingerprint,
-        "initial_params": np.asarray(rec.initial_params, dtype=float).tolist(),
-        "final_params": np.asarray(rec.final_params, dtype=float).tolist(),
-        "initial_score": float(rec.initial_score),
-        "final_score": float(rec.final_score),
-        "message": str(rec.message),
-        "seed": rec.seed,
-    }
-
-
-def _stage_to_dict(stage: Any) -> dict[str, Any]:
-    return {
-        "name": stage.name,
-        "initial_score": float(stage.initial_score),
-        "final_score": float(stage.final_score),
-        "n_iterations": int(stage.n_iterations),
-        "n_evaluations": int(stage.n_evaluations),
-        "converged": bool(stage.converged),
-        "message": str(stage.message),
-        "gradient_mode": str(stage.gradient_mode),
-        "fd_step": stage.fd_step,
-        "elapsed_s": float(stage.elapsed_s),
-        "locked_param_indices": list(stage.locked_param_indices),
-    }
-
-
 def result_to_dict(result: OptimizationResult) -> dict[str, Any]:
-    """Full JSON-safe projection of the one canonical :class:`OptimizationResult`.
+    """Project the canonical result with benchmark scalar coercions.
 
     Includes layout identity, full initial/final vectors, counts, history,
     gradient mode / FD step, multi-start candidate records, workflow stage
-    records, endpoint samples, and per-category metrics — so an accepted or
-    rejected candidate persists its complete result, not just scores.
+    records and notes, endpoint samples, and per-category metrics. Nested
+    diagnostics and nonfinite scalars are normalized by :func:`sanitize_for_json`
+    when the enclosing candidate record is written.
     """
-    return {
-        "success": bool(result.success),
-        "message": str(result.message),
-        "initial_score": float(result.initial_score),
-        "final_score": float(result.final_score),
-        "n_iterations": int(result.n_iterations),
-        "n_evaluations": int(result.n_evaluations),
-        "n_params": int(result.n_params),
-        "layout_fingerprint": result.layout_fingerprint,
-        "initial_params": np.asarray(result.initial_params, dtype=float).tolist(),
-        "final_params": np.asarray(result.final_params, dtype=float).tolist(),
-        "history": [float(x) for x in result.history],
-        "method": result.method,
-        "gradient_mode": result.gradient_mode,
-        "fd_step": result.fd_step,
-        "initial_samples": [float(x) for x in result.initial_samples],
-        "final_samples": [float(x) for x in result.final_samples],
-        "category_metrics": {k: dict(v) for k, v in result.category_metrics.items()},
-        "candidates": [_candidate_record_to_dict(c) for c in result.candidates],
-        "stages": [_stage_to_dict(s) for s in result.stages],
+    payload = result_payload(result)
+    # Preserve the benchmark's historical scalar types without projecting a
+    # second field list or coercing free-form diagnostic notes.
+    scalar_types: dict[str, Callable[[Any], Any]] = {
+        "success": bool,
+        "converged": bool,
+        "message": str,
+        "initial_score": float,
+        "final_score": float,
+        "n_iterations": int,
+        "n_evaluations": int,
+        "n_params": int,
+        "index": int,
+        "elapsed_s": float,
     }
+    for record in (payload, *payload["candidates"], *payload["stages"]):
+        for key, coerce in scalar_types.items():
+            if key in record:
+                record[key] = coerce(record[key])
+    for stage in payload["stages"]:
+        stage["gradient_mode"] = str(stage["gradient_mode"])
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -686,6 +658,19 @@ def _load_kwargs(profile: RunProfile, form: str) -> tuple[dict[str, Any], dict[s
 
 
 def _data_provenance(case: BenchmarkCase, resolved_roots: Mapping[str, str]) -> dict[str, Any]:
+    """Record source metadata and the SDK's versioned scientific input digests.
+
+    The additive ``scientific_problem`` entry participates in resolved candidate
+    identity, so new runs no longer reuse metadata-only candidate IDs. Existing
+    records remain readable as written; absent input digests are not backfilled.
+    Only digests are persisted, not the SDK's full scientific identity payload.
+    """
+    from q2mm.application.models import (
+        PROBLEM_FINGERPRINT_VERSION,
+        problem_fingerprint,
+        problem_input_fingerprints,
+    )
+
     problem = case.problem
     cases = [{"case_id": c.case_id, "stationary_point": c.stationary_point.value} for c in problem.cases]
     hessians: list[dict[str, Any]] = []
@@ -700,6 +685,11 @@ def _data_provenance(case: BenchmarkCase, resolved_roots: Mapping[str, str]) -> 
             }
         )
     return {
+        "scientific_problem": {
+            "fingerprint_version": PROBLEM_FINGERPRINT_VERSION,
+            "fingerprint": problem_fingerprint(problem),
+            "input_fingerprints": dict(problem_input_fingerprints(problem)),
+        },
         "metadata": dict(case.metadata),
         "objective_profile": (
             problem.publication_metadata.objective_profile.identifier
@@ -1147,7 +1137,7 @@ def _execute(
             "opt_time_s": elapsed,
             "optimized": optimized_categories,
             "final_executor_ratio": final_executor_ratio,
-            "stages": [_stage_to_dict(s) for s in result.stages],
+            "stages": result_to_dict(result)["stages"],
         }
     )
     summary.update(_score_interval_summary(list(result.initial_samples), list(result.final_samples)))
@@ -1242,17 +1232,22 @@ def _opposite_ext(ext: str) -> str:
 
 
 def promote_candidate(output_dir: Path, candidate: CandidateResult, provenance: Mapping[str, Any]) -> dict[str, Path]:
-    """Atomically promote an accepted candidate to canonical output names.
+    """Promote an accepted candidate with rollback on installation failure.
 
     Refuses any non-accepted candidate.  The accepted result JSON and the
     optimized force field are serialised to temporary siblings first (a
     serialisation failure changes nothing).  Pre-existing canonical artifacts
-    are snapshotted, then committed with ``os.replace``; a failure at **any**
-    commit step (including the second replace) restores every pre-existing
-    canonical JSON / force field byte-identically, and leaves nothing behind
-    when there was no prior artifact.  The stale opposite-form force field is
-    removed only after a fully successful commit.
+    are snapshotted, then installed with ``os.replace``. Catchable failures
+    attempt to restore the old pair; failed recovery retains backups and is
+    logged without replacing the original exception. After installation,
+    cleanup of backups and the stale opposite-form force field only warns on
+    OSError and never rolls back the committed pair. User interruptions
+    propagate. Sequential replacements are not crash-atomic.
     """
+    import shutil
+
+    from q2mm.application.persistence import _cleanup_files, _temp_sibling
+
     if not candidate.accepted:
         raise ValueError(
             f"refusing to promote non-accepted candidate {candidate.candidate_id!r} ({candidate.status.value})."
@@ -1267,65 +1262,63 @@ def promote_candidate(output_dir: Path, candidate: CandidateResult, provenance: 
     ff = candidate.final_force_field
     ext = _ff_extension(ff) if ff is not None else None
     ff_path = ff_dir / f"{candidate.candidate_id}{ext}" if ext is not None else None
-    tmp_ff = ff_path.with_name(f"{ff_path.name}.tmp-{os.getpid()}") if ff_path is not None else None
-    tmp_json = result_path.with_name(f"{result_path.name}.tmp-{os.getpid()}")
-
-    # ---- serialise both temporaries first (failure here changes nothing) --
-    with tmp_json.open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, allow_nan=False, sort_keys=True)
-        fh.write("\n")
-    try:
-        if ff is not None and tmp_ff is not None:
-            ff_dir.mkdir(parents=True, exist_ok=True)
-            _serialize_ff(ff, tmp_ff)
-    except BaseException:
-        tmp_json.unlink(missing_ok=True)
-        raise
-
-    # ---- snapshot pre-existing canonical targets, then commit -----------
-    import shutil
-
+    tmp_ff = _temp_sibling(ff_path, "output") if ff_path is not None else None
+    tmp_json = _temp_sibling(result_path, "output")
     targets: list[tuple[Path, Path]] = [(tmp_json, result_path)]
     if ff is not None and tmp_ff is not None and ff_path is not None:
         targets.append((tmp_ff, ff_path))
 
-    backups: list[tuple[Path, Path | None]] = []
-    committed: list[Path] = []
-    for _tmp, target in targets:
-        if target.exists():
-            backup_path = target.with_name(f"{target.name}.bak-{os.getpid()}")
-            shutil.copy2(target, backup_path)
-            backups.append((target, backup_path))
-        else:
-            backups.append((target, None))
-
+    backups: dict[Path, Path] = {}
+    attempted: list[Path] = []
+    committed = False
+    phase = "serialization"
     try:
+        with tmp_json.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, indent=2, allow_nan=False, sort_keys=True)
+            fh.write("\n")
+        if ff is not None and tmp_ff is not None:
+            ff_dir.mkdir(parents=True, exist_ok=True)
+            _serialize_ff(ff, tmp_ff)
+        phase = "snapshot"
+        for _tmp, target in targets:
+            if target.exists():
+                backup = _temp_sibling(target, "backup")
+                # A failed copy can leave a partial file that also needs cleanup.
+                backups[target] = backup
+                shutil.copy2(target, backup)
+        phase = "installation"
         for tmp, target in targets:
+            attempted.append(target)
             os.replace(tmp, target)
-            committed.append(target)
-        # Fully committed: drop the opposite-form stale file and the backups.
-        if ff_path is not None and ext is not None:
-            stale = ff_dir / f"{candidate.candidate_id}{_opposite_ext(ext)}"
-            stale.unlink(missing_ok=True)
-        for _target, bak in backups:
-            if bak is not None:
-                bak.unlink(missing_ok=True)
-    except BaseException:
-        # Roll back every committed replace to its pre-existing bytes (or
-        # remove it when there was no prior artifact).
-        for target, bak in backups:
-            if target in committed:
-                if bak is not None:
-                    os.replace(bak, target)
+        committed = True
+    except BaseException as exc:
+        logger.error("Promotion failed during %s; attempting rollback: %s", phase, exc)
+        for target in reversed(attempted):
+            recovery_backup = backups.pop(target, None)
+            try:
+                if recovery_backup is not None:
+                    os.replace(recovery_backup, target)
                 else:
                     target.unlink(missing_ok=True)
-            elif bak is not None:
-                bak.unlink(missing_ok=True)
+            except OSError as recovery_error:
+                logger.error(
+                    "Promotion not committed; rollback failed for %s (recovery backup: %s): %s",
+                    target,
+                    recovery_backup,
+                    recovery_error,
+                )
+        _cleanup_files(backups.values(), phase="Promotion not committed; snapshot cleanup")
         raise
+    else:
+        cleanup = list(backups.values())
+        if ff_path is not None and ext is not None:
+            cleanup.insert(0, ff_dir / f"{candidate.candidate_id}{_opposite_ext(ext)}")
+        _cleanup_files(cleanup, phase="Promotion committed; cleanup")
     finally:
-        tmp_json.unlink(missing_ok=True)
-        if tmp_ff is not None:
-            tmp_ff.unlink(missing_ok=True)
+        _cleanup_files(
+            (tmp for tmp, _target in targets),
+            phase=f"Promotion {'committed' if committed else 'not committed'}; staging cleanup",
+        )
 
     promoted: dict[str, Path] = {"result": result_path}
     if ff_path is not None:

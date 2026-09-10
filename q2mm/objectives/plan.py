@@ -23,6 +23,7 @@ import numpy as np
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import (
     AtomicPartialChargeObservation,
+    Observation,
     ObservationSet,
     ObservationValue,
     ParameterTetherObservation,
@@ -57,9 +58,49 @@ KIND_TO_CATEGORY: MappingProxyType[str, str] = MappingProxyType(
 )
 
 
+def _validate_observation_indices(obs: Observation, molecule: Molecule) -> None:
+    """Validate used indices before either executor can gather or flatten them."""
+    context = f"Observation {obs.label!r} (kind={obs.kind!r}, case_id={obs.case_id!r})"
+    n3 = 3 * molecule.n_atoms
+    if obs.kind in ("frequency", "eig_diagonal"):
+        # Mode indices address the full Cartesian spectrum, including rigid modes.
+        if obs.data_idx >= n3:
+            raise ValueError(f"{context}: data_idx={obs.data_idx} out of range for {n3} modes.")
+    elif obs.kind in ("bond_length", "bond_angle") and obs.atom_indices is None:
+        size = len(molecule.bonds or ()) if obs.kind == "bond_length" else len(molecule.angles or ())
+        if obs.data_idx >= size:
+            raise ValueError(f"{context}: data_idx={obs.data_idx} out of range for {size} topology entries.")
+    elif obs.kind in ("bond_length", "bond_angle", "torsion_angle", "eig_offdiagonal", "hessian_element"):
+        arity = {"bond_length": 2, "bond_angle": 3, "torsion_angle": 4, "eig_offdiagonal": 2, "hessian_element": 2}[
+            obs.kind
+        ]
+        indices = obs.atom_indices
+        if indices is None or len(indices) != arity:
+            raise ValueError(f"{context}: requires exactly {arity} atom_indices, got {indices!r}.")
+        bound = n3 if obs.kind in ("eig_offdiagonal", "hessian_element") else molecule.n_atoms
+        if any(index >= bound for index in indices):
+            raise ValueError(f"{context}: atom_indices={indices!r} out of range [0, {bound}).")
+        if obs.kind == "bond_length":
+            if not any(indices in ((b.atom_i, b.atom_j), (b.atom_j, b.atom_i)) for b in molecule.bonds or ()):
+                raise ValueError(f"{context}: atoms {indices!r} not in bond topology.")
+        elif obs.kind == "bond_angle":
+            if not any(
+                indices in ((a.atom_i, a.atom_j, a.atom_k), (a.atom_k, a.atom_j, a.atom_i))
+                for a in molecule.angles or ()
+            ):
+                raise ValueError(f"{context}: atoms {indices!r} not in angle topology.")
+
+
 @dataclass(frozen=True, eq=False)
 class ObjectivePlan:
     """Immutable, backend-neutral compiled objective description.
+
+    Used observation indices are checked against each case before executor
+    preparation, including zero-weight references. Frequency/eigenmatrix
+    indices address all ``3 * n_atoms`` modes; Hessian indices address the
+    corresponding Cartesian matrix. Explicit bond/angle atoms must identify
+    existing topology (reversal is equivalent), while torsions require only
+    four in-range atom indices, not membership in the torsion topology.
 
     Attributes:
         case_ids: Stable case IDs, in case order.  Observations bind to
@@ -114,6 +155,7 @@ class ObjectivePlan:
             if not isinstance(sp, StationaryPointKind):
                 raise TypeError(f"stationary_points must be StationaryPointKind, got {type(sp).__name__}.")
 
+        case_index = {cid: i for i, cid in enumerate(case_ids)}
         known = set(case_ids)
         for obs in self.observations.values:
             if obs.case_id not in known:
@@ -121,6 +163,8 @@ class ObjectivePlan:
                     f"Observation {obs.label!r} (kind={obs.kind!r}) references case_id={obs.case_id!r}, "
                     f"which is not among this plan's case IDs: {sorted(known)}."
                 )
+            if isinstance(obs, Observation):
+                _validate_observation_indices(obs, molecules[case_index[obs.case_id]])
             if isinstance(obs, (RelativeEnergyObservation, ScanEnergyObservation)):
                 if obs.reference_case_id not in known:
                     raise ValueError(
@@ -180,7 +224,7 @@ class ObjectivePlan:
         object.__setattr__(self, "reference_params", ref)
 
         # Stable, immutable case_id -> index map.
-        object.__setattr__(self, "_case_index", MappingProxyType({cid: i for i, cid in enumerate(case_ids)}))
+        object.__setattr__(self, "_case_index", MappingProxyType(case_index))
 
     # -- Derived, backend-neutral views -----------------------------------
 

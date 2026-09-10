@@ -6,7 +6,10 @@ import numpy as np
 import pytest
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionParam, VdwParam, FunctionalForm
-from q2mm.models.parameters import ParameterKind, ParameterLayout
+from q2mm.models.parameters import ActiveParameterSpace, ParameterKind, ParameterLayout
+from q2mm.models.results import OptimizationResult
+from q2mm.optimizers.cycling import OptimizationLoop
+from test.test_optax import QuadraticEvaluator
 
 
 def _full_ff() -> ForceField:
@@ -208,3 +211,95 @@ class TestOptimizationLoopResult:
             n_evaluations=0,
         )
         assert lr.improvement == 0.0
+
+
+def _scripted_loop(
+    monkeypatch: pytest.MonkeyPatch,
+    outcomes: list[tuple[bool, float]],
+    max_cycles: int = 3,
+) -> OptimizationLoop:
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+    evaluator = QuadraticEvaluator(
+        target=np.array([1.0, 5.0]),
+        initial=np.array([0.0, 5.0]),
+        active_indices=np.array([0]),
+    )
+    passes = iter(outcomes)
+
+    def run_pass(
+        self: ScipyOptimizer, evaluator: QuadraticEvaluator, space: ActiveParameterSpace
+    ) -> OptimizationResult:
+        success, value = next(passes)
+        final_params = space.expand(np.array([value]))
+        return OptimizationResult(
+            success=success,
+            message="inner converged" if success else "inner budget exhausted",
+            initial_score=evaluator.value(space.baseline),
+            final_score=evaluator.value(final_params),
+            initial_params=space.baseline,
+            final_params=final_params,
+            n_params=space.n_full,
+            layout_fingerprint=space.layout.fingerprint,
+            n_iterations=1,
+            n_evaluations=2,
+            gradient_mode="analytical",
+        )
+
+    monkeypatch.setattr(ScipyOptimizer, "optimize", run_pass)
+    return OptimizationLoop(evaluator, evaluator.space, max_cycles=max_cycles, verbose=False)
+
+
+class TestOptimizationLoopStops:
+    @pytest.mark.parametrize("full_success, subspace_success", [(False, False), (False, True), (True, False)])
+    @pytest.mark.parametrize("full_value, subspace_value", [(0.0, 0.0), (0.002, 0.001), (0.002, 0.004)])
+    def test_stall_requires_both_passes_to_converge(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        full_success: bool,
+        subspace_success: bool,
+        full_value: float,
+        subspace_value: float,
+    ) -> None:
+        loop = _scripted_loop(monkeypatch, [(full_success, full_value), (subspace_success, subspace_value)])
+        result = loop.run()
+
+        assert not result.success
+        assert result.n_iterations == 1
+        assert "stalled" in result.message
+        assert "inner budget exhausted" in result.message
+        assert not result.stages[0].converged
+        assert result.stages[0].notes["full_converged"] is full_success
+        assert result.stages[0].notes["subspace_converged"] is subspace_success
+        assert "inner budget exhausted" in result.stages[0].message
+        np.testing.assert_array_equal(result.final_params, [max(full_value, subspace_value), 5.0])
+        assert result.final_score == pytest.approx(loop.evaluator.sample(result.final_params))
+
+    def test_successful_small_change_converges(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        loop = _scripted_loop(monkeypatch, [(True, 0.002), (True, 0.004)])
+        result = loop.run()
+
+        assert result.success
+        assert result.message == "converged"
+        assert result.stages[0].converged
+        assert result.n_iterations == 1
+        np.testing.assert_array_equal(result.final_params, [0.004, 5.0])
+
+    def test_progress_exhausts_cycle_budget_without_convergence(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        loop = _scripted_loop(monkeypatch, [(True, 0.2), (True, 0.3), (True, 0.4), (True, 0.5)], max_cycles=2)
+        result = loop.run()
+
+        assert not result.success
+        assert result.message == "max cycles (2) reached"
+        assert result.n_iterations == 2
+        assert all(stage.converged for stage in result.stages)
+        np.testing.assert_array_equal(result.final_params, [0.5, 5.0])
+
+    def test_failed_progress_can_be_followed_by_successful_cycle(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        loop = _scripted_loop(monkeypatch, [(False, 0.2), (False, 0.3), (True, 0.3), (True, 0.3)])
+        result = loop.run()
+
+        assert result.success
+        assert result.n_iterations == 2
+        assert [stage.converged for stage in result.stages] == [False, True]
+        np.testing.assert_array_equal(result.final_params, [0.3, 5.0])

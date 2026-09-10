@@ -55,6 +55,11 @@ The output manifest records the resolved backend, optimizer, workflow, bounds,
 input fingerprints, active slots, preparation audit, and objective result.
 Saving never overwrites an existing file unless `overwrite=True` is explicit.
 
+Omitting `observations` selects the stationary-point-aware generic recipe.
+See [Fitting objectives and reference data](how-it-works/fitting-objectives.md)
+for mode selection, near-linear overrides, and the distinct frozen recipe
+used by publication case loaders.
+
 !!! warning "XYZ is geometry only"
     XYZ contains element labels and coordinates. It does not carry a Cartesian
     Hessian. Load the Hessian from its actual source and attach it with
@@ -101,21 +106,18 @@ the rows that can change:
 ```python
 import q2mm
 from q2mm.io import load_gaussian_molecules, load_mm3_fld
-from q2mm.models.observations import ObservationSet
 
 paths = ["TS1.log", "TS2.log", "TS3.log"]
 molecules = load_gaussian_molecules(paths, structure_index=-1)
 case_ids = ("TS1", "TS2", "TS3")
 full_ff = load_mm3_fld("complete.fld")
 opt_ff = load_mm3_fld("custom-opt.fld", include_standard=False)
-observations = ObservationSet.from_molecules(molecules, case_ids=case_ids)
 
 problem = q2mm.prepare(
     molecules,
     stationary_point="transition_state",
     force_field=full_ff,
     active_parameters=opt_ff,
-    observations=observations,
     case_ids=case_ids,
     initialize="qfuerza",
 )

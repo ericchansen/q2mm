@@ -77,6 +77,24 @@ Override with the `platform_name` constructor parameter if needed.
 | Electrostatics | ❌ | ❌ |
 | 1-4 scaling | ✅ AMBER (ε/2) | None (MM3) |
 
+### Nonbonded topology and CMAP grids
+
+Nonbonded exclusions are derived from the **bond graph**, even if the molecule
+has no angle or torsion records. Pairs separated by one or two bonds are
+excluded; harmonic-mode pairs whose shortest path is three bonds retain
+half-strength vdW interactions. MM3 keeps its existing unscaled 1-4 interactions.
+Atom types declared in `nonbonded_excluded_atom_types` have no nonbonded
+interactions, including with other excluded centers.
+
+CMAP supplies a fixed two-dihedral energy correction. The backend converts
+`CmapGrid`'s phi-major ordering and -180-degree origin to
+[OpenMM's phi-fast ordering and zero-degree origin](https://docs.openmm.org/latest/api-python/generated/openmm.openmm.CMAPTorsionForce.html#openmm.openmm.CMAPTorsionForce.addMap),
+and converts kcal/mol to kJ/mol once. **Only even grid resolutions are
+supported**: an odd resolution would require resampling, so preparation rejects
+it rather than choosing an interpolation policy. This conversion retains
+OpenMM's native signed-dihedral convention; it does not establish signed-torsion
+equivalence with other backends.
+
 ---
 
 ## Configuration
@@ -121,9 +139,22 @@ keeping all evaluations behind the typed prepared-session contract.
 ## Serialization
 
 Standalone force-field XML can be written with
-`q2mm.io.save_openmm_xml(force_field, path, molecule=...)`. The new backend
-surface does not expose a generic `System` XML exporter; prepared sessions are
-for typed evaluations, not file I/O.
+`q2mm.io.save_openmm_xml(force_field, path, molecule=...)`. This exports a
+limited MM3 subset, not an arbitrary prepared system. Unsupported
+Urey-Bradley, stretch-bend, CMAP, improper, bond-dipole, reduced-site, and
+wildcard content raises `ValueError` before the destination is replaced.
+
+Proper torsions use OpenMM's `<Proper>` schema. Only one Fourier component
+per atom-class tuple is supported: OpenMM's custom torsion loader selects
+the first matching definition rather than summing repeated definitions.
+Multiple components are therefore rejected instead of partially exported.
+The XML's vdW expression is Buckingham exp-6; this format does not imply
+complete equivalence with a backend's physical policies.
+
+For topology-specific serialization of an already prepared OpenMM system,
+use `q2mm.io.save_openmm_system_xml(prepared, path)` and
+`q2mm.io.load_openmm_system_xml(path)`. These are I/O functions, separate
+from the backend's typed evaluation interface.
 
 ---
 
@@ -134,7 +165,14 @@ for typed evaluations, not file I/O.
 - **Partial analytical gradients** — `parameter_gradient()` provides exact
   gradients for bond, angle, and torsion parameters via OpenMM global-parameter
   derivatives. vdW parameter gradients are supplemented via central finite
-  differences.
+  differences for positive epsilon, using a step no larger than 1% of epsilon
+  or 1e-4 kcal/mol. Radii use a 1e-4 Angstrom step, switching to a second-order
+  forward difference when a central step would reach zero. Unused rows and
+  rows without non-excluded partners have zero derivatives. Zero epsilon in
+  same-row pairs has a finite one-sided derivative; zero epsilon mixed with
+  another parameter row is not differentiable and is rejected, even when both
+  epsilons are zero. Negative interacting parameters and unrepresentable steps
+  are rejected rather than perturbed outside the supported domain.
 - **No improper torsions** — not yet implemented.
 - **No electrostatics** — charge optimization is not supported.
 

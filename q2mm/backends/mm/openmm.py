@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import numpy as np
 
@@ -102,7 +102,8 @@ class _OpenMMState:
     """Reusable OpenMM system/context pair for fast parameter updates.
 
     Attributes:
-        molecule: Deep copy of the input molecule.
+        molecule: Input molecule instance, shared by identity for bond reuse;
+            replaced with a new molecule after minimization.
         system: The ``openmm.System`` object.
         integrator: The ``openmm.Integrator`` used by the context.
         context: The ``openmm.Context`` for energy evaluation.
@@ -113,6 +114,7 @@ class _OpenMMState:
         ub_force: The OpenMM HarmonicBondForce for Urey-Bradley terms, or ``None``.
         cmap_force: The OpenMM CMAPTorsionForce, or ``None`` if no CMAP terms.
         bond_terms: Mapping of molecule bonds to force indices.
+        bond_parameters: Original ordered bond rows, retained to validate reuse.
         angle_terms: Mapping of molecule angles to force indices.
         torsion_terms: Mapping of molecule torsions to force indices.
         vdw_terms: Mapping of atoms to vdW particle indices.
@@ -134,6 +136,7 @@ class _OpenMMState:
     ub_force: object | None
     cmap_force: object | None
     bond_terms: list[_BondTerm]
+    bond_parameters: tuple[BondParam, ...]
     angle_terms: list[_AngleTerm]
     torsion_terms: list[_TorsionTerm]
     vdw_terms: list[_VdwTerm]
@@ -275,6 +278,25 @@ def _collect_bond_assignments(
     return assignments
 
 
+def _bound_bond_assignments(state: _OpenMMState, forcefield: ForceField) -> list[tuple[_BondTerm, BondParam]]:
+    """Resolve prepared bonds by source index, allowing only scalar updates."""
+    if forcefield.functional_form != state.functional_form:
+        raise ValueError(
+            f"Force field functional form {forcefield.functional_form!r} does not match "
+            f"the state's form {state.functional_form!r}. "
+            "Create a new context instead of reusing this state."
+        )
+    if len(forcefield.bonds) != len(state.bond_parameters) or any(
+        replace(updated, equilibrium=original.equilibrium, force_constant=original.force_constant) != original
+        for original, updated in zip(state.bond_parameters, forcefield.bonds, strict=True)
+    ):
+        raise ValueError(
+            "Updated force field changes the prepared bond parameter structure. "
+            "Only bond force constants and equilibria may change; prepare a new session for different bond rows."
+        )
+    return [(term, forcefield.bonds[term.parameter_index]) for term in state.bond_terms]
+
+
 def _collect_angle_assignments(
     molecule: Molecule,
     forcefield: ForceField,
@@ -376,39 +398,15 @@ def _build_harmonic_exclusions(
     ``scnb=2.0`` scaling for 1-4 pairs (epsilon divided by 2).
 
     Args:
-        molecule: Molecular structure for bond/angle topology.
+        molecule: Molecular structure for bond topology.
         vdw_force: An ``openmm.NonbondedForce`` to modify in-place.
 
     Returns:
         List of :class:`_Exception14` records for later update.
 
     """
-    excluded_12: set[tuple[int, int]] = set()
-    for bond in molecule.bonds:
-        excluded_12.add((min(bond.atom_i, bond.atom_j), max(bond.atom_i, bond.atom_j)))
-
-    excluded_13: set[tuple[int, int]] = set()
-    for angle in molecule.angles:
-        excluded_13.add((min(angle.atom_i, angle.atom_k), max(angle.atom_i, angle.atom_k)))
-    excluded_13 -= excluded_12
-
-    neighbors: dict[int, set[int]] = {}
-    for bond in molecule.bonds:
-        neighbors.setdefault(bond.atom_i, set()).add(bond.atom_j)
-        neighbors.setdefault(bond.atom_j, set()).add(bond.atom_i)
-
-    pairs_14: set[tuple[int, int]] = set()
-    for angle in molecule.angles:
-        for nb in neighbors.get(angle.atom_i, ()):
-            if nb != angle.atom_j and nb != angle.atom_k:
-                pairs_14.add((min(nb, angle.atom_k), max(nb, angle.atom_k)))
-        for nb in neighbors.get(angle.atom_k, ()):
-            if nb != angle.atom_j and nb != angle.atom_i:
-                pairs_14.add((min(nb, angle.atom_i), max(nb, angle.atom_i)))
-    pairs_14 -= excluded_12
-    pairs_14 -= excluded_13
-
-    for p1, p2 in sorted(excluded_12 | excluded_13):
+    excluded, pairs_14 = _bond_graph_pairs(molecule)
+    for p1, p2 in sorted(excluded):
         vdw_force.addException(p1, p2, 0.0, 1.0, 0.0)
 
     SCNB = 2.0
@@ -422,6 +420,52 @@ def _build_harmonic_exclusions(
         exceptions_14.append(_Exception14(exception_index=exc_idx, particle_i=p1, particle_j=p2))
 
     return exceptions_14
+
+
+def _bond_graph_pairs(molecule: Molecule) -> tuple[set[tuple[int, int]], set[tuple[int, int]]]:
+    """Return pairs at shortest bond distances 1-2 and 3, respectively."""
+    neighbors: dict[int, set[int]] = {}
+    for bond in molecule.bonds:
+        neighbors.setdefault(bond.atom_i, set()).add(bond.atom_j)
+        neighbors.setdefault(bond.atom_j, set()).add(bond.atom_i)
+    excluded: set[tuple[int, int]] = set()
+    pairs_14: set[tuple[int, int]] = set()
+    for start in neighbors:
+        seen = {start}
+        frontier = {start}
+        for distance in range(1, 4):
+            frontier = {neighbor for atom in frontier for neighbor in neighbors[atom]} - seen
+            seen.update(frontier)
+            pairs = pairs_14 if distance == 3 else excluded
+            pairs.update((start, end) for end in frontier if start < end)
+    return excluded, pairs_14
+
+
+def _restrict_mm3_centers(vdw_force: Any, assignments: list[tuple[int, str, str, VdwParam | None]]) -> None:
+    """Never evaluate the Buckingham expression for an absent vdW center."""
+    active = {index for index, _symbol, _atom_type, param in assignments if param is not None}
+    if len(active) != len(assignments):
+        # Zero epsilon does not suppress undefined arithmetic at radius1+radius2=0.
+        vdw_force.addInteractionGroup(active, active)
+
+
+def _vdw_interacting_rows(molecule: Molecule, forcefield: ForceField) -> dict[int, set[int]]:
+    """Map each vdW row to partner rows in non-excluded nonbonded pairs."""
+    assignments = _collect_vdw_assignments(molecule, forcefield)
+    row_indices = {id(param): index for index, param in enumerate(forcefield.vdws)}
+    excluded, _pairs_14 = _bond_graph_pairs(molecule)
+    partners: dict[int, set[int]] = {}
+    for atom_i, _symbol, _atom_type, param_i in assignments:
+        if param_i is None:
+            continue
+        row_i = row_indices[id(param_i)]
+        for atom_j, _symbol_j, _atom_type_j, param_j in assignments[atom_i + 1 :]:
+            if param_j is None or (atom_i, atom_j) in excluded:
+                continue
+            row_j = row_indices[id(param_j)]
+            partners.setdefault(row_i, set()).add(row_j)
+            partners.setdefault(row_j, set()).add(row_i)
+    return partners
 
 
 def _build_atom_type_index(molecule: Molecule) -> dict[str, list[int]]:
@@ -486,6 +530,10 @@ def _build_cmap_force(molecule: Molecule, forcefield: ForceField) -> tuple[objec
     carry no tunable parameters, so this contributes to the potential energy
     only — not to the parameter-gradient vector.
 
+    Only even grid resolutions are supported: the canonical -180-degree
+    origin must be shifted by an integer number of nodes without resampling.
+    Angles retain OpenMM's native signed-dihedral convention.
+
     Args:
         molecule: Molecular structure.
         forcefield: Force field, possibly carrying CMAP grids.
@@ -503,8 +551,15 @@ def _build_cmap_force(molecule: Molecule, forcefield: ForceField) -> tuple[objec
     cmap_terms: list[_CmapTerm] = []
 
     for grid in forcefield.cmaps:
-        # Add the 2D energy grid (convert kcal/mol → kJ/mol for OpenMM)
-        energy_kj = [e * KCAL_TO_KJ for e in grid.energy]
+        if grid.resolution % 2:
+            raise ValueError(
+                f"OpenMM CMAP requires an even resolution, got {grid.resolution}: "
+                "converting the -180-degree grid origin to zero would require resampling."
+            )
+        # Canonical: phi-major, origin (-180, -180). OpenMM: phi-fast, origin (0, 0).
+        energy = np.asarray(grid.energy).reshape(grid.resolution, grid.resolution)
+        shifted = np.roll(energy, shift=(-grid.resolution // 2, -grid.resolution // 2), axis=(0, 1))
+        energy_kj = (shifted.T.flatten() * KCAL_TO_KJ).tolist()
         map_index = cmap_force.addMap(grid.resolution, energy_kj)
 
         phi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_phi, molecule)
@@ -750,6 +805,7 @@ class OpenMMBackend:
         forcefield: ForceField,
         *,
         precision: str | None = None,
+        bond_source: _OpenMMState | None = None,
     ) -> _OpenMMState:
         """Build an OpenMM system and context for a molecule + force field.
 
@@ -762,6 +818,9 @@ class OpenMMBackend:
             precision: Override GPU precision (``"single"``, ``"mixed"``,
                 ``"double"``).  When ``None`` (default) uses the
                 engine-level setting.
+            bond_source: Prepared bond bindings to reuse in a throwaway state.
+                Must own *molecule*. If omitted, match bonds against
+                *forcefield* once.
 
         Returns:
             _OpenMMState: Reusable native state for energy evaluation and
@@ -774,6 +833,8 @@ class OpenMMBackend:
 
         """
         self._validate_forcefield(forcefield)
+        if bond_source is not None and molecule is not bond_source.molecule:
+            raise ValueError("Prepared bond bindings belong to a different molecule; prepare a new session.")
 
         if forcefield.stretch_bends:
             raise NotImplementedError(
@@ -844,7 +905,14 @@ class OpenMMBackend:
             vdw_force.setNonbondedMethod(mm.CustomNonbondedForce.NoCutoff)
 
         # --- Assign bond parameters ---
-        bond_assignments = _collect_bond_assignments(molecule, forcefield)
+        bond_assignments = (
+            _collect_bond_assignments(molecule, forcefield)
+            if bond_source is None
+            else _bound_bond_assignments(bond_source, forcefield)
+        )
+        bond_indices = {id(param): index for index, param in enumerate(forcefield.bonds)}
+        if len(bond_indices) != len(forcefield.bonds):
+            raise ValueError("Cannot bind repeated bond parameter objects to a unique source index.")
         bond_terms: list[_BondTerm] = []
         for bond, param in bond_assignments:
             if use_harmonic:
@@ -865,9 +933,7 @@ class OpenMMBackend:
                     force_index=force_index,
                     atom_i=bond.atom_i,
                     atom_j=bond.atom_j,
-                    elements=bond.elements,
-                    env_id=bond.env_id,
-                    ff_row=bond.ff_row,
+                    parameter_index=bond_indices[id(param)],
                 )
             )
 
@@ -1015,6 +1081,7 @@ class OpenMMBackend:
                 exceptions_14 = _build_harmonic_exclusions(molecule, vdw_force)
             else:
                 vdw_force.createExclusionsFromBonds([(bond.atom_i, bond.atom_j) for bond in molecule.bonds], 2)
+                _restrict_mm3_centers(vdw_force, vdw_assignments)
 
         # --- Assign CMAP correction terms (CHARMM backbone corrections) ---
         cmap_force, cmap_terms = _build_cmap_force(molecule, forcefield)
@@ -1075,6 +1142,7 @@ class OpenMMBackend:
             ub_force=ub_force,
             cmap_force=cmap_force,
             bond_terms=bond_terms,
+            bond_parameters=forcefield.bonds,
             angle_terms=angle_terms,
             torsion_terms=torsion_terms,
             vdw_terms=vdw_terms,
@@ -1097,29 +1165,15 @@ class OpenMMBackend:
 
         Raises:
             ValueError: If the force field's functional form does not match
-                the state's form, or if a required parameter is missing.
+                the state's form, its ordered bond metadata changes, or a
+                required parameter is missing.
 
         """
-        incoming_form = forcefield.functional_form
-        if incoming_form != state.functional_form:
-            raise ValueError(
-                f"Force field functional form {incoming_form!r} does not match "
-                f"the state's form {state.functional_form!r}. "
-                f"Create a new context instead of reusing this state."
-            )
+        bond_assignments = _bound_bond_assignments(state, forcefield)
         use_harmonic = state.functional_form == FunctionalForm.HARMONIC
 
         if state.bond_force is not None:
-            for term in state.bond_terms:
-                param = forcefield.match_bond(
-                    term.elements,
-                    env_id=term.env_id,
-                    ff_row=term.ff_row,
-                    bond_order=getattr(term, "bond_order", ""),
-                    bond_length=getattr(term, "length", None),
-                )
-                if param is None:
-                    raise ValueError(f"Updated force field is missing bond parameter for {term.elements}.")
+            for term, param in bond_assignments:
                 if use_harmonic:
                     state.bond_force.setBondParameters(
                         term.force_index,
@@ -1186,6 +1240,7 @@ class OpenMMBackend:
             state.torsion_force.updateParametersInContext(state.context)
 
         if state.vdw_force is not None:
+            reinitialize = False
             for term in state.vdw_terms:
                 param = forcefield.match_vdw(atom_type=term.atom_type, element=term.element, ff_row=term.ff_row)
                 if param is None:
@@ -1213,11 +1268,17 @@ class OpenMMBackend:
                     _, sig2, eps2 = state.vdw_force.getParticleParameters(exc.particle_j)
                     sig_14 = 0.5 * (sig1 + sig2)
                     eps_14 = (eps1 * eps2) ** 0.5 / SCNB
+                    old_epsilon = state.vdw_force.getExceptionParameters(exc.exception_index)[4]
+                    reinitialize |= (old_epsilon == 0 * old_epsilon.unit) != (eps_14 == 0 * eps_14.unit)
                     state.vdw_force.setExceptionParameters(
                         exc.exception_index, exc.particle_i, exc.particle_j, 0.0, sig_14, eps_14
                     )
 
-            state.vdw_force.updateParametersInContext(state.context)
+            if reinitialize:
+                # OpenMM fixes the set of nonzero exceptions at Context creation.
+                state.context.reinitialize(preserveState=True)
+            else:
+                state.vdw_force.updateParametersInContext(state.context)
 
         if state.ub_force is not None:
             for term in state.ub_terms:
@@ -1245,7 +1306,7 @@ class OpenMMBackend:
     # Analytical parameter gradients via addEnergyParameterDerivative
     # ------------------------------------------------------------------
 
-    def _build_diff_state(self, molecule: Molecule, forcefield: ForceField) -> _OpenMMDiffState:
+    def _build_diff_state(self, state: _OpenMMState, forcefield: ForceField) -> _OpenMMDiffState:
         """Build an OpenMM system with global parameters for analytical gradients.
 
         Each unique FF parameter becomes a named global parameter on the
@@ -1259,7 +1320,7 @@ class OpenMMBackend:
         is available.
 
         Args:
-            molecule: Molecular structure.
+            state: Prepared molecule and original bond bindings.
             forcefield: Force field with canonical-unit parameters.
 
         Returns:
@@ -1267,6 +1328,8 @@ class OpenMMBackend:
 
         """
         self._validate_forcefield(forcefield)
+        bond_assignments = _bound_bond_assignments(state, forcefield)
+        molecule = state.molecule
         ff_form = forcefield.functional_form
         use_harmonic = ff_form == FunctionalForm.HARMONIC
 
@@ -1279,9 +1342,10 @@ class OpenMMBackend:
         grad_unit_factors: list[float] = []
         pv_idx = 0  # tracks position in flat param vector
 
-        # Precompute assignments and build reverse indices for O(n) lookups.
-        bond_assignments = _collect_bond_assignments(molecule, forcefield)
-        bonds_by_param = _index_by_param_id(bond_assignments)
+        # Reuse the original selection even when fitted equilibria cross.
+        bonds_by_param: dict[int, list[_BondTerm]] = {}
+        for term, _param in bond_assignments:
+            bonds_by_param.setdefault(term.parameter_index, []).append(term)
 
         # --- Bonds: each bond param contributes (k, r0) ---
         bond_global_map: dict[int, tuple[str, str]] = {}
@@ -1318,7 +1382,7 @@ class OpenMMBackend:
             bf.addEnergyParameterDerivative(k_name)
             bf.addEnergyParameterDerivative(r0_name)
 
-            for bond in bonds_by_param.get(id(bp), []):
+            for bond in bonds_by_param.get(bp_idx, []):
                 bf.addBond(bond.atom_i, bond.atom_j)
             system.addForce(bf)
 
@@ -1450,6 +1514,7 @@ class OpenMMBackend:
                             [_vdw_radius_to_openmm(param.radius), _vdw_epsilon_to_openmm(param.epsilon)]
                         )
                 vdw_force.createExclusionsFromBonds([(b.atom_i, b.atom_j) for b in molecule.bonds], 2)
+                _restrict_mm3_centers(vdw_force, vdw_assignments)
 
             system.addForce(vdw_force)
 
@@ -1503,17 +1568,23 @@ class OpenMMBackend:
             functional_form=forcefield.functional_form,
         )
 
-    def _evaluate_param_grad(self, molecule: Molecule, forcefield: ForceField) -> tuple[float, np.ndarray]:
-        """Compute energy and analytical gradient w.r.t. FF parameters.
+    def _evaluate_param_grad(self, state: _OpenMMState, forcefield: ForceField) -> tuple[float, np.ndarray]:
+        """Compute energy and mixed analytical/finite-difference FF gradient.
 
         Uses OpenMM's ``addEnergyParameterDerivative()`` on ``CustomForce``
         objects to get exact dE/d(param) for bond, angle, and torsion
         parameters.  vdW parameters use per-particle values that cannot
         be differentiated via global parameters, so their gradients are
-        computed via central finite differences automatically.
+        computed via domain-safe finite differences. Positive epsilon uses
+        a central step capped at 1% of the parameter and 1e-4 kcal/mol.
+        Radii use a 1e-4 Angstrom step, with a second-order forward stencil
+        when a central stencil would reach zero. Zero epsilon also uses a
+        second-order forward difference for same-row pairs. Mixing zero
+        epsilon with another row is not differentiable and is rejected.
+        Rows without non-excluded partners have zero derivatives.
 
         Args:
-            molecule: Molecule to evaluate.
+            state: Prepared molecule and original bond bindings.
             forcefield: Force field parameters.
 
         Returns:
@@ -1526,11 +1597,11 @@ class OpenMMBackend:
                 "OpenMMBackend does not support stretch-bend cross terms. "
                 "Use the JAX backend for force fields with stretch-bend parameters."
             )
-        diff = self._build_diff_state(molecule, forcefield)
+        diff = self._build_diff_state(state, forcefield)
 
-        state = diff.context.getState(getEnergy=True, getParameterDerivatives=True)
-        energy = float(state.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
-        derivs = state.getEnergyParameterDerivatives()
+        result = diff.context.getState(getEnergy=True, getParameterDerivatives=True)
+        energy = float(result.getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole))
+        derivs = result.getEnergyParameterDerivatives()
 
         from q2mm.models.parameters import ParameterKind, ParameterLayout
 
@@ -1545,7 +1616,7 @@ class OpenMMBackend:
             grad[pv_idx] = kj_to_kcal(deriv_openmm * unit_factor)
 
         # vdW parameters use per-particle values without global-parameter
-        # derivatives.  Supplement with central finite differences.
+        # derivatives. Supplement with domain-safe finite differences.
         # Reuse a single _OpenMMState to avoid rebuilding the OpenMM
         # context for each perturbation.  Use double precision on GPU
         # so the finite differences are not lost to float32 rounding.
@@ -1553,16 +1624,38 @@ class OpenMMBackend:
             vdw_radius_indices = layout.indices_by_kind.get(ParameterKind.VDW_RADIUS, ())
             vdw_start = min(vdw_radius_indices)
             vdw_end = vdw_start + 2 * len(forcefield.vdws)
-            step = 1e-4
-            state = self._build_state(molecule, forcefield, precision="double")
+            partners = _vdw_interacting_rows(state.molecule, forcefield)
+            fd_state = self._build_state(state.molecule, forcefield, precision="double", bond_source=state)
+            fd_energy = self._evaluate_energy(fd_state, forcefield)
             for i in range(vdw_start, vdw_end):
+                row_index, component = divmod(i - vdw_start, 2)
+                if row_index not in partners:
+                    continue
+                value = param_vector[i]
+                label = "radius" if component == 0 else "epsilon"
+                if value < 0:
+                    raise ValueError(f"OpenMM vdW {label} derivative requires a nonnegative value (row {row_index}).")
+                if value == 0 and component == 1 and any(partner != row_index for partner in partners[row_index]):
+                    raise ValueError(
+                        f"OpenMM vdW epsilon derivative is singular at zero when mixed with another parameter row "
+                        f"(row {row_index})."
+                    )
+                step = min(1e-4, 0.01 * value) if component == 1 and value > 0 else 1e-4
+                forward = value <= step if component == 0 else value == 0
+                if not step > 0 or not value < value + step or (not forward and not 0 <= value - step < value):
+                    raise ValueError(f"No representable domain-safe step for OpenMM vdW {label} row {row_index}.")
                 pv_plus = param_vector.copy()
                 pv_plus[i] += step
-                pv_minus = param_vector.copy()
-                pv_minus[i] -= step
-                e_plus = self._evaluate_energy(state, layout.replace(forcefield, pv_plus))
-                e_minus = self._evaluate_energy(state, layout.replace(forcefield, pv_minus))
-                grad[i] = (e_plus - e_minus) / (2.0 * step)
+                e_plus = self._evaluate_energy(fd_state, layout.replace(forcefield, pv_plus))
+                if forward:
+                    pv_plus[i] = value + 2 * step
+                    e_plus2 = self._evaluate_energy(fd_state, layout.replace(forcefield, pv_plus))
+                    grad[i] = (-3 * fd_energy + 4 * e_plus - e_plus2) / (2 * step)
+                else:
+                    pv_minus = param_vector.copy()
+                    pv_minus[i] -= step
+                    e_minus = self._evaluate_energy(fd_state, layout.replace(forcefield, pv_minus))
+                    grad[i] = (e_plus - e_minus) / (2.0 * step)
 
         return energy, grad
 
@@ -1655,9 +1748,11 @@ class PreparedOpenMM(AbstractPreparedBackend):
 
     Owns the molecule, base force field, parameter layout, and one reusable
     private :class:`_OpenMMState`.  Energy, Hessian, and frequency evaluations
-    update the state's global parameters in place (reusing native state), while
+    update the state's per-term parameters in place (reusing native state), while
     minimization and analytical parameter gradients build a throwaway state so
-    they never mutate the reusable energy/Hessian state.
+    they never mutate the reusable energy/Hessian state. All paths retain the
+    bond-to-source-row binding selected at preparation, including when fitted
+    equilibrium lengths change which row would be the nearest length match.
     """
 
     def __init__(
@@ -1708,7 +1803,7 @@ class PreparedOpenMM(AbstractPreparedBackend):
         try:
             # Build a fresh throwaway native state so minimization does not
             # pollute the reusable energy/Hessian state's positions.
-            fresh = self._backend._build_state(self.molecule, ff)
+            fresh = self._backend._build_state(self.molecule, ff, bond_source=self._state)
             energy, atoms, coords = self._backend._evaluate_minimize(
                 fresh, tolerance=tolerance, max_iterations=max_iterations
             )
@@ -1751,7 +1846,7 @@ class PreparedOpenMM(AbstractPreparedBackend):
     def _parameter_gradient(self, request: ParameterGradientRequest) -> ParameterGradientResult:  # type: ignore[override]
         ff = self._ff_for(request.parameters)
         try:
-            energy, grad = self._backend._evaluate_param_grad(self.molecule, ff)
+            energy, grad = self._backend._evaluate_param_grad(self._state, ff)
         except Exception as exc:  # noqa: BLE001
             raise EvaluationError(f"OpenMM parameter-gradient evaluation failed: {exc}") from exc
         return ParameterGradientResult(

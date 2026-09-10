@@ -29,6 +29,8 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
+from q2mm._canonical import canonical_fingerprint
+
 logger = logging.getLogger(__name__)
 
 from q2mm.backends.contracts import (
@@ -784,6 +786,8 @@ class _JaxState:
     dipole_pair_indices: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.int32))
     # Functional form used to compile the energy function
     functional_form: str = "harmonic"
+    # Content identity of the inputs captured by the compiled energy kernel.
+    _kernel_signature: str | None = field(default=None, repr=False)
     # Compiled energy function (captures topology, JIT-compiled)
     _energy_fn: Callable | None = field(default=None, repr=False)
     _grad_fn: Callable | None = field(default=None, repr=False)
@@ -1453,7 +1457,8 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
     # Param vector offsets
     from q2mm.models.parameters import ParameterLayout
 
-    _offsets = layout_block_offsets(ParameterLayout.from_force_field(forcefield))
+    layout = ParameterLayout.from_force_field(forcefield)
+    _offsets = layout_block_offsets(layout)
     bond_offset = _offsets["bond"]
     angle_offset = _offsets["angle"]
     torsion_offset = _offsets["torsion"]
@@ -1482,6 +1487,53 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
     _dipole_moments = jnp.array(state.dipole_moments) if has_dipoles else None
     _dipole_bond_indices = jnp.array(state.dipole_bond_indices) if has_dipoles else None
     _dipole_pair_indices = jnp.array(state.dipole_pair_indices) if has_dipoles else None
+
+    # Hash the actual captured inputs, including FF-derived constants absent
+    # from _JaxState. Preserve array order: row i and map i belong together.
+    # Coordinates and runtime parameter values are deliberately not included.
+    state._kernel_signature = canonical_fingerprint(
+        {
+            "n_atoms": len(state.molecule.symbols),
+            "layout": layout.fingerprint,
+            "n_params": len(layout),
+            "offsets": _offsets,
+            "counts": [n_bt, n_at, n_tt, n_vt, n_ubt, n_sbt],
+            "flags": [use_mm3, has_bonds, has_angles, has_torsions, has_vdw, has_ub, has_sb, has_dipoles],
+            "arrays": {
+                name: (
+                    None
+                    if array is None
+                    else {
+                        "shape": array.shape,
+                        "dtype": np.dtype(array.dtype).str,
+                        "data": np.asarray(array).tobytes(order="C").hex(),
+                    }
+                )
+                for name, array in (
+                    ("bond_indices", _bond_indices),
+                    ("bond_param_map", _bond_map),
+                    ("angle_indices", _angle_indices),
+                    ("angle_param_map", _angle_map),
+                    ("torsion_indices", _torsion_indices),
+                    ("torsion_param_map", _torsion_map),
+                    ("torsion_periodicity", _torsion_n),
+                    ("torsion_phase", _torsion_gamma),
+                    ("vdw_pair_indices", _vdw_pairs),
+                    ("atom_vdw_map", _atom_vdw_map),
+                    ("ub_indices", _ub_indices),
+                    ("ub_param_map", _ub_map),
+                    ("sb_angle_indices", _sb_angle_indices),
+                    ("sb_param_map", _sb_map),
+                    ("sb_bond_ij_idx", _sb_bond_ij_idx),
+                    ("sb_bond_jk_idx", _sb_bond_jk_idx),
+                    ("sb_angle_idx", _sb_angle_idx),
+                    ("dipole_moments", _dipole_moments),
+                    ("dipole_bond_indices", _dipole_bond_indices),
+                    ("dipole_pair_indices", _dipole_pair_indices),
+                )
+            },
+        }
+    )
 
     if use_mm3:
 

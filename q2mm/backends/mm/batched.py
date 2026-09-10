@@ -11,7 +11,6 @@ parameter vector; no ForceField crosses the boundary.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 from typing import TYPE_CHECKING
 
@@ -46,34 +45,16 @@ if TYPE_CHECKING:
 
 
 def _topology_signature(state: _JaxState) -> str:
-    """Create a hashable signature for a native state's topology using SHA-256.
+    """Return the content identity recorded when the energy kernel was built.
 
-    Two states with the same signature are guaranteed to share identical
-    connectivity and parameter mapping, so their energy functions are
-    interchangeable up to coordinate differences.
+    Compatibility requires identical ordered topology/mapping arrays, fixed
+    coefficients, flags, and full-vector interpretation, not just connectivity.
+    The compiler captures these together so geometry and compiled-cache state
+    never enter the identity.
     """
-    h = hashlib.sha256()
-    n_atoms = state.molecule.geometry.shape[0] if state.molecule is not None else 0
-    h.update(f"n_atoms={n_atoms}".encode())
-    h.update(f"n_bt={state.n_bond_types}".encode())
-    h.update(f"n_at={state.n_angle_types}".encode())
-    h.update(f"n_tt={state.n_torsion_types}".encode())
-    h.update(f"n_vt={state.n_vdw_types}".encode())
-    h.update(f"form={state.functional_form}".encode())
-    for name, arr in [
-        ("bonds", state.bond_indices),
-        ("angles", state.angle_indices),
-        ("torsions", state.torsion_indices),
-        ("vdw", state.vdw_pair_indices),
-    ]:
-        h.update(f"{name}={sorted(map(tuple, arr))}".encode() if len(arr) > 0 else f"{name}=[]".encode())
-    for name, arr in [
-        ("bmap", state.bond_param_map),
-        ("amap", state.angle_param_map),
-        ("tmap", state.torsion_param_map),
-    ]:
-        h.update(f"{name}={list(arr)}".encode() if len(arr) > 0 else f"{name}=[]".encode())
-    return h.hexdigest()
+    if state._kernel_signature is None:
+        raise EvaluationError("PreparedJaxBatch: native state has no compiled kernel signature.")
+    return state._kernel_signature
 
 
 # ---------------------------------------------------------------------------
@@ -84,8 +65,8 @@ def _topology_signature(state: _JaxState) -> str:
 class PreparedJaxBatch:
     """A typed batch of topology-compatible :class:`PreparedJax` sessions.
 
-    All sessions share the same atom count, connectivity, and parameter mapping
-    (only their coordinates differ).  The batch shares one compiled
+    All sessions share the same static kernel inputs and full-vector layout
+    interpretation (their coordinates may differ).  The batch shares one compiled
     coordinate-Hessian kernel (the representative session's private native
     state), while every session retains its own molecule/coordinates/native
     state.  The only evaluation surface is :meth:`hessians`, which takes a typed
@@ -132,7 +113,7 @@ class PreparedJaxBatch:
                     f"PreparedJaxBatch: incompatible atom count {len(s.molecule.symbols)} != {rep_natoms}."
                 )
             if _topology_signature(s._state) != rep_sig:
-                raise EvaluationError("PreparedJaxBatch: all sessions must share the same topology signature.")
+                raise EvaluationError("PreparedJaxBatch: all sessions must share the same static kernel signature.")
         if len(set(case_ids)) != len(case_ids):
             raise EvaluationError(f"PreparedJaxBatch: case IDs must be unique; got {case_ids}.")
 
@@ -219,9 +200,9 @@ class PreparedJaxBatch:
 def group_by_topology(sessions: list[PreparedJax]) -> list[PreparedJaxBatch]:
     """Group prepared sessions into typed batches by topology compatibility.
 
-    Two sessions are compatible if they share bond/angle/torsion connectivity,
-    vdW pair list, and parameter mappings -- in practice, multiple
-    conformations (GS, TS) of the same molecule.  Each returned
+    Two sessions are compatible if all their static kernel inputs and
+    full-vector layout interpretations agree, including ordered interaction
+    arrays/maps and fixed torsion/dipole data. Coordinates may differ. Each returned
     :class:`PreparedJaxBatch` shares only the compiled kernel of its
     representative session; every session keeps its own coordinates and native
     state.

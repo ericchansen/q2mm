@@ -6,9 +6,11 @@ This tutorial first runs that full pattern on Rh-enamide, then shows exactly
 which paths and objects to replace for a new project.
 
 The examples use the package-root application API:
-`q2mm.prepare`, `q2mm.evaluate`, `q2mm.optimize`, and `q2mm.save`. Publication
-loaders are repository teaching helpers; internally they delegate problem
-construction to the same `q2mm.prepare` service.
+`q2mm.prepare`, `q2mm.evaluate`, `q2mm.optimize`, and `q2mm.save`.
+Publication case loaders provide named, source-backed workflows; internally
+they delegate problem construction to `q2mm.prepare` with an explicit frozen
+observation recipe. Generic preparation uses a different default, explained
+in [Fitting objectives and reference data](how-it-works/fitting-objectives.md).
 
 ## Prerequisites
 
@@ -28,7 +30,7 @@ The governing source is Donoghue, Helquist, Norrby, and Wiest,
 It uses nine transition-state structures. The source objective also used ESP
 charges and relative enthalpies.
 
-The executable repository profile is
+The executable repository compatibility profile is
 `repository-geometry-eigenmatrix-v1`: nine-case geometry and full-eigenmatrix
 targets with the frozen repository weights. It is a
 **partial repository reproduction**, not an exact reproduction of the paper.
@@ -109,7 +111,6 @@ from pathlib import Path
 
 import q2mm
 from q2mm.io import load_gaussian_molecules, load_mm3_fld
-from q2mm.models.observations import ObservationSet
 
 paths = tuple(sorted(Path("/data/my-project/qm").glob("*.log")))
 case_ids = tuple(path.stem for path in paths)
@@ -121,14 +122,12 @@ molecules = load_gaussian_molecules(
 )
 full_ff = load_mm3_fld("/data/my-project/complete.fld")
 opt_ff = load_mm3_fld("/data/my-project/custom-opt.fld", include_standard=False)
-observations = ObservationSet.from_molecules(molecules, case_ids=case_ids)
 
 problem = q2mm.prepare(
     molecules,
     stationary_point="transition_state",
     force_field=full_ff,
     active_parameters=opt_ff,
-    observations=observations,
     case_ids=case_ids,
     initialize="qfuerza",
 )
@@ -250,6 +249,10 @@ rejected instead of silently losing state. Calculator details are documented by
 ## Construct an `OptimizationProblem` manually
 
 Mixed stationary points or custom observation blocks use the immutable core:
+
+The explicit `from_molecule` set below retains the compatibility builder's
+mode exclusions. It does not select the corrected generic default; use
+`q2mm.prepare` without `observations` for that recipe.
 
 ```python
 from q2mm.models.observations import ObservationSet

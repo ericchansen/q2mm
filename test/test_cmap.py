@@ -595,3 +595,73 @@ class TestCmapCharmm36Reference:
             assert gt.atom_types_phi == gf.atom_types_phi
             assert gt.atom_types_psi == gf.atom_types_psi
             assert gt.energy == gf.energy
+
+
+@pytest.mark.openmm
+class TestCmapOpenMMGridConversion:
+    @staticmethod
+    def _grid_node_case(phi: float, psi: float, resolution: int) -> tuple[Molecule, ForceField]:
+        from q2mm.models.molecule import Bond, Molecule
+
+        phi_rad, psi_rad = np.deg2rad([phi, psi])
+        coords = np.array(
+            [
+                [0.0, np.cos(phi_rad), -np.sin(phi_rad)],
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [1.0 - np.cos(psi_rad), 1.0, np.sin(psi_rad)],
+            ]
+        )
+        types = ("A", "B", "C", "D", "E")
+        molecule = Molecule(
+            symbols=("C",) * 5,
+            atom_types=types,
+            geometry=coords,
+            bonds=tuple(Bond(i, i + 1, ("C", "C"), 1.0) for i in range(4)),
+        )
+        grid = CmapGrid(
+            types[:4],
+            types[1:],
+            resolution,
+            tuple(10.0 * i + j for i in range(resolution) for j in range(resolution)),
+        )
+        return molecule, ForceField(functional_form=FunctionalForm.HARMONIC, cmaps=(grid,))
+
+    @pytest.mark.parametrize("resolution", [2, 4, 6])
+    def test_asymmetric_canonical_grid_nodes(self, resolution: int) -> None:
+        """Check native signed-angle nodes, not another backend's torsion policy."""
+        backend = load_backend("openmm", platform_name="CPU")
+        for i in range(resolution):
+            for j in range(resolution):
+                molecule, ff = self._grid_node_case(
+                    -180.0 + i * 360.0 / resolution, -180.0 + j * 360.0 / resolution, resolution
+                )
+                prepared = prepare_case(backend, molecule, ff)
+                vector = param_vector(ff)
+                expected = 10.0 * i + j
+                assert prepared.energy(EnergyRequest(parameters=vector)).energy == pytest.approx(expected, abs=1e-10)
+                derivative = prepared.parameter_gradient(ParameterGradientRequest(parameters=vector))
+                assert derivative.energy == pytest.approx(expected, abs=1e-10)
+                assert derivative.gradient.size == 0
+
+    @pytest.mark.parametrize("phi,psi", [(0.0, 90.0), (-180.0, -90.0), (37.0, -121.0)])
+    def test_cmap_periodicity(self, phi: float, psi: float) -> None:
+        backend = load_backend("openmm", platform_name="CPU")
+        energies = []
+        for phi_turns, psi_turns in [(0, 0), (1, 0), (0, -1), (-1, 1)]:
+            molecule, ff = self._grid_node_case(phi + 360 * phi_turns, psi + 360 * psi_turns, 4)
+            prepared = prepare_case(backend, molecule, ff)
+            energies.append(prepared.energy(EnergyRequest(parameters=param_vector(ff))).energy)
+        np.testing.assert_allclose(energies, energies[0], rtol=0, atol=1e-10)
+        if (phi, psi) == (0.0, 90.0):
+            assert energies[0] == pytest.approx(23.0)
+
+    @pytest.mark.parametrize("resolution", [3, 5])
+    def test_odd_grid_rejected_without_resampling(self, resolution: int) -> None:
+        from q2mm.backends.contracts import PreparationError
+
+        molecule, ff = self._grid_node_case(0.0, 90.0, resolution)
+        backend = load_backend("openmm", platform_name="CPU")
+        with pytest.raises(PreparationError, match="even resolution.*resampling"):
+            prepare_case(backend, molecule, ff)

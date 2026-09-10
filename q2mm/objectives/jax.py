@@ -10,7 +10,9 @@ subprocess/native Python backend path.
 
 Geometry references are handled via implicit differentiation through an
 inner ``jaxopt.LBFGS`` geometry minimization, giving exact analytical
-parameter gradients of the relaxed observables.
+parameter gradients of the relaxed observables. Each geometry-dependent
+case's baseline relaxation is validated once during construction, before
+it can anchor the nonconvergence penalty for trial parameters.
 
 The Phase-3 :class:`~q2mm.backends.mm.jax_engine.PreparedJax` sessions are
 prepared once per case and reused for both the compiled loss (via each
@@ -225,6 +227,8 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
 
     Raises:
         TypeError: If *backend* is not a ``JaxBackend``.
+        ObjectiveConvergenceError: If a geometry-dependent case's baseline
+            relaxation does not converge under the inner solver controls.
 
     """
 
@@ -473,6 +477,15 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
             coords = entry_data["coords"]
             energy_fn = entry_data["session"]._energy_kernel()
             baseline_params = jnp.array(plan.active_space.baseline, dtype=jnp.float64)
+            # The barrier has zero gradient at its anchor, so that anchor
+            # must be a valid solve rather than a false convergence point.
+            _, converged, max_force = _relax_coords(energy_fn, baseline_params, coords)
+            if not bool(converged):
+                raise ObjectiveConvergenceError(
+                    f"JAX baseline geometry relaxation for case {entry_data['case_id']!r} did not converge "
+                    f"(maximum force {float(max_force):.6g}, tolerance {_GEOM_INNER_TOL:.6g}, "
+                    f"iteration cap {_GEOM_INNER_MAXITER})."
+                )
             parameter_scales = jnp.maximum(jnp.abs(baseline_params), jnp.float64(1.0))
 
             def _loss(params):  # noqa: ANN001, ANN202

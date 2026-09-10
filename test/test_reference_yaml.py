@@ -216,6 +216,79 @@ class TestRoundTrip:
 # ---------------------------------------------------------------------------
 
 
+class TestSaveDependencies:
+    @pytest.mark.parametrize("existing", [False, True])
+    @pytest.mark.parametrize("kind", ["none", "eig_diagonal", "eig_offdiagonal"])
+    def test_rejects_unrepresented_hessian(self, tmp_path: Path, existing: bool, kind: str) -> None:
+        mol = make_water().with_hessian(np.eye(9))
+        ref = ObservationSet()
+        if kind == "eig_diagonal":
+            ref = ref.with_hessian_eigenvalue(0.5, mode_idx=0, case_id=mol.name)
+        elif kind == "eig_offdiagonal":
+            ref = ref.with_hessian_offdiagonal(0.1, row=0, col=1, case_id=mol.name)
+        path = tmp_path / "reference.yaml"
+        if existing:
+            path.write_bytes(b"existing reference")
+
+        with pytest.raises(ReferenceYAMLError, match="water.*Hessian"):
+            save_reference_yaml(path, ref, [mol])
+
+        if existing:
+            assert path.read_bytes() == b"existing reference"
+        else:
+            assert not path.exists()
+
+    @pytest.mark.parametrize("existing", [False, True])
+    @pytest.mark.parametrize("kind", ["bonds", "angles", "torsions"])
+    @pytest.mark.parametrize("empty", [False, True])
+    def test_rejects_unrepresented_authoritative_topology(
+        self, tmp_path: Path, existing: bool, kind: str, empty: bool
+    ) -> None:
+        original = make_water()
+        mol = Molecule(
+            symbols=original.symbols,
+            geometry=original.geometry,
+            name=original.name,
+            **{kind: () if empty else getattr(original, kind)},
+        )
+        path = tmp_path / "reference.yaml"
+        if existing:
+            path.write_bytes(b"existing reference")
+
+        with pytest.raises(ReferenceYAMLError, match=f"water.*{kind}"):
+            save_reference_yaml(path, ObservationSet(), [mol])
+
+        if existing:
+            assert path.read_bytes() == b"existing reference"
+        else:
+            assert not path.exists()
+
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_rejects_topology_retained_after_geometry_change(self, tmp_path: Path, existing: bool) -> None:
+        mol = make_water().with_geometry([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [-3.0, 0.0, 0.0]])
+        path = tmp_path / "reference.yaml"
+        if existing:
+            path.write_bytes(b"existing reference")
+
+        with pytest.raises(ReferenceYAMLError, match="water.*topology"):
+            save_reference_yaml(path, ObservationSet(), [mol])
+
+        if existing:
+            assert path.read_bytes() == b"existing reference"
+        else:
+            assert not path.exists()
+
+    def test_inferred_empty_topology_round_trip(self, tmp_path: Path) -> None:
+        mol = Molecule(symbols=("H", "H"), geometry=[[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]], name="separated")
+        path = tmp_path / "reference.yaml"
+
+        save_reference_yaml(path, ObservationSet(), [mol])
+        _, loaded = load_reference_yaml(path)
+
+        assert loaded[0].bonds == mol.bonds == ()
+        assert not loaded[0].bonds_explicit
+
+
 class TestReferenceYAMLFunctions:
     def test_from_yaml(self) -> None:
         ref, mols = load_reference_yaml(WATER_YAML)

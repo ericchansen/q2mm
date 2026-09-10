@@ -248,7 +248,7 @@ class TestForceFieldXMLExport:
         ff = ForceField(
             torsions=[
                 TorsionParam(("H", "C", "C", "H"), periodicity=1, force_constant=0.5, phase=0.0),
-                TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=0.3, phase=180.0),
+                TorsionParam(("H", "C", "C", "F"), periodicity=2, force_constant=0.3, phase=180.0),
             ],
             functional_form=FunctionalForm.MM3,
         )
@@ -259,7 +259,7 @@ class TestForceFieldXMLExport:
         root = tree.getroot()
         torsion_forces = root.findall("CustomTorsionForce")
         assert len(torsion_forces) == 1
-        torsions = torsion_forces[0].findall("Torsion")
+        torsions = torsion_forces[0].findall("Proper")
         assert len(torsions) == 2
 
     def test_with_molecule_generates_atom_types_and_residues(self, tmp_path: Path) -> None:
@@ -392,3 +392,38 @@ class TestForceFieldXMLExport:
         assert root.find("Residues") is not None
         assert root.find("CustomBondForce") is not None
         assert root.find("CustomAngleForce") is not None
+
+    @pytest.mark.parametrize("phase", [0.0, 180.0])
+    def test_single_proper_survives_native_loading(self, tmp_path: Path, phase: float) -> None:
+        import math
+
+        from openmm import app, unit
+
+        from q2mm.geometry import dihedral_angle
+
+        molecule = Molecule(
+            symbols=("C",) * 4,
+            geometry=[[0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [2.5, 1.0, 0.0], [3.4, 1.5, 1.0]],
+            name="chain",
+        )
+        ff = ForceField(
+            torsions=[TorsionParam(("C",) * 4, periodicity=3, force_constant=1.75, phase=phase)],
+            functional_form=FunctionalForm.MM3,
+        )
+        path = save_openmm_xml(ff, tmp_path / "torsion.xml", molecule=molecule)
+        topology = app.Topology()
+        residue = topology.addResidue("Q2MM", topology.addChain())
+        atoms = [topology.addAtom(f"C{i + 1}", app.element.carbon, residue) for i in range(4)]
+        for bond in molecule.bonds:
+            topology.addBond(atoms[bond.atom_i], atoms[bond.atom_j])
+        system = app.ForceField(str(path)).createSystem(topology)
+        torsion_force = next(force for force in system.getForces() if isinstance(force, mm.CustomTorsionForce))
+        assert torsion_force.getNumTorsions() == 1
+
+        integrator = mm.VerletIntegrator(1.0 * unit.femtoseconds)
+        context = mm.Context(system, integrator, mm.Platform.getPlatformByName("Reference"))
+        context.setPositions(molecule.geometry * unit.angstrom)
+        energy = context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilocalories_per_mole)
+        theta = math.radians(dihedral_angle(*molecule.geometry))
+        expected = 1.75 * (1.0 + math.cos(3 * theta - math.radians(phase)))
+        assert energy == pytest.approx(expected, abs=1e-5)

@@ -41,6 +41,33 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _is_feasible(x: np.ndarray, bounds: list[tuple[float, float]] | None) -> bool:
+    if not np.all(np.isfinite(x)):
+        return False
+    if not bounds:
+        return True
+    limits = np.asarray(bounds, dtype=float)
+    return bool(np.all(x >= limits[:, 0]) and np.all(x <= limits[:, 1]))
+
+
+class _DivergenceStop(StopIteration):
+    """Carry an accepted iterate when a solver propagates callback stops."""
+
+    def __init__(self, x: np.ndarray, score: float, nit: int) -> None:
+        super().__init__("Abandoned: sustained divergence from initial score")
+        self.x = np.asarray(x, dtype=float).copy()
+        self.score = score
+        self.nit = nit
+
+
+class _CallbackObjectiveStop(RuntimeError):
+    """Transport objective interruptions past SciPy's callback stop handler."""
+
+    def __init__(self, original: StopIteration) -> None:
+        super().__init__(str(original))
+        self.original = original
+
+
 class ScipyOptimizer:
     """Force field optimizer using :mod:`scipy.optimize`.
 
@@ -53,7 +80,10 @@ class ScipyOptimizer:
         gtol: Projected-gradient tolerance for L-BFGS-B.
         maxls: Maximum L-BFGS-B line-search steps per iteration.
         eps: Finite-difference step for SciPy's internal FD.
-        use_bounds: Whether to use bounds from ``space.bounds``.
+        use_bounds: Whether to enforce sanity bounds from ``space.bounds``,
+            intersected with configured fractional bounds. Unsupported
+            bounded methods and infeasible starts are rejected before
+            evaluation; ``False`` is genuinely unbounded.
         verbose: Log progress.
         divergence_factor: Early-stop threshold multiple of the initial
             score; ``None`` disables.
@@ -64,7 +94,7 @@ class ScipyOptimizer:
     """
 
     DERIVATIVE_FREE_METHODS = {"Nelder-Mead", "Powell"}
-    BOUNDED_METHODS = {"L-BFGS-B", "trust-constr", "least_squares"}
+    BOUNDED_METHODS = {"Nelder-Mead", "Powell", "L-BFGS-B", "trust-constr", "least_squares"}
 
     def __init__(
         self,
@@ -114,6 +144,8 @@ class ScipyOptimizer:
         )
 
         bounds = self._resolve_bounds(space, x0)
+        if not _is_feasible(x0, bounds):
+            raise ValueError("Initial active parameters must be finite and within the effective SciPy bounds.")
         n_eval_before = evaluator.n_evaluations
         hist_before = len(evaluator.history)
 
@@ -153,6 +185,8 @@ class ScipyOptimizer:
                 evaluator, space, baseline, x0, bounds, initial_score, use_evaluator_gradient
             )
 
+        if not _is_feasible(final_x, bounds):
+            raise ValueError("Optimization result violates the effective SciPy active bounds.")
         final_full = space.expand(final_x, base=baseline)
         run_history = evaluator.history[hist_before:]
         # Every path records per-call scalars into the evaluator now (minimize
@@ -190,6 +224,11 @@ class ScipyOptimizer:
     def _resolve_bounds(self, space: ActiveParameterSpace, x0: np.ndarray) -> list[tuple[float, float]] | None:
         if not self.use_bounds:
             return None
+        if self.method not in self.BOUNDED_METHODS:
+            raise ValueError(
+                f"ScipyOptimizer does not support bounds for method {self.method!r}; "
+                "choose a supported bounded method or explicitly set use_bounds=False."
+            )
         use_fractional = self.fc_fraction is not None or self.eq_fraction is not None
         if use_fractional:
             from q2mm.models.parameters import fractional_bounds
@@ -226,8 +265,7 @@ class ScipyOptimizer:
                 options["gtol"] = self.gtol
                 options["maxls"] = self.maxls
 
-        effective_bounds = bounds if (bounds and self.method in self.BOUNDED_METHODS) else None
-        callback = self._make_callback(evaluator, initial_score)
+        effective_bounds = bounds if bounds else None
         use_bound_scaling = (
             use_evaluator_gradient
             and self.method == "L-BFGS-B"
@@ -247,14 +285,23 @@ class ScipyOptimizer:
             solver_bounds = effective_bounds
 
         def to_physical(x_solver: np.ndarray) -> np.ndarray:
-            return centers + half_widths * x_solver if use_bound_scaling else np.asarray(x_solver, dtype=float)
+            if not use_bound_scaling:
+                return np.asarray(x_solver, dtype=float)
+            physical = centers + half_widths * x_solver
+            # Remove mapping roundoff only for feasible solver coordinates.
+            # Truly out-of-bounds trials must remain ineligible for recovery.
+            return np.where(
+                (x_solver >= -1.0) & (x_solver <= 1.0),
+                np.clip(physical, physical_bounds[:, 0], physical_bounds[:, 1]),
+                physical,
+            )
 
         best_x = x0.copy()
-        best_score = float(initial_score)
+        best_score = float(initial_score) if _is_feasible(x0, bounds) and np.isfinite(initial_score) else np.inf
 
         def remember(x_physical: np.ndarray, value: float) -> None:
             nonlocal best_x, best_score
-            if np.isfinite(value) and value < best_score:
+            if _is_feasible(x_physical, bounds) and np.isfinite(value) and value < best_score:
                 best_x = np.asarray(x_physical, dtype=float).copy()
                 best_score = float(value)
 
@@ -271,45 +318,42 @@ class ScipyOptimizer:
             active_grad = space.pack(full_grad)
             return val, active_grad * half_widths if use_bound_scaling else active_grad
 
-        if use_evaluator_gradient:
+        callback = self._make_callback(evaluator, initial_score, value_only)
+        if not use_evaluator_gradient and self.method not in self.DERIVATIVE_FREE_METHODS:
+            options["eps"] = self.eps
+        try:
             scipy_result = optimize.minimize(
-                value_and_grad,
+                value_and_grad if use_evaluator_gradient else value_only,
                 solver_x0,
                 method=self.method,
-                jac=True,
+                jac=True if use_evaluator_gradient else None,
                 bounds=solver_bounds,
                 options=options,
                 callback=callback,
             )
-        else:
-            if self.method not in self.DERIVATIVE_FREE_METHODS:
-                options["eps"] = self.eps
-            scipy_result = optimize.minimize(
-                value_only,
-                solver_x0,
-                method=self.method,
-                jac=None,
-                bounds=solver_bounds,
-                options=options,
-                callback=callback,
+        except _CallbackObjectiveStop as stop:
+            raise stop.original from None
+        except _DivergenceStop as stop:
+            # TNC propagates callback exceptions rather than consuming
+            # StopIteration as the other minimize solvers do.
+            scipy_result = optimize.OptimizeResult(
+                x=stop.x, fun=stop.score, nit=stop.nit, success=False, message=str(stop)
             )
 
         final_x = to_physical(np.asarray(scipy_result.x, dtype=float))
         final_score = float(scipy_result.fun)
-        if bounds and self.method not in self.BOUNDED_METHODS:
-            lower = np.array([b[0] for b in bounds])
-            upper = np.array([b[1] for b in bounds])
-            clipped = np.clip(final_x, lower, upper)
-            if not np.array_equal(clipped, final_x):
-                final_score = float(value_only(clipped))
-            final_x = clipped
-
         recovery_tolerance = 1e-8 * max(1.0, abs(best_score), abs(final_score)) if np.isfinite(final_score) else 0.0
-        recovered_best = not np.isfinite(final_score) or best_score < final_score - recovery_tolerance
+        recovered_best = (
+            not _is_feasible(final_x, bounds)
+            or not np.isfinite(final_score)
+            or best_score < final_score - recovery_tolerance
+        )
         if recovered_best:
+            if not np.isfinite(best_score):
+                raise ValueError("Optimization did not evaluate a finite score at a feasible point.")
             logger.warning(
-                "Optimizer terminated at score %.6g after evaluating a better score %.6g; "
-                "returning the best evaluated parameters.",
+                "Optimizer terminated at an invalid or worse point (score %.6g); "
+                "returning the best feasible evaluated parameters (score %.6g).",
                 final_score,
                 best_score,
             )
@@ -334,7 +378,7 @@ class ScipyOptimizer:
                 abs(final_score - initial_score) / initial_score,
                 message,
             )
-        return final_x, final_score, nit, bool(scipy_result.success and not recovered_best), message
+        return final_x, final_score, nit, bool(scipy_result.success and not recovered_best and not abandoned), message
 
     def _run_least_squares(
         self,
@@ -376,17 +420,42 @@ class ScipyOptimizer:
         nfev = int(getattr(scipy_result, "nfev", 0))
         return scipy_result.x.copy(), final_score, nfev, bool(scipy_result.success), str(scipy_result.message)
 
-    def _make_callback(self, evaluator: ObjectiveEvaluator, initial_score: float) -> Callable:
+    def _make_callback(
+        self,
+        evaluator: ObjectiveEvaluator,
+        initial_score: float,
+        value_at: Callable[[np.ndarray], float] | None = None,
+    ) -> Callable:
         diverge_count = 0
+        iterations = 0
         factor = self.divergence_factor
+        check_divergence = factor is not None and initial_score > 0
         patience = self.divergence_patience
         verbose = self.verbose
         state = {"abandoned": False}
 
-        def callback(_xk: Any, *args: Any, **kwargs: Any) -> bool:
-            nonlocal diverge_count
-            history = evaluator.history
-            score = history[-1] if history else float("nan")
+        def callback(intermediate_result: Any) -> None:
+            nonlocal diverge_count, iterations
+            iterations += 1
+            # SciPy recognizes this parameter name and supplies the accepted
+            # iterate's value, not the last line-search or finite-difference probe.
+            if isinstance(intermediate_result, np.ndarray):
+                if not check_divergence and not verbose:
+                    return
+                # TNC (and older SLSQP) only provides xk. Evaluate that exact
+                # iterate through the same coordinate map and incumbent tracker.
+                if value_at is None:
+                    raise ValueError("An x-only SciPy callback requires an accepted-iterate evaluator.")
+                x = intermediate_result
+                try:
+                    score = value_at(x)
+                except StopIteration as exc:
+                    # Only our divergence signal may be consumed as a normal
+                    # callback stop; objective interruptions must escape intact.
+                    raise _CallbackObjectiveStop(exc) from exc
+            else:
+                x = intermediate_result.x
+                score = float(intermediate_result.fun)
             n = evaluator.n_evaluations
             if verbose and n % 10 == 0:
                 logger.info("  eval %4d  score %.6f", n, score)
@@ -403,10 +472,17 @@ class ScipyOptimizer:
                             patience,
                         )
                         state["abandoned"] = True
-                        return True
+                        raise _DivergenceStop(x, score, iterations)
                 else:
                     diverge_count = 0
-            return False
 
+        if self.method == "trust-constr":
+            # Its native two-argument signature also works on SciPy versions
+            # predating the intermediate_result keyword callback.
+            def trust_callback(_xk: np.ndarray, result: Any) -> None:
+                callback(result)
+
+            trust_callback.state = state  # type: ignore[attr-defined]
+            return trust_callback
         callback.state = state  # type: ignore[attr-defined]
         return callback

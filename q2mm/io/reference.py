@@ -578,7 +578,7 @@ def _reference_value_to_dict(rv: Observation) -> dict[str, Any]:
 
 
 def _molecule_to_dict(mol: Molecule) -> dict[str, Any]:
-    """Convert a :class:`Molecule` to a YAML-friendly dict (inline geometry).
+    """Convert a molecule without unrepresentable dependencies to inline YAML.
 
     Args:
         mol: The molecule to serialise.
@@ -586,7 +586,31 @@ def _molecule_to_dict(mol: Molecule) -> dict[str, Any]:
     Returns:
         Dictionary suitable for YAML output.
 
+    Raises:
+        ReferenceYAMLError: If inline geometry would lose a Hessian or
+            authoritative topology, or change the resolved topology.
+
     """
+    if mol.hessian is not None:
+        raise ReferenceYAMLError(
+            f"Molecule {mol.name!r} has a Hessian that inline reference YAML saving cannot preserve. "
+            "Use an explicitly authored YAML reference to an external atomic-unit Hessian instead."
+        )
+    explicit_topology = [
+        name
+        for name, explicit in (
+            ("bonds", mol.bonds_explicit),
+            ("angles", mol.angles_explicit),
+            ("torsions", mol.torsions_explicit),
+        )
+        if explicit
+    ]
+    if explicit_topology:
+        raise ReferenceYAMLError(
+            f"Molecule {mol.name!r} has authoritative topology ({', '.join(explicit_topology)}) "
+            "that inline reference YAML cannot preserve."
+        )
+
     d: dict[str, Any] = {"name": mol.name}
 
     # Inline geometry — always serialise coordinates inline.
@@ -605,6 +629,14 @@ def _molecule_to_dict(mol: Molecule) -> dict[str, Any]:
     if mol.bond_tolerance != DEFAULT_BOND_TOLERANCE:
         d["bond_tolerance"] = mol.bond_tolerance
 
+    # Geometry changes can retain an originally inferred graph that no longer
+    # agrees with the inference performed by the inline YAML loader.
+    reloaded, _ = _load_molecule(d, Path(), molecule_idx=0)
+    if mol.bonds != reloaded.bonds or mol.angles != reloaded.angles or mol.torsions != reloaded.torsions:
+        raise ReferenceYAMLError(
+            f"Molecule {mol.name!r} has topology that inline reference YAML would change on reload."
+        )
+
     return d
 
 
@@ -620,6 +652,13 @@ def save_reference_yaml(
     ``Observation.case_id`` against each molecule's ``name`` (the same
     stable-ID binding :func:`load_reference_yaml` uses on load).
 
+    This writer is not a complete molecular-state package. It rejects
+    attached Hessians, authoritative topology (including explicit empty
+    connectivity), and retained graphs that inline geometry would re-infer
+    differently. All molecules are checked before opening the destination.
+    Loading hand-authored YAML with an external ``hessian`` path remains
+    supported; this writer does not create or copy dependency sidecars.
+
     Args:
         path: Output file path.
         ref: Reference data to save.
@@ -629,7 +668,8 @@ def save_reference_yaml(
     Raises:
         ReferenceYAMLError: If *molecules* have duplicate names, or if
             *ref* contains observations whose ``case_id`` does not match
-            any molecule's name.
+            any molecule's name, or if a molecule has dependencies or
+            topology that the inline schema cannot preserve.
 
     """
     path = Path(path)

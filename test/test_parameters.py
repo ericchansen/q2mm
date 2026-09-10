@@ -13,6 +13,8 @@ from __future__ import annotations
 import subprocess
 import sys
 import textwrap
+from dataclasses import replace
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -158,6 +160,52 @@ class TestLayoutOrderAndDimensions:
         assert len(layout.units) == n
         assert layout.bounds.shape == (n, 2)
         assert layout.steps.shape == (n,)
+
+
+class TestStretchBendSourceBinding:
+    @pytest.mark.parametrize("fallback_env", ["C1-C2-C2", "", "C9-C9-C9"])
+    @pytest.mark.parametrize("fallback_count", [1, 2])
+    def test_source_angle_without_coupling_does_not_borrow_another_row(
+        self, fallback_env: str, fallback_count: int
+    ) -> None:
+        angle = AngleParam(("C", "C", "C"), 120.0, 50.0, env_id="C1-C2-C2", ff_row=413)
+        unrelated = tuple(
+            StretchBendParam(("C", "C", "C"), 0.2, env_id=fallback_env, ff_row=row)
+            for row in (1537, 1619)[:fallback_count]
+        )
+        ff = ForceField(angles=(angle,), stretch_bends=unrelated, functional_form=FunctionalForm.MM3)
+
+        assert ff.match_stretch_bend(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row) is None
+
+    @pytest.mark.parametrize("force_constant", [0.2, 0.0])
+    @pytest.mark.parametrize("source_env", ["C1-C2-C2", "AA-C2-C2"])
+    def test_same_source_coupling_preserves_literal_patterns_and_zero(
+        self, force_constant: float, source_env: str
+    ) -> None:
+        angle = AngleParam(("C", "C", "C"), 120.0, 50.0, env_id=source_env, ff_row=413)
+        coupling = StretchBendParam(angle.elements, force_constant, env_id=source_env, ff_row=413)
+        unrelated = StretchBendParam(angle.elements, 0.5, env_id="C1-C2-C2", ff_row=1537)
+        ff = ForceField(angles=(angle,), stretch_bends=(unrelated, coupling), functional_form=FunctionalForm.MM3)
+
+        assert ff.match_stretch_bend(("C", "C", "C"), env_id="C1-C2-C2", ff_row=413) is coupling
+
+    @pytest.mark.parametrize("ff_row", [None, 999])
+    @pytest.mark.parametrize("angle_row", [None, 413])
+    @pytest.mark.parametrize("fallback_env", ["C1-C2-C2", "", "C9-C9-C9"])
+    def test_without_valid_source_angle_keeps_environment_fallback(
+        self, ff_row: int | None, angle_row: int | None, fallback_env: str
+    ) -> None:
+        angle = AngleParam(("C", "C", "C"), 120.0, 50.0, env_id="C1-C2-C2", ff_row=angle_row)
+        coupling = StretchBendParam(angle.elements, 0.2, env_id=fallback_env, ff_row=1537)
+        ff = ForceField(angles=(angle,), stretch_bends=(coupling,), functional_form=FunctionalForm.MM3)
+
+        assert ff.match_stretch_bend(angle.elements, env_id=angle.env_id, ff_row=ff_row) is coupling
+
+    def test_exact_coupling_row_still_matches_without_a_source_angle(self) -> None:
+        coupling = StretchBendParam(("C", "C", "C"), 0.2, env_id="AA-C2-C2", ff_row=413)
+        ff = ForceField(stretch_bends=(coupling,), functional_form=FunctionalForm.MM3)
+
+        assert ff.match_stretch_bend(("C", "C", "C"), env_id="C1-C2-C2", ff_row=413) is coupling
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +508,75 @@ class TestActiveParameterSpace:
 
 
 class TestOptSubstructureMembership:
+    @pytest.mark.parametrize(("context", "opt_context"), [("", "0000 0000"), ("0000 0000", "")])
+    def test_generic_bond_context_alias_preserves_membership(self, context: str, opt_context: str) -> None:
+        selected = BondParam(("C", "C"), 1.5, 100.0, env_id="C1-C1", bond_order="-", context=context)
+        unrelated = replace(selected, force_constant=200.0, context="O200 0000")
+        composed = ForceField(
+            bonds=(selected, unrelated), source_path=Path("composed.fld"), functional_form=FunctionalForm.MM3
+        )
+        opt_only = ForceField(
+            bonds=(replace(selected, context=opt_context),),
+            source_path=Path("opt.fld"),
+            functional_form=FunctionalForm.MM3,
+        )
+        layout = ParameterLayout.from_force_field(composed)
+        membership = opt_substructure_membership(composed, opt_only)
+        assert membership.bonds == frozenset({0})
+        space = ActiveParameterSpace.from_membership(layout, composed, membership)
+        np.testing.assert_array_equal(space.active_indices, [0, 1])
+        updated = layout.replace(composed, space.expand(space.pack(layout.vector(composed)) + 0.1))
+        assert updated.bonds[1] == unrelated
+        aliased = replace(composed, bonds=(replace(selected, context=opt_context), unrelated))
+        assert layout.fingerprint != ParameterLayout.from_force_field(aliased).fingerprint
+        assert composed.bonds[0].context == context
+        assert opt_only.bonds[0].context == opt_context
+
+    @pytest.mark.parametrize(
+        ("bond_order", "context"),
+        [("=", ""), ("-", "O200 0000"), ("=", "O200 0000")],
+    )
+    @pytest.mark.parametrize("reverse_rows", [False, True])
+    @pytest.mark.parametrize("cross_source", [False, True])
+    def test_bond_variants_select_only_requested_scalars(
+        self, bond_order: str, context: str, reverse_rows: bool, cross_source: bool
+    ) -> None:
+        generic = BondParam(("C", "C"), 1.5, 100.0, env_id="C1-C1", bond_order="-", ff_row=10)
+        selected = replace(generic, force_constant=200.0, bond_order=bond_order, context=context, ff_row=20)
+        bonds = (selected, generic) if reverse_rows else (generic, selected)
+        composed = ForceField(
+            bonds=bonds,
+            source_path=Path("composed.fld") if cross_source else None,
+            functional_form=FunctionalForm.MM3,
+        )
+        opt_only = ForceField(
+            bonds=(replace(selected, force_constant=999.0, equilibrium=1.2, ff_row=10),),
+            source_path=Path("opt.fld") if cross_source else None,
+            functional_form=FunctionalForm.MM3,
+        )
+
+        membership = opt_substructure_membership(composed, opt_only)
+        selected_index = 0 if reverse_rows else 1
+        assert membership.bonds == frozenset({selected_index})
+        layout = ParameterLayout.from_force_field(composed)
+        space = ActiveParameterSpace.from_membership(layout, composed, membership)
+        np.testing.assert_array_equal(space.active_indices, [2 * selected_index, 2 * selected_index + 1])
+        updated = layout.replace(composed, space.expand(space.pack(layout.vector(composed)) + 0.1))
+        assert updated.bonds[1 - selected_index] == generic
+        assert updated.bonds[selected_index].force_constant == pytest.approx(200.1)
+
+    def test_same_source_row_precedes_fallback_identity(self, tmp_path: Path) -> None:
+        generic = BondParam(("C", "C"), 1.5, 100.0, env_id="C1-C1", bond_order="-", ff_row=10)
+        selected = replace(generic, force_constant=200.0, bond_order="=", context="O200 0000", ff_row=20)
+        source = tmp_path / "source.fld"
+        composed = ForceField(bonds=(generic, selected), source_path=source, functional_form=FunctionalForm.MM3)
+        opt_only = ForceField(
+            bonds=(replace(generic, ff_row=20),),
+            source_path=source,
+            functional_form=FunctionalForm.MM3,
+        )
+        assert opt_substructure_membership(composed, opt_only).bonds == frozenset({1})
+
     def test_membership_matches_opt_only_rows_by_identity(self) -> None:
         composed = ForceField(
             bonds=(

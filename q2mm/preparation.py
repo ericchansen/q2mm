@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import dataclasses
+import logging
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
+from numbers import Real
 from pathlib import Path
 from typing import Literal, cast
 
@@ -22,8 +24,9 @@ from q2mm.backends.contracts import (
     PreparationRequest,
 )
 from q2mm.models.forcefield import ForceField, FunctionalForm
+from q2mm.models.hessian import symbols_to_masses_3n
 from q2mm.models.molecule import Molecule
-from q2mm.models.observations import ObservationSet, observation_payload
+from q2mm.models.observations import Observation, ObservationSet, ObservationValue, observation_payload
 from q2mm.models.parameters import (
     ActiveParameterSpace,
     ParameterLayout,
@@ -38,9 +41,13 @@ from q2mm.models.problem import (
 from q2mm.models.seminario import qfuerza_fresh, qfuerza_into
 
 _COMPATIBILITY_PROFILE = "repository-geometry-eigenmatrix-v1"
+_STATIONARY_POINT_PROFILE = "stationary-point-geometry-eigenmatrix-v1"
 _EXPLICIT_PROFILE = "explicit-observation-set-v1"
 _MATCHED_FREQUENCY_PROFILE = "matched-frequency-v1"
+_HESSIAN_SYMMETRY_ATOL = 1e-12
+_HESSIAN_SYMMETRY_RTOL = 1e-8
 _BEND_FIELDS = frozenset({"force_constant", "equilibrium"})
+logger = logging.getLogger(__name__)
 
 Initialize = Literal["provided", "qfuerza"]
 ActiveParameters = Literal["all"] | ForceField | ActiveParameterSpace
@@ -78,10 +85,54 @@ class ObservationRecipe:
 
 @dataclass(frozen=True)
 class MoleculeObservations(ObservationRecipe):
-    """Geometry plus full-eigenmatrix observations from canonical molecules."""
+    """Frozen repository compatibility geometry and full-eigenmatrix recipe.
+
+    Preserves the historical reaction-mode and six-rigid-mode exclusions,
+    even for ground states and linear molecules. Publication case loaders
+    select this recipe explicitly; generic preparation uses
+    :class:`StationaryPointObservations` instead.
+    """
 
     name: str = field(default="MoleculeObservations", init=False)
     profile: str = field(default=_COMPATIBILITY_PROFILE, init=False)
+
+
+@dataclass(frozen=True)
+class StationaryPointObservations(ObservationRecipe):
+    """Geometry and eigenmatrix targets selected for the declared stationary point.
+
+    Ground states exclude only rigid candidates; transition states also
+    exclude the reaction row and column. The existing unprojected
+    mass-weighted reference basis and magnitude-ranked exclusion are retained.
+    This repository convention is not exact Limé/Norrby Method D.
+
+    Args:
+        linearity: Infer each molecule's linearity, or override all cases in
+            this request. Nonlinear diatomics are not supported.
+        linearity_tolerance: Geometry-relative SVD threshold in ``(0, 1)``.
+            Automatic classification is linear when the second/largest
+            singular-value ratio is at most this threshold. This is an
+            engineering convention, not a paper-defined physical cutoff.
+
+    """
+
+    linearity: Literal["auto", "linear", "nonlinear"] = "auto"
+    linearity_tolerance: float = 1e-8
+    name: str = field(default="StationaryPointObservations", init=False)
+    profile: str = field(default=_STATIONARY_POINT_PROFILE, init=False)
+
+    def __post_init__(self) -> None:
+        if self.linearity not in ("auto", "linear", "nonlinear"):
+            raise PreparationError("StationaryPointObservations.linearity must be 'auto', 'linear', or 'nonlinear'.")
+        tolerance = self.linearity_tolerance
+        if (
+            isinstance(tolerance, bool)
+            or not isinstance(tolerance, Real)
+            or not math.isfinite(tolerance)
+            or not 0.0 < tolerance < 1.0
+        ):
+            raise PreparationError("StationaryPointObservations.linearity_tolerance must be finite and in (0, 1).")
+        object.__setattr__(self, "linearity_tolerance", float(tolerance))
 
 
 @dataclass(frozen=True)
@@ -301,6 +352,165 @@ def _observation_payload(observations: ObservationSet) -> list[dict[str, object]
     return [observation_payload(observation) for observation in observations.values]
 
 
+def _resolve_linearity(
+    molecule: Molecule,
+    recipe: StationaryPointObservations,
+    case_id: str,
+) -> tuple[str, str, float, int]:
+    if molecule.n_atoms < 2:
+        raise PreparationError(
+            f"Case {case_id!r}: StationaryPointObservations requires at least two atoms; "
+            "use explicit observations for atomic/non-vibrational problems."
+        )
+    if not np.isfinite(molecule.geometry).all():
+        raise PreparationError(f"Case {case_id!r}: geometry must be finite for linearity inference.")
+    if molecule.hessian is None or not np.isfinite(molecule.hessian).all():
+        raise PreparationError(f"Case {case_id!r}: a finite canonical Hessian is required.")
+    hessian_scale = float(np.max(np.abs(molecule.hessian)))
+    if hessian_scale > 0.0:
+        # Scale first to keep the Frobenius comparison safe for large finite entries.
+        normalized = molecule.hessian / hessian_scale
+        asymmetry = float(np.linalg.norm(normalized - normalized.T, ord="fro"))
+        symmetry_limit = _HESSIAN_SYMMETRY_ATOL / hessian_scale + _HESSIAN_SYMMETRY_RTOL * float(
+            np.linalg.norm(normalized, ord="fro")
+        )
+        if asymmetry > symmetry_limit:
+            raise PreparationError(
+                f"Case {case_id!r}: Hessian must be symmetric within Frobenius tolerance "
+                f"{_HESSIAN_SYMMETRY_ATOL} + {_HESSIAN_SYMMETRY_RTOL} * norm(H); "
+                "the reference Hessian is not symmetrized."
+            )
+    try:
+        masses = np.asarray(symbols_to_masses_3n(molecule.symbols))[::3]
+    except ValueError as exc:
+        raise PreparationError(f"Case {case_id!r}: {exc}") from exc
+    if not np.isfinite(masses).all() or np.any(masses <= 0):
+        raise PreparationError(f"Case {case_id!r}: atomic masses must be finite and positive.")
+    if molecule.n_atoms == 2 and recipe.linearity == "nonlinear":
+        raise PreparationError(f"Case {case_id!r}: a diatomic cannot use a nonlinear override.")
+    relative = molecule.geometry - molecule.geometry[0]
+    centered = relative - np.average(relative, axis=0, weights=masses)
+    try:
+        singular_values = np.linalg.svd(np.sqrt(masses[:, None]) * centered, compute_uv=False)
+    except np.linalg.LinAlgError as exc:
+        raise PreparationError(f"Case {case_id!r}: linearity decomposition failed.") from exc
+    if not np.isfinite(singular_values).all() or singular_values[0] == 0.0:
+        raise PreparationError(f"Case {case_id!r}: geometry has undefined molecular extent.")
+    ratio = float(singular_values[1] / singular_values[0])
+    inferred = "linear" if molecule.n_atoms == 2 or ratio <= recipe.linearity_tolerance else "nonlinear"
+    resolved = inferred if recipe.linearity == "auto" else recipe.linearity
+    return inferred, resolved, ratio, 5 if resolved == "linear" else 6
+
+
+def _stationary_point_observations(
+    recipe: StationaryPointObservations,
+    molecules: tuple[Molecule, ...],
+    case_ids: tuple[str, ...],
+    point: StationaryPointKind,
+) -> tuple[ObservationSet, dict[str, object]]:
+    observations: list[ObservationValue] = []
+    cases: list[dict[str, object]] = []
+    skip_first = point is StationaryPointKind.TRANSITION_STATE
+    weights = {
+        "bond_length": 10.0,
+        "bond_angle": 5.0,
+        "eig_i": 0.0,
+        "eig_d_low": 0.1,
+        "eig_d_high": 0.1,
+        "eig_o": 0.05,
+    }
+    eigenvalue_threshold = 0.1173
+    for case_id, molecule in zip(case_ids, molecules, strict=True):
+        inferred, resolved, ratio, n_rigid = _resolve_linearity(molecule, recipe, case_id)
+        assert molecule.hessian is not None
+        try:
+            reference = ObservationSet.from_molecule(
+                molecule, case_id=case_id, include_eigenmatrix=False, weights=weights
+            ).with_eigenmatrix_from_hessian(
+                molecule.hessian,
+                symbols=molecule.symbols,
+                case_id=case_id,
+                skip_first=skip_first,
+                n_rigid_modes=n_rigid,
+                diagonal_only=False,
+                weights=weights,
+                eigenvalue_threshold=eigenvalue_threshold,
+            )
+        except np.linalg.LinAlgError as exc:
+            raise PreparationError(f"Case {case_id!r}: reference normal-mode decomposition failed.") from exc
+        diagonals = [
+            value for value in reference.values if isinstance(value, Observation) and value.kind == "eig_diagonal"
+        ]
+        excluded = [value.data_idx for value in diagonals if value.weight == 0.0]
+        retained = [value for value in diagonals if value.weight > 0.0]
+        negative = [value for value in retained if value.value < 0.0]
+        diagnostics: list[dict[str, object]] = []
+        if negative:
+            indices = [value.data_idx for value in negative]
+            logger.warning(
+                "Case %r has negative retained reference curvature in modes %s; inspect the declared "
+                "stationary point and reference quality. The reference values and masks are unchanged.",
+                case_id,
+                indices,
+            )
+            diagnostics.append(
+                {
+                    "code": "negative-retained-curvature",
+                    "mode_indices": indices,
+                    "reference_values": [value.value for value in negative],
+                }
+            )
+        if skip_first and diagonals[0].value >= 0.0:
+            logger.warning(
+                "Case %r declares a transition state but its reserved reaction curvature is nonnegative; "
+                "inspect the declared stationary point and reference quality. TS routing is unchanged.",
+                case_id,
+            )
+            diagnostics.append(
+                {
+                    "code": "nonnegative-ts-reaction-curvature",
+                    "mode_indices": [0],
+                    "reference_values": [diagonals[0].value],
+                }
+            )
+        cases.append(
+            {
+                "case_id": case_id,
+                "stationary_point": point.value,
+                "inferred_linearity": inferred,
+                "resolved_linearity": resolved,
+                "linearity_ratio": ratio,
+                "n_rigid_modes": n_rigid,
+                "skip_first": skip_first,
+                "rigid_mode_indices": [index for index in excluded if not (skip_first and index == 0)],
+                "reaction_mode_index": 0 if skip_first else None,
+                "excluded_mode_indices": excluded,
+                "retained_mode_indices": [value.data_idx for value in retained],
+                "diagnostics": diagnostics,
+            }
+        )
+        observations.extend(reference.values)
+    return ObservationSet(values=tuple(observations)), {
+        "name": recipe.name,
+        "profile": recipe.profile,
+        "geometry": True,
+        "eigenmatrix": "full",
+        "reference_basis": "unprojected-mass-weighted-qm-normal-modes",
+        "reference_hessian": "unmodified",
+        "hessian_symmetry": {
+            "norm": "frobenius",
+            "atol": _HESSIAN_SYMMETRY_ATOL,
+            "rtol": _HESSIAN_SYMMETRY_RTOL,
+        },
+        "selection": "smallest-absolute-eigenvalue-count",
+        "reaction_mask": "excluded-row-and-column",
+        "linearity": recipe.linearity,
+        "linearity_tolerance": recipe.linearity_tolerance,
+        "weights": {**weights, "eigenvalue_threshold": eigenvalue_threshold},
+        "cases": cases,
+    }
+
+
 def _matched_observations(
     recipe: MatchedFrequencyObservations,
     backend: Backend,
@@ -355,7 +565,12 @@ def prepare(
     initialize: Initialize | None = None,
     qfuerza: QFuerzaConfig | None = None,
 ) -> OptimizationProblem:
-    """Build one canonical immutable optimization problem from user inputs."""
+    """Build one canonical immutable optimization problem from user inputs.
+
+    Omitted observations use :class:`StationaryPointObservations`. Select
+    :class:`MoleculeObservations` explicitly for the frozen repository
+    compatibility profile used by publication case loaders.
+    """
     molecule_values = _normalize_molecules(molecules)
     point = _stationary_point(stationary_point)
     requested_form = _functional_form(functional_form)
@@ -364,6 +579,7 @@ def prepare(
         raise PreparationError("observations must be an ObservationSet or a supported ObservationRecipe.")
     if isinstance(observations, ObservationRecipe) and type(observations) not in {
         MoleculeObservations,
+        StationaryPointObservations,
         MatchedFrequencyObservations,
     }:
         raise PreparationError(f"Unsupported observation recipe {type(observations).__name__}.")
@@ -411,12 +627,23 @@ def prepare(
 
     backend = _resolve_backend(matched_recipe, resolved_form) if matched_recipe is not None else None
     needs_hessian = (
-        initialize_source == "qfuerza" or observations is None or isinstance(observations, MoleculeObservations)
+        initialize_source == "qfuerza"
+        or observations is None
+        or isinstance(observations, (MoleculeObservations, StationaryPointObservations))
     )
     if needs_hessian:
         missing = [ids[index] for index, molecule in enumerate(molecule_values) if molecule.hessian is None]
         if missing:
             raise PreparationError(f"Molecules missing required canonical Hessians: {missing}.")
+
+    generic_observations = None
+    if observations is None or isinstance(observations, StationaryPointObservations):
+        generic_observations = _stationary_point_observations(
+            StationaryPointObservations() if observations is None else observations,
+            molecule_values,
+            ids,
+            point,
+        )
 
     if force_field is None:
         template = ForceField.create_for_molecule(
@@ -456,13 +683,16 @@ def prepare(
         active_indices=initial_space.active_indices,
     )
 
-    if observations is None or isinstance(observations, MoleculeObservations):
+    if generic_observations is not None:
+        resolved_observations, recipe_details = generic_observations
+        profile = _STATIONARY_POINT_PROFILE
+    elif isinstance(observations, MoleculeObservations):
         resolved_observations = ObservationSet.from_molecules(
             molecule_values,
             ids,
             eigenmatrix_diagonal_only=False,
         )
-        recipe_details: dict[str, object] = {
+        recipe_details = {
             "name": "MoleculeObservations",
             "profile": _COMPATIBILITY_PROFILE,
             "geometry": True,
@@ -536,5 +766,6 @@ __all__ = [
     "ObservationRecipe",
     "PreparationError",
     "QFuerzaConfig",
+    "StationaryPointObservations",
     "prepare",
 ]

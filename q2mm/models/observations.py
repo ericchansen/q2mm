@@ -334,7 +334,11 @@ class ParameterTetherObservation:
 
 @dataclass(frozen=True)
 class Observation:
-    """A single, immutable reference observation (QM or experimental)."""
+    """A single, immutable reference observation (QM or experimental).
+
+    Used atom/matrix indices must be non-negative integers. Case-dependent
+    arity, upper bounds and topology membership are checked by ObjectivePlan.
+    """
 
     kind: _ObservationKind
     value: float
@@ -370,7 +374,20 @@ class Observation:
             raise ValueError(f"Unknown observation kind {self.kind!r}.")
         if not isinstance(self.data_idx, int) or isinstance(self.data_idx, bool) or self.data_idx < 0:
             raise ValueError("Observation.data_idx must be a non-negative integer.")
-        atom_indices = None if self.atom_indices is None else tuple(int(index) for index in self.atom_indices)
+        atom_indices = None if self.atom_indices is None else tuple(self.atom_indices)
+        if atom_indices is not None and self.kind in {
+            "bond_length",
+            "bond_angle",
+            "torsion_angle",
+            "eig_offdiagonal",
+            "hessian_element",
+        }:
+            if any(
+                not isinstance(index, (int, np.integer)) or isinstance(index, (bool, np.bool_))
+                for index in atom_indices
+            ):
+                raise ValueError("Observation.atom_indices must be non-negative integers.")
+        atom_indices = None if atom_indices is None else tuple(int(index) for index in atom_indices)
         if atom_indices is not None and any(index < 0 for index in atom_indices):
             raise ValueError("Observation.atom_indices must be non-negative.")
         object.__setattr__(self, "value", value)

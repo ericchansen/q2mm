@@ -128,6 +128,41 @@ def make_water(
     )
 
 
+def make_harmonic_diatomic() -> Molecule:
+    """H2 with an analytic bond-stretch Hessian and five rigid modes."""
+    molecule = make_diatomic()
+    stretch = np.array([-1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+    return molecule.with_hessian(0.5 * np.outer(stretch, stretch))
+
+
+def make_harmonic_water(*, angle_stiffness: float = 0.1) -> Molecule:
+    """Water geometry with analytic bond/angle curvature, not ab-initio data."""
+    from q2mm.constants import BOHR_TO_ANG
+
+    molecule = make_water()
+    xyz = molecule.geometry / BOHR_TO_ANG
+    rows = []
+    for terminal in (1, 2):
+        displacement = xyz[terminal] - xyz[0]
+        direction = displacement / np.linalg.norm(displacement)
+        row = np.zeros_like(xyz)
+        row[terminal] = direction
+        row[0] = -direction
+        rows.append(row.ravel())
+    u, v = xyz[1] - xyz[0], xyz[2] - xyz[0]
+    ru, rv = np.linalg.norm(u), np.linalg.norm(v)
+    u, v = u / ru, v / rv
+    cosine = np.dot(u, v)
+    sine = np.sqrt(1.0 - cosine**2)
+    angle = np.zeros_like(xyz)
+    angle[1] = (cosine * u - v) / (ru * sine)
+    angle[2] = (cosine * v - u) / (rv * sine)
+    angle[0] = -angle[1] - angle[2]
+    rows.append(angle.ravel())
+    jacobian = np.asarray(rows)
+    return molecule.with_hessian(jacobian.T @ np.diag([0.5, 0.5, angle_stiffness]) @ jacobian)
+
+
 def make_noble_gas_pair(
     distance: float = 3.0,
     atom_type: str = "He",

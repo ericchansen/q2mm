@@ -5,6 +5,10 @@ This page documents the observation kinds supported by Q2MM's
 experiment-derived target that the objective function compares against the
 corresponding MM prediction during force field optimization.
 
+For automatic selection, stationary-point/linearity handling and the frozen
+repository compatibility profile, start with
+[Fitting objectives and reference data](fitting-objectives.md).
+
 ---
 
 ## Overview
@@ -22,7 +26,7 @@ corresponding MM prediction during force field optimization.
 All observation kinds live in `ObservationSet` and can be combined freely.
 The objective function computes weighted squared residuals:
 
-$$\text{Score} = \sum_i w_i \cdot (x_i^\text{QM} - x_i^\text{MM})^2$$
+$$\text{Data score} = \sum_i [w_i \cdot (x_i^\text{QM} - x_i^\text{MM})]^2$$
 
 ---
 
@@ -244,10 +248,11 @@ ref = ref.with_frequency(value=1648.5, data_idx=0, weight=1.0, case_id="0")
 
 ## Hessian-derived data
 
-These data types are derived from the QM Hessian via the Seminario/QFUERZA
-projection method
+Eigenmatrix targets use the mass-weighted reference normal-mode basis,
+not the Seminario/QFUERZA bond/angle projection used for initialization
 ([Farrugia, Helquist, Norrby & Wiest, *J. Chem. Theory Comput.* **2025**, 22, 469](https://doi.org/10.1021/acs.jctc.5c01751)).
-See [Theory & Methods — Stage 1](theory.md#stage-1-qfuerza-estimation) for the full mathematical treatment.
+See [the generic selection rule](fitting-objectives.md#the-generic-mode-selection-rule)
+for the basis, units and exclusions.
 
 Q2MM supports two ways to use Hessian information as training data, both derived from eigendecomposition of the Hessian.
 
@@ -263,23 +268,25 @@ Q2MM supports two ways to use Hessian information as training data, both derived
 ### Eigenvalue (diagonal)
 
 **Definition:** Diagonal elements of the Hessian after eigendecomposition —
-i.e., the eigenvalues. Each eigenvalue is the force constant for one normal
-mode in Hartree/Bohr².
+i.e., the eigenvalues of the mass-weighted Hessian. Their units are
+Hartree/(amu · Bohr²).
 
 **Kind string:** `eig_diagonal`
 
-**When to use:** Eigenvalues provide more information than frequencies because
-they preserve the sign (negative eigenvalues indicate saddle-point directions)
-and magnitude without the mass-weighting that converts eigenvalues to
-frequencies. They are particularly useful for transition states where the
+**When to use:** Eigenvalues retain curvature units before conversion to
+signed square-root frequencies. The two contain the same per-mode curvature
+information, but residuals on those different numerical scales define
+different objectives.
+The eigenmatrix recipe already mass-weights the Hessian. These targets are
+particularly useful for transition states where the
 negative eigenvalue (reaction coordinate) carries information about barrier
 curvature.
 
 **Weight guidance:** The default weight scheme separates low-frequency and
 high-frequency modes:
 
-- `eig_i = 0.0` — the first (imaginary/reaction coordinate) mode gets zero weight
-- `eig_d_low = 0.1` — eigenvalues below 0.1173 Hartree/Bohr² (≈ 1100 kJ/(mol·Å²))
+- `eig_i = 0.0` — excluded rigid/reaction candidates get zero weight, as specified by the [selected recipe](fitting-objectives.md#choose-the-route-not-just-the-starting-parameters)
+- `eig_d_low = 0.1` — eigenvalues below 0.1173 Hartree/(amu · Bohr²)
 - `eig_d_high = 0.1` — eigenvalues above that threshold
 
 **API:**
@@ -289,7 +296,7 @@ from q2mm.models.observations import ObservationSet
 
 ref = ObservationSet()
 ref = ref.with_hessian_eigenvalue(
-    value=0.0543,            # in Hartree/Bohr²
+    value=0.0543,            # in Hartree/(amu * Bohr²)
     mode_idx=1,              # which eigenvalue (0 = most negative)
     weight=0.1,
     case_id="0",             # stable ID of the training case
@@ -324,9 +331,10 @@ from q2mm.models.observations import ObservationSet
 
 ref = ObservationSet()
 
-# Add all eigenmatrix data from a Hessian (recommended)
+# Explicit low-level TS-shaped compatibility selection
 ref = ref.with_eigenmatrix_from_hessian(
     hessian,                       # (3N, 3N) array in Hartree/Bohr²
+    symbols=molecule.symbols,     # same mass-weighted basis as execution
     diagonal_only=False,           # include off-diagonal elements
     case_id="0",                   # stable ID of the training case
     skip_first=True,               # zero-weight the reaction coordinate
@@ -355,31 +363,26 @@ For TSFF parameterization, the standard Q2MM combination is:
 - **Eigenmatrix** (diagonal + off-diagonal) — capture per-mode force
   constants *and* cross-coupling between modes
 
-This is the default in `ObservationSet.from_molecule()` and the approach
-used in
-[Rosales et al., *Chem. Commun.* **2018**](https://doi.org/10.1039/C8CC03695K)
-and subsequent Q2MM publications.
+`ObservationSet.from_molecule()` retains the repository compatibility
+builder's version of this combination. Generic `prepare` instead uses
+[stationary-point-aware mode accounting](fitting-objectives.md).
+Neither recipe alone is an exact publication reproduction.
 
 !!! note "Why eigenmatrix instead of frequencies?"
     Frequencies are derived from eigenvalues — they contain the same
-    per-mode force constant information, just mass-weighted. Eigenmatrix
+    per-mode curvature information after signed square-root conversion. Eigenmatrix
     data is strictly richer: it also includes off-diagonal elements
     (mode coupling) that frequencies cannot capture. Using both
     simultaneously would double-count the diagonal information, so the
     standard workflow uses eigenmatrix alone.
 
 !!! note "What about the reaction coordinate?"
-    The reaction coordinate (imaginary frequency mode) is included in
-    the eigenmatrix as mode 0. By default its weight is zero (`eig_i =
-    0.0`), effectively excluding it from the fit. When
-    `invert_ts_curvature=True`, the negative eigenvalue is replaced with
-    a large positive value, making the TS appear as a minimum in the MM
-    energy surface. The force field *does* encode the reaction
-    coordinate — it just isn't trained against the QM value. Setting
-    `eig_i` to a non-zero weight would train against the flipped
-    eigenvalue; see
-    [Limé & Norrby, *J. Comput. Chem.* **2015**, 36, 244](https://doi.org/10.1002/jcc.23797)
-    for the tradeoffs.
+    The generic TS recipe and compatibility builder exclude mode 0's
+    diagonal and touching off-diagonals. QFUERZA curvature inversion
+    acts during initialization, not on these reference targets. Merely
+    changing a weight does not replace the reference eigenvalue with an
+    inverted value. See the
+    [source and Method D distinction](fitting-objectives.md#publication-case-loaders-and-compatibility).
 
 ### Ground-state force fields
 
@@ -402,10 +405,11 @@ is an example of a ground-state parameterization that uses geometry +
 eigenmatrix data.
 
 !!! note "Ground-state vs transition-state differences"
-    Ground-state fitting is simpler in one key way: all eigenvalues are
-    positive (no reaction coordinate to handle). On the other hand,
-    ground-state fitting often requires multiple conformers, making
-    energy data more important than in single-structure TSFF fits.
+    Ground-state minima have positive physical vibrational curvature, but
+    rigid motions are ideally zero and approximate stationary geometries
+    can have residual rotational curvature. The generic recipe does not
+    reserve a reaction mode for ground states. See its
+    [selection limitations and diagnostics](fitting-objectives.md#what-the-selection-does-not-establish).
 
 ---
 

@@ -112,7 +112,12 @@ def compute_sensitivity(
 
 
 class OptimizationLoop:
-    """grad-simp cycling loop returning the canonical OptimizationResult."""
+    """grad-simp cycling loop returning the canonical OptimizationResult.
+
+    A small cycle improvement signals convergence only when both the full
+    and subspace passes succeeded. This composite stopping rule does not
+    establish full-space stationarity at the subspace endpoint.
+    """
 
     def __init__(
         self,
@@ -166,6 +171,7 @@ class OptimizationLoop:
         cycle_scores: list[float] = [initial_score]
         stages: list[StageRecord] = []
         converged = False
+        message = f"max cycles ({self.max_cycles}) reached"
 
         use_optax = self.full_method.startswith("optax:")
         use_jaxopt = self.full_method.startswith("jaxopt:")
@@ -256,6 +262,8 @@ class OptimizationLoop:
                             "sensitivity_ranking": sens.ranking.tolist(),
                             "score_after_grad": score_after_grad,
                             "score_after_subspace": simp_result.final_score,
+                            "full_converged": full_result.success,
+                            "subspace_converged": simp_result.success,
                         },
                     )
                 )
@@ -264,7 +272,13 @@ class OptimizationLoop:
                 if self.verbose:
                     logger.info("  Cycle %d: %.2f%% improvement", cycle, change * 100)
                 if 0 <= change < self.convergence:
-                    converged = True
+                    converged = stages[-1].converged
+                    message = (
+                        "converged"
+                        if converged
+                        else f"stalled: cycle {cycle} improvement below threshold without both passes converging; "
+                        f"{stages[-1].message}"
+                    )
                     break
         finally:
             if prev_on_error is not None:
@@ -274,7 +288,7 @@ class OptimizationLoop:
         n_cycles = len(cycle_scores) - 1
         return OptimizationResult(
             success=converged,
-            message="converged" if converged else f"max cycles ({self.max_cycles}) reached",
+            message=message,
             initial_score=initial_score,
             final_score=final_score,
             n_iterations=n_cycles,
