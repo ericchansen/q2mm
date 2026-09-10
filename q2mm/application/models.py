@@ -283,21 +283,26 @@ def problem_fingerprint(problem: OptimizationProblem) -> str:
     return canonical_fingerprint(problem_fingerprint_payload(problem), screen_secrets=True)
 
 
+def _input_fingerprints_from_payload(payload: Mapping[str, Any]) -> Mapping[str, str]:
+    values = {
+        f"molecule:{case['case_id']}": canonical_fingerprint(case["molecule"], screen_secrets=True)
+        for case in payload["cases"]
+    }
+    values["starting_force_field"] = canonical_fingerprint(payload["starting_force_field"], screen_secrets=True)
+    values["observations"] = canonical_fingerprint(payload["observations"])
+    values["active_space"] = canonical_fingerprint(payload["active_space"])
+    return MappingProxyType(values)
+
+
 def problem_input_fingerprints(problem: OptimizationProblem) -> Mapping[str, str]:
     """Return stable per-input fingerprints used by run provenance."""
-    vector = problem.layout.vector(problem.starting_force_field)
-    values = {
-        f"molecule:{case.case_id}": canonical_fingerprint(
-            molecule_fingerprint_payload(case.molecule), screen_secrets=True
-        )
-        for case in problem.cases
-    }
-    values["starting_force_field"] = canonical_fingerprint(
-        force_field_fingerprint_payload(problem.starting_force_field, vector), screen_secrets=True
-    )
-    values["observations"] = canonical_fingerprint(problem_fingerprint_payload(problem)["observations"])
-    values["active_space"] = canonical_fingerprint(problem_fingerprint_payload(problem)["active_space"])
-    return MappingProxyType(values)
+    return _input_fingerprints_from_payload(problem_fingerprint_payload(problem))
+
+
+def _problem_fingerprints(problem: OptimizationProblem) -> tuple[str, Mapping[str, str]]:
+    """Capture the whole-problem and per-input identities from one canonical payload."""
+    payload = problem_fingerprint_payload(problem)
+    return canonical_fingerprint(payload, screen_secrets=True), _input_fingerprints_from_payload(payload)
 
 
 @dataclass(frozen=True, eq=False)
