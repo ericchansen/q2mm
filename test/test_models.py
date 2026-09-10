@@ -1166,7 +1166,9 @@ class TestForceField:
             angles=[AngleParam(("H", "C", "F"), 109.7, 39.6, env_id="H1-C1-F1")],
             torsions=[
                 TorsionParam(("H", "C", "C", "F"), periodicity=1, force_constant=-0.5, env_id="H1-C1-C1-F1"),
-                TorsionParam(("H", "C", "C", "F"), periodicity=2, force_constant=1.2, env_id="H1-C1-C1-F1"),
+                TorsionParam(
+                    ("H", "C", "C", "F"), periodicity=2, force_constant=1.2, phase=180.0, env_id="H1-C1-C1-F1"
+                ),
                 TorsionParam(("H", "C", "C", "F"), periodicity=3, force_constant=0.0, env_id="H1-C1-C1-F1"),
             ],
             vdws=[VdwParam("F0", 1.71, 0.075)],
@@ -1184,6 +1186,9 @@ class TestForceField:
         # Negative torsion values should survive
         v1 = [t for t in roundtrip.torsions if t.periodicity == 1][0]
         assert v1.force_constant == pytest.approx(-0.5)
+        assert [(t.periodicity, t.force_constant, t.phase) for t in roundtrip.torsions] == [
+            (t.periodicity, t.force_constant, t.phase) for t in ff.torsions
+        ]
 
     def test_mm3_export_updates_template(self, tmp_path: Path) -> None:
         ff = load_mm3_fld(RH_MM3)
@@ -3208,12 +3213,12 @@ class TestFrozenParamInvariant:
 class TestMm3VdwRoundTrip:
     """F3: saving MM3 vdW parameters must not corrupt the fixed-width columns."""
 
-    def test_vdw_write_back_is_byte_stable(self, tmp_path: Path) -> None:
+    def test_vdw_write_back_is_byte_stable(self) -> None:
         """Writing parsed vdW values straight back is a byte-for-byte no-op.
 
         Regression for F3: ``_update_mm3_vdw_lines`` used to reflow the whole
         vdW line, clobbering the atom-type / context / opt-descriptor bytes on
-        every save.  It now splices only the numeric sub-columns in place.
+        every save. It now stages only the numeric sub-columns before writing.
         """
         from q2mm.io.mm3 import _parse_mm3_vdw_params, _update_mm3_vdw_lines
 
@@ -3221,11 +3226,11 @@ class TestMm3VdwRoundTrip:
         vdws = _parse_mm3_vdw_params(RH_MM3)
         assert vdws, "expected vdW params in rh-enamide mm3.fld"
 
-        tmp = tmp_path / "mm3.fld"
-        tmp.write_text(original, encoding="utf-8")
-        _update_mm3_vdw_lines(tmp, vdws)
-
-        assert tmp.read_text(encoding="utf-8").splitlines() == original.splitlines()
+        lines = original.splitlines(keepends=True)
+        staged = _update_mm3_vdw_lines(lines, tuple(vdws))
+        assert staged == original.splitlines(keepends=True)
+        assert lines == original.splitlines(keepends=True)
+        assert RH_MM3.read_text(encoding="utf-8") == original
 
 
 class TestMm3HigherOrderTorsion:
