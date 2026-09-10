@@ -236,7 +236,7 @@ def test_whitespace_does_not_disguise_a_native_zero_class(tmp_path: Path) -> Non
         functional_form=FunctionalForm.MM3,
     )
     path = tmp_path / "wildcard.xml"
-    with pytest.raises(ValueError, match="wildcard"):
+    with pytest.raises(ValueError, match="atom classes"):
         save_openmm_xml(ff, path)
     assert not path.exists()
 
@@ -266,3 +266,66 @@ def test_mixed_element_containers_still_detect_duplicate_torsions(tmp_path: Path
     with pytest.raises(ValueError, match="multiple.*torsion"):
         save_openmm_xml(ff, path)
     assert not path.exists()
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        {"bond_order": "-"},
+        {"bond_order": "="},
+        {"bond_order": "*"},
+        {"bond_order": "%"},
+        {"context": "O200 0000"},
+        {"context": "special"},
+    ],
+)
+def test_unrepresentable_bond_selectors_are_rejected(tmp_path: Path, selector: dict[str, str]) -> None:
+    ff = ForceField(
+        bonds=(BondParam(("C", "C"), 1.5, 100.0, **selector),),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = tmp_path / "selector.xml"
+    path.write_bytes(b"original XML")
+    with pytest.raises(ValueError, match="selector"):
+        save_openmm_xml(ff, path)
+    assert path.read_bytes() == b"original XML"
+
+
+@pytest.mark.parametrize("family", ["bond", "angle"])
+def test_duplicate_bonded_classes_cannot_select_an_arbitrary_row(tmp_path: Path, family: str) -> None:
+    if family == "bond":
+        ff = ForceField(
+            bonds=(BondParam(("C", "H"), 1.1, 100.0), BondParam(("H", "C"), 1.2, 200.0)),
+            functional_form=FunctionalForm.MM3,
+        )
+    else:
+        ff = ForceField(
+            angles=(AngleParam(("C", "O", "H"), 100.0, 20.0), AngleParam(("H", "O", "C"), 110.0, 30.0)),
+            functional_form=FunctionalForm.MM3,
+        )
+    path = tmp_path / "duplicate.xml"
+    with pytest.raises(ValueError, match=f"multiple.*{family}"):
+        save_openmm_xml(ff, path)
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("env_id", ["C -H", "C- H", "\tC-H", "C-H "])
+def test_padded_atom_classes_are_rejected(tmp_path: Path, env_id: str) -> None:
+    ff = ForceField(
+        bonds=(BondParam(("C", "H"), 1.1, 100.0, env_id=env_id),),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = tmp_path / "padded.xml"
+    with pytest.raises(ValueError, match="atom classes"):
+        save_openmm_xml(ff, path)
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("context", ["", "0000 0000"])
+def test_generic_bond_context_remains_supported(tmp_path: Path, context: str) -> None:
+    ff = ForceField(
+        bonds=(BondParam(("C", "H"), 1.1, 100.0, context=context),),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = save_openmm_xml(ff, tmp_path / "generic.xml")
+    assert ET.parse(path).getroot().find("CustomBondForce/Bond") is not None

@@ -20,6 +20,7 @@ from q2mm.objectives.protocols import GradientMode, ObjectiveGradientError
 from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 from test._shared import make_diatomic
+from test.test_multistart import QuadraticEvaluator
 
 
 def _mock_engine(supports_grad: bool) -> MagicMock:
@@ -363,6 +364,26 @@ class TestJacAutoDetection:
 class TestFrozenParameterSupport:
     """Frozen parameters are excluded from optimizer updates."""
 
+    def test_frozen_values_outside_active_bounds_are_not_rejected(self) -> None:
+        obj = _MockFrozenObjective(gradient_mode=GradientMode.ANALYTICAL)
+        obj.space = MockSpace(
+            obj.space.baseline,
+            bounds=[(-10.0, 10.0), (-1.0, 1.0), (-10.0, 10.0)],
+            active_indices=np.array([0, 2]),
+        )
+        result = ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+        assert result.final_params[1] == 5.0
+        assert result.final_score < result.initial_score
+
+    def test_no_active_parameters_preserves_baseline(self) -> None:
+        obj = _MockObjective()
+        obj.space = MockSpace(obj.space.baseline, bounds=[(0.0, 0.5)] * 2, active_indices=np.array([], dtype=int))
+        result = ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+        assert result.success
+        assert result.n_iterations == 0
+        assert result.final_score == result.initial_score
+        np.testing.assert_array_equal(result.final_params, obj.space.baseline)
+
     def test_lbfgsb_updates_only_active_params(self) -> None:
         obj = _MockFrozenObjective(gradient_mode=GradientMode.ANALYTICAL)
         result = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False).optimize(obj, obj.space)
@@ -381,6 +402,303 @@ class TestFrozenParameterSupport:
         np.testing.assert_allclose(result.final_params[[1]], [5.0])
         assert result.final_score < result.initial_score
         np.testing.assert_allclose(obj.layout.vector(obj.forcefield), [0.0, 5.0, 0.0])
+
+
+class TestBoundedExecution:
+    @pytest.mark.parametrize("method", ["L-BFGS-B", "Nelder-Mead", "Powell", "trust-constr", "least_squares"])
+    @pytest.mark.parametrize("fraction", [None, 0.2])
+    def test_infeasible_start_is_rejected_before_evaluation(self, method: str, fraction: float | None) -> None:
+        obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([10.0]))
+        with pytest.raises(ValueError, match="Initial active parameters"):
+            ScipyOptimizer(method=method, fc_fraction=fraction, verbose=False).optimize(obj, obj.space)
+        assert obj.n_evaluations == 0
+        np.testing.assert_array_equal(obj.space.baseline, [10.0])
+
+    def test_unsupported_bounds_fail_before_evaluation(self) -> None:
+        obj = _MockObjective()
+        with pytest.raises(ValueError, match="use_bounds=False"):
+            ScipyOptimizer(method="BFGS", verbose=False).optimize(obj, obj.space)
+        assert obj.n_evaluations == 0
+
+    @pytest.mark.parametrize("method", ["Nelder-Mead", "Powell", "L-BFGS-B"])
+    @pytest.mark.parametrize("fraction", [None, 0.2])
+    def test_external_target_stays_within_effective_bounds(self, method: str, fraction: float | None) -> None:
+        obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([1.0]))
+        result = ScipyOptimizer(method=method, fc_fraction=fraction, verbose=False).optimize(obj, obj.space)
+
+        lower, upper = (0.0, 5.0) if fraction is None else (0.8, 1.2)
+        assert lower <= result.final_params[0] <= upper
+        assert result.final_params[0] == pytest.approx(upper, abs=1e-5)
+        assert result.final_score == pytest.approx(np.sum((result.final_params - obj.target) ** 2))
+
+    @pytest.mark.parametrize("method", ["Nelder-Mead", "Powell", "L-BFGS-B"])
+    def test_disabled_bounds_remain_unbounded(self, method: str) -> None:
+        obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([1.0]))
+        result = ScipyOptimizer(method=method, use_bounds=False, fc_fraction=0.2, verbose=False).optimize(
+            obj, obj.space
+        )
+
+        assert result.final_params[0] == pytest.approx(10.0)
+        assert result.final_score == pytest.approx(np.sum((result.final_params - obj.target) ** 2))
+
+    def test_unbounded_method_can_start_outside_sanity_bounds(self) -> None:
+        obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([8.0]))
+        result = ScipyOptimizer(method="BFGS", use_bounds=False, verbose=False).optimize(obj, obj.space)
+        np.testing.assert_array_equal(result.initial_params, [8.0])
+        np.testing.assert_allclose(result.final_params, [10.0])
+
+    def test_normalized_endpoint_roundoff_does_not_discard_feasible_optimum(self) -> None:
+        lower, upper = 1.791445485312492, 1.9836087943897656
+        obj = QuadraticEvaluator(
+            np.array([10.0]),
+            bounds=[(lower, upper)],
+            initial=np.array([(lower + upper) / 2.0]),
+        )
+        result = ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+        np.testing.assert_array_equal(result.final_params, [upper])
+        assert result.final_score == pytest.approx((upper - 10.0) ** 2)
+
+    @pytest.mark.parametrize("method", ["Nelder-Mead", "Powell", "L-BFGS-B"])
+    @pytest.mark.parametrize("terminal", [2.0, 10.0])
+    def test_infeasible_trial_cannot_be_recovered(
+        self, monkeypatch: pytest.MonkeyPatch, method: str, terminal: float
+    ) -> None:
+        from scipy.optimize import OptimizeResult
+
+        obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([1.0]))
+
+        def fake_minimize(fun, x0, *, method, jac, bounds, options, callback):  # noqa: ANN001, ANN202
+            def trial(x):  # noqa: ANN001, ANN202
+                solver_x = (x - 2.5) / 2.5 if jac else x
+                value = fun(np.array([solver_x]))
+                return value[0] if jac else value
+
+            trial(4.0)
+            trial(10.0)
+            score = trial(terminal)
+            return OptimizeResult(
+                x=np.array([(terminal - 2.5) / 2.5 if jac else terminal]),
+                fun=score,
+                nit=3,
+                success=True,
+                message="terminal",
+            )
+
+        monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
+        result = ScipyOptimizer(method=method, verbose=False).optimize(obj, obj.space)
+
+        np.testing.assert_array_equal(result.final_params, [4.0])
+        assert result.final_score == 36.0
+        assert not result.success
+        assert "Recovered best evaluated point" in result.message
+
+    def test_fractional_scaling_preserves_gradient_chain_rule(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from scipy.optimize import OptimizeResult
+
+        obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
+        ff = ForceField(
+            bonds=(BondParam(("H", "H"), force_constant=100.0, equilibrium=0.75),),
+            functional_form=FunctionalForm.HARMONIC,
+        )
+        layout = ParameterLayout.from_force_field(ff)
+        space = ActiveParameterSpace.all_active(layout, ff)
+
+        def fake_minimize(fun, x0, *, method, jac, bounds, options, callback):  # noqa: ANN001, ANN202
+            np.testing.assert_allclose(x0, [0.0, 0.0])
+            assert bounds == [(-1.0, 1.0), (-1.0, 1.0)]
+            value, gradient = fun(np.array([-0.5, 0.5]))
+            physical = np.array([90.0, 0.76875])
+            np.testing.assert_allclose(gradient, 2.0 * (physical - [0.5, 1.5]) * [20.0, 0.0375])
+            assert value == pytest.approx(np.sum((physical - [0.5, 1.5]) ** 2))
+            return OptimizeResult(x=np.array([-0.5, 0.5]), fun=value, nit=1, success=True, message="done")
+
+        monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
+        result = ScipyOptimizer(fc_fraction=0.2, eq_fraction=0.05, verbose=False).optimize(obj, space)
+        np.testing.assert_allclose(result.final_params, [90.0, 0.76875])
+
+
+class _RosenbrockEvaluator(QuadraticEvaluator):
+    def _total(self, x: np.ndarray) -> float:
+        return float((1.0 - x[0]) ** 2 + 100.0 * (x[1] - x[0] ** 2) ** 2)
+
+    def _data_gradient(self, x: np.ndarray) -> np.ndarray:
+        return np.array([-2.0 * (1.0 - x[0]) - 400.0 * x[0] * (x[1] - x[0] ** 2), 200.0 * (x[1] - x[0] ** 2)])
+
+
+class TestDivergenceTermination:
+    @pytest.mark.parametrize(("factor", "initial_score"), [(None, 1.0), (3.0, 0.0), (3.0, -1.0)])
+    def test_inactive_x_only_callback_does_not_evaluate(self, factor: float | None, initial_score: float) -> None:
+        obj = _MockObjective()
+        value_at = MagicMock(wraps=obj.value)
+        callback = ScipyOptimizer(divergence_factor=factor, verbose=False)._make_callback(obj, initial_score, value_at)
+
+        for x in ([1.0, 2.0], [0.5, 1.5]):
+            callback(np.asarray(x))
+
+        value_at.assert_not_called()
+        assert obj.n_evaluations == 0
+        assert obj.history == []
+
+    def test_x_only_callback_still_evaluates_for_verbose_logging(self, caplog: pytest.LogCaptureFixture) -> None:
+        obj = _MockObjective()
+        for _ in range(9):
+            obj.record_evaluation(0.5)
+        value_at = MagicMock(wraps=obj.value)
+        callback = ScipyOptimizer(divergence_factor=None, verbose=True)._make_callback(obj, 1.0, value_at)
+        caplog.set_level("INFO", logger="q2mm.optimizers.scipy_opt")
+
+        callback(np.array([0.5, 1.5]))
+
+        value_at.assert_called_once()
+        assert obj.n_evaluations == 10
+        assert obj.history[-1] == 0.0
+        assert "eval   10  score 0.000000" in caplog.text
+
+    @pytest.mark.parametrize("method", ["L-BFGS-B", "Nelder-Mead", "Powell", "trust-constr"])
+    def test_real_solver_stops_before_iteration_limit(self, method: str) -> None:
+        obj = _RosenbrockEvaluator(np.zeros(2), bounds=[(-5.0, 5.0)] * 2, initial=np.array([-1.2, 1.3]))
+        result = ScipyOptimizer(
+            method=method,
+            maxiter=10,
+            divergence_factor=1e-6,
+            divergence_patience=1,
+            verbose=False,
+        ).optimize(obj, obj.space)
+
+        assert result.n_iterations < 10
+        assert not result.success
+        assert "Abandoned" in result.message
+        assert np.all(np.abs(result.final_params) <= 5.0)
+        assert result.final_score == pytest.approx(obj._total(result.final_params))
+
+    def test_tnc_unbounded_x_only_callback_stops(self) -> None:
+        obj = _RosenbrockEvaluator(np.zeros(2), initial=np.array([-1.2, 1.3]))
+        result = ScipyOptimizer(
+            method="TNC",
+            use_bounds=False,
+            divergence_factor=1e-6,
+            divergence_patience=1,
+            verbose=False,
+        ).optimize(obj, obj.space)
+        assert result.n_iterations == 1
+        assert not result.success
+        assert "Abandoned" in result.message
+        assert result.final_score == pytest.approx(obj._total(result.final_params))
+
+    def test_objective_stop_iteration_is_not_swallowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        obj = _MockObjective()
+
+        def stop_from_objective(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+            raise StopIteration("objective interruption")
+
+        monkeypatch.setattr("scipy.optimize.minimize", stop_from_objective)
+        with pytest.raises(StopIteration, match="objective interruption"):
+            ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+
+    @pytest.mark.parametrize("through_workflow", [False, True])
+    def test_old_fixed_variable_callback_preserves_objective_interruption(
+        self, monkeypatch: pytest.MonkeyPatch, through_workflow: bool
+    ) -> None:
+        from scipy import optimize
+
+        from q2mm.models.problem import OptimizationProblem, TrainingCase
+        from q2mm.workflows import SingleStageWorkflow
+
+        obj = QuadraticEvaluator(np.array([0.5, 1.5]), bounds=[(1.0, 1.0), (0.0, 10.0)], initial=np.array([1.0, 2.0]))
+        obj._gradient_mode = GradientMode.NONE
+        interruption = StopIteration("objective interruption during accepted-iterate evaluation")
+        original_value = obj.value
+        calls = 0
+        in_callback = False
+
+        def interrupted_value(x: np.ndarray) -> float:
+            nonlocal calls
+            calls += 1
+            if calls == 8:
+                assert in_callback
+                raise interruption
+            return original_value(x)
+
+        monkeypatch.setattr(obj, "value", interrupted_value)
+        sample = MagicMock(side_effect=AssertionError("endpoint sampling must not run"))
+        evaluate = MagicMock(side_effect=AssertionError("endpoint evaluation must not run"))
+        monkeypatch.setattr(obj, "sample", sample)
+        monkeypatch.setattr(obj, "evaluate", evaluate)
+        original_minimize = optimize.minimize
+
+        def old_fixed_variable_minimize(fun, x0, *, callback, **kwargs):  # noqa: ANN001, ANN003, ANN202
+            np.testing.assert_array_equal(kwargs["bounds"], [(1.0, 1.0), (0.0, 10.0)])
+            assert kwargs["jac"] is None
+
+            # SciPy 1.15's fixed-variable adapter hides the rich callback
+            # signature; emulate it while keeping the real solver/stop handler.
+            def x_only(xk: np.ndarray) -> None:
+                nonlocal in_callback
+                in_callback = True
+                try:
+                    callback(xk)
+                finally:
+                    in_callback = False
+
+            return original_minimize(fun, x0, callback=x_only, **kwargs)
+
+        monkeypatch.setattr(optimize, "minimize", old_fixed_variable_minimize)
+        optimizer = ScipyOptimizer(verbose=False)
+        with pytest.raises(StopIteration) as caught:
+            if through_workflow:
+                problem = OptimizationProblem(
+                    cases=(
+                        TrainingCase(
+                            case_id="0",
+                            molecule=obj.plan.molecules[0],
+                            stationary_point=StationaryPointKind.GROUND_STATE,
+                        ),
+                    ),
+                    starting_force_field=obj.forcefield,
+                    layout=obj.space.layout,
+                    active_space=obj.space,
+                    observations=obj.plan.observations,
+                )
+                SingleStageWorkflow().run(problem, lambda _plan: obj, optimizer)
+            else:
+                optimizer.optimize(obj, obj.space)
+        assert caught.value is interruption
+        assert calls == 8
+        sample.assert_not_called()
+        evaluate.assert_not_called()
+
+    def test_callback_uses_accepted_score_and_resets_patience(self) -> None:
+        from scipy.optimize import OptimizeResult
+
+        obj = _MockObjective()
+        callback = ScipyOptimizer(divergence_factor=3.0, divergence_patience=2, verbose=False)._make_callback(obj, 1.0)
+        obj.record_evaluation(1000.0)
+        callback(OptimizeResult(x=np.array([1.0, 2.0]), fun=1.0))
+        callback(OptimizeResult(x=np.array([1.0, 2.0]), fun=4.0))
+        callback(OptimizeResult(x=np.array([1.0, 2.0]), fun=1.0))
+        obj.record_evaluation(0.0)
+        callback(OptimizeResult(x=np.array([1.0, 2.0]), fun=4.0))
+        with pytest.raises(StopIteration):
+            callback(OptimizeResult(x=np.array([1.0, 2.0]), fun=4.0))
+
+    def test_abandonment_cannot_report_solver_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from scipy.optimize import OptimizeResult
+
+        obj = _MockObjective()
+
+        def fake_minimize(fun, x0, *, method, jac, bounds, options, callback):  # noqa: ANN001, ANN202
+            accepted = np.array([0.5, 1.6])
+            value = fun(accepted)
+            with pytest.raises(StopIteration):
+                callback(intermediate_result=OptimizeResult(x=accepted, fun=value))
+            return OptimizeResult(x=accepted, fun=value, nit=1, success=True, message="incorrect solver success")
+
+        monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
+        result = ScipyOptimizer(divergence_factor=0.01, divergence_patience=1, verbose=False).optimize(obj, obj.space)
+        assert not result.success
+        assert result.message == "Abandoned: sustained divergence from initial score"
+        np.testing.assert_array_equal(result.final_params, [0.5, 1.6])
+        assert result.final_score == pytest.approx(0.01)
 
 
 class TestOptimizationResultFields:

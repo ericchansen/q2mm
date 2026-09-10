@@ -31,6 +31,10 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
         unsupported.append("improper torsions")
     if any(bond.dipole_moment != 0.0 for bond in ff.bonds):
         unsupported.append("bond dipoles")
+    if any(bond.bond_order for bond in ff.bonds):
+        unsupported.append("bond-order selectors")
+    if any(bond.context not in ("", "0000 0000") for bond in ff.bonds):
+        unsupported.append("bond-context selectors")
     if any(vdw.reduction != 0.0 for vdw in ff.vdws):
         unsupported.append("reduced vdW sites")
     if any(_is_wildcard_atom_type(vdw.atom_type or vdw.element) for vdw in ff.vdws):
@@ -40,7 +44,8 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
     if unsupported:
         raise ValueError(f"Standalone OpenMM XML cannot represent {', '.join(unsupported)}.")
 
-    for terms, arity in ((ff.bonds, 2), (ff.angles, 3), (ff.torsions, 4)):
+    for terms, arity, family in ((ff.bonds, 2, "bond"), (ff.angles, 3, "angle"), (ff.torsions, 4, "torsion")):
+        seen_classes: set[tuple[str, ...]] = set()
         for term in terms:
             if (
                 not isinstance(term.elements, (tuple, list))
@@ -48,22 +53,20 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
                 or any(not isinstance(element, str) or not element.strip() for element in term.elements)
             ):
                 raise ValueError(f"Standalone OpenMM XML requires exactly {arity} nonempty string elements.")
-            classes = term.env_id.split("-") if term.env_id else term.elements
-            if len(classes) != arity or any(not isinstance(value, str) or not value.strip() for value in classes):
+            classes = tuple(term.env_id.split("-")) if term.env_id else tuple(term.elements)
+            if len(classes) != arity or any(
+                not isinstance(value, str) or not value.strip() or value != value.strip() for value in classes
+            ):
                 raise ValueError(f"Standalone OpenMM XML requires complete atom classes, got {classes!r}.")
             if any(_is_wildcard_atom_type(atom_type) for atom_type in classes):
                 raise ValueError(f"Standalone OpenMM XML cannot represent wildcard atom types in {classes!r}.")
-
-    torsion_classes: set[tuple[str, ...]] = set()
-    for torsion in ff.torsions:
-        classes = tuple(torsion.env_id.split("-")) if torsion.env_id else tuple(torsion.elements)
-        key = min(classes, classes[::-1])
-        if key in torsion_classes:
-            raise ValueError(
-                "Standalone OpenMM XML cannot represent multiple Fourier components for the same torsion "
-                f"classes {classes!r}; OpenMM selects only the first matching CustomTorsionForce definition."
-            )
-        torsion_classes.add(key)
+            key = min(classes, classes[::-1])
+            if key in seen_classes:
+                raise ValueError(
+                    f"Standalone OpenMM XML cannot represent multiple {family} definitions for classes "
+                    f"{classes!r}; native class matching cannot retain their separate selection."
+                )
+            seen_classes.add(key)
 
 
 def save_openmm_system_xml(prepared: PreparedOpenMM, path: str | Path) -> Path:
@@ -128,9 +131,10 @@ def save_openmm_xml(
 
     Unsupported populated terms and wildcard types are rejected before
     writing, including Urey-Bradley, stretch-bend, CMAP, improper torsions,
-    bond dipoles, reduced vdW sites, excluded nonbonded atom types, and
-    multiple proper components for the same class tuple. Native zero-type
-    wildcards are rejected in vdW records as well as bonded terms.
+    bond dipoles, bond-order/context selectors, reduced vdW sites, excluded
+    nonbonded atom types, and repeated bonded definitions for the same class
+    tuple. Native zero-type wildcards are rejected in vdW records as well
+    as bonded terms; class names must not contain padding.
 
     A *molecule* (or iterable of molecules) can be provided to generate
     ``<Residues>`` and ``<AtomTypes>`` sections.  If omitted, only the

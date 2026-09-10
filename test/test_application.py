@@ -381,6 +381,75 @@ def test_optimization_run_rejects_changed_frozen_slot() -> None:
         )
 
 
+@pytest.mark.parametrize(("fraction", "final_value"), [(None, 4000.0), (0.2, 125.0)])
+@pytest.mark.parametrize("success", [False, True])
+def test_execute_contains_scipy_single_stage_bound_violations(
+    monkeypatch: pytest.MonkeyPatch, fraction: float | None, final_value: float, success: bool
+) -> None:
+    from q2mm.application.optimization import execute_optimization
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+    from q2mm.workflows import SingleStageWorkflow
+
+    problem = _problem()
+    final = problem.active_space.baseline.copy()
+    final[0] = final_value
+    result = replace(_result(problem), final_params=final, success=success)
+    monkeypatch.setattr(SingleStageWorkflow, "run", lambda *args, **kwargs: result)
+
+    with pytest.raises(ApplicationOptimizationError, match="effective SciPy active bounds"):
+        execute_optimization(
+            problem,
+            _EnergyBackend(),
+            ScipyOptimizer(fc_fraction=fraction, verbose=False),
+            SingleStageWorkflow(),
+            executor="python",
+        )
+
+
+def test_execute_preserves_explicitly_unbounded_scipy(monkeypatch: pytest.MonkeyPatch) -> None:
+    from q2mm.application.optimization import execute_optimization
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+    from q2mm.workflows import SingleStageWorkflow
+
+    problem = _problem()
+    final = problem.active_space.baseline.copy()
+    final[0] = 4000.0
+    expected = replace(_result(problem), final_params=final)
+    monkeypatch.setattr(SingleStageWorkflow, "run", lambda *args, **kwargs: expected)
+
+    result, force_field = execute_optimization(
+        problem,
+        _EnergyBackend(),
+        ScipyOptimizer(use_bounds=False, fc_fraction=0.2, verbose=False),
+        SingleStageWorkflow(),
+        executor="python",
+    )
+    assert result is expected
+    np.testing.assert_array_equal(problem.layout.vector(force_field), final)
+
+
+def test_execute_does_not_apply_initial_fractional_box_to_method_e2(monkeypatch: pytest.MonkeyPatch) -> None:
+    from q2mm.application.optimization import execute_optimization
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+    from q2mm.workflows import MethodE2Workflow
+
+    problem = _problem(ts=True)
+    final = problem.active_space.baseline.copy()
+    final[0] = 130.0
+    expected = replace(_result(problem), final_params=final)
+    monkeypatch.setattr(MethodE2Workflow, "run", lambda *args, **kwargs: expected)
+
+    result, force_field = execute_optimization(
+        problem,
+        _EnergyBackend(),
+        ScipyOptimizer(fc_fraction=0.2, verbose=False),
+        MethodE2Workflow(),
+        executor="python",
+    )
+    assert result is expected
+    np.testing.assert_array_equal(problem.layout.vector(force_field), final)
+
+
 @pytest.mark.parametrize(
     ("form", "extension"),
     [
