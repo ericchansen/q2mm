@@ -579,8 +579,9 @@ class TinkerBackend:
             np.ndarray: Shape ``(3N, 3N)`` Hessian in Hartree/Bohr².
 
         Raises:
-            RuntimeError: If ``testhess`` fails or the ``.hes`` file cannot
-                be parsed.
+            RuntimeError: If ``testhess`` fails.
+            EvaluationError: If the ``.hes`` file is missing, incomplete,
+                or cannot be parsed.
 
         """
         from q2mm.constants import KCALMOLA2_TO_HESSIAN_AU
@@ -593,54 +594,56 @@ class TinkerBackend:
             # Parse the .hes file written by testhess
             hes_path = txyz.replace(".xyz", ".hes")
             if not os.path.exists(hes_path):
-                raise RuntimeError(f"testhess did not produce {hes_path}")
+                raise EvaluationError(f"Tinker testhess did not produce {hes_path}")
 
             with open(hes_path) as f:
                 content = f.read()
 
-            # Split into sections by "Diagonal" and "Off-diagonal" headers
-            sections = re.split(r"\n\s*(?:Diagonal|Off-diagonal)\s+Hessian\s+Elements.*\n", content)
-            # sections[0] is empty/header, sections[1] is diagonal data,
-            # sections[2..] are off-diagonal blocks for each (atom, coord)
-
-            if len(sections) < 2:
-                raise RuntimeError("Could not parse .hes file: no diagonal section found")
-
+            # Keep native atom/axis labels; line wrapping does not start a new block.
+            headers = list(
+                re.finditer(
+                    r"^[ \t]*(Diagonal|Off-diagonal)[ \t]+Hessian[ \t]+Elements([^\r\n]*)",
+                    content,
+                    re.MULTILINE,
+                )
+            )
+            n3 = 3 * structure.n_atoms
             try:
-                # Parse diagonal elements
-                diag_vals = [float(v) for v in sections[1].split()]
-                n3 = len(diag_vals)
-                hessian = np.zeros((n3, n3))
-                for i, val in enumerate(diag_vals):
-                    hessian[i, i] = val
-
-                # Parse off-diagonal blocks: one block per (row_index),
-                # containing elements H[row, row+1], H[row, row+2], ..., H[row, n3-1]
+                if not headers or headers[0].group(1) != "Diagonal":
+                    raise ValueError("no diagonal section found before off-diagonal blocks")
+                if any(header.group(1) == "Diagonal" for header in headers[1:]):
+                    raise ValueError("unexpected diagonal section after the first section")
+                sections = [
+                    content[header.end() : headers[i + 1].start() if i + 1 < len(headers) else len(content)]
+                    for i, header in enumerate(headers)
+                ]
+                diag_vals = [float(v.replace("D", "E").replace("d", "e")) for v in sections[0].split()]
+                if len(diag_vals) != n3:
+                    raise ValueError(f"expected {n3} diagonal values, got {len(diag_vals)}")
                 expected_blocks = n3 - 1
-                row = 0
-                for block_idx, block in enumerate(sections[2:]):
-                    vals = [float(v) for v in block.split()]
-                    if not vals:
-                        continue
+                if len(sections) - 1 != expected_blocks:
+                    raise ValueError(f"expected {expected_blocks} off-diagonal blocks, got {len(sections) - 1}")
+
+                hessian = np.empty((n3, n3))
+                np.fill_diagonal(hessian, diag_vals)
+                for row, (header, block) in enumerate(zip(headers[1:], sections[1:], strict=True)):
+                    atom, axis = row // 3 + 1, "XYZ"[row % 3]
+                    label = header.group(2).strip()
+                    if label:
+                        identity = re.fullmatch(r"for\s+Atom\s+(\d+)\s+([XYZ])", label)
+                        if identity is None or (int(identity.group(1)), identity.group(2)) != (atom, axis):
+                            raise ValueError(f"Off-diagonal block {row}: expected Atom {atom} {axis}, got {label!r}")
+                    vals = [float(v.replace("D", "E").replace("d", "e")) for v in block.split()]
                     expected_vals = n3 - row - 1
                     if len(vals) != expected_vals:
                         raise ValueError(
-                            f"Off-diagonal block {block_idx} (row {row}): "
+                            f"Off-diagonal block {row} (Atom {atom} {axis}): "
                             f"expected {expected_vals} values, got {len(vals)}"
                         )
-                    col_start = row + 1
-                    for j, val in enumerate(vals):
-                        col = col_start + j
-                        hessian[row, col] = val
-                        hessian[col, row] = val
-                    row += 1
-            except (ValueError, IndexError) as exc:
-                n3_str = str(n3) if "n3" in locals() else "?"
-                raise RuntimeError(
-                    f"Failed to parse .hes file: {exc}. "
-                    f"File had {len(sections)} sections, "
-                    f"expected diagonal size {n3_str}."
-                ) from exc
+                    hessian[row, row + 1 :] = vals
+                    hessian[row + 1 :, row] = vals
+            except ValueError as exc:
+                raise EvaluationError(f"Failed to parse Tinker Hessian file {hes_path}: {exc}") from exc
 
             # Tinker outputs Hessian in kcal/(mol·Å²); convert to Hartree/Bohr²
             return hessian * KCALMOLA2_TO_HESSIAN_AU
