@@ -124,7 +124,7 @@ This creates a fundamental tension. MM force fields represent TSs as energy
 to a QM Hessian that has a negative eigenvalue the MM model can't
 reproduce?
 
-Limé & Norrby (*J. Comput. Chem.* **2014**, vol. 36, 244–250, published 2015,
+Limé & Norrby (*J. Comput. Chem.* **2014**, 36, 244–250; 2015 issue,
 [DOI:10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797)) systematically
 tested five methods for handling this, labeled A through E. These methods
 address two independent choices: *what data to fit* (A vs B) and *how to
@@ -432,7 +432,7 @@ correctness problem.
 
 - Seminario, J. M. *Int. J. Quantum Chem.* **1996**, 60, 1271–1277.
   [DOI:10.1002/(SICI)1097-461X(1996)60:7<1271::AID-QUA8>3.0.CO;2-W](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W)
-- Limé, E.; Norrby, P.-O. *J. Comput. Chem.* **2015**, 36, 244–250.
+- Limé, E.; Norrby, P.-O. *J. Comput. Chem.* **2014**, 36, 244–250 (2015 issue).
   [DOI:10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797)
 - Farrugia, M.; Helquist, P.; Norrby, P.-O.; Wiest, O.
   *J. Chem. Theory Comput.* **2025**, 22, 469–476.

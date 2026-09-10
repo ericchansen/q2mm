@@ -461,5 +461,5 @@ from the literature `.fld`.
 - Tests: [`test/test_benchmarks_systems.py`](https://github.com/ericchansen/q2mm/blob/main/test/test_benchmarks_systems.py) (`TestStartingPoint`), [`test/test_parameters.py`](https://github.com/ericchansen/q2mm/blob/main/test/test_parameters.py) (`TestFractionalBounds`)
 - Data: [`q2mm-data/benchmarks/<system>/convergence/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks) (canonical QFUERZA-start default); [`q2mm-data/benchmarks/<system>/from-published/`](https://github.com/ericchansen/q2mm-data/tree/main/benchmarks) (opt-in publication baseline)
 - Method paper: Farrugia, Helquist, Norrby & Wiest, *J. Chem. Theory Comput.* **2025**, 22, 469. [10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751)
-- TS Hessian inversion: Limé & Norrby, *J. Comput. Chem.* **2015**, 36, 244. [10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797)
+- TS Hessian inversion: Limé & Norrby, *J. Comput. Chem.* **2014**, 36, 244–250 (2015 issue). [10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797)
 - Related: [QFUERZA Validation](qfuerza-validation.md) — starting-FF quality across all systems.
