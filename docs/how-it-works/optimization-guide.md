@@ -39,6 +39,39 @@ an executor explicitly:
 
 ---
 
+## Inspect effective catalog settings
+
+Catalog provenance records the Q2MM constructor arguments actually selected,
+including defaults, so an omitted override is not confused with a `None`
+value. Inspecting these settings does not run an optimization:
+
+```python
+from q2mm.optimizers import resolve_optimizer
+
+optimizer, settings = resolve_optimizer("basinhopping")
+assert settings["T"] == optimizer.T == 1.0
+```
+
+The record includes each built-in constructor's controls, such as stopping
+tolerances, bounds flags, schedules, seeds, and verbosity. Multi-start's
+`optimizer` entry describes its constructed inner solver. Cycling records
+its deferred loop arguments plus `full_optimizer` and `simplex_optimizer`;
+a multi-start full phase includes its own inner solver. These nested
+snapshots preserve the existing cycling choices rather than applying the
+standalone catalog's potentially different defaults.
+
+Catalog and SDK/CLI overrides retain their existing precedence, including
+meaningful zero and `False` values. SciPy's `analytical_parameter_scaling`
+entry describes the configured policy, not a claim that scaling was used:
+bound normalization also requires finite, nondegenerate active bounds at
+execution. No algorithm, bound policy, or candidate-hashing rule changes.
+Resolved identity already includes optimizer settings, so corrected or
+expanded records can change resolved IDs without changing the hash rule.
+These records cover Q2MM constructors, not arbitrary custom optimizer
+objects, third-party internal defaults, or adaptive solver state.
+
+---
+
 ## Workflow A: Small + Smooth
 
 **When:** ≤ 10 parameters, harmonic functional form, analytical gradients
