@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Callable, Iterable
+import re
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from q2mm._canonical import canonical_json
+from q2mm._result_serialization import result_payload
 from q2mm.models.forcefield import ForceField, FunctionalForm
-from q2mm.models.results import CandidateRecord, OptimizationResult, StageRecord
 
 from .models import (
     OptimizationRun,
@@ -23,6 +25,7 @@ from .models import (
 )
 
 MANIFEST_SUFFIX = ".manifest.json"
+_INTERNAL_ARTIFACT_NAME = re.compile(r"\..*\.q2mm-(?:reservation|.*-[0-9a-f]{32}\.tmp)", re.IGNORECASE | re.DOTALL)
 logger = logging.getLogger(__name__)
 
 _EXTENSIONS = {
@@ -82,62 +85,33 @@ def _serializer(format_name: str) -> Callable[[ForceField, Path], Path]:
     return save_tinker_prm
 
 
-def _stage_payload(stage: StageRecord) -> dict[str, Any]:
-    return {
-        "name": stage.name,
-        "n_params": stage.n_params,
-        "layout_fingerprint": stage.layout_fingerprint,
-        "initial_score": stage.initial_score,
-        "final_score": stage.final_score,
-        "n_iterations": stage.n_iterations,
-        "n_evaluations": stage.n_evaluations,
-        "converged": stage.converged,
-        "message": stage.message,
-        "gradient_mode": stage.gradient_mode,
-        "fd_step": stage.fd_step,
-        "elapsed_s": stage.elapsed_s,
-        "locked_param_indices": list(stage.locked_param_indices),
-        "notes": dict(stage.notes),
-    }
+def _validate_force_field_format(force_field: ForceField, format_name: str) -> None:
+    required_form = _REQUIRED_FORMS[format_name]
+    if force_field.functional_form is not required_form:
+        raise OutputFormatError(
+            f"{format_name!r} requires functional form {required_form.value!r}; "
+            f"force field uses {force_field.functional_form.value!r}."
+        )
+    if force_field.nonbonded_excluded_atom_types and format_name != "mm3_fld":
+        raise OutputFormatError(f"{format_name!r} cannot represent nonbonded_excluded_atom_types; use MM3 .fld output.")
 
 
-def _candidate_payload(candidate: CandidateRecord) -> dict[str, Any]:
-    return {
-        "index": candidate.index,
-        "status": candidate.status,
-        "n_params": candidate.n_params,
-        "layout_fingerprint": candidate.layout_fingerprint,
-        "initial_params": candidate.initial_params.tolist(),
-        "final_params": candidate.final_params.tolist(),
-        "initial_score": candidate.initial_score,
-        "final_score": candidate.final_score,
-        "message": candidate.message,
-        "seed": candidate.seed,
-    }
+@contextmanager
+def _persistence_errors(target: Path) -> Iterator[None]:
+    """Share the existing write-error policy without changing interruption handling."""
+    try:
+        yield
+    except (OutputFormatError, OutputExistsError):
+        raise
+    except Exception as exc:
+        raise PersistenceError(f"Could not save {target}: {exc}") from exc
 
 
-def _result_payload(result: OptimizationResult) -> dict[str, Any]:
-    return {
-        "success": result.success,
-        "message": result.message,
-        "initial_score": result.initial_score,
-        "final_score": result.final_score,
-        "n_iterations": result.n_iterations,
-        "n_evaluations": result.n_evaluations,
-        "n_params": result.n_params,
-        "layout_fingerprint": result.layout_fingerprint,
-        "initial_params": result.initial_params.tolist(),
-        "final_params": result.final_params.tolist(),
-        "history": list(result.history),
-        "method": result.method,
-        "gradient_mode": result.gradient_mode,
-        "fd_step": result.fd_step,
-        "initial_samples": list(result.initial_samples),
-        "final_samples": list(result.final_samples),
-        "category_metrics": {key: dict(value) for key, value in result.category_metrics.items()},
-        "candidates": [_candidate_payload(candidate) for candidate in result.candidates],
-        "stages": [_stage_payload(stage) for stage in result.stages],
-    }
+def _write_staged_force_field(force_field: ForceField, path: Path, format_name: str) -> Path:
+    """Serialize caller-owned staging content without treating it as a public output."""
+    with _persistence_errors(path):
+        _validate_force_field_format(force_field, format_name)
+        return _serializer(format_name)(force_field, path)
 
 
 def _configuration_payload(configuration: ResolvedExecutionConfiguration) -> dict[str, Any]:
@@ -196,7 +170,7 @@ def _manifest_payload(run: OptimizationRun, format_name: str) -> dict[str, Any]:
         "baseline": run.baseline.tolist(),
         "configuration": _configuration_payload(run.configuration),
         "provenance": dict(run.provenance),
-        "result": _result_payload(run.result),
+        "result": result_payload(run.result),
     }
 
 
@@ -221,7 +195,87 @@ def _write_manifest(path: Path, run: OptimizationRun, format_name: str) -> None:
     path.write_bytes((blob + "\n").encode("ascii"))
 
 
+def _require_absent_manifest(target: Path) -> None:
+    sidecar = Path(f"{target}{MANIFEST_SUFFIX}")
+    if sidecar.exists() or sidecar.is_symlink():
+        raise OutputExistsError(
+            f"Refusing bare force-field save beside existing manifest {sidecar}; "
+            "use a different output path or save an OptimizationRun to replace the pair."
+        )
+
+
+def _require_user_output_path(target: Path, *, force_field: bool = False) -> None:
+    """Keep data out of transaction artifacts and force fields out of manifest paths."""
+    names = [target.name]
+    if target.is_symlink() or target.exists():
+        try:
+            names.append(target.resolve(strict=False).name)
+        except (OSError, RuntimeError) as exc:
+            raise OutputExistsError(f"Cannot resolve output path or alias: {target}") from exc
+    if os.name == "nt":
+        names += [name.partition(":")[0] for name in names]
+    windows_alias = os.name == "nt" and any(name != name.rstrip(" .") for name in names)
+    names = [name.rstrip(" .") for name in names]
+    if any(_INTERNAL_ARTIFACT_NAME.fullmatch(name) for name in names):
+        raise OutputExistsError(f"Output path uses Q2MM's reserved transaction-artifact namespace: {target}")
+    if force_field and any(name.casefold().endswith(MANIFEST_SUFFIX) for name in names):
+        raise OutputExistsError(f"Force-field output path uses Q2MM's reserved manifest namespace: {target}")
+    if os.name == "nt" and ":" in target.name:
+        raise OutputExistsError(f"Windows output filenames must not use alternate-data-stream syntax: {target}")
+    if windows_alias:
+        raise OutputExistsError(f"Windows output filenames must not end in a dot or space: {target}")
+    if target.is_symlink():
+        raise OutputExistsError(f"Output path must not be a filename-symlink alias: {target}")
+
+
+@contextmanager
+def _reserve_outputs(
+    targets: Iterable[Path],
+    *,
+    bare_targets: Iterable[Path] = (),
+    force_field_targets: Iterable[Path] = (),
+) -> Iterator[None]:
+    """Exclude cooperating processes for these outputs through rollback/cleanup.
+
+    Claims are exclusive-created siblings, not the outputs or manifests.
+    Abandoned claims fail closed; they are never automatically retired.
+    Force-field roles are separate from their installable manifest targets.
+    """
+    bare_targets = tuple(bare_targets)
+    force_fields = set(force_field_targets) | set(bare_targets)
+    protected = set(targets) | force_fields | {Path(f"{target}{MANIFEST_SUFFIX}") for target in bare_targets}
+    for target in protected:
+        _require_user_output_path(target, force_field=target in force_fields)
+    owned: list[Path] = []
+    try:
+        for target in sorted(protected):
+            claim = target.with_name(f".{target.name}.q2mm-reservation")
+            try:
+                with claim.open("xb"):
+                    owned.append(claim)
+            except FileExistsError:
+                raise OutputExistsError(f"Another save has reserved output {target}: {claim}") from None
+        for target in bare_targets:
+            _require_absent_manifest(target)
+        yield
+    finally:
+        _cleanup_files(reversed(owned), phase="Transaction reservation cleanup")
+
+
 def _replace_transaction(
+    staged: list[tuple[Path, Path]],
+    *,
+    overwrite: bool,
+    bare_targets: Iterable[Path] = (),
+    force_field_targets: Iterable[Path] = (),
+) -> None:
+    with _reserve_outputs(
+        (target for _temporary, target in staged), bare_targets=bare_targets, force_field_targets=force_field_targets
+    ):
+        _install_staged(staged, overwrite=overwrite)
+
+
+def _install_staged(
     staged: list[tuple[Path, Path]],
     *,
     overwrite: bool,
@@ -283,10 +337,24 @@ def save(
     """Save a force field and, for a run, its deterministic manifest.
 
     The manifest path is ``<force-field-path>.manifest.json``. Bare force
-    fields intentionally produce no manifest. Catchable installation failures
-    trigger rollback; failed recovery retains backups and is logged. Cleanup
-    errors after installation are logged as committed, without rollback.
-    User interruptions propagate. Sequential replacements are not crash-atomic.
+    fields intentionally produce no manifest and are rejected if that sidecar
+    already exists, even with ``overwrite=True`` or a missing force-field file.
+    Catchable installation failures trigger rollback; failed recovery retains
+    backups and is logged. Cleanup errors after installation are logged as
+    committed, without rollback. User interruptions propagate. Sequential
+    replacements are not crash-atomic. Per-output filesystem reservations
+    exclude concurrent cooperating saves and benchmark promotions through
+    installation, rollback, and cleanup; contention raises OutputExistsError.
+    An abandoned reservation fails closed rather than guessing ownership.
+    Internal reservation/temporary names and aliases are not valid data-output
+    paths, including when a format is supplied explicitly.
+    The case-insensitive ``.manifest.json`` suffix and its normalized aliases
+    are reserved for metadata, never a primary force-field output, even for runs.
+    Windows filenames ending in dots or spaces are rejected, not redirected,
+    so filesystem aliases cannot acquire different output/sidecar reservations.
+    Windows alternate-data-stream syntax is not a supported output filename.
+    Existing or dangling filename symlinks are also rejected; directory symlinks
+    remain supported because their children share the same filesystem claims.
     """
     if not isinstance(value, (OptimizationRun, ForceField)):
         raise PersistenceError("save accepts an OptimizationRun or ForceField.")
@@ -295,19 +363,14 @@ def save(
         raise PersistenceError("Output path must name a file.")
     if not target.parent.exists() or not target.parent.is_dir():
         raise PersistenceError(f"Output directory does not exist: {target.parent}")
+    _require_user_output_path(target, force_field=True)
     selected_format = _resolve_format(target, format)
     force_field = value.final_force_field if isinstance(value, OptimizationRun) else value
-    required_form = _REQUIRED_FORMS[selected_format]
-    if force_field.functional_form is not required_form:
-        raise OutputFormatError(
-            f"{selected_format!r} requires functional form {required_form.value!r}; "
-            f"force field uses {force_field.functional_form.value!r}."
-        )
-    if force_field.nonbonded_excluded_atom_types and selected_format != "mm3_fld":
-        raise OutputFormatError(
-            f"{selected_format!r} cannot represent nonbonded_excluded_atom_types; use MM3 .fld output."
-        )
-    manifest_target = Path(f"{target}{MANIFEST_SUFFIX}") if isinstance(value, OptimizationRun) else None
+    _validate_force_field_format(force_field, selected_format)
+    sidecar = Path(f"{target}{MANIFEST_SUFFIX}")
+    if not isinstance(value, OptimizationRun):
+        _require_absent_manifest(target)
+    manifest_target = sidecar if isinstance(value, OptimizationRun) else None
     invalid_targets = [
         candidate
         for candidate in (target, manifest_target)
@@ -323,18 +386,20 @@ def save(
     manifest_temporary = _temp_sibling(manifest_target, "manifest") if manifest_target is not None else None
     temporaries = [item for item in (ff_temporary, manifest_temporary) if item is not None]
     try:
-        _serializer(selected_format)(force_field, ff_temporary)
-        if manifest_temporary is not None:
-            assert isinstance(value, OptimizationRun)
-            _write_manifest(manifest_temporary, value, selected_format)
-        staged = [(ff_temporary, target)]
-        if manifest_temporary is not None and manifest_target is not None:
-            staged.append((manifest_temporary, manifest_target))
-        _replace_transaction(staged, overwrite=overwrite)
-    except (OutputFormatError, OutputExistsError):
-        raise
-    except Exception as exc:
-        raise PersistenceError(f"Could not save {target}: {exc}") from exc
+        with _persistence_errors(target):
+            _serializer(selected_format)(force_field, ff_temporary)
+            if manifest_temporary is not None:
+                assert isinstance(value, OptimizationRun)
+                _write_manifest(manifest_temporary, value, selected_format)
+            staged = [(ff_temporary, target)]
+            if manifest_temporary is not None and manifest_target is not None:
+                staged.append((manifest_temporary, manifest_target))
+            _replace_transaction(
+                staged,
+                overwrite=overwrite,
+                bare_targets=(target,) if manifest_target is None else (),
+                force_field_targets=(target,),
+            )
     finally:
         _cleanup_files(temporaries, phase="Save staging cleanup")
     return SavedOutput(path=target, format=selected_format, manifest_path=manifest_target)

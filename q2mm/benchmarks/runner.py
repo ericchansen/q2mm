@@ -37,7 +37,8 @@ import shlex
 import subprocess
 import sys
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +50,7 @@ import numpy as np
 from q2mm.benchmarks.acceptance import AcceptanceDecision, AcceptancePolicy, CandidateStatus, improvement_percent
 from q2mm.benchmarks.profiles import RunProfile
 from q2mm._canonical import json_value
+from q2mm._result_serialization import result_payload, stage_payload
 from q2mm.constants import REAL_FREQUENCY_THRESHOLD
 from q2mm.models.results import deep_freeze
 from q2mm.objectives.metrics import category_metrics, category_stats
@@ -383,66 +385,43 @@ def _score_interval_summary(initial: Sequence[float], final: Sequence[float]) ->
 # ---------------------------------------------------------------------------
 
 
-def _candidate_record_to_dict(rec: Any) -> dict[str, Any]:
-    return {
-        "index": int(rec.index),
-        "status": rec.status,
-        "n_params": int(rec.n_params),
-        "layout_fingerprint": rec.layout_fingerprint,
-        "initial_params": np.asarray(rec.initial_params, dtype=float).tolist(),
-        "final_params": np.asarray(rec.final_params, dtype=float).tolist(),
-        "initial_score": float(rec.initial_score),
-        "final_score": float(rec.final_score),
-        "message": str(rec.message),
-        "seed": rec.seed,
+def _benchmark_scalars(record: dict[str, Any], *, stage: bool = False) -> dict[str, Any]:
+    """Apply the same benchmark scalar policy to full and stage-only projections."""
+    scalar_types: dict[str, Callable[[Any], Any]] = {
+        "success": bool,
+        "converged": bool,
+        "message": str,
+        "initial_score": float,
+        "final_score": float,
+        "n_iterations": int,
+        "n_evaluations": int,
+        "n_params": int,
+        "index": int,
+        "elapsed_s": float,
     }
-
-
-def _stage_to_dict(stage: Any) -> dict[str, Any]:
-    return {
-        "name": stage.name,
-        "initial_score": float(stage.initial_score),
-        "final_score": float(stage.final_score),
-        "n_iterations": int(stage.n_iterations),
-        "n_evaluations": int(stage.n_evaluations),
-        "converged": bool(stage.converged),
-        "message": str(stage.message),
-        "gradient_mode": str(stage.gradient_mode),
-        "fd_step": stage.fd_step,
-        "elapsed_s": float(stage.elapsed_s),
-        "locked_param_indices": list(stage.locked_param_indices),
-    }
+    for key, coerce in scalar_types.items():
+        if key in record:
+            record[key] = coerce(record[key])
+    if stage:
+        record["gradient_mode"] = str(record["gradient_mode"])
+    return record
 
 
 def result_to_dict(result: OptimizationResult) -> dict[str, Any]:
-    """Full JSON-safe projection of the one canonical :class:`OptimizationResult`.
+    """Project the canonical result with benchmark scalar coercions.
 
     Includes layout identity, full initial/final vectors, counts, history,
     gradient mode / FD step, multi-start candidate records, workflow stage
-    records, endpoint samples, and per-category metrics — so an accepted or
-    rejected candidate persists its complete result, not just scores.
+    records and notes, endpoint samples, and per-category metrics. Nested
+    diagnostics and nonfinite scalars are normalized by :func:`sanitize_for_json`
+    at the JSON-safe summary and :meth:`CandidateResult.record` boundaries.
     """
-    return {
-        "success": bool(result.success),
-        "message": str(result.message),
-        "initial_score": float(result.initial_score),
-        "final_score": float(result.final_score),
-        "n_iterations": int(result.n_iterations),
-        "n_evaluations": int(result.n_evaluations),
-        "n_params": int(result.n_params),
-        "layout_fingerprint": result.layout_fingerprint,
-        "initial_params": np.asarray(result.initial_params, dtype=float).tolist(),
-        "final_params": np.asarray(result.final_params, dtype=float).tolist(),
-        "history": [float(x) for x in result.history],
-        "method": result.method,
-        "gradient_mode": result.gradient_mode,
-        "fd_step": result.fd_step,
-        "initial_samples": [float(x) for x in result.initial_samples],
-        "final_samples": [float(x) for x in result.final_samples],
-        "category_metrics": {k: dict(v) for k, v in result.category_metrics.items()},
-        "candidates": [_candidate_record_to_dict(c) for c in result.candidates],
-        "stages": [_stage_to_dict(s) for s in result.stages],
-    }
+    payload = _benchmark_scalars(result_payload(result))
+    for candidate in payload["candidates"]:
+        _benchmark_scalars(candidate)
+    for stage in payload["stages"]:
+        _benchmark_scalars(stage, stage=True)
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -566,7 +545,9 @@ class CandidateResult:
             "resolved_fingerprint": self.resolved.fingerprint() if self.resolved is not None else None,
             "summary": sanitize_for_json(dict(self.summary)),
             "optimization_result": (
-                result_to_dict(self.optimization_result) if self.optimization_result is not None else None
+                sanitize_for_json(result_to_dict(self.optimization_result))
+                if self.optimization_result is not None
+                else None
             ),
         }
 
@@ -1147,7 +1128,9 @@ def _execute(
             "opt_time_s": elapsed,
             "optimized": optimized_categories,
             "final_executor_ratio": final_executor_ratio,
-            "stages": [_stage_to_dict(s) for s in result.stages],
+            "stages": sanitize_for_json(
+                [_benchmark_scalars(stage_payload(stage), stage=True) for stage in result.stages]
+            ),
         }
     )
     summary.update(_score_interval_summary(list(result.initial_samples), list(result.final_samples)))
@@ -1227,12 +1210,12 @@ def _ff_extension(ff: ForceField) -> str:
 
 def _serialize_ff(ff: ForceField, path: Path) -> None:
     from q2mm.models.forcefield import FunctionalForm
-    from q2mm.application.persistence import save
+    from q2mm.application.persistence import _write_staged_force_field
 
     if ff.functional_form is FunctionalForm.MM3:
-        save(ff, path, format="mm3_fld")
+        _write_staged_force_field(ff, path, "mm3_fld")
     elif ff.functional_form is FunctionalForm.HARMONIC:
-        save(ff, path, format="amber_frcmod")
+        _write_staged_force_field(ff, path, "amber_frcmod")
     else:
         raise ValueError(f"no force-field serializer for functional form {ff.functional_form!r}.")
 
@@ -1252,11 +1235,22 @@ def promote_candidate(output_dir: Path, candidate: CandidateResult, provenance: 
     logged without replacing the original exception. After installation,
     cleanup of backups and the stale opposite-form force field only warns on
     OSError and never rolls back the committed pair. User interruptions
-    propagate. Sequential replacements are not crash-atomic.
+    propagate. Sequential replacements are not crash-atomic. Final outputs and
+    opposite-form cleanup share application save reservations; a manifest-owned
+    force field is never overwritten or retired by a bare promotion. Ownership
+    is preflighted before staging and rechecked under the reservation before
+    installation. Force-field outputs reject manifest-role aliases; result JSON
+    retains generic data-output namespace validation.
     """
     import shutil
 
-    from q2mm.application.persistence import _cleanup_files, _temp_sibling
+    from q2mm.application.persistence import (
+        _cleanup_files,
+        _require_absent_manifest,
+        _require_user_output_path,
+        _reserve_outputs,
+        _temp_sibling,
+    )
 
     if not candidate.accepted:
         raise ValueError(
@@ -1264,14 +1258,23 @@ def promote_candidate(output_dir: Path, candidate: CandidateResult, provenance: 
         )
     accepted_dir = output_dir / "accepted"
     ff_dir = output_dir / "forcefields"
-    accepted_dir.mkdir(parents=True, exist_ok=True)
-
     result_path = accepted_dir / f"{candidate.candidate_id}.json"
-    payload = sanitize_for_json({"provenance": dict(provenance), **candidate.record()})
-
     ff = candidate.final_force_field
     ext = _ff_extension(ff) if ff is not None else None
     ff_path = ff_dir / f"{candidate.candidate_id}{ext}" if ext is not None else None
+    bare_targets = (
+        (ff_path, ff_dir / f"{candidate.candidate_id}{_opposite_ext(ext)}")
+        if ff_path is not None and ext is not None
+        else ()
+    )
+    _require_user_output_path(result_path)
+    for target in bare_targets:
+        _require_user_output_path(target, force_field=True)
+    for target in bare_targets:
+        _require_absent_manifest(target)
+
+    payload = sanitize_for_json({"provenance": dict(provenance), **candidate.record()})
+    accepted_dir.mkdir(parents=True, exist_ok=True)
     tmp_ff = _temp_sibling(ff_path, "output") if ff_path is not None else None
     tmp_json = _temp_sibling(result_path, "output")
     targets: list[tuple[Path, Path]] = [(tmp_json, result_path)]
@@ -1282,53 +1285,58 @@ def promote_candidate(output_dir: Path, candidate: CandidateResult, provenance: 
     attempted: list[Path] = []
     committed = False
     phase = "serialization"
-    try:
-        with tmp_json.open("w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2, allow_nan=False, sort_keys=True)
-            fh.write("\n")
-        if ff is not None and tmp_ff is not None:
-            ff_dir.mkdir(parents=True, exist_ok=True)
-            _serialize_ff(ff, tmp_ff)
-        phase = "snapshot"
-        for _tmp, target in targets:
-            if target.exists():
-                backup = _temp_sibling(target, "backup")
-                # A failed copy can leave a partial file that also needs cleanup.
-                backups[target] = backup
-                shutil.copy2(target, backup)
-        phase = "installation"
-        for tmp, target in targets:
-            attempted.append(target)
-            os.replace(tmp, target)
-        committed = True
-    except BaseException as exc:
-        logger.error("Promotion failed during %s; attempting rollback: %s", phase, exc)
-        for target in reversed(attempted):
-            recovery_backup = backups.pop(target, None)
-            try:
-                if recovery_backup is not None:
-                    os.replace(recovery_backup, target)
-                else:
-                    target.unlink(missing_ok=True)
-            except OSError as recovery_error:
-                logger.error(
-                    "Promotion not committed; rollback failed for %s (recovery backup: %s): %s",
-                    target,
-                    recovery_backup,
-                    recovery_error,
-                )
-        _cleanup_files(backups.values(), phase="Promotion not committed; snapshot cleanup")
-        raise
-    else:
-        cleanup = list(backups.values())
-        if ff_path is not None and ext is not None:
-            cleanup.insert(0, ff_dir / f"{candidate.candidate_id}{_opposite_ext(ext)}")
-        _cleanup_files(cleanup, phase="Promotion committed; cleanup")
-    finally:
-        _cleanup_files(
-            (tmp for tmp, _target in targets),
-            phase=f"Promotion {'committed' if committed else 'not committed'}; staging cleanup",
-        )
+    with ExitStack() as reservations:
+        try:
+            with tmp_json.open("w", encoding="utf-8") as fh:
+                json.dump(payload, fh, indent=2, allow_nan=False, sort_keys=True)
+                fh.write("\n")
+            if ff is not None and tmp_ff is not None:
+                ff_dir.mkdir(parents=True, exist_ok=True)
+                _serialize_ff(ff, tmp_ff)
+            phase = "reservation"
+            reservations.enter_context(
+                _reserve_outputs((target for _tmp, target in targets), bare_targets=bare_targets)
+            )
+            phase = "snapshot"
+            for _tmp, target in targets:
+                if target.exists():
+                    backup = _temp_sibling(target, "backup")
+                    # A failed copy can leave a partial file that also needs cleanup.
+                    backups[target] = backup
+                    shutil.copy2(target, backup)
+            phase = "installation"
+            for tmp, target in targets:
+                attempted.append(target)
+                os.replace(tmp, target)
+            committed = True
+        except BaseException as exc:
+            logger.error("Promotion failed during %s; attempting rollback: %s", phase, exc)
+            for target in reversed(attempted):
+                recovery_backup = backups.pop(target, None)
+                try:
+                    if recovery_backup is not None:
+                        os.replace(recovery_backup, target)
+                    else:
+                        target.unlink(missing_ok=True)
+                except OSError as recovery_error:
+                    logger.error(
+                        "Promotion not committed; rollback failed for %s (recovery backup: %s): %s",
+                        target,
+                        recovery_backup,
+                        recovery_error,
+                    )
+            _cleanup_files(backups.values(), phase="Promotion not committed; snapshot cleanup")
+            raise
+        else:
+            cleanup = list(backups.values())
+            if ff_path is not None and ext is not None:
+                cleanup.insert(0, ff_dir / f"{candidate.candidate_id}{_opposite_ext(ext)}")
+            _cleanup_files(cleanup, phase="Promotion committed; cleanup")
+        finally:
+            _cleanup_files(
+                (tmp for tmp, _target in targets),
+                phase=f"Promotion {'committed' if committed else 'not committed'}; staging cleanup",
+            )
 
     promoted: dict[str, Path] = {"result": result_path}
     if ff_path is not None:
