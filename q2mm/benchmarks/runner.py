@@ -658,6 +658,19 @@ def _load_kwargs(profile: RunProfile, form: str) -> tuple[dict[str, Any], dict[s
 
 
 def _data_provenance(case: BenchmarkCase, resolved_roots: Mapping[str, str]) -> dict[str, Any]:
+    """Record source metadata and the SDK's versioned scientific input digests.
+
+    The additive ``scientific_problem`` entry participates in resolved candidate
+    identity, so new runs no longer reuse metadata-only candidate IDs. Existing
+    records remain readable as written; absent input digests are not backfilled.
+    Only digests are persisted, not the SDK's full scientific identity payload.
+    """
+    from q2mm.application.models import (
+        PROBLEM_FINGERPRINT_VERSION,
+        problem_fingerprint,
+        problem_input_fingerprints,
+    )
+
     problem = case.problem
     cases = [{"case_id": c.case_id, "stationary_point": c.stationary_point.value} for c in problem.cases]
     hessians: list[dict[str, Any]] = []
@@ -672,6 +685,11 @@ def _data_provenance(case: BenchmarkCase, resolved_roots: Mapping[str, str]) -> 
             }
         )
     return {
+        "scientific_problem": {
+            "fingerprint_version": PROBLEM_FINGERPRINT_VERSION,
+            "fingerprint": problem_fingerprint(problem),
+            "input_fingerprints": dict(problem_input_fingerprints(problem)),
+        },
         "metadata": dict(case.metadata),
         "objective_profile": (
             problem.publication_metadata.objective_profile.identifier

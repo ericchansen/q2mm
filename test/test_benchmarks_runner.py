@@ -35,6 +35,7 @@ from q2mm.benchmarks.runner import (
 )
 
 if TYPE_CHECKING:
+    from q2mm.benchmarks.cases import BenchmarkCase
     from q2mm.benchmarks.profiles import ResolvedProfile
     from q2mm.models.forcefield import ForceField
 
@@ -133,6 +134,322 @@ def _candidate(
         optimization_result=result,
         final_force_field=final_ff,
     )
+
+
+# ---------------------------------------------------------------------------
+# Scientific problem identity (synthetic, no backend execution)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def scientific_case() -> BenchmarkCase:
+    from q2mm.benchmarks.cases import BenchmarkCase
+    from q2mm.models.hessian import HessianProvenance, HessianUnits
+    from q2mm.models.observations import Observation, ObservationSet
+    from test.test_application import _problem
+
+    problem = _problem()
+    molecule = problem.molecules[0].with_hessian(
+        np.eye(6),
+        HessianProvenance(units=HessianUnits.ATOMIC, source="synthetic", path=str(Path("inputs") / "h2.log")),
+    )
+    case = dataclasses.replace(problem.cases[0], molecule=molecule)
+    problem = dataclasses.replace(
+        problem,
+        cases=(case, dataclasses.replace(case, case_id="h2-other")),
+        starting_force_field=dataclasses.replace(
+            problem.starting_force_field, source_path=str(Path("inputs") / "starting.frcmod")
+        ),
+        observations=ObservationSet(
+            values=(
+                Observation(kind="energy", value=90.75, case_id="h2"),
+                Observation(kind="frequency", value=100.0, data_idx=0, case_id="h2"),
+            )
+        ),
+    )
+    return BenchmarkCase(key="ch3f", name="synthetic", problem=problem, default_forms=("harmonic",))
+
+
+def _resolve_scientific_case(case: BenchmarkCase) -> ResolvedProfile:
+    from q2mm.benchmarks.runner import _data_provenance
+
+    problem = case.problem
+    return dataclasses.replace(
+        _resolved(RunProfile(system="ch3f", functional_form="harmonic")),
+        layout_fingerprint=problem.layout.fingerprint,
+        n_active_params=problem.active_space.n_active,
+        n_full_params=problem.active_space.n_full,
+        n_molecules=len(problem.cases),
+        data_provenance=_data_provenance(case, {}),
+    )
+
+
+class TestScientificProblemIdentity:
+    def _assert_distinct(self, original: BenchmarkCase, changed: BenchmarkCase) -> None:
+        from q2mm.application import problem_fingerprint, problem_input_fingerprints
+        from q2mm.application.models import PROBLEM_FINGERPRINT_VERSION
+
+        before = _resolve_scientific_case(original)
+        after = _resolve_scientific_case(changed)
+        for case, resolved in ((original, before), (changed, after)):
+            assert resolved.data_provenance["scientific_problem"] == {
+                "fingerprint_version": PROBLEM_FINGERPRINT_VERSION,
+                "fingerprint": problem_fingerprint(case.problem),
+                "input_fingerprints": problem_input_fingerprints(case.problem),
+            }
+        assert before.profile.fingerprint() == after.profile.fingerprint()
+        assert before.n_active_params == after.n_active_params
+        assert before.n_full_params == after.n_full_params
+        assert before.n_molecules == after.n_molecules
+        assert (
+            before.data_provenance["scientific_problem"]["fingerprint"]
+            != after.data_provenance["scientific_problem"]["fingerprint"]
+        )
+        assert before.candidate_id() != after.candidate_id()
+
+        # Most changes collided under the former metadata/count/layout identity.
+        if before.layout_fingerprint == after.layout_fingerprint:
+            legacy_before = dataclasses.replace(
+                before, data_provenance={k: v for k, v in before.data_provenance.items() if k != "scientific_problem"}
+            )
+            legacy_after = dataclasses.replace(
+                after, data_provenance={k: v for k, v in after.data_provenance.items() if k != "scientific_problem"}
+            )
+            assert legacy_before.candidate_id() == legacy_after.candidate_id()
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [{"value": 200.0}, {"weight": 2.0}, {"data_idx": 1}, {"case_id": "h2-other"}],
+        ids=["value", "weight", "index", "case-binding"],
+    )
+    def test_actual_observations(self, scientific_case: BenchmarkCase, overrides: dict[str, Any]) -> None:
+        from q2mm.models.observations import ObservationSet
+
+        problem = scientific_case.problem
+        energy, frequency = problem.observations.values
+        changed = dataclasses.replace(
+            problem,
+            observations=ObservationSet(values=(energy, dataclasses.replace(frequency, **overrides))),
+        )
+        self._assert_distinct(scientific_case, dataclasses.replace(scientific_case, problem=changed))
+
+    @pytest.mark.parametrize("change", ["active-mask", "active-baseline", "frozen-baseline"])
+    def test_actual_active_space(self, scientific_case: BenchmarkCase, change: str) -> None:
+        problem = scientific_case.problem
+        space = problem.active_space
+        if change == "active-mask":
+            space = space.with_active_indices([1])
+        else:
+            baseline = space.baseline.copy()
+            baseline[0 if change == "active-baseline" else 1] += 0.1
+            space = space.with_baseline(baseline)
+        changed = dataclasses.replace(problem, active_space=space)
+        self._assert_distinct(scientific_case, dataclasses.replace(scientific_case, problem=changed))
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [{"force_constant": 101.0}, {"equilibrium": 0.8}, {"dipole_moment": 0.5}],
+        ids=["active-value", "frozen-value", "fixed-metadata"],
+    )
+    def test_full_starting_force_field(self, scientific_case: BenchmarkCase, overrides: dict[str, float]) -> None:
+        problem = scientific_case.problem
+        ff = problem.starting_force_field
+        changed = dataclasses.replace(
+            problem,
+            starting_force_field=dataclasses.replace(ff, bonds=(dataclasses.replace(ff.bonds[0], **overrides),)),
+        )
+        np.testing.assert_array_equal(changed.active_space.baseline, problem.active_space.baseline)
+        self._assert_distinct(scientific_case, dataclasses.replace(scientific_case, problem=changed))
+
+    def test_nonbonded_exclusions(self, scientific_case: BenchmarkCase) -> None:
+        problem = scientific_case.problem
+        changed = dataclasses.replace(
+            problem,
+            starting_force_field=dataclasses.replace(
+                problem.starting_force_field, nonbonded_excluded_atom_types=("H",)
+            ),
+        )
+        self._assert_distinct(scientific_case, dataclasses.replace(scientific_case, problem=changed))
+
+    @pytest.mark.parametrize("overrides", [{"bounds": (0.0, 500.0)}, {"step": 0.02}])
+    def test_parameter_semantics(self, scientific_case: BenchmarkCase, overrides: dict[str, Any]) -> None:
+        problem = scientific_case.problem
+        layout = dataclasses.replace(
+            problem.layout, slots=(dataclasses.replace(problem.layout[0], **overrides), problem.layout[1])
+        )
+        changed = dataclasses.replace(
+            problem, layout=layout, active_space=dataclasses.replace(problem.active_space, layout=layout)
+        )
+        self._assert_distinct(scientific_case, dataclasses.replace(scientific_case, problem=changed))
+
+    @pytest.mark.parametrize("change", ["geometry", "hessian", "topology", "partial-charges", "atom-types"])
+    def test_molecular_inputs(self, scientific_case: BenchmarkCase, change: str) -> None:
+        problem = scientific_case.problem
+        molecule = problem.molecules[0]
+        if change == "geometry":
+            geometry = molecule.geometry.copy()
+            geometry[1, 0] += 0.1
+            molecule = molecule.with_geometry(geometry).with_hessian(molecule.hessian, molecule.hessian_provenance)
+        elif change == "hessian":
+            molecule = molecule.with_hessian(2.0 * molecule.hessian, molecule.hessian_provenance)
+        elif change == "topology":
+            molecule = dataclasses.replace(molecule, bonds=())
+        elif change == "partial-charges":
+            molecule = dataclasses.replace(molecule, partial_charges=(0.1, -0.1))
+        else:
+            molecule = molecule.with_atom_types(["H1", "H2"])
+        changed = dataclasses.replace(
+            problem, cases=(dataclasses.replace(problem.cases[0], molecule=molecule), problem.cases[1])
+        )
+        self._assert_distinct(scientific_case, dataclasses.replace(scientific_case, problem=changed))
+
+    @pytest.mark.parametrize("field", ["cases", "observations"])
+    def test_order_is_part_of_scientific_identity(self, scientific_case: BenchmarkCase, field: str) -> None:
+        from q2mm.application import problem_fingerprint
+        from q2mm.models.observations import ObservationSet
+
+        problem = scientific_case.problem
+        changed = (
+            dataclasses.replace(problem, cases=problem.cases[::-1])
+            if field == "cases"
+            else dataclasses.replace(problem, observations=ObservationSet(values=problem.observations.values[::-1]))
+        )
+        before = _resolve_scientific_case(scientific_case)
+        after = _resolve_scientific_case(dataclasses.replace(scientific_case, problem=changed))
+        assert before.data_provenance["scientific_problem"]["fingerprint"] == problem_fingerprint(problem)
+        assert after.data_provenance["scientific_problem"]["fingerprint"] == problem_fingerprint(changed)
+        assert problem_fingerprint(problem) != problem_fingerprint(changed)
+        assert before.candidate_id() != after.candidate_id()
+
+    def test_equivalent_copies_and_source_directories_follow_sdk_contract(self, scientific_case: BenchmarkCase) -> None:
+        problem = scientific_case.problem
+        copied = dataclasses.replace(
+            problem,
+            cases=tuple(
+                dataclasses.replace(
+                    c, molecule=c.molecule.with_hessian(c.molecule.hessian.copy(), c.molecule.hessian_provenance)
+                )
+                for c in problem.cases
+            ),
+            starting_force_field=dataclasses.replace(
+                problem.starting_force_field, source_path=str(Path("relocated") / "starting.frcmod")
+            ),
+            active_space=problem.active_space.with_baseline(problem.active_space.baseline.copy()),
+        )
+        before = _resolve_scientific_case(scientific_case)
+        after = _resolve_scientific_case(dataclasses.replace(scientific_case, problem=copied))
+        assert before.data_provenance == after.data_provenance
+        assert before.candidate_id() == after.candidate_id()
+
+        # SDK source identity retains basenames, not containing directories.
+        cases = tuple(
+            dataclasses.replace(
+                c,
+                molecule=c.molecule.with_hessian(
+                    c.molecule.hessian,
+                    dataclasses.replace(c.molecule.hessian_provenance, path=str(Path("relocated") / "h2.log")),
+                ),
+            )
+            for c in copied.cases
+        )
+        relocated = _resolve_scientific_case(
+            dataclasses.replace(scientific_case, problem=dataclasses.replace(copied, cases=cases))
+        )
+        assert before.data_provenance["scientific_problem"] == relocated.data_provenance["scientific_problem"]
+        # The outer benchmark identity still records the original full source paths.
+        assert before.candidate_id() != relocated.candidate_id()
+
+    def test_sdk_identity_failure_never_falls_back_to_metadata(
+        self, scientific_case: BenchmarkCase, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from q2mm._canonical import CanonicalizationError
+        from test.test_application import _EnergyBackend
+
+        def reject_identity(_problem: Any) -> str:
+            raise CanonicalizationError("Secret-like field is not permitted.")
+
+        monkeypatch.setattr("q2mm.application.models.problem_fingerprint", reject_identity)
+        monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: scientific_case)
+        candidate = run_profile(
+            RunProfile(system="ch3f", backend="synthetic-mm", functional_form="harmonic", optimizer="scipy-nm"),
+            backend=_EnergyBackend(),
+            analyze=False,
+            include_device=False,
+        )
+        assert candidate.status is CandidateStatus.ERROR
+        assert "Secret-like field" in candidate.reason
+        assert candidate.resolved is None
+        assert candidate.candidate_id == candidate.profile.candidate_id()
+
+    @pytest.mark.parametrize("change", ["observation", "active-mask"])
+    def test_scientifically_distinct_accepted_runs_coexist(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
+    ) -> None:
+        from q2mm.application import problem_fingerprint, problem_input_fingerprints
+        from q2mm.benchmarks.cases import BenchmarkCase
+        from q2mm.models.observations import ObservationSet
+        from q2mm.models.problem import OptimizationProblem
+        from test.test_application import _EnergyBackend, _problem, _result
+
+        problem = dataclasses.replace(_problem(), observations=ObservationSet().with_energy(90.75, case_id="h2"))
+        changed = (
+            dataclasses.replace(problem, observations=ObservationSet().with_energy(80.75, case_id="h2"))
+            if change == "observation"
+            else dataclasses.replace(problem, active_space=problem.active_space.with_active_indices([1]))
+        )
+        executed = []
+
+        def mock_optimize(problem: OptimizationProblem, *_args: Any, **_kwargs: Any) -> tuple[Any, ForceField]:
+            executed.append(problem)
+            final = problem.active_space.baseline.copy()
+            final[problem.active_space.active_indices] -= 0.25
+            reference = problem.observations.values[0].value
+            result = dataclasses.replace(
+                _result(problem, gradient_mode="none"),
+                initial_score=float((problem.active_space.baseline.sum() - reference) ** 2),
+                final_score=float((final.sum() - reference) ** 2),
+                final_params=final,
+                n_iterations=3,
+                n_evaluations=4,
+            )
+            return result, problem.layout.replace(problem.starting_force_field, final)
+
+        monkeypatch.setattr("q2mm.application.optimization.execute_optimization", mock_optimize)
+        profile = RunProfile(
+            system="ch3f", backend="synthetic-mm", functional_form="harmonic", optimizer="scipy-nm", n_evals=0
+        )
+        candidates = []
+        first_files: dict[Path, bytes] = {}
+        for current in (problem, changed):
+            case = BenchmarkCase(key="ch3f", name="synthetic", problem=current, default_forms=("harmonic",))
+            monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: case)
+            candidate = run_profile(profile, backend=_EnergyBackend(), analyze=False, include_device=False)
+            assert candidate.status is CandidateStatus.ACCEPTED, candidate.reason
+            assert candidate.resolved is not None
+            science = candidate.resolved.data_provenance["scientific_problem"]
+            assert science["fingerprint"] == problem_fingerprint(current)
+            assert science["input_fingerprints"] == problem_input_fingerprints(current)
+            path = persist_candidate(tmp_path, candidate, provenance={})
+            promoted = promote_candidate(tmp_path, candidate, provenance={})
+            if not first_files:
+                first_files = {p: p.read_bytes() for p in (path, *promoted.values())}
+            candidates.append(candidate)
+
+        assert len(executed) == 2
+        assert candidates[0].summary["initial_obj_score"] == pytest.approx(100.0)
+        assert candidates[1].summary["initial_obj_score"] == pytest.approx(400.0 if change == "observation" else 100.0)
+        assert len({candidate.candidate_id for candidate in candidates}) == 2
+        assert {p: p.read_bytes() for p in first_files} == first_files
+        for directory in ("candidates", "accepted"):
+            records = load_candidates(tmp_path / directory)
+            assert {record.candidate_id for record in records} == {candidate.candidate_id for candidate in candidates}
+            assert all(record.status is CandidateStatus.ACCEPTED for record in records)
+            assert {
+                record.record["resolved"]["data_provenance"]["scientific_problem"]["fingerprint"] for record in records
+            } == {problem_fingerprint(problem), problem_fingerprint(changed)}
+        assert {p.stem for p in (tmp_path / "forcefields").glob("*.frcmod")} == {
+            candidate.candidate_id for candidate in candidates
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -488,6 +805,29 @@ class TestPersistence:
         for i, status in enumerate(CandidateStatus):
             persist_candidate(tmp_path, _candidate(status, vary=i), provenance={})
         assert {c.status for c in load_candidates(tmp_path)} == set(CandidateStatus)
+
+    @pytest.mark.parametrize("status", list(CandidateStatus))
+    def test_legacy_records_remain_readable_without_invented_scientific_identity(
+        self, tmp_path: Path, status: CandidateStatus, scientific_case: BenchmarkCase
+    ) -> None:
+        candidate = _candidate(status)
+        legacy_path = persist_candidate(tmp_path, candidate, provenance={})
+        legacy_bytes = legacy_path.read_bytes()
+        legacy_record = json.loads(legacy_bytes)
+        assert "scientific_problem" not in legacy_record["resolved"]["data_provenance"]
+
+        resolved = _resolve_scientific_case(scientific_case)
+        current = dataclasses.replace(candidate, candidate_id=resolved.candidate_id(), resolved=resolved)
+        persist_candidate(tmp_path, current, provenance={})
+        records = {record.candidate_id: record for record in load_candidates(tmp_path)}
+        assert len(records) == 2
+        legacy = records[candidate.candidate_id]
+        assert legacy.status is status
+        assert legacy.reason == candidate.reason
+        assert sanitize_for_json(legacy.record) == legacy_record
+        assert "scientific_problem" not in legacy.record["resolved"]["data_provenance"]
+        assert legacy.record["resolved"]["resolved_fingerprint"] == legacy_record["resolved"]["resolved_fingerprint"]
+        assert legacy_path.read_bytes() == legacy_bytes
 
     def test_error_candidate_is_loadable(self, tmp_path: Path) -> None:
         persist_candidate(tmp_path, _candidate(CandidateStatus.ERROR, summary={"error": "boom"}), provenance={})
