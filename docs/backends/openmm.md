@@ -123,8 +123,10 @@ keeping all evaluations behind the typed prepared-session contract.
 Standalone force-field XML can be written with
 `q2mm.io.save_openmm_xml(force_field, path, molecule=...)`. This exports a
 limited MM3 subset, not an arbitrary prepared system. Unsupported
-Urey-Bradley, stretch-bend, CMAP, improper, bond-dipole, reduced-site, and
-wildcard content raises `ValueError` before the destination is replaced.
+Urey-Bradley, stretch-bend, CMAP, improper, bond-dipole, reduced-site,
+nonbonded-exclusion, and wildcard content raises `ValueError` before the
+destination is replaced. Native integer-zero wildcard types are rejected
+in vdW records as well as bonded terms.
 
 Proper torsions use OpenMM's `<Proper>` schema. Only one Fourier component
 per atom-class tuple is supported: OpenMM's custom torsion loader selects
@@ -134,8 +136,8 @@ The XML's vdW expression is Buckingham exp-6; this format does not imply
 complete equivalence with a backend's physical policies.
 
 For topology-specific serialization of an already prepared OpenMM system,
-use `q2mm.io.save_openmm_system_xml(prepared, path)` and
-`q2mm.io.load_openmm_system_xml(path)`. These are I/O functions, separate
+use `q2mm.io.openmm.save_openmm_system_xml(prepared, path)` and
+`q2mm.io.openmm.load_openmm_system_xml(path)`. These are I/O functions, separate
 from the backend's typed evaluation interface.
 
 ---

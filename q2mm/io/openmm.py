@@ -2,18 +2,21 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from q2mm.io._helpers import _validate_form_for_format
 from q2mm.models.forcefield import ForceField
 
-# This exporter does not translate MM3/Tinker wildcard atom types.
-_WILDCARD_TYPES = frozenset({"00"})
-
 if TYPE_CHECKING:
     from q2mm.backends.mm.openmm import PreparedOpenMM
     from q2mm.models.molecule import Molecule
+
+
+def _is_wildcard_atom_type(atom_type: str) -> bool:
+    """Recognize MM3 00 and native integer-zero wildcard spellings."""
+    return re.fullmatch(r"[+-]?0+", atom_type) is not None
 
 
 def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
@@ -30,6 +33,10 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
         unsupported.append("bond dipoles")
     if any(vdw.reduction not in (0.0, 1.0) for vdw in ff.vdws):
         unsupported.append("reduced vdW sites")
+    if any(_is_wildcard_atom_type(vdw.atom_type or vdw.element) for vdw in ff.vdws):
+        unsupported.append("wildcard vdW atom types")
+    if ff.nonbonded_excluded_atom_types:
+        unsupported.append("nonbonded-excluded atom types")
     if unsupported:
         raise ValueError(f"Standalone OpenMM XML cannot represent {', '.join(unsupported)}.")
 
@@ -38,7 +45,7 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
             classes = term.env_id.split("-") if term.env_id else term.elements
             if len(classes) != len(term.elements) or any(not value for value in classes):
                 raise ValueError(f"Standalone OpenMM XML requires complete atom classes, got {classes!r}.")
-            if _WILDCARD_TYPES.intersection(classes):
+            if any(_is_wildcard_atom_type(atom_type) for atom_type in classes):
                 raise ValueError(f"Standalone OpenMM XML cannot represent wildcard atom types in {classes!r}.")
 
     torsion_classes: set[tuple[str, ...]] = set()
@@ -115,8 +122,9 @@ def save_openmm_xml(
 
     Unsupported populated terms and wildcard types are rejected before
     writing, including Urey-Bradley, stretch-bend, CMAP, improper torsions,
-    bond dipoles, reduced vdW sites, and multiple proper components for
-    the same class tuple.
+    bond dipoles, reduced vdW sites, excluded nonbonded atom types, and
+    multiple proper components for the same class tuple. Native zero-type
+    wildcards are rejected in vdW records as well as bonded terms.
 
     A *molecule* (or iterable of molecules) can be provided to generate
     ``<Residues>`` and ``<AtomTypes>`` sections.  If omitted, only the

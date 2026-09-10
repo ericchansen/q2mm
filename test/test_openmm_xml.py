@@ -145,3 +145,55 @@ def test_single_proper_uses_openmm_schema(tmp_path: Path) -> None:
 
     assert root.find("CustomTorsionForce/Proper") is not None
     assert root.find("CustomTorsionForce/Torsion") is None
+
+
+@pytest.mark.parametrize("atom_type", ["00", "0", "000", "+0", "-00"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_wildcard_vdw_rejected_before_writing(tmp_path: Path, atom_type: str, existing: bool) -> None:
+    ff = ForceField(vdws=(VdwParam(atom_type, 1.2, 0.02),), functional_form=FunctionalForm.MM3)
+    path = tmp_path / "vdw.xml"
+    if existing:
+        path.write_bytes(b"existing XML")
+
+    with pytest.raises(ValueError, match="wildcard"):
+        save_openmm_xml(ff, path)
+
+    assert path.read_bytes() == b"existing XML" if existing else not path.exists()
+
+
+@pytest.mark.parametrize("atom_type", ["0", "000", "+0"])
+def test_other_native_zero_classes_are_rejected(tmp_path: Path, atom_type: str) -> None:
+    ff = ForceField(
+        bonds=(BondParam(("C", "C"), 1.5, 100.0, env_id=f"{atom_type}-C"),),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = tmp_path / "bond.xml"
+    with pytest.raises(ValueError, match="wildcard"):
+        save_openmm_xml(ff, path)
+    assert not path.exists()
+
+
+@pytest.mark.parametrize("atom_type", ["H", "He", "C00", "00C", "0001"])
+def test_vdw_wildcard_lookalikes_remain_literal_classes(tmp_path: Path, atom_type: str) -> None:
+    ff = ForceField(vdws=(VdwParam(atom_type, 1.2, 0.02),), functional_form=FunctionalForm.MM3)
+    path = save_openmm_xml(ff, tmp_path / "vdw.xml")
+    atom = ET.parse(path).getroot().find("CustomNonbondedForce/Atom")
+    assert atom is not None
+    assert atom.get("class") == atom_type
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_nonbonded_excluded_types_are_not_silently_lost(tmp_path: Path, existing: bool) -> None:
+    ff = ForceField(
+        vdws=(VdwParam("H", 1.2, 0.02),),
+        nonbonded_excluded_atom_types=("H",),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = tmp_path / "excluded.xml"
+    if existing:
+        path.write_bytes(b"existing XML")
+
+    with pytest.raises(ValueError, match="nonbonded-excluded"):
+        save_openmm_xml(ff, path)
+
+    assert path.read_bytes() == b"existing XML" if existing else not path.exists()
