@@ -495,11 +495,21 @@ class ForceField:
         env_id: str = "",
         ff_row: int | None = None,
     ) -> StretchBendParam | None:
-        """Match a stretch-bend by source row, then environment specificity, rejecting ties."""
+        """Match an optional stretch-bend by source row, then environment.
+
+        An exact coupling row wins, including a zero-valued parameter. If
+        ``ff_row`` identifies an angle in this force field but no coupling,
+        return ``None``: that source angle has no stretch-bend term, rather
+        than borrowing another row's coupling. Without a valid source-angle
+        row, retain environment specificity and element fallback, rejecting
+        unresolved ties.
+        """
         if ff_row is not None:
             for sb in self.stretch_bends:
                 if sb.ff_row == ff_row:
                     return sb
+            if any(angle.ff_row == ff_row for angle in self.angles):
+                return None
         outer = tuple(sorted([elements[0], elements[2]]))
         target_key = (outer[0], elements[1], outer[1])
         candidates = _environment_candidates(
