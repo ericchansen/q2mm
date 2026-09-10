@@ -8,7 +8,7 @@ import numpy as np
 
 import q2mm
 from q2mm.models.forcefield import FunctionalForm
-from test._shared import make_water
+from test._shared import make_harmonic_water
 
 
 def test_root_all_is_exact() -> None:
@@ -83,7 +83,7 @@ print(json.dumps({
 
 
 def test_root_prepare_delegates_without_mutating_input() -> None:
-    molecule = make_water().with_hessian(np.eye(9) * 0.1)
+    molecule = make_harmonic_water()
     geometry = molecule.geometry.copy()
 
     problem = q2mm.prepare(
@@ -94,4 +94,6 @@ def test_root_prepare_delegates_without_mutating_input() -> None:
 
     assert isinstance(problem, q2mm.OptimizationProblem)
     assert problem.starting_force_field.functional_form is FunctionalForm.HARMONIC
+    assert problem.preparation_provenance.profile == "stationary-point-geometry-eigenmatrix-v1"
+    assert sum(o.kind == "eig_diagonal" and o.weight > 0 for o in problem.observations.values) == 3
     np.testing.assert_array_equal(molecule.geometry, geometry)
