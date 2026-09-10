@@ -1303,7 +1303,7 @@ class TestForceField:
     def test_tinker_export_preserves_vdw_reduction(self, tmp_path: Path) -> None:
         """Verify Tinker export preserves VDW reduction factor.
 
-        Regression: _update_tinker_vdw_lines must write match.reduction,
+        Regression: template edits must write the requested reduction,
         not copy the old tail from the file.
         """
         prm_path = tmp_path / "vdw_reduction.prm"
@@ -1349,6 +1349,282 @@ class TestForceField:
 
 
 # ---- Bond order parsing and matching ----
+
+
+class TestTinkerTemplateFidelity:
+    @pytest.fixture(params=["", "# Q2MM\n# OPT Synthetic\n"], ids=["unmarked", "marked"])
+    def source(self, tmp_path: Path, request: pytest.FixtureRequest) -> Path:
+        path = tmp_path / "source.prm"
+        path.write_text(
+            '# Synthetic template\natom 1 C "carbon" 6 12.0 4\n'
+            'atom 2 H "hydrogen" 1 1.0 1\n'
+            "torsionunit 0.5\n" + request.param + "bond\t1 2 5.0 1.1   # bond comment mentions torsion\n"
+            "angle 2 1 2 0.5 200.0 111.0 222.0 # angle comment\n"
+            "torsion 2 1 1 2 1.0 30 4 -2.0 180 2 3.0 -450 6 # bond angle\n"
+            "vdw 2 1.5 0.02 # no reduction\n"
+            "charge 1 0.0\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def test_noop_preserves_all_bytes_and_parameters(self, source: Path, tmp_path: Path) -> None:
+        expected = source.read_bytes()
+        ff = load_tinker_prm(source)
+        output = tmp_path / "roundtrip.prm"
+        for _ in range(3):
+            save_tinker_prm(ff, output)
+            assert output.read_bytes() == expected
+            again = load_tinker_prm(output)
+            for category in ("bonds", "angles", "torsions", "vdws"):
+                assert getattr(again, category) == getattr(ff, category)
+            ff = again
+        assert [t.force_constant for t in ff.torsions] == [0.5, -1.0, 1.5]
+        assert [t.phase for t in ff.torsions] == [30.0, 180.0, -450.0]
+        assert [t.periodicity for t in ff.torsions] == [4, 2, 6]
+        assert ff.angles[0].equilibrium == 160.0
+
+    def test_scalar_edits_survive_and_preserve_template(self, source: Path, tmp_path: Path) -> None:
+        ff = load_tinker_prm(source)
+        edited = replace(
+            ff,
+            bonds=(
+                replace(
+                    ff.bonds[0], force_constant=ff.bonds[0].force_constant * 400, equilibrium=np.float64(1.234567891)
+                ),
+            ),
+            angles=(replace(ff.angles[0], force_constant=ff.angles[0].force_constant * 8, equilibrium=108.123456789),),
+            torsions=tuple(
+                replace(t, force_constant=t.force_constant * 2000, phase=t.phase + 12.5) for t in ff.torsions
+            ),
+            vdws=(replace(ff.vdws[0], radius=1.654321, epsilon=0.03456789, reduction=0.923),),
+        )
+        output = tmp_path / "edited.prm"
+        save_tinker_prm(edited, output)
+        again = load_tinker_prm(output)
+        for category, fields in (
+            ("bonds", ("force_constant", "equilibrium")),
+            ("angles", ("force_constant", "equilibrium")),
+            ("torsions", ("force_constant", "phase", "periodicity")),
+            ("vdws", ("radius", "epsilon", "reduction")),
+        ):
+            for expected, actual in zip(getattr(edited, category), getattr(again, category), strict=True):
+                for field in fields:
+                    assert getattr(actual, field) == pytest.approx(getattr(expected, field), rel=1e-14)
+                assert actual.ff_row == expected.ff_row
+        before = source.read_text().splitlines()
+        after = output.read_text().splitlines()
+        changed_rows = {p.ff_row for p in (*ff.bonds, *ff.angles, *ff.torsions, *ff.vdws)}
+        for row, (old, new) in enumerate(zip(before, after, strict=True), start=1):
+            if row not in changed_rows:
+                assert new == old
+            else:
+                assert new.partition("#")[2] == old.partition("#")[2]
+        assert "bond\t1 2 2000.0 1.234567891   #" in output.read_text()
+        assert " 111.0 222.0 # angle comment" in output.read_text()
+        assert " 0.923 # no reduction" in output.read_text()
+
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_original_torsion_regression_and_line_endings(self, tmp_path: Path, newline: str) -> None:
+        source = tmp_path / "source.prm"
+        text = newline.join(("# Q2MM", "# OPT Test", "torsion C1 C2 C3 C4 1.0 0 1 2.0 180 2 3.0 0 3"))
+        source.write_bytes(text.encode())
+        ff = load_tinker_prm(source)
+        output = tmp_path / "output.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+        assert [(t.force_constant, t.phase, t.periodicity) for t in load_tinker_prm(output).torsions] == [
+            (1.0, 0.0, 1),
+            (2.0, 180.0, 2),
+            (3.0, 0.0, 3),
+        ]
+        save_tinker_prm(replace(ff, torsions=(replace(ff.torsions[0], phase=12.5), *ff.torsions[1:])), output)
+        assert output.read_bytes() == text.replace("1.0 0 1", "1.0 12.5 1").encode()
+
+    @pytest.mark.parametrize("unit", [1.0, 0.5, 2.75, -0.5])
+    def test_torsion_coefficient_matches_official_formula(self, tmp_path: Path, unit: float) -> None:
+        # TinkerTools/tinker@87050685: etors.f etors0a expands cos(n*phi-phase)
+        # into cos(n*phi)*cos(phase) + sin(n*phi)*sin(phase), then applies torsunit.
+        # This is an algebraic coefficient check, not native geometry/sign parity.
+        source = tmp_path / "formula.prm"
+        triples = [(1.0, 37.0, 6), (-2.0, -45.0, 2), (3.0, 180.0, 4), (0.0, 90.0, 1), (0.1, 720.0, 5), (4.0, 0.0, 3)]
+        source.write_text(
+            "torsion 1 2 3 4 "
+            + " ".join(f"{a} {phase} {n}" for a, phase, n in triples)
+            + "\n"
+            + (f"torsionunit {unit}\n" if unit != 1.0 else ""),
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        phi = np.linspace(-np.pi, np.pi, 61)
+        expected = unit * sum(
+            amplitude * (1 + np.cos(n * phi) * np.cos(np.deg2rad(phase)) + np.sin(n * phi) * np.sin(np.deg2rad(phase)))
+            for amplitude, phase, n in triples
+        )
+        actual = sum(t.force_constant * (1 + np.cos(t.periodicity * phi - np.deg2rad(t.phase))) for t in ff.torsions)
+        np.testing.assert_allclose(actual, expected, atol=1e-12)
+        output = tmp_path / "formula-edited.prm"
+        edited = replace(ff, torsions=tuple(replace(t, force_constant=t.force_constant + 0.125) for t in ff.torsions))
+        save_tinker_prm(edited, output)
+        assert [t.force_constant for t in load_tinker_prm(output).torsions] == pytest.approx(
+            [t.force_constant for t in edited.torsions]
+        )
+
+    def test_last_unit_override_and_fortran_exponents(self, tmp_path: Path) -> None:
+        source = tmp_path / "unit.prm"
+        source.write_text(
+            "torsionunit 2.0\n# Q2MM\n# OPT Test\nTORSION 1 2 3 4 2D0 3d1 6\nTORSIONUNIT 0.5 # last\n",
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        assert [(t.force_constant, t.phase, t.periodicity) for t in ff.torsions] == [(1.0, 30.0, 6)]
+        save_tinker_prm(ff, source)
+        assert "2D0 3d1 6" in source.read_text()
+
+    @pytest.mark.parametrize(
+        "record",
+        [
+            "torsion 1 2 3 4",
+            "torsion 1 2 3 4 1 0",
+            "torsion 1 2 3 4 1 0 1 2",
+            "torsion 1 2 3 4 " + "1 0 1 " * 7,
+            "torsion 1 2 3 4 1 0 1 2 180 1",
+            "torsion 1 2 3 4 1 0 0",
+            "torsion 1 2 3 4 1 0 7",
+            "torsion 1 2 3 4 1 0 -1",
+            "torsion 1 2 3 4 1 0 2.5",
+            "torsion 1 2 3 4 nan 0 1",
+            "torsion 1 2 3 4 1 inf 1",
+            "torsion 1 2 3 4 x 0 1",
+            "torsion 1 2 3 4 1_0 0 1",
+            "torsion 1 2 3 4 1e308 0 1\ntorsionunit 2",
+            "torsion 1 2 3 4 1e-300 0 1\ntorsionunit 1e-300",
+            "torsion4 1 2 3 4 1 0 1",
+            "torsion5 1 2 3 4 1 0 1",
+            "torsionunit 0",
+            "torsionunit nan",
+            "torsionunit inf",
+            "torsionunit",
+            "torsionunit 1 2",
+            "bond 1 2 5 1.1 99",
+            "bond 1 2 5",
+            "angle 1 2 3 5 110 120 130 140",
+            "anglep 1 2 3 5 110",
+            "anglef 1 2 3 5 110 2",
+            "vdw 1 1.0 0.1 0.9 123",
+        ],
+    )
+    @pytest.mark.parametrize("header", ["", "# Q2MM\n# OPT Test\n"])
+    def test_rejects_malformed_or_unsupported_fields(self, tmp_path: Path, record: str, header: str) -> None:
+        source = tmp_path / "invalid.prm"
+        source.write_text(header + record + "\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="Tinker row"):
+            load_tinker_prm(source)
+
+    @pytest.mark.parametrize("destination", ["new", "existing", "source"])
+    @pytest.mark.parametrize(
+        "edit",
+        [
+            lambda ff: replace(ff, bonds=()),
+            lambda ff: replace(ff, bonds=(*ff.bonds, ff.bonds[0])),
+            lambda ff: replace(ff, bonds=(replace(ff.bonds[0], ff_row=999),)),
+            lambda ff: replace(ff, bonds=(replace(ff.bonds[0], elements=("C", "F")),)),
+            lambda ff: replace(ff, bonds=(replace(ff.bonds[0], force_constant=float("nan")),)),
+            lambda ff: replace(ff, angles=(replace(ff.angles[0], ub_force_constant=1.0),)),
+            lambda ff: replace(ff, torsions=(replace(ff.torsions[0], periodicity=5), *ff.torsions[1:])),
+            lambda ff: replace(ff, torsions=(replace(ff.torsions[0], is_improper=True), *ff.torsions[1:])),
+            lambda ff: replace(ff, torsions=(replace(ff.torsions[0], phase=float("inf")), *ff.torsions[1:])),
+            lambda ff: replace(ff, torsions=(replace(ff.torsions[0], force_constant=1e308), *ff.torsions[1:])),
+            lambda ff: replace(ff, vdws=(replace(ff.vdws[0], reduction=float("nan")),)),
+            lambda ff: replace(ff, stretch_bends=(StretchBendParam(("H", "C", "H"), 1.0),)),
+            lambda ff: replace(ff, nonbonded_excluded_atom_types=("1",)),
+        ],
+    )
+    def test_rejected_edits_never_touch_output(
+        self, source: Path, tmp_path: Path, destination: str, edit: Callable[[ForceField], ForceField]
+    ) -> None:
+        ff = edit(load_tinker_prm(source))
+        output = source if destination == "source" else tmp_path / f"{destination}.prm"
+        if destination == "existing":
+            output.write_bytes(b"keep me")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="Tinker"):
+            save_tinker_prm(ff, output)
+        if before is None:
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    def test_duplicate_environments_use_exact_rows(self, source: Path, tmp_path: Path) -> None:
+        with source.open("a", encoding="utf-8") as f:
+            f.write("bond 1 2 7.0 1.4\n")
+        ff = load_tinker_prm(source)
+        edited = replace(ff, bonds=tuple(replace(b, equilibrium=1.2 + i) for i, b in enumerate(ff.bonds)))
+        output = tmp_path / "duplicates.prm"
+        save_tinker_prm(replace(edited, bonds=tuple(reversed(edited.bonds))), output)
+        assert [b.equilibrium for b in load_tinker_prm(output).bonds] == pytest.approx([1.2, 2.2])
+        ambiguous = replace(ff, bonds=tuple(replace(b, ff_row=None) for b in ff.bonds))
+        with pytest.raises(ValueError, match="ambiguous source-row"):
+            save_tinker_prm(ambiguous, output)
+
+    def test_unique_environment_fallback(self, source: Path, tmp_path: Path) -> None:
+        ff = load_tinker_prm(source)
+        edited = replace(ff, bonds=(replace(ff.bonds[0], ff_row=None, equilibrium=1.25),))
+        output = tmp_path / "fallback.prm"
+        save_tinker_prm(edited, output)
+        assert load_tinker_prm(output).bonds[0].equilibrium == 1.25
+
+    def test_duplicate_torsion_rows_keep_fold_identity(self, tmp_path: Path) -> None:
+        source = tmp_path / "torsions.prm"
+        source.write_text(
+            "torsion 1 2 3 4 1 30 4 2 60 2\ntorsion 1 2 3 4 3 45 2 4 90 4\n",
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        edited = replace(
+            ff, torsions=tuple(replace(t, force_constant=t.force_constant + 10) for t in reversed(ff.torsions))
+        )
+        output = tmp_path / "torsions-out.prm"
+        save_tinker_prm(edited, output)
+        actual = load_tinker_prm(output)
+        assert [(t.ff_row, t.periodicity, t.force_constant, t.phase) for t in actual.torsions] == [
+            (1, 4, 11.0, 30.0),
+            (1, 2, 12.0, 60.0),
+            (2, 2, 13.0, 45.0),
+            (2, 4, 14.0, 90.0),
+        ]
+
+    def test_unrepresentable_scaled_edit_does_not_replace_output(self, tmp_path: Path) -> None:
+        source = tmp_path / "scaled.prm"
+        source.write_text("torsionunit 1e300\ntorsion 1 2 3 4 1e-300 0 1\n", encoding="utf-8")
+        ff = load_tinker_prm(source)
+        edited = replace(ff, torsions=(replace(ff.torsions[0], force_constant=1e-300),))
+        expected = source.read_bytes()
+        with pytest.raises(ValueError, match="underflow"):
+            save_tinker_prm(edited, source)
+        assert source.read_bytes() == expected
+
+    def test_marked_save_leaves_unselected_rows_untouched(self, tmp_path: Path) -> None:
+        source = tmp_path / "marked.prm"
+        source.write_text(
+            "vdw 1 9.9 8.8\nbond 1 2 5.0 1.2\n# Q2MM\n# OPT Test\n"
+            "vdw 1 1.0 0.2\nbond 1 2 6.0 1.3\n# Fixed\nbond 1 2 7.0 1.4\n",
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        assert len(ff.bonds) == len(ff.vdws) == 1
+        edited = replace(ff, vdws=(replace(ff.vdws[0], epsilon=0.3),), bonds=(replace(ff.bonds[0], equilibrium=1.5),))
+        output = tmp_path / "marked-out.prm"
+        save_tinker_prm(edited, output)
+        assert output.read_text() == source.read_text().replace("vdw 1 1.0 0.2", "vdw 1 1.0 0.3").replace(
+            "bond 1 2 6.0 1.3", "bond 1 2 6.0 1.5"
+        )
+
+    def test_torsions_require_template_for_standalone_save(self, source: Path, tmp_path: Path) -> None:
+        ff = replace(load_tinker_prm(source), source_path=None)
+        output = tmp_path / "standalone.prm"
+        with pytest.raises(ValueError, match="torsion export requires a source template"):
+            save_tinker_prm(ff, output)
+        assert not output.exists()
 
 
 class TestBondOrderParsing:
