@@ -21,6 +21,7 @@ needed at the engine boundary.
 from __future__ import annotations
 
 import functools
+import hashlib
 import logging
 import math
 from collections.abc import Callable, Sequence
@@ -28,6 +29,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 import numpy as np
+
+from q2mm._canonical import canonical_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -784,6 +787,8 @@ class _JaxState:
     dipole_pair_indices: np.ndarray = field(default_factory=lambda: np.empty((0, 2), dtype=np.int32))
     # Functional form used to compile the energy function
     functional_form: str = "harmonic"
+    # Content identity of the inputs captured by the compiled energy kernel.
+    _kernel_signature: str | None = field(default=None, repr=False)
     # Compiled energy function (captures topology, JIT-compiled)
     _energy_fn: Callable | None = field(default=None, repr=False)
     _grad_fn: Callable | None = field(default=None, repr=False)
@@ -1414,20 +1419,20 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
     """
     use_mm3 = state.functional_form == "mm3"
 
-    # Capture topology as JAX arrays in the closure
+    # Keep captured inputs on the host until their content identity is complete.
     has_bonds = state.n_bond_types > 0 and len(state.bond_indices) > 0
     has_angles = state.n_angle_types > 0 and len(state.angle_indices) > 0
     has_torsions = state.n_torsion_types > 0 and len(state.torsion_indices) > 0
     has_vdw = state.n_vdw_types > 0 and len(state.vdw_pair_indices) > 0
 
-    _bond_indices = jnp.array(state.bond_indices) if has_bonds else None
-    _bond_map = jnp.array(state.bond_param_map) if has_bonds else None
-    _angle_indices = jnp.array(state.angle_indices) if has_angles else None
-    _angle_map = jnp.array(state.angle_param_map) if has_angles else None
-    _torsion_indices = jnp.array(state.torsion_indices) if has_torsions else None
-    _torsion_map = jnp.array(state.torsion_param_map) if has_torsions else None
-    _vdw_pairs = jnp.array(state.vdw_pair_indices) if has_vdw else None
-    _atom_vdw_map = jnp.array(state.atom_vdw_map) if has_vdw else None
+    _bond_indices = state.bond_indices if has_bonds else None
+    _bond_map = state.bond_param_map if has_bonds else None
+    _angle_indices = state.angle_indices if has_angles else None
+    _angle_map = state.angle_param_map if has_angles else None
+    _torsion_indices = state.torsion_indices if has_torsions else None
+    _torsion_map = state.torsion_param_map if has_torsions else None
+    _vdw_pairs = state.vdw_pair_indices if has_vdw else None
+    _atom_vdw_map = state.atom_vdw_map if has_vdw else None
 
     # Capture torsion periodicity/phase as static arrays (not optimized)
     if has_torsions:
@@ -1437,8 +1442,8 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
             tp = forcefield.torsions[ff_idx]
             per_term_n.append(float(tp.periodicity))
             per_term_gamma.append(math.radians(tp.phase))
-        _torsion_n = jnp.array(per_term_n)
-        _torsion_gamma = jnp.array(per_term_gamma)
+        _torsion_n = np.array(per_term_n, dtype=np.float64)
+        _torsion_gamma = np.array(per_term_gamma, dtype=np.float64)
     else:
         _torsion_n = None
         _torsion_gamma = None
@@ -1453,7 +1458,8 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
     # Param vector offsets
     from q2mm.models.parameters import ParameterLayout
 
-    _offsets = layout_block_offsets(ParameterLayout.from_force_field(forcefield))
+    layout = ParameterLayout.from_force_field(forcefield)
+    _offsets = layout_block_offsets(layout)
     bond_offset = _offsets["bond"]
     angle_offset = _offsets["angle"]
     torsion_offset = _offsets["torsion"]
@@ -1463,25 +1469,94 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
 
     # Urey-Bradley topology
     has_ub = n_ubt > 0 and len(state.ub_indices) > 0
-    _ub_indices = jnp.array(state.ub_indices) if has_ub else None
-    _ub_map = jnp.array(state.ub_param_map) if has_ub else None
+    _ub_indices = state.ub_indices if has_ub else None
+    _ub_map = state.ub_param_map if has_ub else None
 
     # Stretch-bend topology
     has_sb = n_sbt > 0 and len(state.sb_angle_indices) > 0
-    _sb_angle_indices = jnp.array(state.sb_angle_indices) if has_sb else None
-    _sb_map = jnp.array(state.sb_param_map) if has_sb else None
+    _sb_angle_indices = state.sb_angle_indices if has_sb else None
+    _sb_map = state.sb_param_map if has_sb else None
     # Indices into the bond/angle param blocks — used at runtime to gather
     # equilibrium values from the param vector (not frozen constants).
-    _sb_bond_ij_idx = jnp.array(state.sb_bond_ij_idx) if has_sb else None
-    _sb_bond_jk_idx = jnp.array(state.sb_bond_jk_idx) if has_sb else None
-    _sb_angle_idx = jnp.array(state.sb_angle_idx) if has_sb else None
+    _sb_bond_ij_idx = state.sb_bond_ij_idx if has_sb else None
+    _sb_bond_jk_idx = state.sb_bond_jk_idx if has_sb else None
+    _sb_angle_idx = state.sb_angle_idx if has_sb else None
     sb_offset = _offsets["sb"]
 
     # Bond-dipole electrostatics (frozen — not in the param vector)
     has_dipoles = len(state.dipole_pair_indices) > 0
-    _dipole_moments = jnp.array(state.dipole_moments) if has_dipoles else None
-    _dipole_bond_indices = jnp.array(state.dipole_bond_indices) if has_dipoles else None
-    _dipole_pair_indices = jnp.array(state.dipole_pair_indices) if has_dipoles else None
+    _dipole_moments = state.dipole_moments if has_dipoles else None
+    _dipole_bond_indices = state.dipole_bond_indices if has_dipoles else None
+    _dipole_pair_indices = state.dipole_pair_indices if has_dipoles else None
+
+    # Hash the actual captured inputs, including FF-derived constants absent
+    # from _JaxState. Preserve array order: row i and map i belong together.
+    # Per-array digests bound the JSON payload without reading back device data.
+    # Coordinates and runtime parameter values are deliberately not included.
+    state._kernel_signature = canonical_fingerprint(
+        {
+            "n_atoms": len(state.molecule.symbols),
+            "layout": layout.fingerprint,
+            "n_params": len(layout),
+            "offsets": _offsets,
+            "counts": [n_bt, n_at, n_tt, n_vt, n_ubt, n_sbt],
+            "flags": [use_mm3, has_bonds, has_angles, has_torsions, has_vdw, has_ub, has_sb, has_dipoles],
+            "arrays": {
+                name: (
+                    None
+                    if array is None
+                    else {
+                        "shape": array.shape,
+                        "dtype": array.dtype.str,
+                        "sha256": hashlib.sha256(array.tobytes(order="C")).hexdigest(),
+                    }
+                )
+                for name, array in (
+                    ("bond_indices", _bond_indices),
+                    ("bond_param_map", _bond_map),
+                    ("angle_indices", _angle_indices),
+                    ("angle_param_map", _angle_map),
+                    ("torsion_indices", _torsion_indices),
+                    ("torsion_param_map", _torsion_map),
+                    ("torsion_periodicity", _torsion_n),
+                    ("torsion_phase", _torsion_gamma),
+                    ("vdw_pair_indices", _vdw_pairs),
+                    ("atom_vdw_map", _atom_vdw_map),
+                    ("ub_indices", _ub_indices),
+                    ("ub_param_map", _ub_map),
+                    ("sb_angle_indices", _sb_angle_indices),
+                    ("sb_param_map", _sb_map),
+                    ("sb_bond_ij_idx", _sb_bond_ij_idx),
+                    ("sb_bond_jk_idx", _sb_bond_jk_idx),
+                    ("sb_angle_idx", _sb_angle_idx),
+                    ("dipole_moments", _dipole_moments),
+                    ("dipole_bond_indices", _dipole_bond_indices),
+                    ("dipole_pair_indices", _dipole_pair_indices),
+                )
+            },
+        }
+    )
+
+    _bond_indices = jnp.array(_bond_indices) if has_bonds else None
+    _bond_map = jnp.array(_bond_map) if has_bonds else None
+    _angle_indices = jnp.array(_angle_indices) if has_angles else None
+    _angle_map = jnp.array(_angle_map) if has_angles else None
+    _torsion_indices = jnp.array(_torsion_indices) if has_torsions else None
+    _torsion_map = jnp.array(_torsion_map) if has_torsions else None
+    _torsion_n = jnp.array(_torsion_n) if has_torsions else None
+    _torsion_gamma = jnp.array(_torsion_gamma) if has_torsions else None
+    _vdw_pairs = jnp.array(_vdw_pairs) if has_vdw else None
+    _atom_vdw_map = jnp.array(_atom_vdw_map) if has_vdw else None
+    _ub_indices = jnp.array(_ub_indices) if has_ub else None
+    _ub_map = jnp.array(_ub_map) if has_ub else None
+    _sb_angle_indices = jnp.array(_sb_angle_indices) if has_sb else None
+    _sb_map = jnp.array(_sb_map) if has_sb else None
+    _sb_bond_ij_idx = jnp.array(_sb_bond_ij_idx) if has_sb else None
+    _sb_bond_jk_idx = jnp.array(_sb_bond_jk_idx) if has_sb else None
+    _sb_angle_idx = jnp.array(_sb_angle_idx) if has_sb else None
+    _dipole_moments = jnp.array(_dipole_moments) if has_dipoles else None
+    _dipole_bond_indices = jnp.array(_dipole_bond_indices) if has_dipoles else None
+    _dipole_pair_indices = jnp.array(_dipole_pair_indices) if has_dipoles else None
 
     if use_mm3:
 

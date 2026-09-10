@@ -17,9 +17,14 @@ from q2mm.backends.registry import load_backend
 from test.backend_fixtures import mock_backend_info, param_vector, prepare_case
 
 import importlib.util
+from dataclasses import replace
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
+
+if TYPE_CHECKING:
+    from q2mm.backends.mm.jax_engine import PreparedJax
 
 
 _HAS_JAX = importlib.util.find_spec("jax") is not None
@@ -28,7 +33,16 @@ pytestmark = [pytest.mark.skipif(not _HAS_JAX, reason="JAX not installed"), pyte
 
 from test._shared import make_diatomic, make_water
 
-from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm
+from q2mm.models.forcefield import (
+    AngleParam,
+    BondParam,
+    ForceField,
+    FunctionalForm,
+    StretchBendParam,
+    TorsionParam,
+    VdwParam,
+)
+from q2mm.models.molecule import Angle, Bond, Molecule, Torsion
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.problem import StationaryPointKind
 from q2mm.objectives.plan import ObjectivePlan
@@ -219,6 +233,425 @@ class TestIncompatibleBatch:
 
         with pytest.raises(EvaluationError):
             PreparedJaxBatch([object()])  # type: ignore[list-item]
+
+
+def _assert_separated(sessions: list[PreparedJax]) -> None:
+    """Both batch entry points must agree on static incompatibility."""
+    from q2mm.backends.contracts import EvaluationError
+    from q2mm.backends.mm.batched import PreparedJaxBatch, group_by_topology
+
+    with pytest.raises(EvaluationError, match="signature|layout|functional form|atom count"):
+        PreparedJaxBatch(sessions)
+    assert [batch.case_ids for batch in group_by_topology(sessions)] == [(s.case_id,) for s in sessions]
+
+
+def _assert_batch_parity(sessions: list[PreparedJax], parameters: np.ndarray) -> list[np.ndarray]:
+    """Compare complete Hessians through public batch preparation in case order."""
+    from q2mm.backends.contracts import BatchedHessianRequest
+
+    backend = load_backend("jax")
+    batches = backend.prepare_hessian_batches(sessions)
+    expected = {s.case_id: s.hessian(HessianRequest(parameters=parameters)).hessian for s in sessions}
+    for batch in batches:
+        result = batch.hessians(BatchedHessianRequest(parameters=parameters))
+        assert result.case_ids == batch.case_ids
+        for case_id, hessian in zip(result.case_ids, result.hessians, strict=True):
+            assert np.all(np.isfinite(hessian))
+            np.testing.assert_allclose(hessian, expected[case_id], rtol=1e-10, atol=1e-14)
+    return [expected[s.case_id] for s in sessions]
+
+
+class TestStaticKernelIdentity:
+    """Real prepared-session regressions for previously omitted kernel inputs."""
+
+    def test_mixed_vdw_assignments_and_coordinate_only_conformers(self) -> None:
+        """He2 and Ne2 separate, while each species' conformers remain batched."""
+        from q2mm.backends.mm.batched import PreparedJaxBatch
+
+        backend = load_backend("jax")
+        ff = ForceField(
+            functional_form=FunctionalForm.HARMONIC,
+            vdws=(VdwParam("He", 1.0, 0.1), VdwParam("Ne", 2.0, 0.4)),
+        )
+        cases = [("he-4", "He", 4.0), ("ne-4", "Ne", 4.0), ("he-5", "He", 5.0), ("ne-5", "Ne", 5.0)]
+        sessions = [
+            prepare_case(
+                backend,
+                Molecule(symbols=(symbol, symbol), geometry=np.array([[0, 0, 0], [r, 0, 0]]), bonds=()),
+                ff,
+                case_id,
+            )
+            for case_id, symbol, r in cases
+        ]
+        _assert_separated(sessions[:2])
+        assert [b.case_ids for b in backend.prepare_hessian_batches(sessions)] == [
+            ("he-4", "he-5"),
+            ("ne-4", "ne-5"),
+        ]
+        hessians = _assert_batch_parity(sessions, _params(ff))
+        assert hessians[0][0, 0] == pytest.approx(-3.5544506718907868e-6)
+        assert hessians[1][0, 0] == pytest.approx(8.032568249414983e-4)
+        assert not np.allclose(hessians[0], hessians[2])
+
+        # Every full-vector slot is dynamic, including rows unused by a case.
+        changed = _params(ff) * np.array([1.1, 1.2, 0.9, 0.8])
+        updated = _assert_batch_parity(sessions, changed)
+        assert all(not np.allclose(a, b) for a, b in zip(hessians, updated, strict=True))
+        assert PreparedJaxBatch([sessions[2], sessions[0]]).case_ids == ("he-5", "he-4")
+        _assert_batch_parity(list(reversed(sessions)), changed)
+
+    def test_ordered_connectivity_keeps_parameter_associations(self) -> None:
+        """Sorting connectivity separately from maps aliases distinct bond kernels."""
+        backend = load_backend("jax")
+        ff = ForceField(
+            functional_form=FunctionalForm.HARMONIC,
+            bonds=(BondParam(("C", "H"), 1.0, 5.0), BondParam(("H", "N"), 1.0, 10.0)),
+        )
+        xyz = np.array([[0, 0, 0], [1.1, 0, 0], [4, 0, 0], [5.2, 0, 0]])
+        a = Molecule(
+            symbols=("C", "H", "N", "H"),
+            geometry=xyz,
+            bonds=(Bond(0, 1, ("C", "H"), 1.1), Bond(2, 3, ("N", "H"), 1.2)),
+        )
+        b = Molecule(
+            symbols=("N", "H", "C", "H"),
+            geometry=xyz,
+            bonds=(Bond(2, 3, ("C", "H"), 1.2), Bond(0, 1, ("N", "H"), 1.1)),
+        )
+        sessions = [prepare_case(backend, mol, ff, case_id) for mol, case_id in [(a, "a"), (b, "b")]]
+        sa, sb = (s._state for s in sessions)
+        assert sorted(map(tuple, sa.bond_indices)) == sorted(map(tuple, sb.bond_indices))
+        np.testing.assert_array_equal(sa.bond_param_map, sb.bond_param_map)
+        _assert_separated(sessions)
+        ha, hb = _assert_batch_parity(sessions, _params(ff))
+        assert ha[0, 0] == pytest.approx(hb[0, 0] / 2)
+        assert not np.allclose(ha, hb)
+
+    @pytest.mark.parametrize("field,value", [("phase", 70.0), ("periodicity", 3)])
+    def test_fixed_torsion_coefficients(self, field: str, value: float) -> None:
+        """Fixed Fourier data must not be inferred solely from layout identity."""
+        backend = load_backend("jax")
+        mol = Molecule(
+            symbols=("C",) * 4,
+            geometry=np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [2, 1, 1]]),
+            bonds=(),
+            angles=(),
+            torsions=(Torsion(0, 1, 2, 3, ("C",) * 4, 45.0),),
+        )
+        term = TorsionParam(("C",) * 4, periodicity=1, force_constant=2.0, phase=25.0)
+        ff = ForceField(functional_form=FunctionalForm.HARMONIC, torsions=(term,))
+        changed_ff = replace(ff, torsions=(replace(term, **{field: value}),))
+        sessions = [prepare_case(backend, mol, f, cid) for f, cid in [(ff, "a"), (changed_ff, "b")]]
+        if field == "phase":
+            assert sessions[0].layout.fingerprint == sessions[1].layout.fingerprint
+        _assert_separated(sessions)
+        ha, hb = _assert_batch_parity(sessions, _params(ff))
+        assert not np.allclose(ha, hb)
+
+    @pytest.mark.parametrize("moment", [0.0, -1.0, 2.0])
+    def test_fixed_dipole_moments(self, moment: float) -> None:
+        """Dipole activation, sign, and magnitude are outside the full vector."""
+        backend = load_backend("jax")
+        mol = Molecule(
+            symbols=("C", "H", "C", "H"),
+            geometry=np.array([[0, 0, 0], [1, 0, 0], [3, 0, 0], [4, 0, 0]]),
+            bonds=(Bond(0, 1, ("C", "H"), 1.0, ff_row=1), Bond(2, 3, ("C", "H"), 1.0, ff_row=2)),
+        )
+        bond = BondParam(("C", "H"), 1.0, 5.0, dipole_moment=1.0, ff_row=1)
+        ff = ForceField(functional_form=FunctionalForm.MM3, bonds=(bond, replace(bond, ff_row=2)))
+        changed_ff = replace(ff, bonds=(replace(bond, dipole_moment=moment), ff.bonds[1]))
+        sessions = [prepare_case(backend, mol, f, cid) for f, cid in [(ff, "a"), (changed_ff, "b")]]
+        assert sessions[0].layout.fingerprint == sessions[1].layout.fingerprint
+        _assert_separated(sessions)
+        ha, hb = _assert_batch_parity(sessions, _params(ff))
+        assert not np.allclose(ha, hb)
+
+    def test_equal_length_layouts_with_different_row_meaning_separate(self) -> None:
+        """Identical used mappings cannot hide reordered unused full-vector rows."""
+        backend = load_backend("jax")
+        ff = replace(
+            _h2_ff(),
+            bonds=(*_h2_ff().bonds, BondParam(("C", "C"), 1.5, 3.0), BondParam(("N", "N"), 1.4, 4.0)),
+        )
+        reordered = replace(ff, bonds=(ff.bonds[0], ff.bonds[2], ff.bonds[1]))
+        sessions = [prepare_case(backend, make_diatomic(), f, cid) for f, cid in [(ff, "a"), (reordered, "b")]]
+        assert len(sessions[0].layout) == len(sessions[1].layout)
+        np.testing.assert_array_equal(sessions[0]._state.bond_param_map, sessions[1]._state.bond_param_map)
+        _assert_separated(sessions)
+
+    def test_runtime_parameter_values_and_compiled_caches_do_not_split(self) -> None:
+        """Fresh equivalent FFs and different values retain one content identity."""
+        from q2mm.backends.contracts import BatchedHessianRequest
+        from q2mm.backends.mm.batched import PreparedJaxBatch, _topology_signature
+
+        backend = load_backend("jax")
+        ff = _water_ff()
+        changed = _layout(ff).replace(ff, _params(ff) * np.array([1.2, 1.05, 0.8, 0.95]))
+        a = prepare_case(backend, make_water(angle_deg=100.0), ff, "a")
+        b = prepare_case(backend, make_water(angle_deg=110.0), changed, "b")
+        assert a._state is not b._state
+        assert a._state._energy_fn is not b._state._energy_fn
+        before = _topology_signature(a._state)
+        batch = PreparedJaxBatch([b, a])
+        for parameters in [_params(ff), _params(changed)]:
+            batch.hessians(BatchedHessianRequest(parameters=parameters))
+            _assert_batch_parity([b, a], parameters)
+        assert _topology_signature(a._state) == _topology_signature(b._state) == before
+
+    def test_all_parameter_blocks_remain_dynamic(self, all_terms_case: tuple[PreparedJax, ForceField]) -> None:
+        """Exercise offsets and every full-vector block through a real vmap batch."""
+        backend = load_backend("jax")
+        a, ff = all_terms_case
+        geometry = a.molecule.geometry.copy()
+        geometry[-1] += [0.1, 0.2, -0.1]
+        b = prepare_case(backend, replace(a.molecule, geometry=geometry), ff, "conformer")
+        assert [batch.case_ids for batch in backend.prepare_hessian_batches([b, a])] == [("conformer", "original")]
+        baseline = _assert_batch_parity([b, a], _params(ff))
+        layout = _layout(ff)
+        for indices in layout.indices_by_kind.values():
+            parameters = _params(ff)
+            parameters[list(indices)] *= 1.05
+            updated = _assert_batch_parity([b, a], parameters)
+            assert all(not np.allclose(old, new) for old, new in zip(baseline, updated, strict=True))
+
+    def test_functional_form_separates(self) -> None:
+        backend = load_backend("jax")
+        ff = _h2_ff()
+        harmonic = replace(ff, functional_form=FunctionalForm.HARMONIC)
+        sessions = [
+            prepare_case(backend, make_diatomic(distance=0.9), f, cid)
+            for f, cid in [(ff, "mm3"), (harmonic, "harmonic")]
+        ]
+        _assert_separated(sessions)
+        ha, hb = _assert_batch_parity(sessions, _params(ff))
+        assert not np.allclose(ha, hb)
+
+
+@pytest.fixture
+def all_terms_case() -> tuple[PreparedJax, ForceField]:
+    """Prepare a valid tiny case with every captured array nonempty."""
+    backend = load_backend("jax")
+    mol = Molecule(
+        symbols=("C",) * 4,
+        geometry=np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [2, 1, 1]]),
+        bonds=tuple(Bond(i, i + 1, ("C", "C"), 1.0) for i in range(3)),
+        angles=tuple(Angle(i, i + 1, i + 2, ("C",) * 3, 90.0) for i in range(2)),
+        torsions=(Torsion(0, 1, 2, 3, ("C",) * 4, 45.0),),
+    )
+    ff = ForceField(
+        functional_form=FunctionalForm.MM3,
+        bonds=(BondParam(("C", "C"), 1.0, 5.0, dipole_moment=1.0), BondParam(("C", "H"), 1.1, 6.0)),
+        angles=tuple(
+            AngleParam(elements, 100.0, 0.7, ub_force_constant=2.0, ub_equilibrium=1.5)
+            for elements in [("C", "C", "C"), ("C", "C", "H")]
+        ),
+        torsions=tuple(TorsionParam(("C",) * 4, periodicity=n, force_constant=0.5, phase=25.0) for n in [1, 2]),
+        stretch_bends=(StretchBendParam(("C",) * 3, 0.3), StretchBendParam(("C", "C", "H"), 0.4)),
+        vdws=(VdwParam("C", 1.0, 0.1), VdwParam("H", 0.8, 0.2)),
+    )
+    return prepare_case(backend, mol, ff, "original"), ff
+
+
+class TestCapturedKernelMetadata:
+    """Compiler-level coverage, not domain-valid energy proofs for mutated state."""
+
+    @pytest.mark.parametrize("active_terms", ["all", "bonds", "none"])
+    def test_signature_is_host_only_before_device_uploads(
+        self,
+        all_terms_case: tuple[PreparedJax, ForceField],
+        monkeypatch: pytest.MonkeyPatch,
+        active_terms: str,
+    ) -> None:
+        from types import SimpleNamespace
+
+        from q2mm.backends.mm import jax_engine
+
+        original, ff = all_terms_case
+        if active_terms != "all":
+            ff = _h2_ff() if active_terms == "bonds" else ForceField(functional_form=FunctionalForm.HARMONIC)
+            original = prepare_case(load_backend("jax"), make_diatomic(), ff, "small")
+        state = replace(original._state, _kernel_signature=None)
+        uploads: list[np.ndarray] = []
+
+        class DeviceArray:
+            def __array__(self, *args: object, **kwargs: object) -> np.ndarray:
+                pytest.fail("Kernel identity must not read device arrays back to the host")
+
+        def upload(array: np.ndarray) -> DeviceArray:
+            assert state._kernel_signature is not None, "Fingerprint must precede every device upload"
+            assert isinstance(array, np.ndarray), "Upload the same host arrays used for fingerprinting"
+            uploads.append(array)
+            return DeviceArray()
+
+        monkeypatch.setattr(jax_engine, "jnp", SimpleNamespace(array=upload))
+        monkeypatch.setattr(jax_engine, "jax", SimpleNamespace(jit=lambda fn: fn))
+        jax_engine._compile_energy_fn(state, ff)
+        assert state._kernel_signature == original._state._kernel_signature
+        assert len(uploads) == {"all": 20, "bonds": 2, "none": 0}[active_terms]
+        if active_terms == "all":
+            assert sum(array.dtype == np.float64 for array in uploads) == 3
+
+    def test_array_digests_bound_payload_and_preserve_content(
+        self, all_terms_case: tuple[PreparedJax, ForceField], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import hashlib
+        from unittest.mock import Mock
+
+        from q2mm._canonical import canonical_json
+        from q2mm.backends.mm import jax_engine
+
+        original, ff = all_terms_case
+        fingerprint = Mock(wraps=jax_engine.canonical_fingerprint)
+        monkeypatch.setattr(jax_engine, "canonical_fingerprint", fingerprint)
+
+        def compile_payload(array: np.ndarray) -> tuple[str, dict]:
+            state = replace(original._state, bond_indices=array, _kernel_signature=None)
+            jax_engine._compile_energy_fn(state, ff)
+            payload = fingerprint.call_args.args[0]
+            assert state._kernel_signature is not None
+            return state._kernel_signature, payload["arrays"]
+
+        small = np.tile(original._state.bond_indices, (10, 1))
+        large = np.tile(original._state.bond_indices, (10000, 1))
+        _, small_payload = compile_payload(small)
+        signature, large_payload = compile_payload(large)
+        expected = {
+            field: getattr(original._state, field)
+            for field in (
+                "bond_param_map",
+                "angle_indices",
+                "angle_param_map",
+                "torsion_indices",
+                "torsion_param_map",
+                "vdw_pair_indices",
+                "atom_vdw_map",
+                "ub_indices",
+                "ub_param_map",
+                "sb_angle_indices",
+                "sb_param_map",
+                "sb_bond_ij_idx",
+                "sb_bond_jk_idx",
+                "sb_angle_idx",
+                "dipole_moments",
+                "dipole_bond_indices",
+                "dipole_pair_indices",
+            )
+        }
+        expected["bond_indices"] = large
+        expected["torsion_periodicity"] = np.array(
+            [float(ff.torsions[i].periodicity) for i in original._state.torsion_param_map]
+        )
+        expected["torsion_phase"] = np.array(
+            [np.deg2rad(ff.torsions[i].phase) for i in original._state.torsion_param_map]
+        )
+        assert large_payload.keys() == expected.keys()
+        for name, array in expected.items():
+            assert large_payload[name] == {
+                "shape": array.shape,
+                "dtype": array.dtype.str,
+                "sha256": hashlib.sha256(array.tobytes(order="C")).hexdigest(),
+            }
+        assert len(canonical_json(large_payload)) < 4096
+        assert abs(len(canonical_json(large_payload)) - len(canonical_json(small_payload))) <= 16
+
+        copied_signature, copied_payload = compile_payload(np.asfortranarray(large))
+        assert copied_signature == signature
+        assert copied_payload == large_payload
+        changed = large.copy()
+        changed[-1, -1] += 1
+        changed_signature, changed_payload = compile_payload(changed)
+        assert changed_signature != signature
+        assert changed_payload["bond_indices"]["sha256"] != large_payload["bond_indices"]["sha256"]
+        assert fingerprint.call_count == 4
+
+    @pytest.mark.parametrize(
+        "field",
+        [
+            "bond_indices",
+            "bond_param_map",
+            "angle_indices",
+            "angle_param_map",
+            "torsion_indices",
+            "torsion_param_map",
+            "vdw_pair_indices",
+            "atom_vdw_map",
+            "ub_indices",
+            "ub_param_map",
+            "sb_angle_indices",
+            "sb_param_map",
+            "sb_bond_ij_idx",
+            "sb_bond_jk_idx",
+            "sb_angle_idx",
+            "dipole_moments",
+            "dipole_bond_indices",
+            "dipole_pair_indices",
+        ],
+    )
+    def test_every_captured_array_separates(self, all_terms_case: tuple[PreparedJax, ForceField], field: str) -> None:
+        from q2mm.backends.mm.jax_engine import _compile_energy_fn
+
+        original, ff = all_terms_case
+        changed = prepare_case(load_backend("jax"), original.molecule, ff, "changed")
+        array = getattr(original._state, field).copy()
+        assert array.size > 0
+        array.flat[0] += 1
+        changed._state = replace(changed._state, **{field: array})
+        changed._state._energy_fn = _compile_energy_fn(changed._state, ff)
+        _assert_separated([original, changed])
+
+    @pytest.mark.parametrize(
+        "field",
+        ["n_bond_types", "n_angle_types", "n_torsion_types", "n_vdw_types", "n_ub_types", "n_sb_types"],
+    )
+    @pytest.mark.parametrize("count", [0, 3])
+    def test_block_counts_and_activation_separate(
+        self, all_terms_case: tuple[PreparedJax, ForceField], field: str, count: int
+    ) -> None:
+        from q2mm.backends.mm.jax_engine import _compile_energy_fn
+
+        original, ff = all_terms_case
+        changed = prepare_case(load_backend("jax"), original.molecule, ff, "changed")
+        changed._state = replace(changed._state, **{field: count})
+        changed._state._energy_fn = _compile_energy_fn(changed._state, ff)
+        _assert_separated([original, changed])
+
+    @pytest.mark.parametrize("change", ["shape", "dtype", "order"])
+    def test_array_representation_is_part_of_identity(
+        self, all_terms_case: tuple[PreparedJax, ForceField], change: str
+    ) -> None:
+        from q2mm.backends.mm.jax_engine import _compile_energy_fn
+
+        original, ff = all_terms_case
+        changed = prepare_case(load_backend("jax"), original.molecule, ff, "changed")
+        array = original._state.bond_indices
+        variants = {"shape": array.reshape(-1), "dtype": array.astype(np.int64), "order": array[::-1]}
+        changed._state = replace(changed._state, bond_indices=variants[change])
+        changed._state._energy_fn = _compile_energy_fn(changed._state, ff)
+        _assert_separated([original, changed])
+
+    def test_storage_layout_does_not_change_content_identity(
+        self, all_terms_case: tuple[PreparedJax, ForceField]
+    ) -> None:
+        from q2mm.backends.mm.batched import PreparedJaxBatch
+        from q2mm.backends.mm.jax_engine import _compile_energy_fn
+
+        original, ff = all_terms_case
+        copied = prepare_case(load_backend("jax"), original.molecule, ff, "copied")
+        array = np.asfortranarray(original._state.bond_indices)
+        array.setflags(write=False)
+        copied._state = replace(copied._state, bond_indices=array)
+        copied._state._energy_fn = _compile_energy_fn(copied._state, ff)
+        assert PreparedJaxBatch([original, copied]).case_ids == ("original", "copied")
+
+    def test_missing_compiler_identity_rejected(self, all_terms_case: tuple[PreparedJax, ForceField]) -> None:
+        from q2mm.backends.contracts import EvaluationError
+        from q2mm.backends.mm.batched import PreparedJaxBatch, group_by_topology
+
+        session, _ = all_terms_case
+        session._state = replace(session._state, _kernel_signature=None)
+        for prepare in [PreparedJaxBatch, group_by_topology]:
+            with pytest.raises(EvaluationError, match="no compiled kernel signature"):
+                prepare([session])
 
 
 # ---------------------------------------------------------------------------
