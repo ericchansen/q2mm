@@ -103,6 +103,30 @@ multi = MultiStartOptimizer(
 result = multi.optimize(evaluator, plan.active_space)
 ```
 
+`MultiStartOptimizer` also accepts a `JaxOptOptimizer` inner solver when
+used with a `JaxObjectiveExecutor`. The supported `JaxMultiStartOptimizer`
+constructor is a small adapter to this same sequential implementation,
+not a second execution loop. It retains its 10-start default and
+`jaxopt-multi:<method>` result labels; direct generic composition retains
+the generic 5-start default and `multi-start(<inner method>)` labels.
+Neither path fuses all starts or molecules into one JAX program.
+
+`n_starts` includes the unchanged baseline as the first start. Remaining
+starts use seeded uniform perturbations of active parameters, with
+half-width `max(abs(initial_value) * perturbation_pct, 1e-6)`, then clip
+those generated active values to their bounds. The small absolute floor
+also applies when `perturbation_pct=0`. Frozen parameters remain at their
+baseline values.
+
+Every start retains a candidate record, including exceptions and
+nonconverged runs. Selection prefers the lowest-scoring converged
+candidate, or the best returned nonconverged candidate if none converged;
+ties keep the first candidate. If every inner solve raises, the result is
+an explicit failure with all candidate records. Evaluation counts cover
+the outer baseline evaluation and all starts; iteration counts and history
+come from the selected run, not a sum across runs. Selected stage, sample,
+and category metadata are retained.
+
 **Why this works:** The MM3 landscape has many local minima. Single-start
 L-BFGS-B gets trapped at 579 cm⁻¹ RMSD on CH₃F — a poor basin. Running
 10 starts from perturbed initial points finds basins that single-start
