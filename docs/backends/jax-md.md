@@ -73,12 +73,31 @@ backend = JaxMdBackend(
 | Prepared-session operation | Supported | Notes |
 |--------|:---------:|-------|
 | `energy(EnergyRequest)` | ✅ | — |
-| `minimize(MinimizationRequest)` | ✅ | JAX gradients + SciPy L-BFGS-B |
+| `minimize(MinimizationRequest)` | ✅ | JAX gradients + SciPy L-BFGS-B; [control limits](#minimization-controls) |
 | `hessian(HessianRequest)` | ✅ | **Analytical** via `jax.hessian` |
 | `frequencies(FrequencyRequest)` | ✅ | From analytical Hessian |
 | `parameter_gradient(ParameterGradientRequest)` | ✅ | **Analytical** via `jax.grad` |
 | `batched_energy(BatchedEnergyRequest)` | ✅ | **Vectorized** via `jax.vmap` |
 | `Capability.REUSABLE_STATE` | ✅ | Prepared session reuses compiled JAX functions |
+
+### Minimization controls
+
+Omit `MinimizationRequest.tolerance` (or use `None`) to retain the native
+SciPy stopping defaults. Any explicit value raises `EvaluationError`
+before the native minimizer is invoked; it is not silently ignored.
+
+The existing helper passes only `maxiter` to SciPy L-BFGS-B, with no `tol`,
+`ftol`, or `gtol` override. SciPy has distinct [function-reduction and
+projected-gradient criteria](https://docs.scipy.org/doc/scipy/reference/optimize.minimize-lbfgsb.html);
+this adapter has no established mapping of the generic request's native-unit
+tolerance to one of them. Rejecting the option avoids inventing that mapping.
+
+`max_iterations=None` retains the existing 200-iteration limit, and an
+explicit supported iteration limit is forwarded unchanged. No energy or
+solver implementation, native stopping default, or result field changes.
+This control-support boundary does not establish convergence validity:
+finite returned coordinates are not new convergence evidence, and
+GEO-01c/D-06 remain separate.
 
 !!! tip "Optax and JaxOpt optimizers"
     JaxMdBackend exposes analytical parameter gradients through
