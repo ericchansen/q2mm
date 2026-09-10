@@ -503,7 +503,7 @@ def _stationary_point_observations(
             "rtol": _HESSIAN_SYMMETRY_RTOL,
         },
         "selection": "smallest-absolute-eigenvalue-count",
-        "reaction_mask": "excluded-row-and-column",
+        "reaction_mask": "excluded-row-and-column" if skip_first else "none",
         "linearity": recipe.linearity,
         "linearity_tolerance": recipe.linearity_tolerance,
         "weights": {**weights, "eigenvalue_threshold": eigenvalue_threshold},

@@ -430,6 +430,7 @@ def test_ground_state_keeps_all_physical_modes(molecule: Molecule, rigid: int, r
     assert len(details["retained_mode_indices"]) == retained
     assert details["reaction_mode_index"] is None
     assert details["diagnostics"] == ()
+    assert problem.preparation_provenance.observation_recipe["reaction_mask"] == "none"
     assert problem.preparation_provenance.observation_recipe["reference_hessian"] == "unmodified"
 
 
@@ -491,6 +492,7 @@ def test_ts_masks_reaction_row_and_column_without_modifying_reference(molecule: 
     problem = _generic_problem(molecule, point="transition_state")
     details = problem.preparation_provenance.observation_recipe["cases"][0]
     excluded = set(details["excluded_mode_indices"])
+    assert problem.preparation_provenance.observation_recipe["reaction_mask"] == "excluded-row-and-column"
     assert details["reaction_mode_index"] == 0
     assert len(excluded) == details["n_rigid_modes"] + 1
     assert details["diagnostics"] == ()
@@ -738,6 +740,7 @@ def test_saved_run_retains_generic_profile_masks_and_diagnostics(tmp_path: Path,
     assert preparation["profile"] == "stationary-point-geometry-eigenmatrix-v1"
     recipe = preparation["observation_recipe"]
     assert recipe["name"] == "StationaryPointObservations"
+    assert recipe["reaction_mask"] == "none"
     assert recipe["hessian_symmetry"] == {"norm": "frobenius", "atol": 1e-12, "rtol": 1e-8}
     assert recipe["linearity_tolerance"] == 1e-8
     assert recipe["cases"][0]["n_rigid_modes"] == 6

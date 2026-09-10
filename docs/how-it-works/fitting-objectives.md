@@ -49,7 +49,7 @@ flowchart TD
     New --> Problem["Immutable fitting problem"]
     Frozen --> Problem
     Problem --> Run["Evaluate or optimize"]
-    Run --> Saved["Saved run: observations and preparation identity"]
+    Run --> Saved["Saved manifest: recipe and input fingerprints"]
 ```
 
 | Route | Observation identity and behavior |
@@ -91,7 +91,7 @@ stationary point or linearity.
 | Harmonic water | Two weighted vibrational diagonals | Three weighted vibrational diagonals | [Mode-accounting and compatibility regressions](https://github.com/ericchansen/q2mm/blob/master/test/test_preparation.py) |
 
 These are analytic harmonic test systems with the appropriate rigid
-nullspace, not reported ab-initio frequencies or optimization benchmarks.
+nullspace, not reported ab initio frequencies or optimization benchmarks.
 All full-spectrum diagonal and lower-triangle off-diagonal records are still
 stored. **Stored target count is not weighted target count.**
 
@@ -195,7 +195,7 @@ limitations remain in the canonical
 records. The default correction neither fills those gaps nor changes their
 status.
 
-There is also a specific TS distinction: Lime and Norrby's Method D retains
+There is also a specific TS distinction: Limé and Norrby's Method D retains
 reaction-mode off-diagonal terms while excluding the reaction eigenvalue.
 Both repository recipes discussed here retain the existing **reaction row
 and column exclusion**, so neither should be called exact Method D.
@@ -224,7 +224,7 @@ cover these distinctions.
 
 [Farrugia et al. (2025)](../references.md#methods), main-article pages 2-3,
 describes QFUERZA initialization and reference-normal-mode comparisons.
-[Lime and Norrby (2014; volume published 2015)](../references.md#methods),
+[Limé and Norrby (2014; 2015 issue)](../references.md#methods),
 pages 1-3, describes the mass-weighted basis, five/six rigid motions,
 TS-as-MM-minimum construction and Method D. Citation years follow the
 Zotero-checked bibliography.

@@ -248,11 +248,18 @@ ref = ref.with_frequency(value=1648.5, data_idx=0, weight=1.0, case_id="0")
 
 ## Hessian-derived data
 
-Eigenmatrix targets use the mass-weighted reference normal-mode basis,
-not the Seminario/QFUERZA bond/angle projection used for initialization
+The generic `q2mm.prepare` recipe builds eigenmatrix targets in the
+mass-weighted reference normal-mode basis, not the Seminario/QFUERZA
+bond/angle projection used for initialization
 ([Farrugia, Helquist, Norrby & Wiest, *J. Chem. Theory Comput.* **2025**, 22, 469](https://doi.org/10.1021/acs.jctc.5c01751)).
 See [the generic selection rule](fitting-objectives.md#the-generic-mode-selection-rule)
 for the basis, units and exclusions.
+
+The lower-level `ObservationSet.with_eigenmatrix_from_hessian` method
+uses mass weighting only when `symbols` is supplied. Without symbols it
+uses the raw Cartesian Hessian eigenbasis, with Hartree/Bohr² rather than
+Hartree/(amu · Bohr²) units. The mass-weighted conventions below assume
+symbols are supplied in the same atom order as the Hessian.
 
 Q2MM supports two ways to use Hessian information as training data, both derived from eigendecomposition of the Hessian.
 
@@ -465,7 +472,9 @@ ref = ObservationSet()
 ref = ref.with_bond_length(value=1.384, atom_indices=(0, 1), weight=10.0, case_id="0")
 ref = ref.with_bond_angle(value=104.5, atom_indices=(1, 0, 2), weight=5.0, case_id="0")
 ref = ref.with_frequency(value=1648.5, data_idx=0, weight=1.0, case_id="0")
-ref = ref.with_eigenmatrix_from_hessian(hessian, diagonal_only=False, case_id="0")
+ref = ref.with_eigenmatrix_from_hessian(
+    hessian, symbols=mol.symbols, diagonal_only=False, case_id="0"
+)
 ```
 
 See the [API Reference](../reference/q2mm/index.md) for the full method signatures.
