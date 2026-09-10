@@ -37,6 +37,15 @@ pip install jax[cuda12] jax-md
 
 **Functional forms:** Harmonic only.
 
+### Preparation gates
+
+Populated Urey-Bradley, CMAP, improper parameters, nonzero bond dipoles, and
+nondefault vdW reduction raise
+`PreparationError` before layout or native-state construction.
+The existing stretch-bend rejection and harmonic-only form restriction
+remain in place. Reference partial charges do not populate the Coulomb
+handler. See the [shared term-presence rules](index.md#populated-term-preparation-gates).
+
 ---
 
 ## Configuration
@@ -97,7 +106,7 @@ The backend name includes the JAX device string (e.g., `JAX-MD (OPLSAA, gpu)`).
 - **Harmonic only** — MM3 functional form is not yet supported.
 - **Electrostatics zeroed** — Coulomb energy is computed with zero charges;
   charge optimization is not yet supported.
-- **No improper torsions** — topology arrays are empty.
+- **Unsupported populated terms** — Urey-Bradley, CMAP, improper parameters, bond dipoles, and nondefault vdW reduction are rejected, not silently omitted or replaced by empty native terms.
 - **64-bit mode forced** — importing this module enables `jax_enable_x64`
   globally, which affects all JAX code in the process.
 

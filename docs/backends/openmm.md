@@ -71,7 +71,7 @@ Override with the `platform_name` constructor parameter if needed.
 | Bonds | ✅ Harmonic | ✅ Cubic/quartic |
 | Angles | ✅ Harmonic | ✅ Sextic |
 | Torsions | ✅ | ✅ |
-| Improper torsions | ❌ | ❌ |
+| Improper torsions | Existing cosine model | Existing cosine model |
 | vdW (LJ 12-6) | ✅ | — |
 | vdW (Buckingham exp-6) | — | ✅ |
 | Electrostatics | ❌ | ❌ |
@@ -94,6 +94,14 @@ supported**: an odd resolution would require resampling, so preparation rejects
 it rather than choosing an interpolation policy. This conversion retains
 OpenMM's native signed-dihedral convention; it does not establish signed-torsion
 equivalence with other backends.
+
+### Preparation gates
+
+Nonzero canonical bond dipoles and nondefault vdW reduction raise
+`PreparationError` before layout or native-state construction in both forms.
+Existing Urey-Bradley, CMAP, and cosine improper handling is retained.
+The separate stretch-bend limitation is unchanged. See the
+[shared term-presence rules](index.md#populated-term-preparation-gates).
 
 ---
 
@@ -185,7 +193,7 @@ from the backend's typed evaluation interface.
   another parameter row is not differentiable and is rejected, even when both
   epsilons are zero. Negative interacting parameters and unrepresentable steps
   are rejected rather than perturbed outside the supported domain.
-- **No improper torsions** — not yet implemented.
+- **Unsupported populated terms** — bond dipoles and reduced vdW sites are rejected during preparation.
 - **No electrostatics** — charge optimization is not supported.
 
 ---

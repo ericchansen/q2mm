@@ -65,6 +65,7 @@ from q2mm.backends.contracts import (
     PreparedBackend,
     readonly_array,
 )
+from q2mm.backends.mm._term_support import _validate_term_support
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.constants import (
     MM3_BOND_C3,
@@ -871,7 +872,7 @@ class JaxBackend:
 
         Raises:
             PreparationError: If no force field is supplied or its functional
-                form is unsupported.
+                form or populated terms are unsupported.
 
         """
         from q2mm.models.parameters import ParameterLayout
@@ -884,6 +885,15 @@ class JaxBackend:
             raise PreparationError(
                 f"JAX does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
             )
+        _validate_term_support(
+            request.force_field,
+            backend="JAX",
+            unsupported=frozenset(
+                {"CMAP", "vdW reduction", "stretch-bend", "bond dipoles"}
+                if form == "harmonic"
+                else {"CMAP", "vdW reduction"}
+            ),
+        )
         layout = ParameterLayout.from_force_field(request.force_field)
         try:
             state = self._build_state(request.molecule, request.force_field)

@@ -42,6 +42,7 @@ from q2mm.backends.contracts import (
     PreparationRequest,
     readonly_array,
 )
+from q2mm.backends.mm._term_support import _validate_term_support
 from q2mm.backends.mm._openmm_terms import (
     _AngleTerm,
     _BondTerm,
@@ -698,7 +699,8 @@ class OpenMMBackend:
 
         Raises:
             PreparationError: If no force field is supplied, its functional
-                form is unsupported, or the OpenMM system cannot be built.
+                form or populated terms are unsupported, or the OpenMM system
+                cannot be built.
 
         """
         from q2mm.models.parameters import ParameterLayout
@@ -711,6 +713,9 @@ class OpenMMBackend:
             raise PreparationError(
                 f"OpenMM does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
             )
+        _validate_term_support(
+            request.force_field, backend="OpenMM", unsupported=frozenset({"bond dipoles", "vdW reduction"})
+        )
         layout = ParameterLayout.from_force_field(request.force_field)
         try:
             state = self._build_state(request.molecule, request.force_field)
