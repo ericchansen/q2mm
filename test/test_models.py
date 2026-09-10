@@ -293,6 +293,77 @@ class TestMoleculeFromStructure:
         assert molecule.bonds[0].source_bond_order == "2"
         assert molecule.bonds[0].ff_row == 42
 
+    @pytest.mark.parametrize("metadata_update", ["hessian", "name"])
+    @pytest.mark.parametrize(("initial_distance", "new_distance", "n_bonds"), [(0.74, 5.0, 1), (5.0, 0.74, 0)])
+    def test_metadata_update_preserves_moved_inferred_graph(
+        self, metadata_update: str, initial_distance: float, new_distance: float, n_bonds: int
+    ) -> None:
+        original = Molecule(
+            symbols=("H", "H"),
+            geometry=np.array([[0.0, 0.0, 0.0], [initial_distance, 0.0, 0.0]]),
+            hessian=np.eye(6),
+            name="hydrogen",
+        )
+        moved = original.with_geometry(np.array([[0.0, 0.0, 0.0], [new_distance, 0.0, 0.0]]))
+        if metadata_update == "hessian":
+            updated = moved.with_hessian(np.eye(6) * 2)
+            np.testing.assert_array_equal(updated.hessian, np.eye(6) * 2)
+        else:
+            updated = moved.with_overrides(name="renamed", charge=1, multiplicity=2)
+            assert updated.name == "renamed"
+            assert (updated.charge, updated.multiplicity) == (1, 2)
+            assert updated.hessian is None
+
+        assert len(updated.bonds) == n_bonds
+        assert updated.bonds == moved.bonds
+        assert not updated.bonds_explicit
+        if n_bonds:
+            assert updated.bonds[0].length == pytest.approx(new_distance)
+        assert moved.hessian is None
+        assert moved.hessian_provenance is None
+        assert original.name == "hydrogen"
+        np.testing.assert_array_equal(original.hessian, np.eye(6))
+        assert updated.with_hessian(None).bonds == moved.bonds
+
+        reinferred = updated.with_overrides(bond_tolerance=original.bond_tolerance)
+        assert len(reinferred.bonds) == 1 - n_bonds
+        assert not reinferred.bonds_explicit
+
+    @pytest.mark.parametrize("empty_category", [None, "bonds", "angles", "torsions"])
+    def test_geometry_and_metadata_updates_preserve_each_topology_category(self, empty_category: str | None) -> None:
+        topology = {} if empty_category is None else {empty_category: ()}
+        original = Molecule(
+            symbols=("C",) * 4,
+            geometry=np.array([[0.0, 1.5, 0.0], [0.0, 0.0, 0.0], [1.5, 0.0, 0.0], [1.5, 0.0, 1.5]]),
+            hessian=np.eye(12),
+            **topology,
+        )
+        geometry = np.array([[0.0, 5.0, 0.0], [0.0, 0.0, 0.0], [5.0, 0.0, 0.0], [8.0, 3.0, 4.0]])
+        moved = original.with_geometry(geometry)
+        updated = moved.with_hessian(np.eye(12)).with_overrides(name="chain").with_atom_types(["C1"] * 4)
+
+        for category in ("bonds", "angles", "torsions"):
+            assert getattr(updated, f"{category}_explicit") == (category == empty_category)
+            assert len(getattr(updated, category)) == len(getattr(original, category))
+            if category == empty_category:
+                assert getattr(updated, category) == ()
+        assert moved.hessian is None
+        assert moved.hessian_provenance is None
+        assert updated.with_geometry(original.geometry).hessian is None
+        if updated.bonds:
+            assert [b.length for b in updated.bonds] == pytest.approx([5.0, 5.0, np.sqrt(34.0)])
+            assert all(b.env_id == "C1-C1" for b in updated.bonds)
+        if updated.angles:
+            assert [a.value for a in updated.angles] == pytest.approx(
+                [90.0, np.degrees(np.arccos(-3.0 / np.sqrt(34.0)))]
+            )
+        if updated.torsions:
+            assert updated.torsions[0].value == pytest.approx(-np.degrees(np.arctan2(4.0, 3.0)))
+        if empty_category is not None:
+            reinferred = updated.with_overrides(bond_tolerance=0.5)
+            assert getattr(reinferred, empty_category) == ()
+            assert getattr(reinferred, f"{empty_category}_explicit")
+
 
 # ---- Torsion detection ----
 

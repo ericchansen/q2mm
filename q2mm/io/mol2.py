@@ -12,8 +12,9 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from q2mm.elements import MASSES, TWO_LETTER_ELEMENTS
 from q2mm.geometry import bond_length
-from q2mm.models.identifiers import _extract_element, canonicalize_bond_env_id
+from q2mm.models.identifiers import canonicalize_bond_env_id
 from q2mm.models.molecule import Bond, Molecule
 
 logger = logging.getLogger(__name__)
@@ -29,6 +30,31 @@ _CANONICAL_BOND_ORDERS = {
     "ar": "*",
     "3": "%",
 }
+
+# Non-element labels used by the existing Mol2 fixtures.
+_CUSTOM_ATOM_TYPE_ELEMENTS = {
+    "HC": "H",
+    "HX": "H",
+    "PX": "P",
+    "RH": "Rh",
+}
+
+
+def _element_from_atom_type(atom_type: str) -> str:
+    """Resolve a SYBYL element prefix or an existing custom element-based type.
+
+    Element symbols retain their canonical case. Undotted types can append
+    digits (``C3``); ``HC``, ``HX``, ``PX``, and ``RH`` retain fixture semantics.
+    Atom names are identifiers, not element evidence. Unrecognized types,
+    including dummy/pseudo types without supported Mol2 semantics, are rejected.
+    """
+    if "." in atom_type:
+        element = atom_type.split(".", 1)[0]
+    else:
+        element = _CUSTOM_ATOM_TYPE_ELEMENTS.get(atom_type, atom_type.rstrip("0123456789"))
+    if element not in MASSES and element not in TWO_LETTER_ELEMENTS:
+        raise ValueError(f"Unsupported Mol2 atom type {atom_type!r}: cannot resolve a chemical element.")
+    return element
 
 
 def _canonicalize_bond_order(order: str | None) -> str:
@@ -57,8 +83,8 @@ class _Mol2Atom:
 
     @property
     def symbol(self) -> str:
-        """Resolve this atom's element symbol."""
-        return _extract_element(self.element) if self.element else ""
+        """Return this atom's validated element symbol."""
+        return self.element
 
 
 @dataclass
@@ -205,23 +231,27 @@ class Mol2:
         from SYBYL requires consistent data ordering matching the
         standard; otherwise the file is not in valid mol2 format.
         """
-        self._records = []
+        self._records = None
+        records = []
         joined_lines = "".join(self.lines)
         structure_chunks = joined_lines.split(self.TRIPOS_FLAG + self.MOLECULE_FLAG)
-        entry_num = 0 if len(structure_chunks) > 2 else None
-        for struct_chunk in structure_chunks:
+        if len(structure_chunks) < 2:
+            raise ValueError(f"No {self.TRIPOS_FLAG + self.MOLECULE_FLAG} entries in the Mol2 file.")
+        for entry_num, struct_chunk in enumerate(structure_chunks[1:]):
             if struct_chunk != "":
-                self._records.append(self.parse_structure(struct_chunk, chunk_index=entry_num))
+                chunk_index = entry_num if len(structure_chunks) > 2 else None
+                records.append(self.parse_structure(struct_chunk, chunk_index=chunk_index))
 
-        if len(structure_chunks) - 1 != len(self._records):
+        if len(structure_chunks) - 1 != len(records):
             logger.log(
                 logging.WARNING,
                 "Only "
-                + str(len(self._records))
+                + str(len(records))
                 + " structures could be parsed from "
                 + str(len(structure_chunks) - 1)
                 + " MOLECULE entries in the .mol2 file",
             )
+        self._records = records
 
     def parse_atoms(self, atom_lines: list[str]) -> list[_Mol2Atom]:
         """Parse atom entries from mol2 atom-section lines.
@@ -239,11 +269,8 @@ class Mol2:
             if atom_entry == "" or atom_entry.strip() == self.ATOM_FLAG:
                 continue
             atom_split = atom_entry.split()
-            # Mol2 column 2 is the atom name (e.g. "C1", "RH1"), not the
-            # element symbol.  Strip trailing digits and title-case to get
-            # a proper element key that matches constants.MASSES (e.g. "Rh").
-            raw_name = atom_split[1]
-            element = raw_name.rstrip("0123456789").capitalize()
+            atom_type = atom_split[5]
+            element = _element_from_atom_type(atom_type)
             # partial_charge (column 9) comes as a string — cast to float
             try:
                 charge = float(atom_split[8])
@@ -257,7 +284,7 @@ class Mol2:
                     x=x,
                     y=y,
                     z=z,
-                    atom_type_name=atom_split[5],
+                    atom_type_name=atom_type,
                     partial_charge=charge,
                 )
             )

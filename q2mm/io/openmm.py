@@ -56,7 +56,7 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
 
     torsion_classes: set[tuple[str, ...]] = set()
     for torsion in ff.torsions:
-        classes = tuple(torsion.env_id.split("-")) if torsion.env_id else torsion.elements
+        classes = tuple(torsion.env_id.split("-")) if torsion.env_id else tuple(torsion.elements)
         key = min(classes, classes[::-1])
         if key in torsion_classes:
             raise ValueError(

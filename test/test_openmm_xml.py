@@ -239,3 +239,30 @@ def test_whitespace_does_not_disguise_a_native_zero_class(tmp_path: Path) -> Non
     with pytest.raises(ValueError, match="wildcard"):
         save_openmm_xml(ff, path)
     assert not path.exists()
+
+
+def test_valid_list_elements_can_be_exported(tmp_path: Path) -> None:
+    elements = ["H", "C", "C", "H"]
+    ff = ForceField(
+        torsions=(TorsionParam(elements, periodicity=3, force_constant=1.0),),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = save_openmm_xml(ff, tmp_path / "list.xml")
+    proper = ET.parse(path).getroot().find("CustomTorsionForce/Proper")
+    assert proper is not None
+    assert [proper.get(f"class{i}") for i in range(1, 5)] == elements
+    assert ff.torsions[0].elements is elements
+
+
+def test_mixed_element_containers_still_detect_duplicate_torsions(tmp_path: Path) -> None:
+    ff = ForceField(
+        torsions=(
+            TorsionParam(["H", "C", "C", "H"], periodicity=1, force_constant=1.0),
+            TorsionParam(("H", "C", "C", "H"), periodicity=2, force_constant=1.0),
+        ),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = tmp_path / "mixed.xml"
+    with pytest.raises(ValueError, match="multiple.*torsion"):
+        save_openmm_xml(ff, path)
+    assert not path.exists()
