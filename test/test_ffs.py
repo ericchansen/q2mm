@@ -2,6 +2,7 @@ import copy
 import logging
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -15,11 +16,14 @@ from q2mm.io.mm3 import (
     P_3_START,
     _Mm3ParameterRow,
     _format_mm3_angle_line,
+    _format_mm3_torsion_line,
     _mm3_export_ff,
     _mm3_import_ff,
     _splice_fixed,
     load_mm3_fld,
+    save_mm3_fld,
 )
+from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, StretchBendParam, TorsionParam
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout, opt_substructure_membership
 from q2mm.models.units import mm3_angle_k_to_canonical, mm3_bond_k_to_canonical, mm3_sb_k_to_canonical
 
@@ -287,6 +291,228 @@ class TestMM3ExportHigherTorsion(unittest.TestCase):
         self.assertAlmostEqual(float(written[P_3_START:P_3_END]), 33.0, places=4)
         # Trailing non-numeric bytes must survive untouched.
         self.assertIn("TAILBYTES", written)
+
+
+def _improper_template(scope: str) -> str:
+    if scope == "standard":
+        proper = _format_mm3_torsion_line(["H1", "C1", "C1", "H1"], 0.2, 0.4, 0.6)
+        improper = " 5" + proper[2:].rstrip("\n") + "  UNCHANGED TAIL\n"
+        return "".join([" C  synthetic template\n", proper, improper, improper, "-2\n"])
+    block = _substructure(scope, "C2-C2-AA-C3")
+    block[-2] = block[-2].rstrip("\n") + "             UNCHANGED TAIL\n"
+    block.insert(-1, block[-2])
+    return "".join(block)
+
+
+class TestMM3OutputFidelity:
+    @pytest.mark.parametrize("scope", ["standard", "OPT selected", "FROZEN"])
+    @pytest.mark.parametrize("periodicity", [1, 2], ids=["imp1", "imp2"])
+    @pytest.mark.parametrize("value", [9.0, 0.0, -7.5, 1234.5, -1234.5])
+    @pytest.mark.parametrize("explicit_template", [False, True])
+    def test_template_improper_scalar_roundtrip(
+        self, tmp_path: Path, scope: str, periodicity: int, value: float, explicit_template: bool
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template(scope), encoding="utf-8")
+        original_bytes = source.read_bytes()
+        ff = load_mm3_fld(source)
+        target = next(t for t in ff.torsions if t.is_improper and t.periodicity == periodicity)
+        changed = replace(
+            ff,
+            torsions=tuple(replace(t, force_constant=value) if t is target else t for t in ff.torsions),
+        )
+        if explicit_template:
+            changed = replace(changed, source_path=None, source_format=None)
+        output = tmp_path / "updated.fld"
+        save_mm3_fld(changed, output, template_path=source if explicit_template else None)
+
+        assert load_mm3_fld(output).torsions == changed.torsions
+        assert source.read_bytes() == original_bytes
+        expected_lines = source.read_text(encoding="utf-8").splitlines(keepends=True)
+        assert target.ff_row is not None
+        line = expected_lines[target.ff_row - 1]
+        start, end = (P_1_START, P_1_END) if periodicity == 1 else (P_2_START, P_2_END)
+        expected_lines[target.ff_row - 1] = line[:start] + f"{2.0 * value:10.4f}" + line[end:]
+        assert output.read_text(encoding="utf-8") == "".join(expected_lines)
+
+    @pytest.mark.parametrize("periodicity", [1, 2], ids=["imp1", "imp2"])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            pytest.param({"force_constant": 50000.0}, id="positive-overflow"),
+            pytest.param({"force_constant": -5000.0}, id="negative-overflow"),
+            pytest.param({"force_constant": float("nan")}, id="nan"),
+            pytest.param({"force_constant": float("inf")}, id="infinity"),
+            pytest.param({"force_constant": float("-inf")}, id="negative-infinity"),
+            pytest.param({"phase": 90.0}, id="phase"),
+            pytest.param({"periodicity": 3}, id="order"),
+            pytest.param({"ff_row": None}, id="no-source-row"),
+            pytest.param({"ff_row": 999}, id="missing-source-row"),
+            pytest.param({"env_id": "N1-C1-C1-H1"}, id="environment"),
+            pytest.param({"elements": ("N", "C", "C", "H")}, id="elements"),
+            pytest.param({"is_improper": False}, id="interaction-kind"),
+        ],
+    )
+    def test_template_rejects_unrepresentable_improper_before_write(
+        self, tmp_path: Path, periodicity: int, destination: str, changes: dict[str, object]
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template("FROZEN"), encoding="utf-8")
+        original = source.read_bytes()
+        ff = load_mm3_fld(source)
+        target = next(t for t in ff.torsions if t.is_improper and t.periodicity == periodicity)
+        changed = replace(ff, torsions=tuple(replace(t, **changes) if t is target else t for t in ff.torsions))
+        output = source if destination == "source" else tmp_path / "output.fld"
+        before = original if destination == "source" else b"existing destination\r\n\xff"
+        if destination == "existing":
+            output.write_bytes(before)
+
+        with pytest.raises(ValueError, match="MM3.*improper"):
+            save_mm3_fld(changed, output)
+        assert source.read_bytes() == original
+        if destination == "absent":
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_template_rejects_duplicate_improper_column(self, tmp_path: Path, existing: bool) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template("standard"), encoding="utf-8")
+        ff = load_mm3_fld(source)
+        target = next(t for t in ff.torsions if t.is_improper)
+        changed = replace(ff, torsions=(*ff.torsions, replace(target, force_constant=9.0)))
+        output = tmp_path / "output.fld"
+        if existing:
+            output.write_bytes(b"unchanged")
+        with pytest.raises(ValueError, match="MM3.*improper.*duplicate"):
+            save_mm3_fld(changed, output)
+        if existing:
+            assert output.read_bytes() == b"unchanged"
+        else:
+            assert not output.exists()
+
+    @pytest.mark.parametrize("periodicity", [1, 2], ids=["imp1", "imp2"])
+    @pytest.mark.parametrize(("value", "phase_offset"), [(9.0, 360.0), (-9.0, -360.0), (0.0, 90.0)])
+    def test_template_improper_equivalent_phase_in_place(
+        self, tmp_path: Path, periodicity: int, value: float, phase_offset: float
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template("OPT selected"), encoding="utf-8")
+        ff = load_mm3_fld(source)
+        target = next(t for t in ff.torsions if t.is_improper and t.periodicity == periodicity)
+        changed = replace(
+            ff,
+            torsions=tuple(
+                replace(t, force_constant=value, phase=t.phase + phase_offset) if t is target else t
+                for t in ff.torsions
+            ),
+        )
+        save_mm3_fld(changed, source)
+        actual = next(
+            t for t in load_mm3_fld(source).torsions if t.ff_row == target.ff_row and t.periodicity == periodicity
+        )
+        assert actual == replace(target, force_constant=value)
+
+    @pytest.mark.parametrize("existing", [False, True])
+    @pytest.mark.parametrize(
+        ("changes", "feature"),
+        [
+            pytest.param({"stretch_bends": (StretchBendParam(("H", "C", "H"), 5.0),)}, "stretch-bend", id="IO-04a"),
+            pytest.param(
+                {"stretch_bends": (StretchBendParam(("H", "C", "H"), 0.0),)}, "stretch-bend", id="IO-04a-zero"
+            ),
+            *[
+                pytest.param(
+                    {"angles": (AngleParam(("H", "C", "H"), 109.5, 20.0, ub_force_constant=k, ub_equilibrium=r),)},
+                    "Urey-Bradley",
+                    id=f"IO-04b-{k}-{r}",
+                )
+                for k, r in [(30.0, 2.0), (0.0, 0.0), (30.0, None), (None, 2.0)]
+            ],
+            *[
+                pytest.param(
+                    {"torsions": (TorsionParam(("H", "C", "C", "H"), n, k),)},
+                    "periodicity",
+                    id=f"IO-04c-{n}-{k}",
+                )
+                for n, k in [(4, 6.0), (5, 6.0), (6, 6.0), (7, 6.0), (4, 0.0)]
+            ],
+            *[
+                pytest.param(
+                    {"torsions": (TorsionParam(("H", "C", "C", "H"), n, 2.0, is_improper=True),)},
+                    "improper",
+                    id=f"IO-04d-{n}",
+                )
+                for n in (1, 2)
+            ],
+            *[
+                pytest.param(
+                    {"bonds": (BondParam(("C", "C"), 1.3, 300.0, bond_order=order),)},
+                    "bond order",
+                    id=f"IO-04e-{order}",
+                )
+                for order in ("=", "*", "%")
+            ],
+            pytest.param(
+                {"bonds": (BondParam(("C", "C"), 1.3, 300.0, context="O200 0000"),)},
+                "bond context",
+                id="IO-04f",
+            ),
+            *[
+                pytest.param(
+                    {"bonds": (BondParam(("C", "C"), 1.3, 300.0, dipole_moment=dipole),)},
+                    "bond dipole",
+                    id=f"IO-04g-{dipole}",
+                )
+                for dipole in (0.4, -0.4)
+            ],
+        ],
+    )
+    def test_standalone_rejects_loss_before_write(
+        self, tmp_path: Path, existing: bool, changes: dict[str, object], feature: str
+    ) -> None:
+        ff = ForceField(
+            bonds=(BondParam(("C", "F"), 1.38, 300.0, env_id="C1-F1"),),
+            functional_form=FunctionalForm.MM3,
+        )
+        ff = replace(ff, **changes)
+        output = tmp_path / "output.fld"
+        if existing:
+            output.write_bytes(b"existing destination\r\n\xff")
+        with pytest.raises(ValueError, match=f"MM3.*{feature}"):
+            save_mm3_fld(ff, output)
+        if existing:
+            assert output.read_bytes() == b"existing destination\r\n\xff"
+        else:
+            assert not output.exists()
+
+    @pytest.mark.parametrize("order", ["", "-"])
+    @pytest.mark.parametrize("context", ["", "0000 0000"])
+    def test_standalone_supported_generic_values(self, tmp_path: Path, order: str, context: str) -> None:
+        ff = ForceField(
+            bonds=(BondParam(("C", "F"), 1.38, 300.0, env_id="C1-F1", bond_order=order, context=context),),
+            angles=(AngleParam(("H", "C", "F"), 109.5, 40.0, env_id="H1-C1-F1"),),
+            torsions=tuple(
+                TorsionParam(("H", "C", "C", "F"), n, k, phase=phase, env_id="H1-C1-C1-F1")
+                for n, k, phase in [(1, -0.5, 0.0), (2, 1.2, 180.0), (3, 0.3, 0.0)]
+            ),
+            functional_form=FunctionalForm.MM3,
+        )
+        output = tmp_path / "supported.fld"
+        save_mm3_fld(ff, output)
+        actual = load_mm3_fld(output)
+        assert actual.bonds[0].force_constant == pytest.approx(300.0, rel=1e-3)
+        assert actual.bonds[0].equilibrium == 1.38
+        assert actual.bonds[0].bond_order == "-"
+        assert actual.bonds[0].context == ""
+        assert actual.bonds[0].dipole_moment == 0.0
+        assert actual.angles[0].force_constant == pytest.approx(40.0, rel=1e-3)
+        assert actual.angles[0].ub_force_constant is actual.angles[0].ub_equilibrium is None
+        assert [(t.periodicity, t.force_constant, t.phase, t.is_improper) for t in actual.torsions] == [
+            (t.periodicity, t.force_constant, t.phase, t.is_improper) for t in ff.torsions
+        ]
 
 
 class TestSpliceFixed(unittest.TestCase):

@@ -6,6 +6,7 @@ import contextlib
 import copy
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -833,13 +834,20 @@ def _mm3_export_ff(path: str | Path, rows: list[_Mm3ParameterRow], lines: list[s
     for row in rows:
         logger.log(1, f">>> row: {row} row.value: {row.value}")
         line = lines[row.ff_row - 1]
-        if abs(row.value) > 999.0:
+        if row.ptype in ("imp1", "imp2"):
+            if not math.isfinite(row.value) or len(f"{row.value:10.4f}") > P_1_END - P_1_START:
+                raise ValueError(
+                    f"Cannot save MM3 improper row {row.ff_row}: amplitude {row.value!r} "
+                    "does not fit a finite 10-character, four-decimal field."
+                )
+        elif abs(row.value) > 999.0:
             logger.warning(f"Value of {row} is too high! Skipping write.")
+            continue
         # Higher-order torsion amplitudes V4/V5/V6 (ff_col 4/5/6) live in the
         # same three physical parameter columns as V1/V2/V3 but on the "54"
         # continuation line, which is addressed by their own ``ff_row``.  Map
         # them onto the same columns so higher-order torsions round-trip.
-        elif row.ff_col in (1, 4):
+        if row.ff_col in (1, 4):
             lines[row.ff_row - 1] = line[:P_1_START] + f"{row.value:10.4f}" + line[P_1_END:]
         elif row.ff_col in (2, 5):
             lines[row.ff_row - 1] = line[:P_2_START] + f"{row.value:10.4f}" + line[P_2_END:]
@@ -848,6 +856,65 @@ def _mm3_export_ff(path: str | Path, rows: list[_Mm3ParameterRow], lines: list[s
     with open(path, "w") as f:
         f.writelines(lines)
     logger.log(10, f"WROTE: {path}")
+
+
+def _validate_mm3_template_impropers(torsions: tuple[TorsionParam, ...], rows: list[_Mm3ParameterRow]) -> None:
+    """Reject improper edits that cannot be applied to an existing template column."""
+    improper_rows = {(row.ff_row, row.ff_col): row for row in rows if row.ptype in ("imp1", "imp2")}
+    row_numbers = {row_number for row_number, _ in improper_rows}
+    seen: set[tuple[int, int]] = set()
+    for torsion in torsions:
+        if not torsion.is_improper and torsion.ff_row not in row_numbers:
+            continue
+        row = improper_rows.get((torsion.ff_row, torsion.periodicity)) if torsion.ff_row is not None else None
+        if row is None:
+            raise ValueError(
+                f"Cannot save MM3 improper torsion at row {torsion.ff_row}, periodicity {torsion.periodicity}: "
+                "no matching imp1/imp2 template column."
+            )
+        key = (row.ff_row, row.ff_col)
+        if key in seen:
+            raise ValueError(f"Cannot save MM3 improper row {row.ff_row}: duplicate periodicity {row.ff_col}.")
+        seen.add(key)
+        atom_types = [t.strip() for t in row.atom_types if t.strip() and t.strip() != "-"]
+        if (
+            not torsion.is_improper
+            or torsion.env_id != "-".join(atom_types)
+            or torsion.elements != tuple(_extract_element(t) for t in atom_types)
+        ):
+            raise ValueError(f"Cannot save MM3 improper row {row.ff_row}: interaction kind or atom identity changed.")
+        phase = 180.0 if row.ff_col == 2 else 0.0
+        if not math.isfinite(torsion.phase) or (torsion.force_constant != 0.0 and torsion.phase % 360.0 != phase):
+            raise ValueError(
+                f"Cannot save MM3 improper row {row.ff_row}: periodicity {row.ff_col} requires phase {phase} "
+                "modulo 360 degrees for a nonzero amplitude."
+            )
+
+
+def _validate_mm3_standalone(ff: ForceField) -> None:
+    """Reject populated features that the standalone MM3 writer cannot represent."""
+    if ff.stretch_bends:
+        raise ValueError("Cannot save standalone MM3 stretch-bend terms; use a source template.")
+    for index, angle in enumerate(ff.angles):
+        if angle.ub_force_constant is not None or angle.ub_equilibrium is not None:
+            raise ValueError(f"Cannot save standalone MM3 angle {index}: Urey-Bradley fields are unsupported.")
+    for index, torsion in enumerate(ff.torsions):
+        if torsion.is_improper:
+            raise ValueError(f"Cannot save standalone MM3 improper torsion {index}; use a source template.")
+        if torsion.periodicity not in (1, 2, 3):
+            raise ValueError(
+                f"Cannot save standalone MM3 torsion {index}: periodicity {torsion.periodicity} "
+                "is unsupported; only V1/V2/V3 are emitted."
+            )
+    for index, bond in enumerate(ff.bonds):
+        if bond.bond_order not in ("", "-"):
+            raise ValueError(f"Cannot save standalone MM3 bond {index}: bond order {bond.bond_order!r} would be lost.")
+        if bond.context not in ("", _GENERIC_CONTEXT):
+            raise ValueError(f"Cannot save standalone MM3 bond {index}: bond context {bond.context!r} would be lost.")
+        if bond.dipole_moment != 0.0:
+            raise ValueError(
+                f"Cannot save standalone MM3 bond {index}: bond dipole {bond.dipole_moment!r} would be lost."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1008,8 +1075,18 @@ def save_mm3_fld(
     If a template path is provided, or this force field came from
     :func:`load_mm3_fld`, the existing file is updated in-place via the
     legacy MM3 exporter so comments and unrelated parameters are preserved.
+    Source-matched ``imp1``/``imp2`` amplitudes are updated in their original
+    columns (four decimal places in file units). Unrepresentable improper
+    edits, including changed interaction identity or nonzero-amplitude
+    phase, raise ``ValueError`` before the destination is opened for writing.
 
     Otherwise, a self-contained standard-parameter MM3 file is generated.
+    This limited writer rejects populated stretch-bend and Urey-Bradley
+    fields, improper torsions, periodicities outside 1-3 (including zero
+    amplitudes), non-single declared bond orders, non-generic bond contexts,
+    and nonzero bond dipoles before modifying the destination. Empty bond
+    order and generic context (empty or ``"0000 0000"``) remain accepted.
+    These checks do not add support for any new physical terms.
     """
     _validate_form_for_format(ff, "mm3_fld")
     output_path = Path(path)
@@ -1019,6 +1096,7 @@ def save_mm3_fld(
 
     if template is not None:
         template_rows, template_lines = _mm3_import_ff(template)
+        _validate_mm3_template_impropers(ff.torsions, template_rows)
         updated_rows = copy.deepcopy(template_rows)
         bond_by_row, bond_by_env = _build_bond_maps(ff.bonds)
         angle_by_row, angle_by_env = _build_angle_maps(ff.angles)
@@ -1037,7 +1115,7 @@ def save_mm3_fld(
                         if row.ptype == "af"
                         else _normalize_equilibrium_angle(angle.equilibrium)
                     )
-            elif row.ptype == "df":
+            elif row.ptype in ("df", "imp1", "imp2"):
                 value = _torsion_file_value(ff.torsions, row.ff_row, row.ff_col)
                 if value is not None:
                     row.value = value
@@ -1052,6 +1130,7 @@ def save_mm3_fld(
         _write_nonbonded_exclusions(output_path, ff.nonbonded_excluded_atom_types)
         return output_path
 
+    _validate_mm3_standalone(ff)
     del substructure_name, smiles
     lines: list[str] = []
     if ff.nonbonded_excluded_atom_types:
