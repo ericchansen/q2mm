@@ -523,6 +523,8 @@ class TinkerBackend:
         structure: Molecule,
         forcefield: ForceField,
         rms_grad: float = 0.01,
+        *,
+        max_iterations: int | None = None,
     ) -> tuple[float, list[str], np.ndarray]:
         """Energy-minimize structure.
 
@@ -530,18 +532,37 @@ class TinkerBackend:
             structure (Molecule): Molecule to minimize.
             forcefield (ForceField): Force field with the parameter values.
             rms_grad: RMS gradient convergence criterion in kcal/mol/Å.
+            max_iterations: Native ``MAXITER`` limit, or ``None`` to leave
+                the native default unchanged.
 
         Returns:
             tuple[float, list[str], np.ndarray]: ``(energy, atoms, coords)``
                 where energy is in kcal/mol and coords are in Å.
 
         Raises:
+            EvaluationError: If the iteration limit is not representable
+                as a positive native integer.
             RuntimeError: If the energy cannot be parsed from output or the
                 minimized coordinate file is not found.
 
+        References:
+            Tinker's ``minimize`` calls ``lbfgs``, which reads ``MAXITER``
+            from the key file:
+            https://github.com/TinkerTools/tinker/blob/87050685eff8840d312e2a332cc82c33f63c7c3d/source/lbfgs.f
+
         """
+        if max_iterations is not None and (
+            isinstance(max_iterations, bool)
+            or not isinstance(max_iterations, (int, np.integer))
+            or not 1 <= max_iterations < 2**31
+        ):
+            raise EvaluationError("Tinker max_iterations must be an integer between 1 and 2147483647.")
+
         with tempfile.TemporaryDirectory(prefix="q2mm_tinker_") as workdir:
             txyz = self._write_tinker_xyz(structure, forcefield, workdir)
+            if max_iterations is not None:
+                with open(os.path.splitext(txyz)[0] + ".key", "a", encoding="utf-8") as key:
+                    key.write(f"MAXITER {max_iterations}\n")
             result = self._run_tinker("minimize", txyz, [str(rms_grad)])
 
             # Parse final energy
@@ -712,7 +733,9 @@ class PreparedTinker(AbstractPreparedBackend):
     def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
         ff = self._ff_for(request.parameters)
         rms_grad = request.tolerance if request.tolerance is not None else 0.01
-        energy, atoms, coords = self._backend._evaluate_minimize(self.molecule, ff, rms_grad=rms_grad)
+        energy, atoms, coords = self._backend._evaluate_minimize(
+            self.molecule, ff, rms_grad=rms_grad, max_iterations=request.max_iterations
+        )
         return GeometryResult(
             energy=float(energy),
             energy_unit=EnergyUnit.KCAL_PER_MOL,
