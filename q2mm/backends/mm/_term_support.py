@@ -2,12 +2,25 @@
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from q2mm.backends.contracts import PreparationError
-from q2mm.models.forcefield import ForceField
+from q2mm.models.forcefield import ForceField, TorsionParam
 
-_Term = Literal["CMAP", "bond dipoles", "stretch-bend", "Urey-Bradley", "improper torsions", "vdW reduction"]
+_Term = Literal[
+    "CMAP", "bond dipoles", "stretch-bend", "Urey-Bradley", "improper torsions", "vdW reduction", "wildcard torsions"
+]
+
+
+def _has_wildcard_types(torsion: TorsionParam) -> bool:
+    """Recognize native X/zero tokens, not substrings or inferred unknown elements."""
+    types = tuple(part.strip() for part in torsion.env_id.split("-"))
+    # An ordinary type such as X1 can have an inferred element X. A complete
+    # native type quadruplet is authoritative; generic terms use elements.
+    if len(types) != 4 or not all(types):
+        types = torsion.elements
+    return any(token.strip() == "X" or re.fullmatch(r"[+-]?0+", token.strip()) is not None for token in types)
 
 
 def _validate_term_support(force_field: ForceField, *, backend: str, unsupported: frozenset[_Term]) -> None:
@@ -26,6 +39,7 @@ def _validate_term_support(force_field: ForceField, *, backend: str, unsupported
         ),
         "improper torsions": any(t.is_improper for t in force_field.torsions),
         "vdW reduction": any(v.reduction != 0.0 for v in force_field.vdws),
+        "wildcard torsions": any(_has_wildcard_types(t) for t in force_field.torsions),
     }
     rejected = [term for term in sorted(unsupported) if populated[term]]
     if rejected:
