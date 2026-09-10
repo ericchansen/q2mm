@@ -37,7 +37,7 @@ import shlex
 import subprocess
 import sys
 import time
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +49,7 @@ import numpy as np
 from q2mm.benchmarks.acceptance import AcceptanceDecision, AcceptancePolicy, CandidateStatus, improvement_percent
 from q2mm.benchmarks.profiles import RunProfile
 from q2mm._canonical import json_value
+from q2mm._result_serialization import result_payload
 from q2mm.constants import REAL_FREQUENCY_THRESHOLD
 from q2mm.models.results import deep_freeze
 from q2mm.objectives.metrics import category_metrics, category_stats
@@ -383,66 +384,37 @@ def _score_interval_summary(initial: Sequence[float], final: Sequence[float]) ->
 # ---------------------------------------------------------------------------
 
 
-def _candidate_record_to_dict(rec: Any) -> dict[str, Any]:
-    return {
-        "index": int(rec.index),
-        "status": rec.status,
-        "n_params": int(rec.n_params),
-        "layout_fingerprint": rec.layout_fingerprint,
-        "initial_params": np.asarray(rec.initial_params, dtype=float).tolist(),
-        "final_params": np.asarray(rec.final_params, dtype=float).tolist(),
-        "initial_score": float(rec.initial_score),
-        "final_score": float(rec.final_score),
-        "message": str(rec.message),
-        "seed": rec.seed,
-    }
-
-
-def _stage_to_dict(stage: Any) -> dict[str, Any]:
-    return {
-        "name": stage.name,
-        "initial_score": float(stage.initial_score),
-        "final_score": float(stage.final_score),
-        "n_iterations": int(stage.n_iterations),
-        "n_evaluations": int(stage.n_evaluations),
-        "converged": bool(stage.converged),
-        "message": str(stage.message),
-        "gradient_mode": str(stage.gradient_mode),
-        "fd_step": stage.fd_step,
-        "elapsed_s": float(stage.elapsed_s),
-        "locked_param_indices": list(stage.locked_param_indices),
-    }
-
-
 def result_to_dict(result: OptimizationResult) -> dict[str, Any]:
-    """Full JSON-safe projection of the one canonical :class:`OptimizationResult`.
+    """Project the canonical result with benchmark scalar coercions.
 
     Includes layout identity, full initial/final vectors, counts, history,
     gradient mode / FD step, multi-start candidate records, workflow stage
-    records, endpoint samples, and per-category metrics — so an accepted or
-    rejected candidate persists its complete result, not just scores.
+    records and notes, endpoint samples, and per-category metrics. Nested
+    diagnostics and nonfinite scalars are normalized by :func:`sanitize_for_json`
+    when the enclosing candidate record is written.
     """
-    return {
-        "success": bool(result.success),
-        "message": str(result.message),
-        "initial_score": float(result.initial_score),
-        "final_score": float(result.final_score),
-        "n_iterations": int(result.n_iterations),
-        "n_evaluations": int(result.n_evaluations),
-        "n_params": int(result.n_params),
-        "layout_fingerprint": result.layout_fingerprint,
-        "initial_params": np.asarray(result.initial_params, dtype=float).tolist(),
-        "final_params": np.asarray(result.final_params, dtype=float).tolist(),
-        "history": [float(x) for x in result.history],
-        "method": result.method,
-        "gradient_mode": result.gradient_mode,
-        "fd_step": result.fd_step,
-        "initial_samples": [float(x) for x in result.initial_samples],
-        "final_samples": [float(x) for x in result.final_samples],
-        "category_metrics": {k: dict(v) for k, v in result.category_metrics.items()},
-        "candidates": [_candidate_record_to_dict(c) for c in result.candidates],
-        "stages": [_stage_to_dict(s) for s in result.stages],
+    payload = result_payload(result)
+    # Preserve the benchmark's historical scalar types without projecting a
+    # second field list or coercing free-form diagnostic notes.
+    scalar_types: dict[str, Callable[[Any], Any]] = {
+        "success": bool,
+        "converged": bool,
+        "message": str,
+        "initial_score": float,
+        "final_score": float,
+        "n_iterations": int,
+        "n_evaluations": int,
+        "n_params": int,
+        "index": int,
+        "elapsed_s": float,
     }
+    for record in (payload, *payload["candidates"], *payload["stages"]):
+        for key, coerce in scalar_types.items():
+            if key in record:
+                record[key] = coerce(record[key])
+    for stage in payload["stages"]:
+        stage["gradient_mode"] = str(stage["gradient_mode"])
+    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -1147,7 +1119,7 @@ def _execute(
             "opt_time_s": elapsed,
             "optimized": optimized_categories,
             "final_executor_ratio": final_executor_ratio,
-            "stages": [_stage_to_dict(s) for s in result.stages],
+            "stages": result_to_dict(result)["stages"],
         }
     )
     summary.update(_score_interval_summary(list(result.initial_samples), list(result.final_samples)))

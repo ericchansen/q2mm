@@ -11,6 +11,7 @@ including a deterministic rejection that still preserves its full result.
 from __future__ import annotations
 
 import dataclasses
+import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -27,6 +28,7 @@ from q2mm.benchmarks.runner import (
     load_candidates,
     persist_candidate,
     promote_candidate,
+    result_to_dict,
     run_profile,
     run_profiles,
     sanitize_for_json,
@@ -265,6 +267,206 @@ class TestSanitizeForJson:
     def test_numpy_scalars_and_arrays(self) -> None:
         out = sanitize_for_json({"i": np.int64(3), "f": np.float64(2.5), "arr": np.array([1.0, 2.0])})
         assert out == {"i": 3, "f": 2.5, "arr": [1.0, 2.0]}
+
+
+class TestResultProjection:
+    @pytest.mark.parametrize("status", [CandidateStatus.ACCEPTED, CandidateStatus.REJECTED])
+    def test_saved_envelopes_preserve_every_canonical_field(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, status: CandidateStatus
+    ) -> None:
+        from types import MappingProxyType
+
+        from q2mm._canonical import canonical_json
+        from q2mm.application.persistence import save
+        from q2mm.benchmarks.cases import BenchmarkCase
+        from q2mm.models.results import CandidateRecord, StageRecord
+        from test.test_application import _EnergyBackend, _problem, _run
+
+        problem = _problem()
+        run = _run(problem)
+        result = run.result
+        stages = (
+            StageRecord(
+                name="method-e2-round-1",
+                n_params=result.n_params,
+                layout_fingerprint=result.layout_fingerprint,
+                initial_score=120,
+                final_score=60,
+                n_iterations=3,
+                n_evaluations=7,
+                converged=False,
+                message="iteration limit",
+                gradient_mode="finite_difference",
+                fd_step=0.02,
+                elapsed_s=2,
+                locked_param_indices=(0,),
+                notes=MappingProxyType(
+                    {
+                        "near_zero_replacements": [{"full_idx": 0, "type": "bond_k", "from": 0.0, "to": 1.0}],
+                        "solver": {"residual": np.array([0.125, 0.25]), "limit": np.int64(3)},
+                    }
+                ),
+            ),
+            StageRecord(
+                name="selected-subspace",
+                n_params=result.n_params,
+                layout_fingerprint=result.layout_fingerprint,
+                initial_score=60,
+                final_score=40,
+                n_iterations=4,
+                n_evaluations=9,
+                converged=True,
+                message="stationary",
+                gradient_mode="analytical",
+                elapsed_s=3,
+                notes={"selected_indices": np.array([1]), "selected_labels": ["bond_eq[1]"], "method": "C"},
+            ),
+        )
+        candidates = tuple(
+            CandidateRecord(
+                index=index,
+                status=candidate_status,
+                n_params=result.n_params,
+                layout_fingerprint=result.layout_fingerprint,
+                initial_params=result.initial_params + index,
+                final_params=result.final_params + index,
+                initial_score=120 if index == 0 else float("nan"),
+                final_score=(40, float("inf"), float("-inf"))[index],
+                message=f"candidate {candidate_status}",
+                seed=10 + index if index != 2 else None,
+            )
+            for index, candidate_status in enumerate(("success", "failure", "skipped"))
+        )
+        result = dataclasses.replace(
+            result,
+            success=status is CandidateStatus.ACCEPTED,
+            message="complete diagnostic record",
+            initial_score=120,
+            final_score=40,
+            n_iterations=7,
+            n_evaluations=16,
+            history=(120, 60, 40),
+            method="method-e2",
+            gradient_mode="finite_difference",
+            fd_step=0.02,
+            candidates=candidates,
+            stages=stages,
+            initial_samples=(119, 121),
+            final_samples=(39, 41),
+            category_metrics={"bond_length": {"rmsd": np.float64(0.25), "r_squared": float("nan")}},
+        )
+        run = dataclasses.replace(run, result=result)
+        case = BenchmarkCase(key="ch3f", name="synthetic", problem=problem, default_forms=("harmonic",))
+        monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: case)
+        monkeypatch.setattr(
+            "q2mm.application.optimization.execute_optimization",
+            lambda *_args, **_kwargs: (result, run.final_force_field),
+        )
+        candidate = run_profile(
+            RunProfile(
+                system="ch3f", backend="synthetic-mm", functional_form="harmonic", optimizer="scipy-lbfgsb", n_evals=0
+            ),
+            backend=_EnergyBackend(),
+            policy=AcceptancePolicy(require_convergence=True),
+            analyze=False,
+            include_device=False,
+        )
+        assert candidate.status is status, candidate.reason
+
+        # Reflect only in the test oracle so a future model field cannot silently disappear.
+        expected = {field.name: getattr(result, field.name) for field in dataclasses.fields(result)}
+        expected["candidates"] = [
+            {field.name: getattr(record, field.name) for field in dataclasses.fields(record)} for record in candidates
+        ]
+        expected["stages"] = [
+            {field.name: getattr(record, field.name) for field in dataclasses.fields(record)} for record in stages
+        ]
+        expected = json.loads(canonical_json(expected))
+        saved = save(run, tmp_path / "run.frcmod")
+        assert saved.manifest_path is not None
+        manifest = json.loads(saved.manifest_path.read_text())
+        candidate_path = persist_candidate(tmp_path, candidate, provenance={"generator": "test"})
+        record = json.loads(candidate_path.read_text())
+        assert manifest["result"] == record["optimization_result"] == expected
+        assert record["summary"]["stages"] == expected["stages"]
+        assert manifest["schema"] == "q2mm.optimization-run-manifest"
+        assert manifest["schema_version"] == 1
+        assert record["status"] == status.value
+        assert record["candidate_id"] == candidate.candidate_id
+        assert isinstance(manifest["result"]["initial_score"], int)
+        assert isinstance(record["optimization_result"]["initial_score"], float)
+        for sdk_stage, benchmark_stage in zip(manifest["result"]["stages"], record["optimization_result"]["stages"]):
+            assert isinstance(sdk_stage["elapsed_s"], int)
+            assert isinstance(benchmark_stage["elapsed_s"], float)
+        assert isinstance(result.stages[0].notes["solver"], MappingProxyType)
+        assert not result.stages[0].notes["solver"]["residual"].flags.writeable
+        assert not result.initial_params.flags.writeable
+        assert not result.candidates[0].final_params.flags.writeable
+
+    def test_failed_result_preserves_nonfinite_sentinel_policy(self) -> None:
+        from q2mm.application.persistence import _manifest_payload
+        from q2mm._canonical import canonical_json
+        from test.test_application import _problem, _run
+
+        run = _run(_problem())
+        result = dataclasses.replace(
+            run.result,
+            success=False,
+            initial_score=float("nan"),
+            final_score=float("inf"),
+            history=(float("-inf"), float("nan"), float("inf")),
+        )
+        run = dataclasses.replace(run, result=result)
+        sdk = json.loads(canonical_json(_manifest_payload(run, "amber_frcmod")))["result"]
+        benchmark = sanitize_for_json(result_to_dict(result))
+        assert sdk == benchmark
+        assert sdk["initial_score"] == "NaN"
+        assert sdk["final_score"] == "Infinity"
+        assert sdk["history"] == ["-Infinity", "NaN", "Infinity"]
+
+    @pytest.mark.parametrize(
+        ("notes", "benchmark_notes", "error"),
+        [
+            ({"nested": {1: "selected"}}, {"nested": {"1": "selected"}}, "must be a string"),
+            ({"selected": {1, 0}}, {"selected": [0, 1]}, "Unordered collection"),
+            ({"solver": {"api_key": "redacted"}}, {"solver": {"api_key": "redacted"}}, "Secret-like field"),
+        ],
+    )
+    def test_envelope_specific_note_policies_remain_distinct(
+        self, tmp_path: Path, notes: dict[str, Any], benchmark_notes: dict[str, Any], error: str
+    ) -> None:
+        from q2mm.application.models import PersistenceError
+        from q2mm.application.persistence import save
+        from q2mm.models.results import StageRecord
+        from test.test_application import _problem, _run
+
+        run = _run(_problem())
+        result = run.result
+        stage = StageRecord(
+            name="diagnostics",
+            n_params=result.n_params,
+            layout_fingerprint=result.layout_fingerprint,
+            initial_score=2.0,
+            final_score=1.0,
+            n_iterations=1,
+            n_evaluations=2,
+            converged=True,
+            message="ok",
+            gradient_mode="none",
+            notes=notes,
+        )
+        run = dataclasses.replace(run, result=dataclasses.replace(result, stages=(stage,)))
+        with pytest.raises(PersistenceError, match=error):
+            save(run, tmp_path / "run.frcmod")
+        assert list(tmp_path.iterdir()) == []
+        candidate = dataclasses.replace(
+            _candidate(CandidateStatus.ACCEPTED),
+            optimization_result=run.result,
+            final_force_field=run.final_force_field,
+        )
+        candidate_path = persist_candidate(tmp_path, candidate, provenance={})
+        payload = json.loads(candidate_path.read_text())["optimization_result"]
+        assert payload["stages"][0]["notes"] == benchmark_notes
 
 
 class TestClassifyRatio:

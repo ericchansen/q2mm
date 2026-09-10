@@ -1,12 +1,80 @@
 """Fault-injection coverage for application paired-file installation."""
 
+import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from q2mm.application import persistence
-from q2mm.application.models import PersistenceError
+from q2mm.application.models import OutputExistsError, PersistenceError
 from test.test_application import _problem, _run
+
+
+@pytest.mark.parametrize("overwrite", [False, True])
+@pytest.mark.parametrize("orphan", [False, True])
+def test_bare_save_rejects_existing_sidecar_before_staging(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, overwrite: bool, orphan: bool
+) -> None:
+    problem = _problem()
+    run = _run(problem)
+    target = tmp_path / "run.frcmod"
+    saved = persistence.save(run, target)
+    manifest = saved.manifest_path
+    assert manifest is not None
+    if orphan:
+        target.unlink()
+        manifest.write_bytes(b"untrusted sidecar: not JSON")
+    original = {path: path.read_bytes() for path in tmp_path.iterdir()}
+    vector = run.result.final_params.copy()
+    vector[0] += 1.0
+    changed = problem.layout.replace(run.final_force_field, vector)
+
+    def unexpected_write(*args: object, **kwargs: object) -> None:
+        pytest.fail("Conflicting bare save reached staging or serialization")
+
+    monkeypatch.setattr(persistence, "_temp_sibling", unexpected_write)
+    monkeypatch.setattr(persistence, "_serializer", unexpected_write)
+    monkeypatch.setattr(persistence, "_replace_transaction", unexpected_write)
+    with pytest.raises(OutputExistsError, match="manifest.*different output path") as raised:
+        persistence.save(changed, target, overwrite=overwrite)
+    assert str(manifest) in str(raised.value)
+    assert {path: path.read_bytes() for path in tmp_path.iterdir()} == original
+
+
+def test_bare_save_without_sidecar_still_supports_fresh_and_overwrite(tmp_path: Path) -> None:
+    problem = _problem()
+    target = tmp_path / "bare.frcmod"
+    saved = persistence.save(problem.starting_force_field, target)
+    original = target.read_bytes()
+    assert saved.manifest_path is None
+    vector = problem.layout.vector(problem.starting_force_field).copy()
+    vector[0] += 1.0
+    changed = problem.layout.replace(problem.starting_force_field, vector)
+    assert persistence.save(changed, target, overwrite=True) == saved
+    assert target.read_bytes() != original
+    assert set(tmp_path.iterdir()) == {target}
+
+
+def test_run_over_run_save_replaces_both_artifacts(tmp_path: Path) -> None:
+    problem = _problem()
+    run = _run(problem)
+    target = tmp_path / "run.frcmod"
+    saved = persistence.save(run, target)
+    manifest = saved.manifest_path
+    assert manifest is not None
+    original = {path: path.read_bytes() for path in (target, manifest)}
+    vector = run.result.final_params.copy()
+    vector[problem.active_space.active_indices[0]] += 1.0
+    changed = replace(
+        run,
+        result=replace(run.result, final_params=vector, message="updated run"),
+        final_force_field=problem.layout.replace(run.final_force_field, vector),
+    )
+    assert persistence.save(changed, target, overwrite=True) == saved
+    assert all(path.read_bytes() != content for path, content in original.items())
+    assert json.loads(manifest.read_text())["result"]["final_params"] == vector.tolist()
+    assert set(tmp_path.iterdir()) == {target, manifest}
 
 
 @pytest.mark.parametrize("overwrite", [False, True])

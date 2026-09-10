@@ -10,8 +10,8 @@ from typing import Any
 from uuid import uuid4
 
 from q2mm._canonical import canonical_json
+from q2mm._result_serialization import result_payload
 from q2mm.models.forcefield import ForceField, FunctionalForm
-from q2mm.models.results import CandidateRecord, OptimizationResult, StageRecord
 
 from .models import (
     OptimizationRun,
@@ -82,64 +82,6 @@ def _serializer(format_name: str) -> Callable[[ForceField, Path], Path]:
     return save_tinker_prm
 
 
-def _stage_payload(stage: StageRecord) -> dict[str, Any]:
-    return {
-        "name": stage.name,
-        "n_params": stage.n_params,
-        "layout_fingerprint": stage.layout_fingerprint,
-        "initial_score": stage.initial_score,
-        "final_score": stage.final_score,
-        "n_iterations": stage.n_iterations,
-        "n_evaluations": stage.n_evaluations,
-        "converged": stage.converged,
-        "message": stage.message,
-        "gradient_mode": stage.gradient_mode,
-        "fd_step": stage.fd_step,
-        "elapsed_s": stage.elapsed_s,
-        "locked_param_indices": list(stage.locked_param_indices),
-        "notes": dict(stage.notes),
-    }
-
-
-def _candidate_payload(candidate: CandidateRecord) -> dict[str, Any]:
-    return {
-        "index": candidate.index,
-        "status": candidate.status,
-        "n_params": candidate.n_params,
-        "layout_fingerprint": candidate.layout_fingerprint,
-        "initial_params": candidate.initial_params.tolist(),
-        "final_params": candidate.final_params.tolist(),
-        "initial_score": candidate.initial_score,
-        "final_score": candidate.final_score,
-        "message": candidate.message,
-        "seed": candidate.seed,
-    }
-
-
-def _result_payload(result: OptimizationResult) -> dict[str, Any]:
-    return {
-        "success": result.success,
-        "message": result.message,
-        "initial_score": result.initial_score,
-        "final_score": result.final_score,
-        "n_iterations": result.n_iterations,
-        "n_evaluations": result.n_evaluations,
-        "n_params": result.n_params,
-        "layout_fingerprint": result.layout_fingerprint,
-        "initial_params": result.initial_params.tolist(),
-        "final_params": result.final_params.tolist(),
-        "history": list(result.history),
-        "method": result.method,
-        "gradient_mode": result.gradient_mode,
-        "fd_step": result.fd_step,
-        "initial_samples": list(result.initial_samples),
-        "final_samples": list(result.final_samples),
-        "category_metrics": {key: dict(value) for key, value in result.category_metrics.items()},
-        "candidates": [_candidate_payload(candidate) for candidate in result.candidates],
-        "stages": [_stage_payload(stage) for stage in result.stages],
-    }
-
-
 def _configuration_payload(configuration: ResolvedExecutionConfiguration) -> dict[str, Any]:
     backend = configuration.backend
     optimizer = configuration.optimizer
@@ -196,7 +138,7 @@ def _manifest_payload(run: OptimizationRun, format_name: str) -> dict[str, Any]:
         "baseline": run.baseline.tolist(),
         "configuration": _configuration_payload(run.configuration),
         "provenance": dict(run.provenance),
-        "result": _result_payload(run.result),
+        "result": result_payload(run.result),
     }
 
 
@@ -283,10 +225,12 @@ def save(
     """Save a force field and, for a run, its deterministic manifest.
 
     The manifest path is ``<force-field-path>.manifest.json``. Bare force
-    fields intentionally produce no manifest. Catchable installation failures
-    trigger rollback; failed recovery retains backups and is logged. Cleanup
-    errors after installation are logged as committed, without rollback.
-    User interruptions propagate. Sequential replacements are not crash-atomic.
+    fields intentionally produce no manifest and are rejected if that sidecar
+    already exists, even with ``overwrite=True`` or a missing force-field file.
+    Catchable installation failures trigger rollback; failed recovery retains
+    backups and is logged. Cleanup errors after installation are logged as
+    committed, without rollback. User interruptions propagate. Sequential
+    replacements are not crash-atomic.
     """
     if not isinstance(value, (OptimizationRun, ForceField)):
         raise PersistenceError("save accepts an OptimizationRun or ForceField.")
@@ -307,7 +251,13 @@ def save(
         raise OutputFormatError(
             f"{selected_format!r} cannot represent nonbonded_excluded_atom_types; use MM3 .fld output."
         )
-    manifest_target = Path(f"{target}{MANIFEST_SUFFIX}") if isinstance(value, OptimizationRun) else None
+    sidecar = Path(f"{target}{MANIFEST_SUFFIX}")
+    if not isinstance(value, OptimizationRun) and (sidecar.exists() or sidecar.is_symlink()):
+        raise OutputExistsError(
+            f"Refusing bare force-field save beside existing manifest {sidecar}; "
+            "use a different output path or save an OptimizationRun to replace the pair."
+        )
+    manifest_target = sidecar if isinstance(value, OptimizationRun) else None
     invalid_targets = [
         candidate
         for candidate in (target, manifest_target)
