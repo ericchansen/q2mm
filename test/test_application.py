@@ -462,6 +462,34 @@ def test_scipy_object_internal_fd_step(method: str, mode: str | None, tmp_path: 
     assert manifest["result"]["fd_step"] == expected_step
 
 
+@pytest.mark.parametrize("override", [None, 1e-4, 0.03], ids=["omitted", "explicit-default", "explicit-other"])
+def test_root_optimize_preserves_fd_step_precedence(override: float | None) -> None:
+    import q2mm
+
+    spec = OptimizerSpec(
+        key="custom-fd",
+        label="Custom FD",
+        method="L-BFGS-B",
+        evaluator="python",
+        gradient_mode="finite_difference",
+        fd_step=0.02,
+    )
+    run = q2mm.optimize(
+        _problem(),
+        backend=_EnergyBackend(),
+        recipe="explicit",
+        optimizer=spec,
+        optimizer_options={"maxiter": 1},
+        workflow="single-stage",
+        **({} if override is None else {"fd_step": override}),
+        n_evals=0,
+    )
+    expected = spec.fd_step if override is None else override
+    assert run.executor_configuration.fd_step == expected
+    assert run.result.fd_step == expected
+    assert ("fd_step" in run.configuration.overrides) is (override is not None)
+
+
 @pytest.mark.parametrize("source", ["spec", "catalog", "object"])
 @pytest.mark.parametrize("override", [None, 1e-4, 0.04], ids=["omitted", "explicit-default", "explicit-other"])
 def test_executor_fd_step_precedence(source: str, override: float | None, tmp_path: Path) -> None:

@@ -5,13 +5,10 @@ import subprocess
 import sys
 
 import numpy as np
-import pytest
 
 import q2mm
 from q2mm.models.forcefield import FunctionalForm
-from q2mm.optimizers.catalog import OptimizerSpec
 from test._shared import make_water
-from test.test_application import _EnergyBackend, _problem
 
 
 def test_root_all_is_exact() -> None:
@@ -98,29 +95,3 @@ def test_root_prepare_delegates_without_mutating_input() -> None:
     assert isinstance(problem, q2mm.OptimizationProblem)
     assert problem.starting_force_field.functional_form is FunctionalForm.HARMONIC
     np.testing.assert_array_equal(molecule.geometry, geometry)
-
-
-@pytest.mark.parametrize("override", [None, 1e-4, 0.03], ids=["omitted", "explicit-default", "explicit-other"])
-def test_root_optimize_preserves_fd_step_precedence(override: float | None) -> None:
-    spec = OptimizerSpec(
-        key="custom-fd",
-        label="Custom FD",
-        method="L-BFGS-B",
-        evaluator="python",
-        gradient_mode="finite_difference",
-        fd_step=0.02,
-    )
-    run = q2mm.optimize(
-        _problem(),
-        backend=_EnergyBackend(),
-        recipe="explicit",
-        optimizer=spec,
-        optimizer_options={"maxiter": 1},
-        workflow="single-stage",
-        **({} if override is None else {"fd_step": override}),
-        n_evals=0,
-    )
-    expected = spec.fd_step if override is None else override
-    assert run.executor_configuration.fd_step == expected
-    assert run.result.fd_step == expected
-    assert ("fd_step" in run.configuration.overrides) is (override is not None)
