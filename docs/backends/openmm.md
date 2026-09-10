@@ -84,6 +84,8 @@ Nonzero canonical bond dipoles and nondefault vdW reduction raise
 Existing Urey-Bradley, CMAP, and cosine improper handling is retained.
 The separate stretch-bend limitation is unchanged. See the
 [shared term-presence rules](index.md#populated-term-preparation-gates).
+Proper and improper terms containing [known native wildcard tokens](index.md#wildcard-torsion-boundary)
+are rejected even when other valid terms make the system nonempty.
 
 ---
 

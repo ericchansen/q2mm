@@ -888,7 +888,9 @@ class JaxBackend:
             request.force_field,
             backend="JAX",
             unsupported=frozenset(
-                {"CMAP", "vdW reduction", "stretch-bend"} if form == "harmonic" else {"CMAP", "vdW reduction"}
+                {"CMAP", "vdW reduction", "wildcard torsions", "stretch-bend"}
+                if form == "harmonic"
+                else {"CMAP", "vdW reduction", "wildcard torsions"}
             ),
         )
         layout = ParameterLayout.from_force_field(request.force_field)

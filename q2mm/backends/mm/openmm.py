@@ -659,7 +659,9 @@ class OpenMMBackend:
                 f"OpenMM does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
             )
         _validate_term_support(
-            request.force_field, backend="OpenMM", unsupported=frozenset({"bond dipoles", "vdW reduction"})
+            request.force_field,
+            backend="OpenMM",
+            unsupported=frozenset({"bond dipoles", "vdW reduction", "wildcard torsions"}),
         )
         layout = ParameterLayout.from_force_field(request.force_field)
         try:

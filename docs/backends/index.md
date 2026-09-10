@@ -54,8 +54,8 @@ before parameter-layout or native-state construction:
 
 | Backend | Rejected populated content |
 |---------|----------------------------|
-| [JAX](jax-engine.md#preparation-gates) | CMAP and nondefault vdW reduction in both forms; stretch-bend in harmonic mode |
-| [OpenMM](openmm.md#preparation-gates) | Bond dipoles and nondefault vdW reduction in both forms |
+| [JAX](jax-engine.md#preparation-gates) | CMAP, nondefault vdW reduction, and [known wildcard torsions](#wildcard-torsion-boundary) in both forms; stretch-bend in harmonic mode |
+| [OpenMM](openmm.md#preparation-gates) | Bond dipoles, nondefault vdW reduction, and [known wildcard torsions](#wildcard-torsion-boundary) in both forms |
 | [JAX-MD](jax-md.md#preparation-gates) | Urey-Bradley, CMAP and improper torsions |
 
 Populated zero-valued grids, stretch-bend/improper records, and Urey-Bradley
@@ -73,6 +73,32 @@ Existing supported terms and native functional models are unchanged.
 checks from backend-marked runtime cases. In particular, its mocked JAX-MD
 preparation checks are not JAX-MD runtime evidence; the `jax_md` cases require
 an available supported-platform installation.
+
+#### Wildcard torsion boundary
+
+JAX and OpenMM do not expand native wildcard torsions. Their preparation
+gates reject proper or improper records containing the known tokens below,
+even when their amplitude is zero or other valid terms make the system
+nonempty. Exact typed and ordinary element-based matching is unchanged;
+full wildcard matching and its precedence rules remain deferred.
+
+| Token | Format evidence |
+|-------|-----------------|
+| `X` (case-sensitive, whole token) | [AMBER parameter card 6 and general improper types](https://ambermd.org/FileFormats.php); retained by the frcmod loader |
+| `00` | Existing MM3 loader representation and [documented MM3 transfer boundary](../benchmarks/optimizer-comparison.md#macromodel-mm3-transfer-boundary) |
+| Integer zero (`0`, including padded or signed zero spellings) | [Tinker native torsion assignment](https://github.com/TinkerTools/tinker/blob/c9698d2101c5f66ce1d413f4aa2d5f62e4c22df2/source/ktors.f) uses zero atom classes for terminal wildcard matching; the loader retains their labels |
+
+A complete dash-separated type quadruplet in `TorsionParam.env_id` takes
+precedence over inferred elements. If no complete quadruplet is available,
+the canonical element labels are inspected instead. This avoids turning
+ordinary type names such as `X1` or `Xe` into wildcards merely because an
+element inference produced `X`. Substrings, lowercase `x`, asterisks, and
+other unknown names are not guessed to be wildcard syntax.
+
+Names, comments, source paths, row numbers, and reference partial charges
+do not trigger this gate. `test/test_wildcard_term_rejection.py` includes
+small CPU omission reproductions, exact-binding controls, and preflight
+checks. No loader, Tinker backend, or native AMBER/Tinker engine is changed.
 
 ### Harmonic
 
