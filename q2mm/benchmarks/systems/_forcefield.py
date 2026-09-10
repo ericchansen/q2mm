@@ -28,7 +28,9 @@ def load_published_opt(ff_path: str | Path) -> tuple[ForceField, ForceField]:
 
     Used for FFs (e.g. Donoghue 2008 Rh-enamide, Rosales 2020 Heck relay)
     whose .fld file already contains both the standard MM3 backbone AND
-    a custom OPT-substructure block with literature-fitted values.
+    custom OPT-substructure blocks with literature-fitted values. Other
+    physical substructure blocks, including non-OPT blocks, are retained
+    in the full import as well.
 
     No QFUERZA projection is run — the published OPT values are
     preserved exactly.  This is the strategy that fixes the
@@ -38,11 +40,12 @@ def load_published_opt(ff_path: str | Path) -> tuple[ForceField, ForceField]:
         ff_path: Path to the published .fld file.
 
     Returns:
-        ``(composed, opt_only)`` — the full force field (standard MM3 +
-        OPT block, no frozen/active partition applied) and the
-        OPT-substructure-only force field used to identify which
-        parameters are OPT (via
-        :func:`~q2mm.models.parameters.opt_substructure_membership`).
+        ``(composed, opt_only)`` — supported standard MM3 parameters plus
+        all physical substructure blocks (OPT and non-OPT), and the field
+        restricted to OPT-named blocks' bonded parameters. Both retain
+        the global vdW table. Neither has a frozen/active partition
+        applied; the second field identifies OPT membership via
+        :func:`~q2mm.models.parameters.opt_substructure_membership`.
 
     """
     import dataclasses
@@ -66,8 +69,9 @@ def compose_opt_with_mm3_base(
 
     Wahlers TSFFs (pd-allyl, pd 1,4-conjugate addition, rh 1,4-conjugate
     addition) ship as standalone OPT-substructure-only files (~100-500
-    parameters) that depend on a separate standard MM3 base file
-    (~2,500 backbone params).  This primitive concatenates the two
+    parameters) that depend on a separate MM3 base file. The base import
+    retains supported standard rows and all physical substructure blocks,
+    including non-OPT blocks. This primitive concatenates the two
     into a single :class:`ForceField`, with the OPT block appearing
     first so that matching prefers OPT over the corresponding base
     entries.
