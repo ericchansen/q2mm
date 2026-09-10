@@ -9,8 +9,17 @@ import pytest
 
 yaml = pytest.importorskip("yaml", reason="pyyaml not installed")
 
+from q2mm.models.forcefield import BondParam, ForceField, FunctionalForm
 from q2mm.models.molecule import Molecule
-from q2mm.models.observations import Observation, ObservationSet
+from q2mm.models.observations import (
+    Observation,
+    ObservationEnergyUnit,
+    ObservationSet,
+    ScanCoordinate,
+    ScanCoordinateKind,
+    ThermodynamicQuantity,
+)
+from q2mm.models.parameters import ParameterLayout, ParameterUnit
 from q2mm.io.reference import (
     ReferenceYAMLError,
     _reference_value_to_dict,
@@ -214,6 +223,134 @@ class TestRoundTrip:
 # ---------------------------------------------------------------------------
 # from_yaml / to_yaml on ObservationSet
 # ---------------------------------------------------------------------------
+
+
+class TestSaveDependencies:
+    @pytest.mark.parametrize("existing", [False, True])
+    @pytest.mark.parametrize("kind", ["none", "eig_diagonal", "eig_offdiagonal"])
+    def test_rejects_unrepresented_hessian(self, tmp_path: Path, existing: bool, kind: str) -> None:
+        mol = make_water().with_hessian(np.eye(9))
+        ref = ObservationSet()
+        if kind == "eig_diagonal":
+            ref = ref.with_hessian_eigenvalue(0.5, mode_idx=0, case_id=mol.name)
+        elif kind == "eig_offdiagonal":
+            ref = ref.with_hessian_offdiagonal(0.1, row=0, col=1, case_id=mol.name)
+        path = tmp_path / "reference.yaml"
+        if existing:
+            path.write_bytes(b"existing reference")
+
+        with pytest.raises(ReferenceYAMLError, match="water.*Hessian"):
+            save_reference_yaml(path, ref, [mol])
+
+        if existing:
+            assert path.read_bytes() == b"existing reference"
+        else:
+            assert not path.exists()
+
+    @pytest.mark.parametrize("existing", [False, True])
+    @pytest.mark.parametrize("kind", ["bonds", "angles", "torsions"])
+    @pytest.mark.parametrize("empty", [False, True])
+    def test_rejects_unrepresented_authoritative_topology(
+        self, tmp_path: Path, existing: bool, kind: str, empty: bool
+    ) -> None:
+        original = make_water()
+        mol = Molecule(
+            symbols=original.symbols,
+            geometry=original.geometry,
+            name=original.name,
+            **{kind: () if empty else getattr(original, kind)},
+        )
+        path = tmp_path / "reference.yaml"
+        if existing:
+            path.write_bytes(b"existing reference")
+
+        with pytest.raises(ReferenceYAMLError, match=f"water.*{kind}"):
+            save_reference_yaml(path, ObservationSet(), [mol])
+
+        if existing:
+            assert path.read_bytes() == b"existing reference"
+        else:
+            assert not path.exists()
+
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_rejects_topology_retained_after_geometry_change(self, tmp_path: Path, existing: bool) -> None:
+        mol = make_water().with_geometry([[0.0, 0.0, 0.0], [3.0, 0.0, 0.0], [-3.0, 0.0, 0.0]])
+        path = tmp_path / "reference.yaml"
+        if existing:
+            path.write_bytes(b"existing reference")
+
+        with pytest.raises(ReferenceYAMLError, match="water.*topology"):
+            save_reference_yaml(path, ObservationSet(), [mol])
+
+        if existing:
+            assert path.read_bytes() == b"existing reference"
+        else:
+            assert not path.exists()
+
+    def test_inferred_empty_topology_round_trip(self, tmp_path: Path) -> None:
+        mol = Molecule(symbols=("H", "H"), geometry=[[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]], name="separated")
+        path = tmp_path / "reference.yaml"
+
+        save_reference_yaml(path, ObservationSet(), [mol])
+        _, loaded = load_reference_yaml(path)
+
+        assert loaded[0].bonds == mol.bonds == ()
+        assert not loaded[0].bonds_explicit
+
+
+class TestTypedObservationRejection:
+    @pytest.mark.parametrize("existing", [False, True])
+    @pytest.mark.parametrize(
+        "kind",
+        [
+            "atomic_partial_charge",
+            "direct_electrostatic_potential",
+            "relative_energy",
+            "scan_energy",
+            "parameter_tether",
+        ],
+    )
+    def test_typed_metadata_is_rejected_before_output(self, tmp_path: Path, existing: bool, kind: str) -> None:
+        ref = ObservationSet().with_energy(0.0, case_id="a")
+        if kind == "atomic_partial_charge":
+            ref = ref.with_atomic_partial_charge(0.25, atom_index=1, case_id="b")
+        elif kind == "direct_electrostatic_potential":
+            ref = ref.with_direct_electrostatic_potential(0.25, point=(1.0, 2.0, 3.0), case_id="b")
+        elif kind == "relative_energy":
+            ref = ref.with_relative_energy_group(
+                [("a", 0.0), ("b", 2.0)],
+                group_id="relative",
+                reference_case_id="a",
+                unit=ObservationEnergyUnit.HARTREE,
+                quantity=ThermodynamicQuantity.ENERGY,
+            )
+        elif kind == "scan_energy":
+            ref = ref.with_scan_energy_group(
+                [
+                    ("a", 0.0, ScanCoordinate(ScanCoordinateKind.DISTANCE, (0, 1), 0.7, "angstrom")),
+                    ("b", 1.0, ScanCoordinate(ScanCoordinateKind.DISTANCE, (0, 1), 0.8, "angstrom")),
+                ],
+                group_id="scan",
+                reference_case_id="a",
+                unit=ObservationEnergyUnit.KCAL_PER_MOL,
+            )
+        else:
+            layout = ParameterLayout.from_force_field(
+                ForceField(functional_form=FunctionalForm.HARMONIC, bonds=(BondParam(("H", "H"), 0.74, 10.0),))
+            )
+            ref = ref.with_parameter_tether(
+                10.0, parameter_id=layout.ids[0], unit=ParameterUnit.KCAL_PER_MOL_PER_ANGSTROM2, case_id="b"
+            )
+        molecules = [Molecule(symbols=("H", "H"), geometry=((0, 0, 0), (0.74, 0, 0)), name=name) for name in ("a", "b")]
+        path = tmp_path / "reference.yaml"
+        if existing:
+            path.write_bytes(b"preserve reference")
+        before = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+
+        with pytest.raises(ReferenceYAMLError, match=kind):
+            save_reference_yaml(path, ref, molecules)
+
+        assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before
 
 
 class TestReferenceYAMLFunctions:
