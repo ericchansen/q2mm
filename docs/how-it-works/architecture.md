@@ -218,6 +218,7 @@ q2mm/
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
 ├── application/          # Data-independent evaluate, optimize, and atomic save services
 │   ├── models.py        # Immutable resolved configuration + OptimizationRun/SavedOutput
+│   ├── configuration.py # Exact built-in capture + optional ConfigurationProvider protocol
 │   ├── evaluation.py    # Typed OptimizationProblem and reference-property evaluation
 │   ├── optimization.py  # Strict recipe/component resolution and generic execution
 │   └── persistence.py   # Semantic FF formats + deterministic run manifests

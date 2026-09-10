@@ -83,6 +83,9 @@ class _FrequencyBackend:
 
 
 class _NoOpOptimizer:
+    def configuration_settings(self) -> dict[str, str]:
+        return {"mode": "no-op"}
+
     def optimize(
         self,
         evaluator: ObjectiveEvaluator,

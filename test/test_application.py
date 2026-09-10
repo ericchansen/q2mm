@@ -586,6 +586,9 @@ def test_unknown_optimizer_keeps_explicit_gradient_contract(reported_mode: str) 
     class CustomOptimizer:
         method = "L-BFGS-B"
 
+        def configuration_settings(self) -> dict[str, object]:
+            return {"reported_mode": reported_mode}
+
         def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
             assert evaluator.gradient_mode is GradientMode.NONE
             return _result(problem, gradient_mode=reported_mode)
