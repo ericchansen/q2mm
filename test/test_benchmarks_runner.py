@@ -171,7 +171,7 @@ def scientific_case() -> BenchmarkCase:
 
 
 def _resolve_scientific_case(case: BenchmarkCase) -> ResolvedProfile:
-    from q2mm.benchmarks.runner import _data_provenance
+    from q2mm.benchmarks.records import _data_provenance
 
     problem = case.problem
     return dataclasses.replace(
@@ -934,7 +934,7 @@ class TestPromotion:
         # Fail on the SECOND os.replace (the force field commit) after the
         # first (JSON) has already been committed: rollback must restore the
         # pre-existing JSON bytes exactly and leave the prior FF untouched.
-        import q2mm.benchmarks.runner as runner_mod
+        import q2mm.benchmarks.artifacts as artifacts_mod
 
         real_replace = os.replace
         calls = {"n": 0}
@@ -945,7 +945,7 @@ class TestPromotion:
                 raise OSError("synthetic replace failure")
             real_replace(src, dst)
 
-        monkeypatch.setattr(runner_mod.os, "replace", _flaky_replace)
+        monkeypatch.setattr(artifacts_mod.os, "replace", _flaky_replace)
         with pytest.raises(OSError, match="synthetic replace failure"):
             promote_candidate(tmp_path, _candidate(CandidateStatus.ACCEPTED, ff=_harmonic_ff()), provenance={})
 
@@ -963,7 +963,7 @@ class TestPromotion:
         # accepted/ JSON absent (rolled back), not a partial file.
         cand = _candidate(CandidateStatus.ACCEPTED, ff=_harmonic_ff())
         cid = cand.candidate_id
-        import q2mm.benchmarks.runner as runner_mod
+        import q2mm.benchmarks.artifacts as artifacts_mod
 
         real_replace = os.replace
         calls = {"n": 0}
@@ -974,7 +974,7 @@ class TestPromotion:
                 raise OSError("synthetic replace failure")
             real_replace(src, dst)
 
-        monkeypatch.setattr(runner_mod.os, "replace", _flaky_replace)
+        monkeypatch.setattr(artifacts_mod.os, "replace", _flaky_replace)
         with pytest.raises(OSError, match="synthetic replace failure"):
             promote_candidate(tmp_path, cand, provenance={})
         assert not (tmp_path / "accepted" / f"{cid}.json").exists()
@@ -1196,7 +1196,7 @@ class TestPromotion:
         caplog: pytest.LogCaptureFixture,
         stage: str,
     ) -> None:
-        import q2mm.benchmarks.runner as runner
+        import q2mm.benchmarks.artifacts as artifacts
 
         candidate = _candidate(CandidateStatus.ACCEPTED)
         paths = promote_candidate(tmp_path, candidate, {})
@@ -1213,9 +1213,9 @@ class TestPromotion:
 
         with monkeypatch.context() as patch:
             if stage == "json":
-                patch.setattr(runner.json, "dump", fail_json)
+                patch.setattr(artifacts.json, "dump", fail_json)
             else:
-                patch.setattr(runner, "_serialize_ff", fail_ff)
+                patch.setattr(artifacts, "_serialize_ff", fail_ff)
             with pytest.raises(OSError) as raised:
                 promote_candidate(tmp_path, candidate, {})
         assert raised.value is failure
@@ -1542,12 +1542,12 @@ class TestRunProfilePipeline:
     def test_optimizer_and_workflow_built_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Provenance + execution must share one build: resolve_optimizer and
         # _resolve_workflow are each called exactly once per profile run.
-        import q2mm.benchmarks.runner as runner_mod
+        import q2mm.benchmarks.profiles as profiles_mod
 
         opt_calls = {"n": 0}
         wf_calls = {"n": 0}
-        real_opt = runner_mod.resolve_optimizer
-        real_wf = runner_mod._resolve_workflow
+        real_opt = profiles_mod.resolve_optimizer
+        real_wf = profiles_mod._resolve_workflow
 
         def _spy_opt(profile: RunProfile) -> Any:
             opt_calls["n"] += 1
@@ -1557,8 +1557,8 @@ class TestRunProfilePipeline:
             wf_calls["n"] += 1
             return real_wf(profile)
 
-        monkeypatch.setattr(runner_mod, "resolve_optimizer", _spy_opt)
-        monkeypatch.setattr(runner_mod, "_resolve_workflow", _spy_wf)
+        monkeypatch.setattr(profiles_mod, "resolve_optimizer", _spy_opt)
+        monkeypatch.setattr(profiles_mod, "_resolve_workflow", _spy_wf)
         run_profile(
             RunProfile(
                 system="ch3f",
