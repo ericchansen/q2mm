@@ -10,7 +10,7 @@ listed Zotero records; DOI links are the authoritative public links.
 |---|---|---|
 | QFUERZA starting parameters | Farrugia, M.; Helquist, P.; Norrby, P.-O.; Wiest, O. “Rapid FF Generation via Hessian-Informed Initial Parameters and Automated Refinement.” *J. Chem. Theory Comput.* (online 2025; vol. 22, 469–476). [10.1021/acs.jctc.5c01751](https://doi.org/10.1021/acs.jctc.5c01751) | `XDS9K3C4` |
 | Original FUERZA projection | Seminario, J. M. “Calculation of Intramolecular Force Fields from Second-Derivative Tensors.” *Int. J. Quantum Chem.* **1996**, 60, 1271–1277. [10.1002/(SICI)1097-461X(1996)60:7<1271::AID-QUA8>3.0.CO;2-W](https://doi.org/10.1002/(SICI)1097-461X(1996)60:7%3C1271::AID-QUA8%3E3.0.CO;2-W) | — |
-| TS curvature inversion and Method E2 | Limé, E.; Norrby, P.-O. “Improving the Q2MM Method for Transition State Force Field Modeling.” *J. Comput. Chem.* **2015**, 36, 244–250. [10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797) | `UATW7GLJ` |
+| TS curvature inversion and Method E2 | Limé, E.; Norrby, P.-O. “Improving the Q2MM Method for Transition State Force Field Modeling.” *J. Comput. Chem.* **2014** (vol. 36, 244–250, published 2015). [10.1002/jcc.23797](https://doi.org/10.1002/jcc.23797) | `UATW7GLJ` |
 
 QFUERZA supplies initial values; it does not replace a publication's complete
 objective. See [Theory & Methods](how-it-works/theory.md).
