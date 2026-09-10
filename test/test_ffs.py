@@ -1,8 +1,10 @@
 import copy
 import json
 import logging
+import math
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -17,10 +19,23 @@ from q2mm.io.mm3 import (
     P_3_START,
     _Mm3ParameterRow,
     _format_mm3_angle_line,
+    _format_mm3_torsion_line,
+    _format_mm3_vdw_line,
     _mm3_export_ff,
     _mm3_import_ff,
     _splice_fixed,
     load_mm3_fld,
+    save_mm3_fld,
+)
+from q2mm.models.forcefield import (
+    AngleParam,
+    BondParam,
+    CmapGrid,
+    ForceField,
+    FunctionalForm,
+    StretchBendParam,
+    TorsionParam,
+    VdwParam,
 )
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout, opt_substructure_membership
 from q2mm.models.units import mm3_angle_k_to_canonical, mm3_bond_k_to_canonical, mm3_sb_k_to_canonical
@@ -333,6 +348,726 @@ class TestMM3ExportHigherTorsion(unittest.TestCase):
         self.assertIn("TAILBYTES", written)
 
 
+def _improper_template(scope: str) -> str:
+    if scope == "standard":
+        proper = _format_mm3_torsion_line(["H1", "C1", "C1", "H1"], 0.2, 0.4, 0.6)
+        improper = " 5" + proper[2:].rstrip("\n") + "  UNCHANGED TAIL\n"
+        return "".join([" C  synthetic template\n", proper, improper, improper, "-2\n"])
+    block = _substructure(scope, "C2-C2-AA-C3")
+    block[-2] = block[-2].rstrip("\n") + "             UNCHANGED TAIL\n"
+    block.insert(-1, block[-2])
+    return "".join(block)
+
+
+class TestMM3OutputFidelity:
+    @pytest.mark.parametrize("scope", ["standard", "OPT selected", "FROZEN"])
+    @pytest.mark.parametrize("periodicity", [1, 2], ids=["imp1", "imp2"])
+    @pytest.mark.parametrize("value", [9.0, 0.0, -7.5, 1234.5, -1234.5])
+    @pytest.mark.parametrize("explicit_template", [False, True])
+    def test_template_improper_scalar_roundtrip(
+        self, tmp_path: Path, scope: str, periodicity: int, value: float, explicit_template: bool
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template(scope), encoding="utf-8")
+        original_bytes = source.read_bytes()
+        ff = load_mm3_fld(source)
+        target = next(t for t in ff.torsions if t.is_improper and t.periodicity == periodicity)
+        changed = replace(
+            ff,
+            torsions=tuple(replace(t, force_constant=value) if t is target else t for t in ff.torsions),
+        )
+        if explicit_template:
+            changed = replace(changed, source_path=None, source_format=None)
+        output = tmp_path / "updated.fld"
+        save_mm3_fld(changed, output, template_path=source if explicit_template else None)
+
+        assert load_mm3_fld(output).torsions == changed.torsions
+        assert source.read_bytes() == original_bytes
+        expected_lines = source.read_text(encoding="utf-8").splitlines(keepends=True)
+        assert target.ff_row is not None
+        line = expected_lines[target.ff_row - 1]
+        start, end = (P_1_START, P_1_END) if periodicity == 1 else (P_2_START, P_2_END)
+        expected_lines[target.ff_row - 1] = line[:start] + f"{2.0 * value:10.4f}" + line[end:]
+        assert output.read_text(encoding="utf-8") == "".join(expected_lines)
+
+    @pytest.mark.parametrize("periodicity", [1, 2], ids=["imp1", "imp2"])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    @pytest.mark.parametrize(
+        "changes",
+        [
+            pytest.param({"force_constant": 50000.0}, id="positive-overflow"),
+            pytest.param({"force_constant": -5000.0}, id="negative-overflow"),
+            pytest.param({"force_constant": float("nan")}, id="nan"),
+            pytest.param({"force_constant": float("inf")}, id="infinity"),
+            pytest.param({"force_constant": float("-inf")}, id="negative-infinity"),
+            pytest.param({"phase": 90.0}, id="phase"),
+            pytest.param({"periodicity": 3}, id="order"),
+            pytest.param({"ff_row": None}, id="no-source-row"),
+            pytest.param({"ff_row": 999}, id="missing-source-row"),
+            pytest.param({"env_id": "N1-C1-C1-H1"}, id="environment"),
+            pytest.param({"elements": ("N", "C", "C", "H")}, id="elements"),
+            pytest.param({"is_improper": False}, id="interaction-kind"),
+        ],
+    )
+    def test_template_rejects_unrepresentable_improper_before_write(
+        self, tmp_path: Path, periodicity: int, destination: str, changes: dict[str, object]
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template("FROZEN"), encoding="utf-8")
+        original = source.read_bytes()
+        ff = load_mm3_fld(source)
+        target = next(t for t in ff.torsions if t.is_improper and t.periodicity == periodicity)
+        changed = replace(ff, torsions=tuple(replace(t, **changes) if t is target else t for t in ff.torsions))
+        output = source if destination == "source" else tmp_path / "output.fld"
+        before = original if destination == "source" else b"existing destination\r\n\xff"
+        if destination == "existing":
+            output.write_bytes(before)
+
+        with pytest.raises(ValueError, match="MM3.*improper"):
+            save_mm3_fld(changed, output)
+        assert source.read_bytes() == original
+        if destination == "absent":
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_template_rejects_duplicate_improper_column(self, tmp_path: Path, existing: bool) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template("standard"), encoding="utf-8")
+        ff = load_mm3_fld(source)
+        target = next(t for t in ff.torsions if t.is_improper)
+        changed = replace(ff, torsions=(*ff.torsions, replace(target, force_constant=9.0)))
+        output = tmp_path / "output.fld"
+        if existing:
+            output.write_bytes(b"unchanged")
+        with pytest.raises(ValueError, match="MM3.*improper.*duplicate"):
+            save_mm3_fld(changed, output)
+        if existing:
+            assert output.read_bytes() == b"unchanged"
+        else:
+            assert not output.exists()
+
+    @pytest.mark.parametrize("periodicity", [1, 2], ids=["imp1", "imp2"])
+    @pytest.mark.parametrize(("value", "phase_offset"), [(9.0, 360.0), (-9.0, -360.0), (0.0, 90.0)])
+    def test_template_improper_equivalent_phase_in_place(
+        self, tmp_path: Path, periodicity: int, value: float, phase_offset: float
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template("OPT selected"), encoding="utf-8")
+        ff = load_mm3_fld(source)
+        target = next(t for t in ff.torsions if t.is_improper and t.periodicity == periodicity)
+        changed = replace(
+            ff,
+            torsions=tuple(
+                replace(t, force_constant=value, phase=t.phase + phase_offset) if t is target else t
+                for t in ff.torsions
+            ),
+        )
+        save_mm3_fld(changed, source)
+        actual = next(
+            t for t in load_mm3_fld(source).torsions if t.ff_row == target.ff_row and t.periodicity == periodicity
+        )
+        assert actual == replace(target, force_constant=value)
+
+    @pytest.mark.parametrize("existing", [False, True])
+    @pytest.mark.parametrize(
+        ("changes", "feature"),
+        [
+            *[
+                pytest.param(
+                    {"cmaps": (CmapGrid(("C",) * 4, ("C",) * 4, 2, (value,) * 4),)},
+                    "CMAP",
+                    id=f"CMAP-{value}",
+                )
+                for value in (0.0, 1.0)
+            ],
+            *[
+                pytest.param(
+                    {"torsions": (TorsionParam(("H", "C", "C", "H"), n, k, phase=phase),)},
+                    "phase",
+                    id=f"proper-phase-{n}-{k}-{phase}",
+                )
+                for n in (1, 2, 3)
+                for k in (-0.5, 0.5)
+                for phase in (90.0, 180.0 if n % 2 else 0.0)
+            ],
+            *[
+                pytest.param(
+                    {"torsions": (TorsionParam(("H", "C", "C", "H"), 1, k, phase=phase),)},
+                    "phase",
+                    id=f"nonfinite-phase-{k}-{phase}",
+                )
+                for k in (0.0, 0.5)
+                for phase in (float("nan"), float("inf"), float("-inf"))
+            ],
+            pytest.param({"stretch_bends": (StretchBendParam(("H", "C", "H"), 5.0),)}, "stretch-bend", id="IO-04a"),
+            pytest.param(
+                {"stretch_bends": (StretchBendParam(("H", "C", "H"), 0.0),)}, "stretch-bend", id="IO-04a-zero"
+            ),
+            *[
+                pytest.param(
+                    {"angles": (AngleParam(("H", "C", "H"), 109.5, 20.0, ub_force_constant=k, ub_equilibrium=r),)},
+                    "Urey-Bradley",
+                    id=f"IO-04b-{k}-{r}",
+                )
+                for k, r in [(30.0, 2.0), (0.0, 0.0), (30.0, None), (None, 2.0)]
+            ],
+            *[
+                pytest.param(
+                    {"torsions": (TorsionParam(("H", "C", "C", "H"), n, k),)},
+                    "periodicity",
+                    id=f"IO-04c-{n}-{k}",
+                )
+                for n, k in [(4, 6.0), (5, 6.0), (6, 6.0), (7, 6.0), (4, 0.0)]
+            ],
+            *[
+                pytest.param(
+                    {"torsions": (TorsionParam(("H", "C", "C", "H"), n, 2.0, is_improper=True),)},
+                    "improper",
+                    id=f"IO-04d-{n}",
+                )
+                for n in (1, 2)
+            ],
+            *[
+                pytest.param(
+                    {"bonds": (BondParam(("C", "C"), 1.3, 300.0, bond_order=order),)},
+                    "bond order",
+                    id=f"IO-04e-{order}",
+                )
+                for order in ("=", "*", "%")
+            ],
+            pytest.param(
+                {"bonds": (BondParam(("C", "C"), 1.3, 300.0, context="O200 0000"),)},
+                "bond context",
+                id="IO-04f",
+            ),
+            *[
+                pytest.param(
+                    {"bonds": (BondParam(("C", "C"), 1.3, 300.0, dipole_moment=dipole),)},
+                    "bond dipole",
+                    id=f"IO-04g-{dipole}",
+                )
+                for dipole in (0.4, -0.4)
+            ],
+        ],
+    )
+    def test_standalone_rejects_loss_before_write(
+        self, tmp_path: Path, existing: bool, changes: dict[str, object], feature: str
+    ) -> None:
+        ff = ForceField(
+            bonds=(BondParam(("C", "F"), 1.38, 300.0, env_id="C1-F1"),),
+            functional_form=FunctionalForm.MM3,
+        )
+        ff = replace(ff, **changes)
+        output = tmp_path / "output.fld"
+        if existing:
+            output.write_bytes(b"existing destination\r\n\xff")
+        with pytest.raises(ValueError, match=f"MM3.*{feature}"):
+            save_mm3_fld(ff, output)
+        if existing:
+            assert output.read_bytes() == b"existing destination\r\n\xff"
+        else:
+            assert not output.exists()
+
+    @pytest.mark.parametrize("order", ["", "-"])
+    @pytest.mark.parametrize("context", ["", "0000 0000"])
+    def test_standalone_supported_generic_values(self, tmp_path: Path, order: str, context: str) -> None:
+        ff = ForceField(
+            bonds=(BondParam(("C", "F"), 1.38, 300.0, env_id="C1-F1", bond_order=order, context=context),),
+            angles=(AngleParam(("H", "C", "F"), 109.5, 40.0, env_id="H1-C1-F1"),),
+            torsions=tuple(
+                TorsionParam(("H", "C", "C", "F"), n, k, phase=phase, env_id="H1-C1-C1-F1")
+                for n, k, phase in [(1, -0.5, 0.0), (2, 1.2, 180.0), (3, 0.3, 0.0)]
+            ),
+            functional_form=FunctionalForm.MM3,
+        )
+        output = tmp_path / "supported.fld"
+        save_mm3_fld(ff, output)
+        actual = load_mm3_fld(output)
+        assert actual.bonds[0].force_constant == pytest.approx(300.0, rel=1e-3)
+        assert actual.bonds[0].equilibrium == 1.38
+        assert actual.bonds[0].bond_order == "-"
+        assert actual.bonds[0].context == ""
+        assert actual.bonds[0].dipole_moment == 0.0
+        assert actual.angles[0].force_constant == pytest.approx(40.0, rel=1e-3)
+        assert actual.angles[0].ub_force_constant is actual.angles[0].ub_equilibrium is None
+        assert [(t.periodicity, t.force_constant, t.phase, t.is_improper) for t in actual.torsions] == [
+            (t.periodicity, t.force_constant, t.phase, t.is_improper) for t in ff.torsions
+        ]
+
+    @pytest.mark.parametrize("periodicity", [1, 2, 3])
+    @pytest.mark.parametrize(("value", "phase_offset"), [(0.5, 360.0), (-0.5, -360.0), (0.0, 90.0)])
+    def test_standalone_proper_equivalent_and_zero_phases(
+        self, tmp_path: Path, periodicity: int, value: float, phase_offset: float
+    ) -> None:
+        canonical_phase = 180.0 if periodicity % 2 == 0 else 0.0
+        ff = ForceField(
+            torsions=(
+                TorsionParam(
+                    ("H", "C", "C", "H"),
+                    periodicity,
+                    value,
+                    phase=canonical_phase + phase_offset,
+                    env_id="H1-C1-C1-H1",
+                ),
+            ),
+            functional_form=FunctionalForm.MM3,
+        )
+        output = tmp_path / "proper.fld"
+        save_mm3_fld(ff, output)
+        actual = next(t for t in load_mm3_fld(output).torsions if t.periodicity == periodicity)
+        assert actual.force_constant == value
+        assert actual.phase == canonical_phase
+        assert not actual.is_improper
+
+
+def _vdw_template(*, generated: bool = False) -> str:
+    vdws = (VdwParam("C1", 1.2345, 0.0123, reduction=0.5678), VdwParam("C1", 2.3456, 0.0456, reduction=0.6789))
+    lines = [_improper_template("FROZEN"), "-6\n"]
+    for vdw in vdws:
+        if generated:
+            lines.append(_format_mm3_vdw_line(vdw))
+        else:
+            lines.append(
+                f"  {vdw.atom_type:<2} {vdw.radius:10.4f} {vdw.epsilon:10.4f} {vdw.reduction:10.4f}"
+                "  UNCHANGED VDW TAIL\n"
+            )
+    return "".join([*lines, " END OF NONBONDED INTERACTIONS\n", "-2\n"])
+
+
+class TestMM3VdwOutputFidelity:
+    @pytest.mark.parametrize("generated", [False, True])
+    @pytest.mark.parametrize("source_bound", [False, True])
+    @pytest.mark.parametrize("column", [1, 2, 3], ids=["radius", "epsilon", "reduction"])
+    @pytest.mark.parametrize("token", ["123456789.0", "000001.2345"])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_overlong_source_token_rejected_without_leading_digit_leftover(
+        self, tmp_path: Path, generated: bool, source_bound: bool, column: int, token: str, destination: str
+    ) -> None:
+        fields = [f"{value:10.4f}" for value in (1.2345, 0.0123, 0.5678)]
+        assert len(token) > 10
+        fields[column - 1] = token
+        prefix = "  C1  " if generated else "  C1 "
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template("FROZEN") + "-6\n" + prefix + " ".join(fields) + "\n-2\n")
+        original = source.read_bytes()
+        loaded = load_mm3_fld(source)
+        replacement = replace(loaded.vdws[0], radius=2.3456, epsilon=0.1234, reduction=0.6789)
+        if source_bound:
+            ff = replace(loaded, vdws=(replacement,))
+        else:
+            ff = ForceField(vdws=(replace(replacement, ff_row=None),), functional_form=FunctionalForm.MM3)
+        output = source if destination == "source" else tmp_path / "output.fld"
+        if destination == "existing":
+            output.write_bytes(b"preserve destination")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="MM3.*vdW.*10-character"):
+            save_mm3_fld(ff, output, template_path=source)
+        assert source.read_bytes() == original
+        assert output.read_bytes() == before if before is not None else not output.exists()
+
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    @pytest.mark.parametrize(
+        ("line", "field"),
+        [
+            pytest.param("  C1 1.2 0.1 0.0\n", "radius", id="compact-fields"),
+            pytest.param(f"  C1 {1.2:9.4f} {0.1:10.4f} {0.0:10.4f}\n", "radius", id="narrow-radius-field"),
+            pytest.param(f"  C1 {1.2:10.4f} {0.1:10.4f}\n", "reduction", id="missing-reduction"),
+            pytest.param(f"  C1 {1.2:10.4f} {0.1:10.4f} {'not-float':>10}\n", "reduction", id="nonnumeric-reduction"),
+        ],
+    )
+    def test_template_type_match_rejects_unwritable_fields_before_write(
+        self, tmp_path: Path, destination: str, line: str, field: str
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_improper_template("FROZEN") + "-6\n" + line + "-2\n", encoding="utf-8")
+        original = source.read_bytes()
+        ff = ForceField(vdws=(VdwParam("C1", 1.2345, 0.1234, reduction=0.5678),), functional_form=FunctionalForm.MM3)
+        output = source if destination == "source" else tmp_path / "output.fld"
+        before = original if destination == "source" else b"existing destination\r\n\xff"
+        if destination == "existing":
+            output.write_bytes(before)
+        with pytest.raises(ValueError, match=rf"MM3.*vdW.*{field}"):
+            save_mm3_fld(ff, output, template_path=source)
+        assert source.read_bytes() == original
+        if destination == "absent":
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    @pytest.mark.parametrize("field", ["radius", "epsilon", "reduction"])
+    @pytest.mark.parametrize(
+        "value",
+        [100000.0, -10000.0, 99999.99996, -9999.99996, float("nan"), float("inf"), float("-inf")],
+    )
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_template_rejects_invalid_vdw_before_any_write(
+        self, tmp_path: Path, field: str, value: float, destination: str
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_vdw_template(), encoding="utf-8")
+        original = source.read_bytes()
+        ff = load_mm3_fld(source)
+        changed = replace(
+            ff,
+            vdws=(replace(ff.vdws[0], **{field: value}), *ff.vdws[1:]),
+            torsions=tuple(replace(t, force_constant=2.5) if t.is_improper else t for t in ff.torsions),
+        )
+        output = source if destination == "source" else tmp_path / "output.fld"
+        before = original if destination == "source" else b"existing destination\r\n\xff"
+        if destination == "existing":
+            output.write_bytes(before)
+        with pytest.raises(ValueError, match=rf"MM3.*vdW.*{field}"):
+            save_mm3_fld(changed, output)
+        assert source.read_bytes() == original
+        if destination == "absent":
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    @pytest.mark.parametrize("field", ["radius", "epsilon", "reduction"])
+    @pytest.mark.parametrize("value", [0.0, 1.23456, 99999.9999, -9999.9999])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_template_vdw_precision_preserves_other_fields_and_rows(
+        self, tmp_path: Path, field: str, value: float, destination: str
+    ) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_vdw_template(), encoding="utf-8")
+        original = source.read_bytes()
+        ff = load_mm3_fld(source)
+        target = replace(ff.vdws[0], **{field: value})
+        changed = replace(ff, vdws=(target, *ff.vdws[1:]))
+        output = source if destination == "source" else tmp_path / "output.fld"
+        if destination == "existing":
+            output.write_bytes(b"replace destination")
+        save_mm3_fld(changed, output)
+        actual = load_mm3_fld(output)
+        rounded = replace(target, **{field: float(f"{value:.4f}")})
+        assert actual.vdws == (rounded, *ff.vdws[1:])
+        assert actual.bonds == ff.bonds
+        assert actual.angles == ff.angles
+        assert actual.stretch_bends == ff.stretch_bends
+        assert actual.torsions == ff.torsions
+        start = {"radius": 5, "epsilon": 16, "reduction": 27}[field]
+        lines = original.splitlines(keepends=True)
+        assert target.ff_row is not None
+        line = lines[target.ff_row - 1]
+        lines[target.ff_row - 1] = line[:start] + f"{value:10.4f}".encode("ascii") + line[start + 10 :]
+        assert output.read_bytes() == b"".join(lines)
+        if destination != "source":
+            assert source.read_bytes() == original
+
+    def test_generated_vdw_template_preserves_four_decimal_precision(self, tmp_path: Path) -> None:
+        source = tmp_path / "generated.fld"
+        source.write_text(_vdw_template(generated=True), encoding="utf-8")
+        ff = load_mm3_fld(source)
+        changed = replace(ff, vdws=(replace(ff.vdws[0], radius=3.4567, epsilon=0.1234, reduction=0.7654), *ff.vdws[1:]))
+        output = tmp_path / "updated.fld"
+        save_mm3_fld(changed, output)
+        assert load_mm3_fld(output).vdws == changed.vdws
+
+    def test_template_type_match_updates_only_vdw_fields(self, tmp_path: Path) -> None:
+        source = tmp_path / "source.fld"
+        source.write_text(_vdw_template(), encoding="utf-8")
+        original = source.read_bytes()
+        source_ff = load_mm3_fld(source)
+        vdw = VdwParam("C1", 3.4567, 0.1234, reduction=0.7654)
+        ff = ForceField(vdws=(vdw,), functional_form=FunctionalForm.MM3)
+        output = tmp_path / "updated.fld"
+        save_mm3_fld(ff, output, template_path=source)
+        actual = load_mm3_fld(output)
+        assert actual.vdws == tuple(
+            replace(param, radius=vdw.radius, epsilon=vdw.epsilon, reduction=vdw.reduction) for param in source_ff.vdws
+        )
+        assert actual.torsions == source_ff.torsions
+        assert source.read_bytes() == original
+        original_lines = original.splitlines(keepends=True)
+        actual_lines = output.read_bytes().splitlines(keepends=True)
+        vdw_rows = {param.ff_row for param in source_ff.vdws}
+        assert len(actual_lines) == len(original_lines)
+        for row, (before, after) in enumerate(zip(original_lines, actual_lines, strict=True), start=1):
+            if row in vdw_rows:
+                assert before[:5] == after[:5]
+                assert before[37:] == after[37:]
+            else:
+                assert before == after
+
+
+_MM3_NUMERIC_FIELDS = [
+    ("bonds", "equilibrium"),
+    ("bonds", "force_constant"),
+    ("angles", "equilibrium"),
+    ("angles", "force_constant"),
+    ("torsions", "force_constant"),
+    ("vdws", "radius"),
+    ("vdws", "epsilon"),
+    ("vdws", "reduction"),
+]
+
+
+def _edit_mm3_native_scalar(ff: ForceField, family: str, field: str, value: float) -> ForceField:
+    if field == "force_constant":
+        if family == "bonds":
+            value = mm3_bond_k_to_canonical(value)
+        elif family == "angles":
+            value = mm3_angle_k_to_canonical(value)
+        elif family == "stretch_bends":
+            value = mm3_sb_k_to_canonical(value)
+        else:
+            value /= 2.0
+    params = getattr(ff, family)
+    return replace(ff, **{family: (replace(params[0], **{field: value}), *params[1:])})
+
+
+@pytest.fixture
+def numeric_source(tmp_path: Path) -> Path:
+    source = tmp_path / "source.fld"
+    source.write_text(_vdw_template(), encoding="utf-8")
+    return source
+
+
+class TestMM3NumericOutputFidelity:
+    @pytest.mark.parametrize(("family", "field"), _MM3_NUMERIC_FIELDS)
+    @pytest.mark.parametrize("value", [1000.0, -1000.0, 99999.9999, -9999.9999, 0.00004])
+    def test_standalone_fitting_scalars_roundtrip_at_file_precision(
+        self, numeric_source: Path, tmp_path: Path, family: str, field: str, value: float
+    ) -> None:
+        ff = load_mm3_fld(numeric_source)
+        ff = replace(
+            ff,
+            bonds=tuple(replace(b, dipole_moment=0.0) for b in ff.bonds),
+            stretch_bends=(),
+            torsions=tuple(t for t in ff.torsions if not t.is_improper and t.periodicity <= 3),
+            source_path=None,
+            source_format=None,
+        )
+        output = save_mm3_fld(_edit_mm3_native_scalar(ff, family, field, value), tmp_path / "output.fld")
+        actual = getattr(load_mm3_fld(output), family)[0]
+        expected = getattr(_edit_mm3_native_scalar(ff, family, field, float(f"{value:.4f}")), family)[0]
+        expected_value = getattr(expected, field)
+        if family == "angles" and field == "equilibrium" and expected_value > 180.0:
+            folded = expected_value % 360.0
+            expected_value = 360.0 - folded if folded > 180.0 else folded
+        assert getattr(actual, field) == pytest.approx(expected_value, rel=1e-14, abs=0.0)
+        if family != "vdws":
+            start = P_2_START if field == "force_constant" and family in ("bonds", "angles") else P_1_START
+            assert actual.ff_row is not None
+            assert output.read_text().splitlines()[actual.ff_row - 1][start : start + 10] == f"{value:10.4f}"
+
+    @pytest.mark.parametrize(("family", "field"), _MM3_NUMERIC_FIELDS)
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), -float("inf"), -10000.0, -9999.99996])
+    @pytest.mark.parametrize("mode", ["standalone", "implicit-template", "explicit-template"])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_invalid_scalar_preserves_destination(
+        self, numeric_source: Path, tmp_path: Path, family: str, field: str, value: float, mode: str, destination: str
+    ) -> None:
+        ff = load_mm3_fld(numeric_source)
+        if mode == "standalone":
+            ff = replace(
+                ff,
+                bonds=tuple(replace(b, dipole_moment=0.0) for b in ff.bonds),
+                stretch_bends=(),
+                torsions=tuple(t for t in ff.torsions if not t.is_improper and t.periodicity <= 3),
+            )
+        ff = _edit_mm3_native_scalar(ff, family, field, value)
+        if mode != "implicit-template":
+            ff = replace(ff, source_path=None, source_format=None)
+        original = numeric_source.read_bytes()
+        output = numeric_source if destination == "source" else tmp_path / "output.fld"
+        if destination == "existing":
+            output.write_bytes(b"existing destination\r\n\xff")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="MM3.*(finite|10-character)"):
+            save_mm3_fld(ff, output, template_path=numeric_source if mode == "explicit-template" else None)
+        assert numeric_source.read_bytes() == original
+        assert output.read_bytes() == before if before is not None else not output.exists()
+
+    @pytest.mark.parametrize(("family", "field"), _MM3_NUMERIC_FIELDS + [("stretch_bends", "force_constant")])
+    @pytest.mark.parametrize("value", [1000.0, -1000.0, 99999.9999, -9999.9999, 99999.99994, -9999.99994])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_fitting_template_scalar_changes_only_its_source_field(
+        self, numeric_source: Path, tmp_path: Path, family: str, field: str, value: float, destination: str
+    ) -> None:
+        ff = load_mm3_fld(numeric_source)
+        changed = _edit_mm3_native_scalar(ff, family, field, value)
+        target = getattr(ff, family)[0]
+        original = numeric_source.read_bytes()
+        output = numeric_source if destination == "source" else tmp_path / "output.fld"
+        if destination == "existing":
+            output.write_bytes(b"replace destination")
+        save_mm3_fld(changed, output)
+
+        expected = value
+        if family == "angles" and field == "equilibrium" and value > 180.0:
+            folded = value % 360.0
+            expected = 360.0 - folded if folded > 180.0 else folded
+        if family == "vdws":
+            start = {"radius": 5, "epsilon": 16, "reduction": 27}[field]
+        else:
+            start = P_2_START if field == "force_constant" and family in ("bonds", "angles") else P_1_START
+        lines = original.splitlines(keepends=True)
+        assert target.ff_row is not None
+        line = lines[target.ff_row - 1]
+        serialized = f"{expected:10.4f}".encode("ascii")
+        assert len(serialized) == 10
+        lines[target.ff_row - 1] = line[:start] + serialized + line[start + 10 :]
+        assert output.read_bytes() == b"".join(lines)
+        if destination != "source":
+            assert numeric_source.read_bytes() == original
+        actual = getattr(load_mm3_fld(output), family)[0]
+        expected_param = getattr(_edit_mm3_native_scalar(ff, family, field, float(serialized)), family)[0]
+        assert getattr(actual, field) == pytest.approx(getattr(expected_param, field), rel=1e-14)
+
+    @pytest.mark.parametrize(("family", "field"), _MM3_NUMERIC_FIELDS)
+    @pytest.mark.parametrize("value", [100000.0, 99999.99996])
+    @pytest.mark.parametrize("existing", [False, True])
+    def test_standalone_positive_width_and_rounding_overflow(
+        self, numeric_source: Path, tmp_path: Path, family: str, field: str, value: float, existing: bool
+    ) -> None:
+        ff = load_mm3_fld(numeric_source)
+        ff = replace(
+            ff,
+            bonds=tuple(replace(b, dipole_moment=0.0) for b in ff.bonds),
+            stretch_bends=(),
+            torsions=tuple(t for t in ff.torsions if not t.is_improper and t.periodicity <= 3),
+            source_path=None,
+            source_format=None,
+        )
+        output = tmp_path / "output.fld"
+        if existing:
+            output.write_bytes(b"preserve destination")
+        with pytest.raises(ValueError, match="MM3.*10-character"):
+            save_mm3_fld(_edit_mm3_native_scalar(ff, family, field, value), output)
+        assert output.read_bytes() == b"preserve destination" if existing else not output.exists()
+
+    @pytest.mark.parametrize(
+        ("family", "field"),
+        [
+            ("bonds", "equilibrium"),
+            ("bonds", "force_constant"),
+            ("angles", "force_constant"),
+            ("torsions", "force_constant"),
+            ("stretch_bends", "force_constant"),
+        ],
+    )
+    @pytest.mark.parametrize("value", [100000.0, 99999.99996, float("nan"), float("inf"), -float("inf")])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_template_positive_overflow_and_stretch_bend_nonfinite_do_not_silently_skip(
+        self, numeric_source: Path, tmp_path: Path, family: str, field: str, value: float, destination: str
+    ) -> None:
+        ff = _edit_mm3_native_scalar(load_mm3_fld(numeric_source), family, field, value)
+        original = numeric_source.read_bytes()
+        output = numeric_source if destination == "source" else tmp_path / "output.fld"
+        if destination == "existing":
+            output.write_bytes(b"preserve destination")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="MM3.*(finite|10-character)"):
+            save_mm3_fld(ff, output)
+        assert numeric_source.read_bytes() == original
+        assert output.read_bytes() == before if before is not None else not output.exists()
+
+    @pytest.mark.parametrize("periodicity", [1, 2, 3])
+    @pytest.mark.parametrize("amplitude", [1e308, -1e308])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_standalone_finite_amplitude_conversion_overflow_preserves_destination(
+        self, numeric_source: Path, tmp_path: Path, periodicity: int, amplitude: float, destination: str
+    ) -> None:
+        assert math.isfinite(amplitude) and not math.isfinite(amplitude * 2.0)
+        ff = ForceField(
+            torsions=(
+                TorsionParam(
+                    ("H", "C", "C", "H"), periodicity, amplitude, phase=180.0 if periodicity % 2 == 0 else 0.0
+                ),
+            ),
+            functional_form=FunctionalForm.MM3,
+        )
+        original = numeric_source.read_bytes()
+        output = numeric_source if destination == "source" else tmp_path / "output.fld"
+        if destination == "existing":
+            output.write_bytes(b"preserve destination")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="MM3.*finite"):
+            save_mm3_fld(ff, output)
+        assert numeric_source.read_bytes() == original
+        assert output.read_bytes() == before if before is not None else not output.exists()
+
+    @pytest.mark.parametrize("periodicity", [1, 2, 3, 4, 5, 6])
+    @pytest.mark.parametrize(
+        ("amplitude", "phase"),
+        [(0.5, 90.0), (-0.5, 90.0)]
+        + [(k, phase) for k in (0.0, 0.5) for phase in (float("nan"), float("inf"), -float("inf"))],
+    )
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_template_proper_phase_rejected_before_staging(
+        self, numeric_source: Path, tmp_path: Path, periodicity: int, amplitude: float, phase: float, destination: str
+    ) -> None:
+        ff = load_mm3_fld(numeric_source)
+        target = next(t for t in ff.proper_torsions if t.periodicity == periodicity)
+        changed = replace(
+            ff,
+            torsions=tuple(
+                replace(t, force_constant=amplitude, phase=phase) if t is target else t for t in ff.torsions
+            ),
+            vdws=(replace(ff.vdws[0], radius=3.4567), *ff.vdws[1:]),
+        )
+        original = numeric_source.read_bytes()
+        output = numeric_source if destination == "source" else tmp_path / "output.fld"
+        if destination == "existing":
+            output.write_bytes(b"preserve destination")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="MM3.*proper.*phase"):
+            save_mm3_fld(changed, output)
+        assert numeric_source.read_bytes() == original
+        assert output.read_bytes() == before if before is not None else not output.exists()
+
+    @pytest.mark.parametrize("periodicity", [1, 2, 3, 4, 5, 6])
+    @pytest.mark.parametrize(("amplitude", "offset"), [(1234.5, 360.0), (-1234.5, -360.0), (0.0, 90.0)])
+    def test_template_proper_equivalent_phase_keeps_all_six_source_columns(
+        self, numeric_source: Path, periodicity: int, amplitude: float, offset: float
+    ) -> None:
+        ff = load_mm3_fld(numeric_source)
+        target = next(t for t in ff.proper_torsions if t.periodicity == periodicity)
+        changed = replace(
+            ff,
+            torsions=tuple(
+                replace(t, force_constant=amplitude, phase=t.phase + offset) if t is target else t for t in ff.torsions
+            ),
+        )
+        expected = numeric_source.read_bytes().splitlines(keepends=True)
+        assert target.ff_row is not None
+        start = (P_1_START, P_2_START, P_3_START)[(periodicity - 1) % 3]
+        line = expected[target.ff_row - 1]
+        expected[target.ff_row - 1] = line[:start] + f"{2.0 * amplitude:10.4f}".encode("ascii") + line[start + 10 :]
+        save_mm3_fld(changed, numeric_source)
+        assert numeric_source.read_bytes() == b"".join(expected)
+        actual = next(t for t in load_mm3_fld(numeric_source).proper_torsions if t.periodicity == periodicity)
+        assert actual == replace(target, force_constant=amplitude)
+
+    @pytest.mark.parametrize("periodicity", [1, 2, 3, 4, 5, 6])
+    @pytest.mark.parametrize("amplitude", [float("nan"), float("inf"), -float("inf"), 1e308, -1e308])
+    @pytest.mark.parametrize("destination", ["absent", "existing", "source"])
+    def test_template_proper_raw_and_converted_nonfinite_amplitude(
+        self, numeric_source: Path, tmp_path: Path, periodicity: int, amplitude: float, destination: str
+    ) -> None:
+        if math.isfinite(amplitude):
+            assert not math.isfinite(amplitude * 2.0)
+        ff = load_mm3_fld(numeric_source)
+        target = next(t for t in ff.proper_torsions if t.periodicity == periodicity)
+        changed = replace(
+            ff, torsions=tuple(replace(t, force_constant=amplitude) if t is target else t for t in ff.torsions)
+        )
+        original = numeric_source.read_bytes()
+        output = numeric_source if destination == "source" else tmp_path / "output.fld"
+        if destination == "existing":
+            output.write_bytes(b"preserve destination")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="MM3.*finite"):
+            save_mm3_fld(changed, output)
+        assert numeric_source.read_bytes() == original
+        assert output.read_bytes() == before if before is not None else not output.exists()
+
+
 class TestSpliceFixed(unittest.TestCase):
     """``_splice_fixed`` must preserve byte-stability of other columns."""
 
@@ -343,12 +1078,16 @@ class TestSpliceFixed(unittest.TestCase):
         self.assertTrue(out.endswith("TAIL"))
         self.assertEqual(len(out), len(line))
 
-    def test_overflow_leaves_line_unchanged(self) -> None:
+    def test_overflow_rejects_before_splicing(self) -> None:
         # 1234567.0 formatted as .4f needs 12 chars; a width-8 field cannot
         # hold it without shifting every trailing byte.
         line = "AB" + " " * 8 + "TAIL"
-        out = _splice_fixed(line, 2, 8, 1234567.0)
-        self.assertEqual(out, line)
+        with self.assertRaisesRegex(ValueError, "MM3.*8-character"):
+            _splice_fixed(line, 2, 8, 1234567.0)
+
+    def test_missing_field_rejects_before_splicing(self) -> None:
+        with self.assertRaisesRegex(ValueError, "MM3.*field"):
+            _splice_fixed("AB 1.0", 2, 10, 1.5)
 
 
 if __name__ == "__main__":

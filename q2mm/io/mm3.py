@@ -6,6 +6,7 @@ import contextlib
 import copy
 import json
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -108,6 +109,7 @@ P_2_START = 34
 P_2_END = 44
 P_3_START = 45
 P_3_END = 55
+_MM3_FIELD_WIDTH = P_1_END - P_1_START
 # Context flags occupy cols 56–65 (two 4-char codes separated by space)
 CTX_START = 56
 CTX_END = 66
@@ -147,23 +149,47 @@ def _mm3_atom_types(env_id: str, elements: tuple[str, ...]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _require_finite_mm3_values(*values: float, context: str) -> None:
+    """Reject nonfinite canonical values before conversion or normalization."""
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError(f"Cannot save MM3 {context}: numeric values must be finite.")
+
+
+def _format_mm3_field(value: float, width: int = _MM3_FIELD_WIDTH, *, context: str = "numeric field") -> str:
+    """Format one finite file value without allowing rounding to widen its column."""
+    _require_finite_mm3_values(value, context=context)
+    text = f"{value:{width}.4f}"
+    if len(text) > width:
+        raise ValueError(
+            f"Cannot save MM3 {context}: value {value!r} does not fit a {width}-character, four-decimal field."
+        )
+    return text
+
+
 def _format_mm3_bond_line(atom_types: list[str], equilibrium: float, force_constant: float) -> str:
     prefix = f" 1  {atom_types[0]:>2} - {atom_types[1]:>2}{'':12}"
-    return f"{prefix}{equilibrium:10.4f} {force_constant:10.4f}\n"
+    fields = " ".join(_format_mm3_field(value, context="bond") for value in (equilibrium, force_constant))
+    return f"{prefix}{fields}\n"
 
 
 def _format_mm3_angle_line(atom_types: list[str], equilibrium: float, force_constant: float) -> str:
     prefix = f" 2  {atom_types[0]:>2} - {atom_types[1]:>2} - {atom_types[2]:>2}{'':7}"
-    return f"{prefix}{equilibrium:10.4f} {force_constant:10.4f}\n"
+    fields = " ".join(_format_mm3_field(value, context="angle") for value in (equilibrium, force_constant))
+    return f"{prefix}{fields}\n"
 
 
 def _format_mm3_torsion_line(atom_types: list[str], v1: float, v2: float, v3: float) -> str:
     prefix = f" 4  {atom_types[0]:>2} - {atom_types[1]:>2} - {atom_types[2]:>2} - {atom_types[3]:>2}  "
-    return f"{prefix}{v1:10.4f} {v2:10.4f} {v3:10.4f}\n"
+    fields = " ".join(_format_mm3_field(value, context="proper torsion") for value in (v1, v2, v3))
+    return f"{prefix}{fields}\n"
 
 
 def _format_mm3_vdw_line(vdw: VdwParam) -> str:
-    return f"  {vdw.atom_type:<3} {vdw.radius:10.4f} {vdw.epsilon:10.4f} {vdw.reduction:10.4f}                                   0000    O 1\n"
+    fields = " ".join(
+        _format_mm3_field(value, context=f"vdW {name}")
+        for name, value in (("radius", vdw.radius), ("epsilon", vdw.epsilon), ("reduction", vdw.reduction))
+    )
+    return f"  {vdw.atom_type:<3} {fields}                                   0000    O 1\n"
 
 
 # ---------------------------------------------------------------------------
@@ -205,55 +231,44 @@ def _parse_mm3_vdw_params(path: Path) -> list[VdwParam]:
     return vdws
 
 
-def _splice_fixed(line: str, start: int, width: int, value: float) -> str:
-    """Overwrite one fixed-width numeric column, preserving all other bytes.
-
-    Returns *line* unchanged if the column falls outside the existing line
-    length (the field was not present in fixed position), so trailing MM3
-    columns — formal charge, context flag, opt descriptor — are never
-    disturbed.
-    """
-    if len(line) < start + width:
-        return line
-    field = f"{value:{width}.4f}"
-    if len(field) > width:
-        # The value is too wide for the fixed column.  ``f"{v:{width}.4f}"``
-        # treats *width* as a minimum, so writing it anyway would push every
-        # trailing byte to the right and break the byte-stability guarantee.
-        # Leave the line untouched instead.
-        logger.warning(
-            "Value %.4f does not fit MM3 column width %d; leaving line unchanged.",
-            value,
-            width,
-        )
-        return line
+def _splice_fixed(line: str, start: int, width: int, value: float, *, context: str = "numeric field") -> str:
+    """Replace a representable fixed field, rejecting missing columns or lossy edits."""
+    if start < 0 or len(line.rstrip("\r\n")) < start + width:
+        raise ValueError(f"Cannot save MM3 {context}: no existing {width}-character field.")
+    field = _format_mm3_field(value, width, context=context)
     return line[:start] + field + line[start + width :]
 
 
-# Fixed MM3 vdW numeric columns (0-based start, field width). These match
-# the columns the loader reads (``line[5:15]`` / ``line[16:26]``) so a
-# save→load round-trip is byte-stable.
-_VDW_RADIUS_COL = (5, 10)
-_VDW_EPSILON_COL = (16, 10)
-_VDW_REDUCTION_COL = (27, 10)
-
-
-def _update_mm3_vdw_lines(path: Path, vdws: list[VdwParam]) -> None:
-    lines = path.read_text(encoding="utf-8").splitlines()
+def _update_mm3_vdw_lines(lines: list[str], vdws: tuple[VdwParam, ...]) -> list[str]:
+    """Stage representable vdW edits without opening the destination."""
+    lines = list(lines)
     by_row, by_type = _build_vdw_maps(vdws)
     for index, line in enumerate(lines):
         row = index + 1
         match = by_row.get(row)
-        parts = line.split()
+        parts = list(re.finditer(r"\S+", line))
         if match is None and parts:
-            match = by_type.get(parts[0].strip())
+            match = by_type.get(parts[0].group())
         if match is None:
             continue
-        updated = _splice_fixed(line, *_VDW_RADIUS_COL, match.radius)
-        updated = _splice_fixed(updated, *_VDW_EPSILON_COL, match.epsilon)
-        updated = _splice_fixed(updated, *_VDW_REDUCTION_COL, match.reduction)
+        updated = line
+        for column, (name, value) in enumerate(
+            (("radius", match.radius), ("epsilon", match.epsilon), ("reduction", match.reduction)), start=1
+        ):
+            if len(parts) <= column:
+                raise ValueError(f"Cannot save MM3 vdW row {row} {name}: no existing 10-character numeric field.")
+            start = parts[column].end() - _MM3_FIELD_WIDTH
+            if start <= parts[column - 1].end() or parts[column].start() < start:
+                raise ValueError(f"Cannot save MM3 vdW row {row} {name}: no existing 10-character numeric field.")
+            try:
+                float(parts[column].group())
+            except ValueError as exc:
+                raise ValueError(f"Cannot save MM3 vdW row {row} {name}: template field is not numeric.") from exc
+            # Source and generated atom-type prefixes differ in width. Locate
+            # each right-aligned field from its original token, not a guessed offset.
+            updated = _splice_fixed(updated, start, _MM3_FIELD_WIDTH, value, context=f"vdW row {row} {name}")
         lines[index] = updated
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return lines
 
 
 # ---------------------------------------------------------------------------
@@ -850,24 +865,104 @@ def _mm3_import_ff(
 
 def _mm3_export_ff(path: str | Path, rows: list[_Mm3ParameterRow], lines: list[str]) -> None:
     """Write parameter rows back to an mm3.fld file at fixed column positions."""
+    lines = list(lines)
     for row in rows:
         logger.log(1, f">>> row: {row} row.value: {row.value}")
         line = lines[row.ff_row - 1]
-        if abs(row.value) > 999.0:
-            logger.warning(f"Value of {row} is too high! Skipping write.")
+        kind = "improper" if row.ptype in ("imp1", "imp2") else row.ptype
+        context = f"{kind} row {row.ff_row}"
         # Higher-order torsion amplitudes V4/V5/V6 (ff_col 4/5/6) live in the
         # same three physical parameter columns as V1/V2/V3 but on the "54"
         # continuation line, which is addressed by their own ``ff_row``.  Map
         # them onto the same columns so higher-order torsions round-trip.
-        elif row.ff_col in (1, 4):
-            lines[row.ff_row - 1] = line[:P_1_START] + f"{row.value:10.4f}" + line[P_1_END:]
+        if row.ff_col in (1, 4):
+            lines[row.ff_row - 1] = _splice_fixed(line, P_1_START, _MM3_FIELD_WIDTH, row.value, context=context)
         elif row.ff_col in (2, 5):
-            lines[row.ff_row - 1] = line[:P_2_START] + f"{row.value:10.4f}" + line[P_2_END:]
+            lines[row.ff_row - 1] = _splice_fixed(line, P_2_START, _MM3_FIELD_WIDTH, row.value, context=context)
         elif row.ff_col in (3, 6):
-            lines[row.ff_row - 1] = line[:P_3_START] + f"{row.value:10.4f}" + line[P_3_END:]
+            lines[row.ff_row - 1] = _splice_fixed(line, P_3_START, _MM3_FIELD_WIDTH, row.value, context=context)
     with open(path, "w") as f:
         f.writelines(lines)
     logger.log(10, f"WROTE: {path}")
+
+
+def _mm3_phase_is_representable(torsion: TorsionParam) -> bool:
+    """Check the fixed odd/even phase convention; a zero amplitude has no phase dependence."""
+    phase = 180.0 if torsion.periodicity % 2 == 0 else 0.0
+    return (
+        math.isfinite(torsion.force_constant)
+        and math.isfinite(torsion.phase)
+        and (torsion.force_constant == 0.0 or torsion.phase % 360.0 == phase)
+    )
+
+
+def _validate_mm3_torsion_phase(torsion: TorsionParam, *, context: str) -> None:
+    """Require finite amplitude and phase under the existing MM3 phase convention."""
+    if not _mm3_phase_is_representable(torsion):
+        phase = 180.0 if torsion.periodicity % 2 == 0 else 0.0
+        raise ValueError(
+            f"Cannot save MM3 {context}: amplitude and phase must be finite; periodicity {torsion.periodicity} "
+            f"requires phase {phase} modulo 360 degrees for a nonzero amplitude."
+        )
+
+
+def _validate_mm3_template_impropers(torsions: tuple[TorsionParam, ...], rows: list[_Mm3ParameterRow]) -> None:
+    """Reject improper edits that cannot be applied to an existing template column."""
+    improper_rows = {(row.ff_row, row.ff_col): row for row in rows if row.ptype in ("imp1", "imp2")}
+    row_numbers = {row_number for row_number, _ in improper_rows}
+    seen: set[tuple[int, int]] = set()
+    for torsion in torsions:
+        if not torsion.is_improper and torsion.ff_row not in row_numbers:
+            continue
+        row = improper_rows.get((torsion.ff_row, torsion.periodicity)) if torsion.ff_row is not None else None
+        if row is None:
+            raise ValueError(
+                f"Cannot save MM3 improper torsion at row {torsion.ff_row}, periodicity {torsion.periodicity}: "
+                "no matching imp1/imp2 template column."
+            )
+        key = (row.ff_row, row.ff_col)
+        if key in seen:
+            raise ValueError(f"Cannot save MM3 improper row {row.ff_row}: duplicate periodicity {row.ff_col}.")
+        seen.add(key)
+        atom_types = [t.strip() for t in row.atom_types if t.strip() and t.strip() != "-"]
+        if (
+            not torsion.is_improper
+            or torsion.env_id != "-".join(atom_types)
+            or torsion.elements != tuple(_extract_element(t) for t in atom_types)
+        ):
+            raise ValueError(f"Cannot save MM3 improper row {row.ff_row}: interaction kind or atom identity changed.")
+        _validate_mm3_torsion_phase(torsion, context=f"improper row {row.ff_row}")
+
+
+def _validate_mm3_standalone(ff: ForceField) -> None:
+    """Reject populated features that the standalone MM3 writer cannot represent."""
+    if ff.cmaps:
+        raise ValueError("Cannot save standalone MM3 CMAP grids; no CMAP representation is emitted.")
+    if ff.stretch_bends:
+        raise ValueError("Cannot save standalone MM3 stretch-bend terms; use a source template.")
+    for index, angle in enumerate(ff.angles):
+        if angle.ub_force_constant is not None or angle.ub_equilibrium is not None:
+            raise ValueError(f"Cannot save standalone MM3 angle {index}: Urey-Bradley fields are unsupported.")
+        _require_finite_mm3_values(angle.equilibrium, angle.force_constant, context=f"standalone angle {index}")
+    for index, torsion in enumerate(ff.torsions):
+        if torsion.is_improper:
+            raise ValueError(f"Cannot save standalone MM3 improper torsion {index}; use a source template.")
+        if torsion.periodicity not in (1, 2, 3):
+            raise ValueError(
+                f"Cannot save standalone MM3 torsion {index}: periodicity {torsion.periodicity} "
+                "is unsupported; only V1/V2/V3 are emitted."
+            )
+        _validate_mm3_torsion_phase(torsion, context=f"standalone proper torsion {index}")
+    for index, bond in enumerate(ff.bonds):
+        _require_finite_mm3_values(bond.equilibrium, bond.force_constant, context=f"standalone bond {index}")
+        if bond.bond_order not in ("", "-"):
+            raise ValueError(f"Cannot save standalone MM3 bond {index}: bond order {bond.bond_order!r} would be lost.")
+        if bond.context not in ("", _GENERIC_CONTEXT):
+            raise ValueError(f"Cannot save standalone MM3 bond {index}: bond context {bond.context!r} would be lost.")
+        if bond.dipole_moment != 0.0:
+            raise ValueError(
+                f"Cannot save standalone MM3 bond {index}: bond dipole {bond.dipole_moment!r} would be lost."
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1028,6 +1123,16 @@ def save_mm3_fld(
     If a template path is provided, or this force field came from
     :func:`load_mm3_fld`, the existing file is updated in-place via the
     legacy MM3 exporter so comments and unrelated parameters are preserved.
+    Source-matched ``imp1``/``imp2`` amplitudes are updated in their original
+    columns (four decimal places in file units). Unrepresentable improper
+    edits, including changed interaction identity or nonzero-amplitude
+    phase, raise ``ValueError`` before the destination is opened for writing.
+    Proper template torsions, including V4/V5/V6 continuation rows, follow
+    the same phase rule. All emitted scalars use finite 10-character fields
+    at four-decimal precision, including vdW reduction and converted force
+    constants. Overflow after conversion or rounding, missing fixed fields,
+    and oversized source vdW tokens are rejected before any write; fitting
+    large values are serialized rather than silently skipped.
 
     Source-backed bonds, angles, and stretch-bends update only their exact
     ``ff_row``; a missing source row is rejected before writing. Parameters
@@ -1035,6 +1140,15 @@ def save_mm3_fld(
     bonded numeric fields retain their original spelling.
 
     Otherwise, a self-contained standard-parameter MM3 file is generated.
+    This limited writer rejects populated CMAP, stretch-bend and Urey-Bradley
+    fields, improper torsions, periodicities outside 1-3 (including zero
+    amplitudes), non-single declared bond orders, non-generic bond contexts,
+    and nonzero bond dipoles before modifying the destination. Nonzero proper
+    torsions require phases equivalent to 0 degrees for odd orders or 180
+    degrees for even orders; zero amplitudes may retain arbitrary finite
+    phases in memory (output reloads the canonical phase). Empty bond
+    order and generic context (empty or ``"0000 0000"``) remain accepted.
+    These checks do not add support for any new physical terms.
     """
     _validate_form_for_format(ff, "mm3_fld")
     output_path = Path(path)
@@ -1044,6 +1158,9 @@ def save_mm3_fld(
 
     if template is not None:
         template_rows, template_lines = _mm3_import_ff(template)
+        _validate_mm3_template_impropers(ff.torsions, template_rows)
+        for torsion in ff.proper_torsions:
+            _validate_mm3_torsion_phase(torsion, context=f"proper torsion row {torsion.ff_row}")
         updated_rows = copy.deepcopy(template_rows)
         bond_by_row, _ = _build_bond_maps(ff.bonds)
         angle_by_row, _ = _build_angle_maps(ff.angles)
@@ -1062,22 +1179,27 @@ def save_mm3_fld(
             if row.ptype in ("bf", "be"):
                 bond = _match_bond_for_export(row.ff_row, row.atom_types, bond_by_row, bond_by_env)
                 if bond is not None:
+                    _require_finite_mm3_values(bond.equilibrium, bond.force_constant, context=f"bond row {row.ff_row}")
                     row.value = canonical_to_mm3_bond_k(bond.force_constant) if row.ptype == "bf" else bond.equilibrium
             elif row.ptype in ("af", "ae"):
                 angle = _match_angle_for_export(row.ff_row, row.atom_types, angle_by_row, angle_by_env)
                 if angle is not None:
+                    _require_finite_mm3_values(
+                        angle.equilibrium, angle.force_constant, context=f"angle row {row.ff_row}"
+                    )
                     row.value = (
                         canonical_to_mm3_angle_k(angle.force_constant)
                         if row.ptype == "af"
                         else _normalize_equilibrium_angle(angle.equilibrium)
                     )
-            elif row.ptype == "df":
+            elif row.ptype in ("df", "imp1", "imp2"):
                 value = _torsion_file_value(ff.torsions, row.ff_row, row.ff_col)
                 if value is not None:
                     row.value = value
             elif row.ptype == "sb":
                 sb = _match_sb_for_export(row.ff_row, row.atom_types, sb_by_row, sb_by_env)
                 if sb is not None:
+                    _require_finite_mm3_values(sb.force_constant, context=f"stretch-bend row {row.ff_row}")
                     row.value = canonical_to_mm3_sb_k(sb.force_constant)
 
         changed_rows = [
@@ -1085,12 +1207,12 @@ def save_mm3_fld(
             for original, updated in zip(template_rows, updated_rows, strict=True)
             if updated.value != original.value
         ]
-        _mm3_export_ff(output_path, changed_rows, list(template_lines))
-        if ff.vdws:
-            _update_mm3_vdw_lines(output_path, ff.vdws)
+        staged_lines = _update_mm3_vdw_lines(template_lines, ff.vdws)
+        _mm3_export_ff(output_path, changed_rows, staged_lines)
         _write_nonbonded_exclusions(output_path, ff.nonbonded_excluded_atom_types)
         return output_path
 
+    _validate_mm3_standalone(ff)
     del substructure_name, smiles
     lines: list[str] = []
     if ff.nonbonded_excluded_atom_types:
