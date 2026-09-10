@@ -47,8 +47,8 @@ from q2mm.constants import (
     BOHR_TO_ANG,
     HARTREE_TO_KCALMOL,
     HESSIAN_AU_TO_KJMOLA2,
+    KCALMOLA2_TO_HESSIAN_AU,
     KCAL_TO_KJ,
-    KJMOLA2_TO_HESSIAN_AU,
     KJMOLNM2_TO_HESSIAN_AU,
     MDYNA_TO_KJMOLA2,
     MM3_STR,
@@ -109,9 +109,6 @@ MDYNRAD_TO_KCALMOLARAD: float = 2.51118 * (180.0 / math.pi)
 KCALMOLA2_TO_MDYNA: float = 1.0 / MDYNA_TO_KCALMOLA2
 KCALMOLRAD2_TO_MDYNA_RAD2: float = 1.0 / MDYNA_RAD2_TO_KCALMOLRAD2
 KCALMOLARAD_TO_MDYNRAD: float = 1.0 / MDYNRAD_TO_KCALMOLARAD
-
-# Hessian: kcal/(mol·Å²) → Hartree/Bohr² (two-step via kJ intermediary)
-KCALMOLA2_TO_HESSIAN_AU: float = KCAL_TO_KJ * KJMOLA2_TO_HESSIAN_AU
 
 # QM → canonical (Seminario path): AU → mdyn → kcal
 AU_BOND_K_TO_CANONICAL: float = AU_TO_MDYNA * MDYNA_TO_KCALMOLA2

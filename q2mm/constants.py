@@ -46,7 +46,7 @@ MDYNA_TO_KJMOLA2 = 6.022140857e2
 MM3_STR = 601.99392
 
 # --- Derived Hessian unit conversions ---
-# All derived from base CODATA constants above to avoid inconsistency.
+# All Hessian paths share the same kJ-based derivation.
 # Canonical internal Hessian unit: Hartree/Bohr² (atomic units).
 
 # Hartree/Bohr² ↔ kJ/(mol·Å²)
@@ -58,8 +58,9 @@ HESSIAN_AU_TO_KJMOLNM2 = HESSIAN_AU_TO_KJMOLA2 * 100.0
 KJMOLNM2_TO_HESSIAN_AU = 1.0 / HESSIAN_AU_TO_KJMOLNM2
 
 # Hartree/Bohr² ↔ kcal/(mol·Å²) (Tinker native for Hessian output)
-HESSIAN_AU_TO_KCALMOLA2 = HARTREE_TO_KCALMOL / (BOHR_TO_ANG**2)
-KCALMOLA2_TO_HESSIAN_AU = 1.0 / HESSIAN_AU_TO_KCALMOLA2
+# Do not independently derive this from the rounded Hartree-to-kcal factor.
+KCALMOLA2_TO_HESSIAN_AU = KCAL_TO_KJ * KJMOLA2_TO_HESSIAN_AU
+HESSIAN_AU_TO_KCALMOLA2 = 1.0 / KCALMOLA2_TO_HESSIAN_AU
 
 # --- Physical constants ---
 AVO = 6.022140857e23
