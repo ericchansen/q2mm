@@ -153,8 +153,81 @@ class TestJaxMultiStartValidation:
             optimizer.optimize(obj, _all_active_space(obj))
 
 
+@pytest.mark.parametrize("n_starts", [1, 2])
+def test_bounded_native_adapter(n_starts: int) -> None:
+    """Real JaxOpt/executor wiring, not a scientific convergence test."""
+    from q2mm.models.observations import ObservationSet
+    from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
+    from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+
+    mol = make_diatomic(distance=0.74, bond_tolerance=1.5)
+    coordinates = mol.geometry.copy()
+    ff = _h2_ff(bond_k=2.0)
+    ref = ObservationSet().with_energy(value=0.0, case_id="0", weight=1.0)
+    obj = _make_objective(ff, load_backend("jax"), [mol], ref)
+    # Both the frozen value and active start differ from the executor's plan.
+    baseline = np.array([3.0, 0.84])
+    space = obj.plan.active_space.with_baseline(baseline).with_active_indices([1])
+    obj.value(obj.plan.active_space.baseline)
+    count_before = obj.n_evaluations
+    optimizer = JaxMultiStartOptimizer(
+        n_starts=n_starts, maxiter=1, tol=1e-12, perturbation_pct=0.05, seed=2, verbose=False
+    )
+    result = optimizer.optimize(obj, space)
+
+    assert result.method == "jaxopt-multi:lbfgs"
+    assert result.gradient_mode == "analytical"
+    assert result.fd_step is None
+    assert result.n_params == space.n_full == 2
+    assert result.layout_fingerprint == space.layout.fingerprint
+    assert result.n_iterations == 1
+    assert not result.success
+    assert len(result.candidates) == n_starts
+    # Native gradient dispatches are not host-recorded objective evaluations.
+    assert result.n_evaluations == obj.n_evaluations - count_before == 1 + 2 * n_starts
+    assert len(result.history) == 2
+    assert result.initial_score == pytest.approx(obj.sample(baseline))
+    assert result.final_score == pytest.approx(obj.sample(result.final_params))
+    assert 0.0 < result.final_score < result.initial_score
+    np.testing.assert_array_equal(result.initial_params, baseline)
+
+    rng = np.random.default_rng(2)
+    expected_active = [baseline[1]] + [baseline[1] + rng.uniform(-0.042, 0.042) for _ in range(n_starts - 1)]
+    for index, (candidate, active) in enumerate(zip(result.candidates, expected_active, strict=True)):
+        assert candidate.index == index
+        assert candidate.seed == 2
+        assert candidate.status == "failure"
+        assert "Max iterations (1) reached" in candidate.message
+        assert candidate.n_params == space.n_full
+        assert candidate.layout_fingerprint == space.layout.fingerprint
+        np.testing.assert_allclose(candidate.initial_params, [baseline[0], active], rtol=0.0, atol=1e-15)
+        assert candidate.final_params[0] == baseline[0]
+        assert not candidate.initial_params.flags.writeable
+        assert not candidate.final_params.flags.writeable
+        assert candidate.initial_score == pytest.approx(obj.sample(candidate.initial_params))
+        assert candidate.final_score == pytest.approx(obj.sample(candidate.final_params))
+        assert 0.0 < candidate.final_score < candidate.initial_score
+
+    selected = min(result.candidates, key=lambda candidate: candidate.final_score)
+    assert selected.index == n_starts - 1
+    assert result.final_score == selected.final_score
+    np.testing.assert_array_equal(result.final_params, selected.final_params)
+    assert result.history == (selected.initial_score, selected.final_score)
+
+    plain = JaxOptOptimizer(maxiter=1, tol=1e-12, verbose=False).optimize(obj, space)
+    np.testing.assert_allclose(result.candidates[0].final_params, plain.final_params, rtol=0.0, atol=1e-12)
+    assert result.candidates[0].final_score == pytest.approx(plain.final_score)
+    assert plain.n_iterations == result.n_iterations
+    assert plain.n_evaluations == 2
+    np.testing.assert_array_equal(space.baseline, baseline)
+    np.testing.assert_array_equal(obj.plan.active_space.baseline, _params(ff))
+    np.testing.assert_array_equal(_params(ff), [2.0, 0.80])
+    np.testing.assert_array_equal(mol.geometry, coordinates)
+
+
+@pytest.mark.nightly
 class TestJaxMultiStartConvergence:
-    """End-to-end optimization tests."""
+    """Full convergence and repeated seeded solves; keep out of default CI."""
 
     def _make_h2_obj(self) -> JaxObjectiveExecutor:
         from q2mm.models.observations import ObservationSet
