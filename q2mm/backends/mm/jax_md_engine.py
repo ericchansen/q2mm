@@ -875,7 +875,12 @@ class JaxMdBackend:
         return np.asarray(hess_kcal_a2) * KCALMOLA2_TO_HESSIAN_AU
 
     def _evaluate_minimize(self, state: _JaxMdState, forcefield: ForceField, *, max_iterations: int = 200) -> tuple:
-        """Minimize coordinates with analytical JAX gradients (L-BFGS-B)."""
+        """Minimize coordinates with analytical JAX gradients (L-BFGS-B).
+
+        Only ``maxiter`` is overridden; SciPy's stopping defaults are retained.
+        No public tolerance-to-criterion/unit mapping is defined, so the
+        prepared request boundary rejects explicit tolerance values.
+        """
         from scipy.optimize import minimize as scipy_minimize
 
         params, coords = self._params_and_coords(state, forcefield)
@@ -961,6 +966,11 @@ class PreparedJaxMd(AbstractPreparedBackend):
 
     def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
         ff = self._ff_for(request.parameters)
+        if request.tolerance is not None:
+            raise EvaluationError(
+                "JAX-MD does not support an explicit minimization tolerance. "
+                "Use tolerance=None to retain native SciPy stopping defaults."
+            )
         max_iterations = request.max_iterations if request.max_iterations is not None else 200
         try:
             energy, atoms, coords = self._backend._evaluate_minimize(self._state, ff, max_iterations=max_iterations)
