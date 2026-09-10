@@ -1,4 +1,5 @@
 import copy
+import json
 import logging
 import tempfile
 import unittest
@@ -6,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from q2mm._canonical import canonical_fingerprint
 from q2mm.io.mm3 import (
     P_1_END,
     P_1_START,
@@ -35,6 +37,26 @@ class TestMM3Import(unittest.TestCase):
 
     def test_has_params(self) -> None:
         self.assertGreater(len(self.params), 0, "No parameters parsed")
+
+    def test_published_golden_preserves_complete_source_vector(self) -> None:
+        fixture_dir = REPO_ROOT / "test" / "fixtures"
+        golden = json.loads((fixture_dir / "published_ff" / "rh_enamide_donoghue2008.json").read_text(encoding="utf-8"))
+        compatibility = json.loads((fixture_dir / "publication_problem_compatibility.json").read_text(encoding="utf-8"))
+        published = next(
+            row
+            for row in compatibility["rows"]
+            if row["system"] == "rh-enamide" and row["starting_point"] == "published"
+        )
+        ff = load_mm3_fld(FF_PATH)
+        layout = ParameterLayout.from_force_field(ff)
+        vector = layout.vector(ff)
+
+        self.assertEqual(golden["summary"]["n_params"], len(layout))
+        self.assertEqual(golden["param_vector"], vector.tolist())
+        self.assertEqual(layout.fingerprint, published["layout"]["fingerprint"])
+        self.assertEqual(canonical_fingerprint(vector), published["starting_vector"]["fingerprint"])
+        self.assertEqual(golden["summary"]["n_molecules"], len(published["case_ids"]))
+        self.assertEqual(len(golden["per_molecule"]), len(published["case_ids"]))
 
     def test_non_opt_source_angle_is_retained(self) -> None:
         ff = load_mm3_fld(FF_PATH)

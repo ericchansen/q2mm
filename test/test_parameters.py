@@ -162,6 +162,52 @@ class TestLayoutOrderAndDimensions:
         assert layout.steps.shape == (n,)
 
 
+class TestStretchBendSourceBinding:
+    @pytest.mark.parametrize("fallback_env", ["C1-C2-C2", "", "C9-C9-C9"])
+    @pytest.mark.parametrize("fallback_count", [1, 2])
+    def test_source_angle_without_coupling_does_not_borrow_another_row(
+        self, fallback_env: str, fallback_count: int
+    ) -> None:
+        angle = AngleParam(("C", "C", "C"), 120.0, 50.0, env_id="C1-C2-C2", ff_row=413)
+        unrelated = tuple(
+            StretchBendParam(("C", "C", "C"), 0.2, env_id=fallback_env, ff_row=row)
+            for row in (1537, 1619)[:fallback_count]
+        )
+        ff = ForceField(angles=(angle,), stretch_bends=unrelated, functional_form=FunctionalForm.MM3)
+
+        assert ff.match_stretch_bend(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row) is None
+
+    @pytest.mark.parametrize("force_constant", [0.2, 0.0])
+    @pytest.mark.parametrize("source_env", ["C1-C2-C2", "AA-C2-C2"])
+    def test_same_source_coupling_preserves_literal_patterns_and_zero(
+        self, force_constant: float, source_env: str
+    ) -> None:
+        angle = AngleParam(("C", "C", "C"), 120.0, 50.0, env_id=source_env, ff_row=413)
+        coupling = StretchBendParam(angle.elements, force_constant, env_id=source_env, ff_row=413)
+        unrelated = StretchBendParam(angle.elements, 0.5, env_id="C1-C2-C2", ff_row=1537)
+        ff = ForceField(angles=(angle,), stretch_bends=(unrelated, coupling), functional_form=FunctionalForm.MM3)
+
+        assert ff.match_stretch_bend(("C", "C", "C"), env_id="C1-C2-C2", ff_row=413) is coupling
+
+    @pytest.mark.parametrize("ff_row", [None, 999])
+    @pytest.mark.parametrize("angle_row", [None, 413])
+    @pytest.mark.parametrize("fallback_env", ["C1-C2-C2", "", "C9-C9-C9"])
+    def test_without_valid_source_angle_keeps_environment_fallback(
+        self, ff_row: int | None, angle_row: int | None, fallback_env: str
+    ) -> None:
+        angle = AngleParam(("C", "C", "C"), 120.0, 50.0, env_id="C1-C2-C2", ff_row=angle_row)
+        coupling = StretchBendParam(angle.elements, 0.2, env_id=fallback_env, ff_row=1537)
+        ff = ForceField(angles=(angle,), stretch_bends=(coupling,), functional_form=FunctionalForm.MM3)
+
+        assert ff.match_stretch_bend(angle.elements, env_id=angle.env_id, ff_row=ff_row) is coupling
+
+    def test_exact_coupling_row_still_matches_without_a_source_angle(self) -> None:
+        coupling = StretchBendParam(("C", "C", "C"), 0.2, env_id="AA-C2-C2", ff_row=413)
+        ff = ForceField(stretch_bends=(coupling,), functional_form=FunctionalForm.MM3)
+
+        assert ff.match_stretch_bend(("C", "C", "C"), env_id="C1-C2-C2", ff_row=413) is coupling
+
+
 # ---------------------------------------------------------------------------
 # ParameterId semantics: deterministic, duplicate-occurrence disambiguation
 # ---------------------------------------------------------------------------
