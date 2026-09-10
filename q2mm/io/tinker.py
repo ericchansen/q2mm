@@ -6,7 +6,7 @@ import dataclasses
 import logging
 import math
 import re
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Hashable, Sequence
 from pathlib import Path
 from typing import TypeVar
 
@@ -28,6 +28,7 @@ from q2mm.models.identifiers import (
     _extract_element,
     canonicalize_angle_env_id,
     canonicalize_bond_env_id,
+    canonicalize_torsion_env_id,
 )
 from q2mm.models.units import (
     canonical_to_mm3_angle_k,
@@ -98,17 +99,25 @@ def _tinker_atom_types(env_id: str, elements: tuple[str, ...]) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _require_finite_tinker_values(*values: float) -> None:
+    if not all(math.isfinite(value) for value in values):
+        raise ValueError("Tinker output numeric values must be finite.")
+
+
 def _format_tinker_bond_line(atom_types: list[str], force_constant: float, equilibrium: float) -> str:
+    _require_finite_tinker_values(force_constant, equilibrium)
     return f"bond   {atom_types[0]:>4} {atom_types[1]:>4} {force_constant:10.4f} {equilibrium:10.4f}\n"
 
 
 def _format_tinker_angle_line(atom_types: list[str], force_constant: float, equilibrium: float) -> str:
+    _require_finite_tinker_values(force_constant, equilibrium)
     return (
         f"angle  {atom_types[0]:>4} {atom_types[1]:>4} {atom_types[2]:>4} {force_constant:10.4f} {equilibrium:10.4f}\n"
     )
 
 
 def _format_tinker_vdw_line(atom_type: str, radius: float, epsilon: float, reduction: float = 0.0) -> str:
+    _require_finite_tinker_values(radius, epsilon, reduction)
     return f"vdw    {atom_type:>4} {radius:10.4f} {epsilon:10.4f} {reduction:10.4f}\n"
 
 
@@ -117,8 +126,24 @@ def _format_tinker_vdw_line(atom_type: str, radius: float, epsilon: float, reduc
 # ---------------------------------------------------------------------------
 
 
+def _tinker_data(line: str) -> str:
+    """Return data before the first unquoted # or ! comment delimiter."""
+    for match in re.finditer(r""""[^"]*"|'[^']*'|[#!]""", line):
+        if match.group() in ("#", "!"):
+            return line[: match.start()]
+    return line
+
+
 def _tinker_tokens(line: str) -> list[str]:
-    return line.partition("#")[0].split()
+    return _tinker_data(line).split()
+
+
+def _validate_tinker_record_lengths(lines: Sequence[str]) -> None:
+    # getprm.f reads A240 records; readprm.f also uses CHARACTER*240.
+    # Comments may extend beyond that limit, but required data must not.
+    for row, line in enumerate(lines, start=1):
+        if len(_tinker_data(line).rstrip().encode("utf-8")) > 240:
+            raise ValueError(f"Tinker row {row}: data exceeds the native 240-byte record limit")
 
 
 def _tinker_float(token: str, row: int) -> float:
@@ -145,6 +170,13 @@ def _tinker_torsion_unit(lines: Sequence[str]) -> float:
             if unit == 0.0:
                 raise ValueError(f"Tinker row {row}: zero torsionunit is not invertible")
     return unit
+
+
+def _tinker_scaled_torsion(amplitude: float, unit: float, row: int) -> float:
+    coefficient = unit * amplitude
+    if not math.isfinite(coefficient) or (amplitude != 0.0 and coefficient == 0.0):
+        raise ValueError(f"Tinker row {row}: torsion scaling overflow or underflow")
+    return coefficient
 
 
 def _tinker_torsion_terms(parts: list[str], row: int) -> list[tuple[float, float, int]]:
@@ -209,19 +241,24 @@ _DIPOLES = ["dipole", "dipole3", "dipole4", "dipole5"]
 logger = logging.getLogger(__name__)
 
 
+def _tinker_section_header(line: str, name: str) -> bool:
+    """Match a full-line comment header's leading control token exactly."""
+    return line.lstrip().split(maxsplit=2)[:2] == ["#", name]
+
+
 def _tinker_import_ff(path: str | Path) -> tuple[list[_TinkerParameterRow], list[str]]:
     """Read OPT rows in marked files, or supported rows in unmarked files."""
     with open(path, encoding="utf-8", newline="") as f:
         lines = f.readlines()
     rows: list[_TinkerParameterRow] = []
     q2mm_sec = False
-    gather_data = not any("# Q2MM" in line for line in lines)
+    gather_data = not any(_tinker_section_header(line, "Q2MM") for line in lines)
     for row, line in enumerate(lines, start=1):
-        if not q2mm_sec and "# Q2MM" in line:
+        if not q2mm_sec and _tinker_section_header(line, "Q2MM"):
             q2mm_sec = True
             gather_data = False
         elif q2mm_sec and line.lstrip().startswith("#"):
-            gather_data = "OPT" in line
+            gather_data = _tinker_section_header(line, "OPT")
         parts = _tinker_tokens(line)
         if not gather_data or not parts:
             continue
@@ -268,6 +305,7 @@ def _tinker_import_ff(path: str | Path) -> tuple[list[_TinkerParameterRow], list
 def load_tinker_prm(path: str | Path) -> ForceField:
     """Load supported bond, angle, proper torsion and vdW parameters.
 
+    Only complete ``Q2MM`` and ``OPT`` comment-header tokens select sections.
     Marked files expose only OPT sections; unmarked files expose supported
     rows throughout. Bond/angle conversions retain the MM3 convention.
     Torsion coefficients are ``torsionunit * amplitude`` in kcal/mol, with
@@ -330,13 +368,11 @@ def load_tinker_prm(path: str | Path) -> ForceField:
             )
         elif row.ptype == "df" and len(atom_types) >= 4:
             elems = tuple(_elem(t) for t in atom_types[:4])
-            env_id = "-".join(t.strip() for t in atom_types[:4])
+            env_id = canonicalize_torsion_env_id(atom_types[:4])
             amplitude, phase, periodicity = _tinker_torsion_terms(_tinker_tokens(lines[row.ff_row - 1]), row.ff_row)[
                 row.ff_col - 1
             ]
-            coefficient = torsion_unit * amplitude
-            if not math.isfinite(coefficient) or (amplitude != 0.0 and coefficient == 0.0):
-                raise ValueError(f"Tinker row {row.ff_row}: torsion scaling overflow or underflow")
+            coefficient = _tinker_scaled_torsion(amplitude, torsion_unit, row.ff_row)
             torsions.append(
                 TorsionParam(
                     elements=elems,
@@ -380,20 +416,24 @@ _TemplateParam = TypeVar("_TemplateParam", BondParam, AngleParam, TorsionParam, 
 def _tinker_template_pairs(
     originals: Sequence[_TemplateParam],
     updates: Sequence[_TemplateParam],
-    identity: Callable[[_TemplateParam], object],
+    identity: Callable[[_TemplateParam], Hashable],
     editable: tuple[str, ...],
 ) -> list[tuple[_TemplateParam, _TemplateParam]]:
     """Bind every update once, rejecting lossy edits and ambiguous fallback."""
     if len(originals) != len(updates):
         raise ValueError("Tinker template cannot represent parameter additions or removals")
+    by_identity: dict[Hashable, list[tuple[int, _TemplateParam]]] = {}
+    by_source: dict[tuple[int | None, Hashable], list[tuple[int, _TemplateParam]]] = {}
+    for index, original in enumerate(originals):
+        key = identity(original)
+        entry = (index, original)
+        by_identity.setdefault(key, []).append(entry)
+        by_source.setdefault((original.ff_row, key), []).append(entry)
     pairs = []
     matched: set[int] = set()
     for update in updates:
-        candidates = [
-            (index, original)
-            for index, original in enumerate(originals)
-            if identity(original) == identity(update) and (update.ff_row is None or update.ff_row == original.ff_row)
-        ]
+        key = identity(update)
+        candidates = by_identity.get(key, []) if update.ff_row is None else by_source.get((update.ff_row, key), [])
         if len(candidates) != 1 or candidates[0][0] in matched:
             raise ValueError("Tinker template parameter has missing or ambiguous source-row identity")
         index, original = candidates[0]
@@ -413,7 +453,7 @@ def _tinker_replace_token(lines: list[str], row: int, column: int, value: float)
     if not math.isfinite(value):
         raise ValueError(f"Tinker row {row}: exported value must be finite")
     line = lines[row - 1]
-    tokens = list(re.finditer(r"\S+", line.partition("#")[0]))
+    tokens = list(re.finditer(r"\S+", _tinker_data(line)))
     if column == len(tokens):
         # An omitted vdW reduction can be appended without moving the comment.
         end = tokens[-1].end()
@@ -421,6 +461,17 @@ def _tinker_replace_token(lines: list[str], row: int, column: int, value: float)
     else:
         token = tokens[column]
         lines[row - 1] = line[: token.start()] + repr(value) + line[token.end() :]
+
+
+def _tinker_torsion_for_binding(param: TorsionParam) -> TorsionParam:
+    """Use proper-torsion reversal equivalence without rewriting source columns."""
+    atom_types = _split_env_id(param.env_id, 4)
+    elements = tuple(param.elements)
+    return dataclasses.replace(
+        param,
+        env_id=canonicalize_torsion_env_id(atom_types) if atom_types else param.env_id,
+        elements=min(elements, elements[::-1]),
+    )
 
 
 def _tinker_template_lines(ff: ForceField, template: Path) -> list[str]:
@@ -448,7 +499,10 @@ def _tinker_template_lines(ff: ForceField, template: Path) -> list[str]:
         if before.equilibrium != after.equilibrium:
             _tinker_replace_token(lines, before.ff_row, 5, _normalize_equilibrium_angle(after.equilibrium))
     for before, after in _tinker_template_pairs(
-        original.torsions, ff.torsions, lambda p: (p.env_id, p.periodicity), ("force_constant", "phase")
+        tuple(_tinker_torsion_for_binding(param) for param in original.torsions),
+        tuple(_tinker_torsion_for_binding(param) for param in ff.torsions),
+        lambda p: (p.env_id, p.periodicity),
+        ("force_constant", "phase"),
     ):
         assert before.ff_row is not None
         terms = _tinker_torsion_terms(_tinker_tokens(lines[before.ff_row - 1]), before.ff_row)
@@ -458,6 +512,8 @@ def _tinker_template_lines(ff: ForceField, template: Path) -> list[str]:
             if after.force_constant != 0.0 and amplitude == 0.0:
                 raise ValueError(f"Tinker row {before.ff_row}: torsion scaling underflow")
             _tinker_replace_token(lines, before.ff_row, 5 + 3 * slot, amplitude)
+            serialized = _tinker_tokens(lines[before.ff_row - 1])[5 + 3 * slot]
+            _tinker_scaled_torsion(_tinker_float(serialized, before.ff_row), unit, before.ff_row)
         if before.phase != after.phase:
             _tinker_replace_token(lines, before.ff_row, 6 + 3 * slot, after.phase)
     for before, after in _tinker_template_pairs(
@@ -482,12 +538,22 @@ def save_tinker_prm(
     If a template path is provided, or this force field came from
     :func:`load_tinker_prm`, only changed scalar tokens are replaced.
     Unmodified bytes, comments and extra angle equilibria are preserved.
-    Source rows disambiguate repeated environments; missing or ambiguous
-    bindings, additions/removals and non-scalar edits (including changing
-    a torsion fold) fail before output is opened. Torsion phase edits are
-    supported, and amplitudes are divided by the template's torsionunit.
+    Source rows disambiguate repeated environments. Torsion components bind
+    by environment, source row and fold, not tuple position or object edit
+    history. Missing/ambiguous identities, additions/removals and non-scalar
+    differences within a bound identity fail before output is opened.
+    A row's original fold set and column order are retained; balanced
+    permutations of the requested components serialize by those identities.
+    Torsion phase edits are supported, and amplitudes are divided by the
+    template's torsionunit.
+    Forward/reversed proper-torsion identities and element tuples bind by
+    the model's existing equivalence without changing source atom order.
+    Serialized amplitudes must reconstruct finite coefficients without
+    underflow; required data must fit Tinker's 240-byte records. Comment
+    tails beginning with # or ! may extend beyond that limit.
     Otherwise, a minimal Q2MM bond/angle/vdW section is written; proper
-    torsions require a template. This is not a complete Tinker FF writer.
+    torsions require a template. Every emitted standalone scalar must be
+    finite after conversion. This is not a complete Tinker FF writer.
     """
     _validate_form_for_format(ff, "tinker_prm")
     output_path = Path(path)
@@ -497,6 +563,7 @@ def save_tinker_prm(
 
     if template is not None:
         lines = _tinker_template_lines(ff, template)
+        _validate_tinker_record_lengths(lines)
         with output_path.open("w", encoding="utf-8", newline="") as f:
             f.writelines(lines)
         return output_path
@@ -522,5 +589,6 @@ def save_tinker_prm(
         )
     for vdw in ff.vdws:
         lines.append(_format_tinker_vdw_line(vdw.atom_type, vdw.radius, vdw.epsilon, vdw.reduction))
+    _validate_tinker_record_lengths(lines)
     output_path.write_text("".join(lines), encoding="utf-8")
     return output_path

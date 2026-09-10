@@ -1423,6 +1423,153 @@ class TestForceField:
 
 
 class TestTinkerTemplateFidelity:
+    @pytest.mark.parametrize("marked", [False, True])
+    @pytest.mark.parametrize("decoy", ["description", "inline-hash", "inline-bang", "ordinary-comment"])
+    def test_marker_mentions_do_not_hide_unmarked_parameters(self, tmp_path: Path, marked: bool, decoy: str) -> None:
+        description = "carbon # Q2MM text" if decoy == "description" else "carbon"
+        inline = {"inline-hash": " # note # Q2MM", "inline-bang": " ! note # Q2MM"}.get(decoy, "")
+        comment = "# ordinary comment mentions # Q2MM\n" if decoy == "ordinary-comment" else ""
+        header = "  # Q2MM parameters\n  # OPT Synthetic\n" if marked else ""
+        source = tmp_path / "source.prm"
+        source.write_text(
+            f'atom 1 C "{description}" 6 12.0 4{inline}\n'
+            'atom 2 H "hydrogen" 1 1.0 1\n' + comment + header + "bond 1 2 5.0 1.1\nangle 2 1 2 0.5 109.5\n"
+            "torsion 2 1 1 2 1.0 37 1\nvdw 1 1.5 0.02\n",
+            encoding="utf-8",
+        )
+
+        ff = load_tinker_prm(source)
+
+        assert [len(getattr(ff, family)) for family in ("bonds", "angles", "torsions", "vdws")] == [1, 1, 1, 1]
+        output = tmp_path / "roundtrip.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+
+    @pytest.mark.parametrize("duplicate_environment,source_hint", [(False, False), (False, True), (True, True)])
+    def test_template_binding_visits_each_identity_once(self, duplicate_environment: bool, source_hint: bool) -> None:
+        from q2mm.io.tinker import _tinker_template_pairs
+
+        size = 64
+        originals = tuple(
+            BondParam(
+                ("C", "H"),
+                equilibrium=1.1,
+                force_constant=float(index + 1),
+                env_id="C-H" if duplicate_environment else f"C{index}-H",
+                ff_row=index + 1,
+            )
+            for index in range(size)
+        )
+        updates = tuple(
+            replace(param, force_constant=param.force_constant + 0.25, ff_row=param.ff_row if source_hint else None)
+            for param in reversed(originals)
+        )
+        calls = 0
+
+        def identity(param: BondParam) -> str:
+            nonlocal calls
+            calls += 1
+            return param.env_id
+
+        pairs = _tinker_template_pairs(originals, updates, identity, ("force_constant", "equilibrium"))
+
+        assert [original.ff_row for original, _update in pairs] == list(range(size, 0, -1))
+        assert calls <= 2 * size
+
+    @pytest.mark.parametrize("source_hint", [False, True])
+    def test_balanced_fold_permutation_preserves_requested_parameter_set(
+        self, tmp_path: Path, source_hint: bool
+    ) -> None:
+        source = tmp_path / "source.prm"
+        source.write_text("torsion 1 2 3 4 0.5 37 1 1.5 151 2\n", encoding="utf-8")
+        ff = load_tinker_prm(source)
+        edited = replace(
+            ff,
+            torsions=tuple(
+                replace(param, periodicity=3 - param.periodicity, ff_row=param.ff_row if source_hint else None)
+                for param in ff.torsions
+            ),
+        )
+        output = tmp_path / "edited.prm"
+
+        save_tinker_prm(edited, output)
+
+        loaded = load_tinker_prm(output)
+        assert {t.periodicity: (t.force_constant, t.phase) for t in loaded.torsions} == {
+            t.periodicity: (t.force_constant, t.phase) for t in edited.torsions
+        }
+        assert output.read_text().split()[7::3] == ["1", "2"]
+        phi = np.linspace(-np.pi, np.pi, 61)
+        expected = 0.5 * (1 + np.cos(2 * phi - np.deg2rad(37))) + 1.5 * (1 + np.cos(phi - np.deg2rad(151)))
+        actual = sum(
+            t.force_constant * (1 + np.cos(t.periodicity * phi - np.deg2rad(t.phase))) for t in loaded.torsions
+        )
+        np.testing.assert_allclose(actual, expected, rtol=1e-14, atol=1e-14)
+
+    @pytest.mark.parametrize("reverse", [False, True])
+    @pytest.mark.parametrize("newline", ["\n", "\r\n"])
+    def test_canonical_torsion_identity_preserves_source(self, tmp_path: Path, reverse: bool, newline: str) -> None:
+        labels = ["C1", "C2", "C3", "C4"]
+        if reverse:
+            labels.reverse()
+        text = f"torsionunit 0.5{newline}torsion {' '.join(labels)} 1.0 37 4 -2.0 -450 2 # preserve order{newline}"
+        source = tmp_path / "source.prm"
+        source.write_bytes(text.encode())
+
+        ff = load_tinker_prm(source)
+
+        assert [t.env_id for t in ff.torsions] == ["C1-C2-C3-C4", "C1-C2-C3-C4"]
+        assert [(t.force_constant, t.phase, t.periodicity, t.ff_row) for t in ff.torsions] == [
+            (0.5, 37.0, 4, 2),
+            (-1.0, -450.0, 2, 2),
+        ]
+        output = tmp_path / "roundtrip.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+        assert load_tinker_prm(output).torsions == ff.torsions
+
+    @pytest.mark.parametrize("source_hint", [False, True])
+    def test_canonical_torsion_identity_binds_reversed_template(self, tmp_path: Path, source_hint: bool) -> None:
+        source = tmp_path / "source.prm"
+        source.write_text("torsion C4 C3 C2 C1 1.0 37 4 -2.0 -450 2 # original order\n", encoding="utf-8")
+        ff = load_tinker_prm(source)
+        edited = replace(
+            ff,
+            torsions=tuple(
+                replace(
+                    t,
+                    env_id="C1-C2-C3-C4",
+                    ff_row=t.ff_row if source_hint else None,
+                    force_constant=t.force_constant + 0.25,
+                )
+                for t in ff.torsions
+            ),
+        )
+        output = tmp_path / "edited.prm"
+
+        save_tinker_prm(edited, output)
+
+        again = load_tinker_prm(output)
+        assert [t.force_constant for t in again.torsions] == [1.25, -1.75]
+        assert [t.phase for t in again.torsions] == [37.0, -450.0]
+        assert [t.periodicity for t in again.torsions] == [4, 2]
+        assert output.read_text().split()[:5] == ["torsion", "C4", "C3", "C2", "C1"]
+        assert output.read_text().endswith("# original order\n")
+
+    def test_canonical_torsion_identity_keeps_ambiguous_rows_distinct(self, tmp_path: Path) -> None:
+        source = tmp_path / "source.prm"
+        source.write_text("torsion C1 C2 C3 C4 1.0 37 4\ntorsion C4 C3 C2 C1 2.0 71 4\n", encoding="utf-8")
+        ff = load_tinker_prm(source)
+        output = tmp_path / "roundtrip.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+        ambiguous = replace(ff, torsions=tuple(replace(t, ff_row=None) for t in ff.torsions))
+
+        with pytest.raises(ValueError, match="ambiguous source-row"):
+            save_tinker_prm(ambiguous, output)
+
+        assert output.read_bytes() == source.read_bytes()
+
     @pytest.fixture(params=["", "# Q2MM\n# OPT Synthetic\n"], ids=["unmarked", "marked"])
     def source(self, tmp_path: Path, request: pytest.FixtureRequest) -> Path:
         path = tmp_path / "source.prm"
@@ -1673,6 +1820,165 @@ class TestTinkerTemplateFidelity:
         with pytest.raises(ValueError, match="underflow"):
             save_tinker_prm(edited, source)
         assert source.read_bytes() == expected
+
+    @pytest.mark.parametrize("destination", ["new", "existing", "source"])
+    @pytest.mark.parametrize("failure", ["record-length", "reconstructed-overflow", "scaling-underflow"])
+    def test_native_record_failures_preserve_destination(
+        self, source: Path, tmp_path: Path, destination: str, failure: str
+    ) -> None:
+        if failure == "record-length":
+            with source.open("a", encoding="utf-8") as f:
+                f.write("torsion 1 2 3 4 " + " ".join(f"{n} 0 {n}" for n in range(1, 7)) + "\n")
+            ff = load_tinker_prm(source)
+            edited = replace(
+                ff,
+                torsions=tuple(
+                    replace(t, force_constant=t.force_constant + 0.1234567890123456, phase=123.12345678901234)
+                    if t.env_id == "1-2-3-4"
+                    else t
+                    for t in ff.torsions
+                ),
+            )
+            unit = 0.5
+            data = "torsion 1 2 3 4 " + " ".join(
+                f"{t.force_constant / unit!r} {t.phase!r} {t.periodicity}"
+                for t in edited.torsions
+                if t.env_id == "1-2-3-4"
+            )
+            assert len(data) > 240
+            message = "240"
+        else:
+            with source.open("a", encoding="utf-8") as f:
+                f.write("torsionunit 3\n" if failure == "reconstructed-overflow" else "torsionunit 1e300\n")
+            ff = load_tinker_prm(source)
+            coefficient = float.fromhex("0x1.fffffffffffffp+1023") if failure == "reconstructed-overflow" else 1e-300
+            edited = replace(ff, torsions=(replace(ff.torsions[0], force_constant=coefficient), *ff.torsions[1:]))
+            message = "overflow|underflow"
+        output = source if destination == "source" else tmp_path / f"{destination}.prm"
+        if destination == "existing":
+            output.write_bytes(b"preserve existing output")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match=message):
+            save_tinker_prm(edited, output)
+        if before is None:
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    @pytest.mark.parametrize("comment", ["! fitted # parameter", "# fitted ! parameter"])
+    def test_both_comment_boundaries_preserve_noop_and_edits(self, source: Path, tmp_path: Path, comment: str) -> None:
+        text = source.read_text().replace("# bond comment mentions torsion", comment)
+        text = text.replace("# angle comment", comment).replace("# bond angle", comment)
+        text = text.replace("# no reduction", comment).replace("torsionunit 0.5", f"torsionunit 0.5 {comment}")
+        source.write_text(text, encoding="utf-8")
+        ff = load_tinker_prm(source)
+        output = tmp_path / "comments.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+        edited = replace(
+            ff,
+            bonds=(replace(ff.bonds[0], equilibrium=1.25),),
+            angles=(replace(ff.angles[0], equilibrium=108.5),),
+            torsions=(replace(ff.torsions[0], phase=45.0), *ff.torsions[1:]),
+            vdws=(replace(ff.vdws[0], reduction=0.9),),
+        )
+        save_tinker_prm(edited, output)
+        again = load_tinker_prm(output)
+        assert again.bonds[0].equilibrium == 1.25
+        assert again.angles[0].equilibrium == 108.5
+        assert again.torsions[0].phase == 45.0
+        assert again.vdws[0].reduction == 0.9
+        assert output.read_text() == (
+            text.replace("5.0 1.1", "5.0 1.25")
+            .replace("0.5 200.0", "0.5 108.5")
+            .replace("1.0 30 4", "1.0 45.0 4")
+            .replace("vdw 2 1.5 0.02 ", "vdw 2 1.5 0.02 0.9 ")
+        )
+
+    @pytest.mark.parametrize("comment", ["#", "!"])
+    @pytest.mark.parametrize("width", [239, 240, 241])
+    def test_native_record_boundary_excludes_comment_tail(self, tmp_path: Path, comment: str, width: int) -> None:
+        source = tmp_path / "boundary.prm"
+        data = "torsion 1 2 3 4 1 30 6"
+        text = data.rjust(width) + f"   {comment} " + "comment " * 50 + "\n"
+        source.write_text(text, encoding="utf-8")
+        ff = load_tinker_prm(source)
+        output = tmp_path / "boundary-out.prm"
+        if width > 240:
+            with pytest.raises(ValueError, match="240"):
+                save_tinker_prm(ff, output)
+            assert not output.exists()
+        else:
+            save_tinker_prm(ff, output)
+            assert output.read_bytes() == source.read_bytes()
+            assert load_tinker_prm(output).torsions == ff.torsions
+
+    @pytest.mark.parametrize("destination", ["new", "existing", "source"])
+    @pytest.mark.parametrize("comment", ["#", "!"])
+    def test_numeric_triplet_tail_is_not_a_comment(self, tmp_path: Path, destination: str, comment: str) -> None:
+        source = tmp_path / "malformed.prm"
+        source.write_text(f"torsion 1 2 3 4 1 30 6 2.0 45 {comment} missing fold\n", encoding="utf-8")
+        output = source if destination == "source" else tmp_path / f"{destination}.prm"
+        if destination == "existing":
+            output.write_bytes(b"preserve output")
+        before = output.read_bytes() if output.exists() else None
+        with pytest.raises(ValueError, match="complete.*triplets"):
+            save_tinker_prm(ForceField(functional_form=FunctionalForm.MM3), output, template_path=source)
+        if before is None:
+            assert not output.exists()
+        else:
+            assert output.read_bytes() == before
+
+    def test_reconstructed_coefficient_valid_control(self, tmp_path: Path) -> None:
+        source = tmp_path / "scaled-control.prm"
+        source.write_text("torsionunit 3\ntorsion 1 2 3 4 1 0 6\n", encoding="utf-8")
+        ff = load_tinker_prm(source)
+        coefficient = 1.7e308
+        edited = replace(ff, torsions=(replace(ff.torsions[0], force_constant=coefficient),))
+        save_tinker_prm(edited, source)
+        assert load_tinker_prm(source).torsions[0].force_constant == pytest.approx(coefficient)
+
+    @pytest.mark.parametrize("destination_exists", [False, True])
+    @pytest.mark.parametrize("record", ["bond", "angle", "vdw"])
+    def test_standalone_required_data_must_fit_native_record(
+        self, tmp_path: Path, destination_exists: bool, record: str
+    ) -> None:
+        atom_type = "C" * 241
+        ff = ForceField(
+            bonds=(BondParam(("C", "H"), 1.1, 100.0, env_id=f"{atom_type}-H1"),) if record == "bond" else (),
+            angles=(AngleParam(("H", "C", "H"), 109.0, 50.0, env_id=f"H1-{atom_type}-H1"),)
+            if record == "angle"
+            else (),
+            vdws=(VdwParam(atom_type, 1.5, 0.02),) if record == "vdw" else (),
+            functional_form=FunctionalForm.MM3,
+        )
+        output = tmp_path / "standalone.prm"
+        if destination_exists:
+            output.write_bytes(b"preserve output")
+        with pytest.raises(ValueError, match="240"):
+            save_tinker_prm(ff, output)
+        if destination_exists:
+            assert output.read_bytes() == b"preserve output"
+        else:
+            assert not output.exists()
+
+    def test_record_limit_does_not_treat_quoted_markers_as_comments(self, tmp_path: Path) -> None:
+        source = tmp_path / "quoted.prm"
+        source.write_text(
+            'atom 1 C "quoted # ! description" 6 12.0 4\natom 2 H "H" 1 1.0 1\nbond 1 2 5.0 1.1\n',
+            encoding="utf-8",
+        )
+        ff = load_tinker_prm(source)
+        output = tmp_path / "quoted-out.prm"
+        save_tinker_prm(ff, output)
+        assert output.read_bytes() == source.read_bytes()
+        source.write_text(
+            source.read_text().replace('"quoted # ! description"', '"' + "#" * 240 + '"'), encoding="utf-8"
+        )
+        before = output.read_bytes()
+        with pytest.raises(ValueError, match="240"):
+            save_tinker_prm(ff, output)
+        assert output.read_bytes() == before
 
     def test_marked_save_leaves_unselected_rows_untouched(self, tmp_path: Path) -> None:
         source = tmp_path / "marked.prm"
