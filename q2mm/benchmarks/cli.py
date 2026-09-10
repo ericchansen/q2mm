@@ -25,10 +25,12 @@ import platform
 import sys
 from pathlib import Path
 
+from q2mm.benchmarks import artifacts
 from q2mm.benchmarks.acceptance import AcceptancePolicy, CandidateStatus
 from q2mm.benchmarks.profiles import FUNCTIONAL_FORMS, OPTIMIZER_CATALOG, RunProfile
 from q2mm.benchmarks.publications import KNOWN_OBJECTIVE_PROFILES
-from q2mm.benchmarks.runner import RunOutcome, load_candidates, run_profiles
+from q2mm.benchmarks.records import RunOutcome
+from q2mm.benchmarks.runner import run_profiles
 
 __all__ = ["main"]
 
@@ -325,7 +327,7 @@ def _cmd_load(args: argparse.Namespace) -> int:
     if not directory.is_dir():
         print(f"Error: {directory} is not a directory", file=sys.stderr)
         return 1
-    candidates = load_candidates(directory)
+    candidates = artifacts.load_candidates(directory)
     if not candidates:
         print(f"No candidate records found under {directory}", file=sys.stderr)
         return 1

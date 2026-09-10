@@ -205,6 +205,42 @@ conflict-priority, conformance, and packaging details.
 
 ---
 
+## Benchmark ownership
+
+The benchmark runner coordinates a candidate's lifecycle; it does not own
+every operation needed by a run. `run_profile` and `run_profiles` remain the
+single execution/promotion path, including status classification and the
+decision to publish accepted candidates.
+
+| Owner | Responsibility and reused boundary |
+|-------|------------------------------------|
+| `benchmarks.profiles` | Requested/resolved identities and configuration adapters; optimizer construction uses `optimizers.catalog`, and external roots use `benchmarks.systems._paths` |
+| `benchmarks.acceptance` | Existing acceptance policy and executor-ratio classification |
+| `benchmarks.analysis` | Frequency, PES-distortion, and configured-executor sample diagnostics; objective metric formulas remain in `objectives.metrics` |
+| `benchmarks.records` | Candidate/outcome envelopes and provenance; full results and stage-only summaries use `_result_serialization`, and scientific digests use the application model's single-payload fingerprint helper |
+| `benchmarks.artifacts` | JSON files and accepted-artifact mechanics; validated staging, public output-role checks, reservations, and temporary/cleanup helpers come from `application.persistence` |
+| `benchmarks.runner` | Resolution/execution order, score-of-record evaluation, acceptance and publication gates, incremental persistence and promotion decisions |
+
+Historical public imports from `benchmarks.runner` are direct re-exports of
+their owners. There is no second runner or result-projection field list.
+Analysis, records, artifacts, and profile helpers do not import the runner,
+and importing these modules does not load optional computational runtimes.
+
+Benchmark promotion retains its copy-snapshot transaction contract, distinct
+from the SDK's rename-based installation. Both reuse the same public
+output-role validation and exclusive filesystem reservations. Promotion
+preflights final paths before allocating a record or staging files, then
+holds reservations through snapshots, installation, rollback, and cleanup.
+It does not overwrite manifest-owned force fields or introduce a recovery
+policy. This split changes ownership, not either transaction or the
+execution/acceptance policy.
+
+Configured-executor endpoint means, intervals, counts, and raw samples stay
+separate from the independently evaluated Python objective of record. For
+multi-stage results, cross-stage sample comparisons and the final executor
+ratio remain explicitly omitted; publication audits receive no ratio and
+fail closed rather than comparing different objective plans.
+
 ## Module organization
 
 ```
@@ -214,6 +250,7 @@ q2mm/
 ├── geometry.py           # Geometry helpers (distances, angles, alignment)
 ├── resources.py          # Installed scientific-resource lookup and integrity checks
 ├── preparation.py        # Generic immutable prepare() + closed observation recipes
+├── _result_serialization.py # Canonical full-result and stage-only projections
 ├── _jax_support.py       # Foundational lazy JAX import guard (has_jax/load_jax); shared by models.hessian and backends.mm._jax_common
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
 ├── application/          # Data-independent evaluate, optimize, and atomic save services
@@ -226,12 +263,22 @@ q2mm/
 ├── benchmarks/           # Benchmark systems, explicit profiles, acceptance, and publication persistence
 │   ├── cases.py         # BenchmarkCase wrapper around OptimizationProblem
 │   ├── publications.py  # Canonical source-completeness records and blocked rows
-│   ├── profiles.py      # Immutable RunProfile + deterministic ResolvedProfile/provenance/fingerprint
-│   ├── acceptance.py    # Closed candidate-status vocabulary + the single no-progress decision
-│   ├── runner.py        # The one execution/result/persistence/promotion path (single/batch/matrix)
+│   ├── profiles.py      # Profile identities + configuration/data-root adapters over existing resolvers
+│   ├── acceptance.py    # Candidate status, no-progress/worsening policy, and executor-ratio classification
+│   ├── analysis.py      # Frequency, PES-distortion, and optimizer-sample diagnostics
+│   ├── records.py       # Immutable candidate/outcome envelopes + canonical projection/provenance adapters
+│   ├── artifacts.py     # Strict JSON storage + accepted-artifact staging, snapshots, rollback, cleanup
+│   ├── runner.py        # The one execution/promotion coordinator (run_profile/run_profiles)
 │   ├── cli.py           # q2mm-benchmark console entry point (list/preflight/single/batch/matrix/load)
 │   └── systems/         # load_system(), SYSTEM_KEYS, per-system modules
-│       └── ferrocene.py # Wahlers Chapter 4 seven-structure ground-state profile
+│       ├── ch3f.py      # CH3F matched-frequency benchmark
+│       ├── ch3f_sn2.py  # CH3F SN2 transition-state benchmark
+│       ├── ferrocene.py # Wahlers Chapter 4 seven-structure ground-state profile
+│       ├── heck_relay.py # Heck-relay publication system
+│       ├── pd_allyl.py  # Pd-allyl publication system
+│       ├── pd_conjugate.py # Pd conjugate-addition publication system
+│       ├── rh_conjugate.py # Rh conjugate-addition publication system
+│       └── rh_enamide.py # Rh-enamide publication system
 │
 ├── models/               # Format-neutral data structures
 │   ├── forcefield.py     # ForceField, BondParam, AngleParam, TorsionParam, FunctionalForm
