@@ -159,9 +159,11 @@ def category_metrics(plan: ObjectivePlan, evaluation: Evaluation) -> dict[str, d
 
 
 def evaluate_samples(evaluator: ObjectiveEvaluator, full_vector: np.ndarray, n_evals: int) -> tuple[float, ...]:
-    """Sample the real objective ``n_evals`` times at *full_vector*.
+    """Sample the supplied executor ``n_evals`` times at *full_vector*.
 
-    Quantifies per-call engine non-determinism.  Uses the evaluator's
+    The evaluator determines the objective plan and executor; these are not
+    automatically independent Python-objective samples. Quantifies per-call
+    engine non-determinism using the evaluator's
     :meth:`~q2mm.objectives.protocols.ObjectiveEvaluator.sample`, which
     re-evaluates without touching the evaluation counter or history, so
     optimizer bookkeeping is never polluted by post-hoc sampling.

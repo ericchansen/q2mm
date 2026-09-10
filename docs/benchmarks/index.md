@@ -24,7 +24,7 @@ q2mm's benchmark program answers three questions:
 |---------|---------------|------------|
 | [Publication Reproduction Coverage](published-ff-validation.md) | Distinguish executable, partial, demonstration, and blocked publication rows | Path-free compatibility and SDK-path proofs; numerical claims require linked q2mm-data artifacts |
 | [QFUERZA Validation](qfuerza-validation.md) | Verify our QFUERZA implementation against the paper and Zenodo data; evaluate starting-point quality across 5 systems | Cisplatin matches Zenodo exactly for QFUERZA angles; all five TS systems have positive mass-weighted starting-point R² |
-| [Optimizer Comparison](optimizer-comparison.md) | Compare the production SciPy L-BFGS-B + JAX executor path on literature-scale TS systems | 4 of 5 systems show significant q2mm-objective improvement; pd-allyl is a confirmed local minimum |
+| [Optimizer Comparison](optimizer-comparison.md) | Compare the production SciPy L-BFGS-B + JAX executor path on literature-scale TS systems | Historical mixed-source reductions for four systems; sample/endpoint provenance and local-basin limits are explicit |
 | [GPU Acceleration](gpu.md) | CPU-vs-GPU wall-clock comparisons | JAX GPU ~5.6× faster on Rh-enamide |
 | [When Analytical Wins](crossover.md) | System-size crossover for analytical vs finite-difference gradients | Analytical gradients dominate above ~50 parameters |
 

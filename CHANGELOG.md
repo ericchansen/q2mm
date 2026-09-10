@@ -108,20 +108,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **MM3 angle gradient correctness** — replaced the JAX angle term's
   gradient-killing `arccos(clip())` path with a well-conditioned
   `atan2`-based custom VJP near collinear geometries. This moved the
-  literature-scale TS systems back into the JaxLoss ratio gate and unlocked
+  literature-scale TS systems back inside the default JaxLoss ratio band and unlocked
   substantial real-objective improvements for Heck relay and Rh 1,4-conjugate.
 - **Heck relay optimization** — after the MM3 angle-gradient fix, the
-  JaxLoss/ObjectiveFunction ratio is 1.085 and SciPy L-BFGS-B over JaxLoss
-  reduces the sampled real objective by 52.82% ± 1.54% CI95.
+  historical JaxLoss/ObjectiveFunction ratio is 1.085, with the gate bypassed,
+  and the legacy sample
+  summary reports a 52.82% reduction with a ±1.54% interval. Those fields
+  do not identify the sampled executor or establish Python-objective
+  confidence; see the [qualified historical results](docs/benchmarks/optimizer-comparison.md#optimization-results).
 - **Rh 1,4-conjugate optimization** — the same gradient fix resolves the
-  spurious stationary point seen in earlier runs; sampled real-objective
-  reduction is 18.00% ± 4.17% CI95.
+  spurious stationary point reported in earlier runs; the legacy sample
+  summary reports an 18.00% reduction with a ±4.17% interval, subject to
+  the same executor-provenance qualification.
 - **Pd 1,4-conjugate optimization** — after preserving the published Wahlers
-  OPT values, the default ratio gate passes and the real objective improves
-  by 16.1%.
-- **Pd-allyl verdict** — n=10 sampled evaluation confirms the published
-  Wahlers OPT values sit at a q2mm JaxLoss local minimum; any improvement is
-  below the ±0.40% CI95 noise band.
+  OPT values, the recorded ratio of 0.985 is within the default band, but
+  this historical run explicitly bypassed the gate (`ratio_tol: null`,
+  `ratio_status: "ok_bypassed"`). Its stored improvement field reports
+  16.1%, while the stored endpoint fields imply 15.96%; the qualified
+  results page distinguishes those values.
+- **Pd-allyl historical report** — the requested n=10 sample summary shows
+  little movement with a ±0.40% legacy interval. This does not confirm a
+  local minimum or bound improvement for a different executor.
 - **JaxLoss harmonic restraint** — `_relax_coords()` previously added an
   artificial harmonic restraint (k=100 kcal/mol·Å²) to geometry
   relaxation, causing JaxLoss to optimize a different objective than
