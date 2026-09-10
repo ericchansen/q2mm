@@ -1,18 +1,24 @@
 """Generic optimizer catalog and strict construction.
 
 The catalog is dependency-light: optional optimizer implementations are
-imported only when their entry is explicitly resolved.
+imported only when their entry is explicitly resolved. Effective settings
+include the Q2MM constructors' bound defaults and nested Q2MM solvers;
+they do not inspect arbitrary custom optimizer objects or runtime state.
 """
 
 from __future__ import annotations
 
+import inspect
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 from q2mm.models.results import OptimizationResult, deep_freeze
+
+if TYPE_CHECKING:
+    from q2mm.optimizers.protocols import _Optimizer
 
 EVALUATORS = frozenset({"python", "jax"})
 GRADIENT_MODES = frozenset({"analytical", "finite_difference", "none"})
@@ -161,7 +167,114 @@ class _CyclingOptimizer:
     def optimize(self, evaluator: Any, space: Any) -> OptimizationResult:
         from q2mm.optimizers.cycling import OptimizationLoop
 
-        return OptimizationLoop(evaluator, space, verbose=False, **self._kwargs).run()
+        return OptimizationLoop(evaluator, space, **self._kwargs).run()
+
+
+_T = TypeVar("_T")
+
+
+def _constructor_arguments(constructor: Callable[..., object], overrides: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind known built-in constructor arguments, including their declared defaults."""
+    bound = inspect.signature(constructor).bind_partial(**overrides)
+    bound.apply_defaults()
+    return dict(bound.arguments)
+
+
+def _constructor_settings(constructor: Callable[..., object], kind: str, **overrides: Any) -> dict[str, Any]:
+    return {"kind": kind, **_constructor_arguments(constructor, overrides)}
+
+
+def _construct(constructor: Callable[..., _T], kind: str, **overrides: Any) -> tuple[_T, dict[str, Any]]:
+    arguments = _constructor_arguments(constructor, overrides)
+    return constructor(**arguments), {"kind": kind, **arguments}
+
+
+def _scipy_scaling_settings(settings: dict[str, Any], gradient_mode: str) -> dict[str, Any]:
+    applicable = settings["method"] == "L-BFGS-B" and settings["use_bounds"] and gradient_mode != "none"
+    return {
+        **settings,
+        "analytical_parameter_scaling": "bound-normalized" if applicable else "none",
+        "parameter_scaling_requires": "finite nondegenerate active bounds" if applicable else None,
+    }
+
+
+@dataclass(frozen=True)
+class _Construction:
+    """One bound constructor graph, shared by execution and settings capture."""
+
+    constructor: Callable[..., _Optimizer]
+    kind: str
+    arguments: Mapping[str, object]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "arguments", MappingProxyType(dict(self.arguments)))
+
+    def build(self) -> _Optimizer:
+        """Construct this graph without consulting another resolver."""
+        arguments = {
+            name: value.build() if isinstance(value, _Construction) else value for name, value in self.arguments.items()
+        }
+        return self.constructor(**arguments)
+
+    def settings(self, gradient_mode: str = "none") -> dict[str, object]:
+        """Describe the same bound arguments without constructing any object."""
+        settings = {
+            "kind": self.kind,
+            **{
+                name: value.settings(gradient_mode) if isinstance(value, _Construction) else value
+                for name, value in self.arguments.items()
+            },
+        }
+        return _scipy_scaling_settings(settings, gradient_mode) if self.kind == "scipy" else settings
+
+
+def _leaf(constructor: Callable[..., _Optimizer], kind: str, **arguments: object) -> _Construction:
+    return _Construction(constructor, kind, _constructor_arguments(constructor, arguments))
+
+
+def _cycling_constructions(settings: Mapping[str, Any]) -> dict[str, _Construction]:
+    """Own cycling's method parsing, constructor choices, and phase arguments."""
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+    method = settings["full_method"]
+    maxiter = settings["full_maxiter"]
+    scipy_arguments = {"maxiter": maxiter, "eps": settings["eps"], "verbose": False}
+    if method.startswith("optax:"):
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        name = method.split(":", 1)[1]
+        name, schedule = name.split("+", 1) if "+" in name else (name, None)
+        full = _leaf(OptaxOptimizer, "optax", optimizer=name, max_steps=maxiter, schedule=schedule, verbose=False)
+    elif method.startswith("jaxopt:"):
+        from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+
+        full = _leaf(JaxOptOptimizer, "jaxopt", method=method.split(":", 1)[1], maxiter=maxiter, verbose=False)
+    elif method.startswith("basinhopping"):
+        from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
+
+        name = (method.split(":", 1)[1].strip() or "L-BFGS-B") if ":" in method else "L-BFGS-B"
+        full = _leaf(BasinHoppingOptimizer, "basinhopping", local_method=name, local_maxiter=maxiter, verbose=False)
+    elif method.startswith("multi:"):
+        from q2mm.optimizers.multistart import MultiStartOptimizer
+
+        inner = _leaf(ScipyOptimizer, "scipy", method=method.split(":", 1)[1], **scipy_arguments)
+        full = _leaf(MultiStartOptimizer, "multistart", optimizer=inner, n_starts=5, verbose=False)
+    else:
+        full = _leaf(ScipyOptimizer, "scipy", method=method, **scipy_arguments)
+    simplex = _leaf(
+        ScipyOptimizer,
+        "scipy",
+        method=settings["simp_method"],
+        maxiter=settings["simp_maxiter"],
+        eps=settings["eps"],
+        verbose=False,
+    )
+    return {"full_optimizer": full, "simplex_optimizer": simplex}
+
+
+def _cycling_nested_settings(settings: Mapping[str, Any], gradient_mode: str) -> dict[str, Any]:
+    """Serialize the same phase plans used by cycling execution."""
+    return {name: plan.settings(gradient_mode) for name, plan in _cycling_constructions(settings).items()}
 
 
 _COMMON_DEFAULTS: Mapping[str, Any] = MappingProxyType(
@@ -214,7 +327,13 @@ def resolve_optimizer(
     value: str | OptimizerSpec,
     options: Mapping[str, Any] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
-    """Construct an optimizer and return its exact effective settings."""
+    """Construct an optimizer and snapshot its resolved Q2MM constructor settings.
+
+    Deliberate catalog overrides take precedence over constructor defaults.
+    Deferred cycling records both its constructor arguments and its nested
+    full/simplex solvers. No optimization or optional-runtime import is
+    needed to resolve these settings.
+    """
     spec = optimizer_spec(value)
     supplied = dict(options or {})
     unknown = set(supplied) - _allowed_options(spec.method)
@@ -229,7 +348,9 @@ def resolve_optimizer(
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         effective = 500 if maxiter is None else int(maxiter)
-        opt: Any = ScipyOptimizer(
+        opt, settings = _construct(
+            ScipyOptimizer,
+            "scipy",
             method=method,
             maxiter=effective,
             ftol=float(cfg["ftol"]),
@@ -237,31 +358,27 @@ def resolve_optimizer(
             fc_fraction=cfg["fc_fraction"],
             eq_fraction=cfg["eq_fraction"],
         )
-        return opt, {
-            "kind": "scipy",
-            "method": method,
-            "maxiter": effective,
-            "ftol": float(cfg["ftol"]),
-            "gtol": opt.gtol,
-            "maxls": opt.maxls,
-            "eps": opt.eps,
-            "fc_fraction": cfg["fc_fraction"],
-            "eq_fraction": cfg["eq_fraction"],
-            "use_bounds": opt.use_bounds,
-            "analytical_parameter_scaling": "bound-normalized",
-        }
+        return opt, _scipy_scaling_settings(settings, spec.gradient_mode)
     if method == "cycling":
+        from q2mm.optimizers.cycling import OptimizationLoop
+
         effective_cfg: dict[str, Any] = {
             "max_params": int(cfg["max_params"]),
             "convergence": float(cfg["convergence"]),
             "max_cycles": int(cfg["max_cycles"]),
+            "verbose": False,
         }
         if maxiter is not None:
             effective_cfg["full_maxiter"] = int(maxiter)
             effective_cfg["simp_maxiter"] = int(maxiter)
         if "full_method" in extra:
             effective_cfg["full_method"] = extra["full_method"]
-        return _CyclingOptimizer(**effective_cfg), {"kind": "cycling", **effective_cfg}
+        effective_cfg = _constructor_arguments(OptimizationLoop, effective_cfg)
+        return _CyclingOptimizer(**effective_cfg), {
+            "kind": "cycling",
+            **effective_cfg,
+            **_cycling_nested_settings(effective_cfg, spec.gradient_mode),
+        }
     if method.startswith("optax:"):
         from q2mm.optimizers.optax import OptaxOptimizer
 
@@ -274,23 +391,13 @@ def resolve_optimizer(
         }
         if "schedule" in extra:
             kwargs["schedule"] = extra["schedule"]
-        return OptaxOptimizer(**kwargs), {
-            "kind": "optax",
-            "optimizer": kwargs["optimizer"],
-            "max_steps": steps,
-            "schedule": extra.get("schedule"),
-            "learning_rate": float(cfg["learning_rate"]),
-        }
+        return _construct(OptaxOptimizer, "optax", **kwargs)
     if method.startswith("jaxopt:"):
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
         effective = 200 if maxiter is None else int(maxiter)
         name = method.split(":", 1)[1]
-        return JaxOptOptimizer(method=name, maxiter=effective, verbose=False), {
-            "kind": "jaxopt",
-            "method": name,
-            "maxiter": effective,
-        }
+        return _construct(JaxOptOptimizer, "jaxopt", method=name, maxiter=effective, verbose=False)
     if method.startswith("basinhopping"):
         from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
 
@@ -300,29 +407,25 @@ def resolve_optimizer(
             kwargs["niter"] = int(extra["niter"])
         if "T" in extra:
             kwargs["T"] = float(extra["T"])
-        return BasinHoppingOptimizer(**kwargs), {
-            "kind": "basinhopping",
-            "local_maxiter": local_maxiter,
-            "niter": extra.get("niter"),
-            "T": extra.get("T"),
-            "seed": int(cfg["seed"]),
-        }
+        return _construct(BasinHoppingOptimizer, "basinhopping", **kwargs)
     if method.startswith("multi:"):
         from q2mm.optimizers.multistart import MultiStartOptimizer
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         inner_maxiter = 500 if maxiter is None else int(maxiter)
         inner_name = method.split(":", 1)[1]
-        inner = ScipyOptimizer(method=inner_name, maxiter=inner_maxiter, verbose=False)
+        inner, inner_settings = _construct(
+            ScipyOptimizer, "scipy", method=inner_name, maxiter=inner_maxiter, verbose=False
+        )
         kwargs = {"optimizer": inner, "verbose": False, "seed": int(cfg["seed"])}
         if "n_starts" in extra:
             kwargs["n_starts"] = int(extra["n_starts"])
-        return MultiStartOptimizer(**kwargs), {
-            "kind": "multistart",
-            "inner_method": inner_name,
-            "inner_maxiter": inner_maxiter,
-            "n_starts": extra.get("n_starts"),
-            "seed": int(cfg["seed"]),
+        multi, settings = _construct(MultiStartOptimizer, "multistart", **kwargs)
+        return multi, {
+            **settings,
+            "optimizer": _scipy_scaling_settings(inner_settings, spec.gradient_mode),
+            "inner_method": inner_settings["method"],
+            "inner_maxiter": inner_settings["maxiter"],
         }
     raise ValueError(f"Unknown optimizer method {method!r}.")
 
