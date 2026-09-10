@@ -13,9 +13,10 @@ here is narrower and testable:
 > q2mm's JAX backend and analytical-gradient optimizer reduce q2mm's own
 > multi-target objective without corrupting the force field?
 
-For four of the five systems the answer is yes.  Pd-allyl is the exception: it
-passes the executor-ratio gate, but the published Wahlers parameters already
-sit at a local minimum for the current q2mm objective.
+The historical endpoint reports below show reductions for four of the five
+systems and little movement for Pd-allyl. Repeated optimizer-executor samples
+do not by themselves establish uncertainty for the independent Python
+objective of record or prove that a starting point is a local minimum.
 
 ---
 
@@ -39,10 +40,21 @@ All multi-target benchmarks use the same production setup:
 - **Gradient source:** the `scipy-lbfgsb-jax` CLI path builds the JAX
   executor explicitly when the JAX/Python executor ratio check is within the
   default ±15% band.
-- **Validation:** the Python executor is evaluated before and
-  after the JAX-executor-guided optimization.  For noisy systems, the reported
-  improvement is the mean over 10 initial and 10 final evaluations with a
-  95% confidence interval.
+- **Validation:** the Python executor supplies the independent before/after
+  scores of record. Workflow repeats sample the configured optimization
+  executor; for a JAX workflow those are JAX samples, not Python repeats.
+  Their means and intervals must not be attached to the Python endpoint
+  improvement as if both described the same series.
+
+Current summaries name sample statistics `initial_optimizer_score_mean`,
+`initial_optimizer_score_ci95`, `final_optimizer_score_mean`,
+`final_optimizer_score_ci95`, `optimizer_improvement_pct_mean`, and
+`optimizer_improvement_significant`. They also record
+`optimizer_samples_executor`, both sample counts, and
+`optimizer_sample_statistics_version=1`. The interval arithmetic and
+acceptance policy are unchanged. `initial_obj_score`, `final_obj_score`,
+and `improvement_pct` still describe the independent Python endpoints.
+No statistics are emitted when either sample series is absent.
 
 The raw JSON outputs and optimized force fields for these published-start
 runs live in
@@ -87,7 +99,7 @@ optimization now transfers to the real objective.
 
 ## Optimization results
 
-| System | Initial score | Final score | Mean Δ | 95% CI on Δ | L-BFGS-B iters | Real OF evals | Wall time |
+| System | Initial score | Final score | Reported mean Δ | Reported 95% CI on Δ | L-BFGS-B iters | Real OF evals | Wall time |
 |--------|--------------:|------------:|-------:|------------:|---------------:|--------------:|----------:|
 | [Rh-enamide](../systems/rh-enamide.md) | 4.885 × 10⁵ | 2.700 × 10⁵ | **−44.73%** | ±0.29% | 13 | 2 | 710 s opt + post-evals |
 | [Heck relay](../systems/heck-relay.md) | 3.098 × 10⁶ | 1.461 × 10⁶ | **−52.82%** | ±1.54% | 7 | 2 | 1,825 s opt + post-evals |
@@ -101,9 +113,13 @@ under [#288](https://github.com/ericchansen/q2mm/pull/288) /
 [q2mm-data#10](https://github.com/ericchansen/q2mm-data/pull/10) after the MM3
 angle-gradient fix; the canonical/opt-out subdir rename in
 [q2mm-data#11](https://github.com/ericchansen/q2mm-data/pull/11) moved
-these published-start files from `convergence/` to `from-published/`).  `95% CI on Δ` is the conservative bound
+these published-start files from `convergence/` to `from-published/`). The legacy interval formula is
 `(initial_obj_score_ci95 + final_obj_score_ci95) / initial_obj_score_mean × 100`
-— the same combination used by the JSON's `improvement_significant` flag.
+— the same combination used by those records' `improvement_significant`
+flag. These legacy names alone do not identify the sampled executor; they
+must not be treated as verified Python-objective confidence bounds without
+matching sample provenance. The historical artifacts and numbers above have
+not been recomputed or relabeled in place.
 Rh-enamide and ch3f were re-evaluated with `--n-evals 5`; the others with
 `--n-evals 10`.  Pd 1,4-conj is a single-call run (no CI sampled).
 
@@ -111,10 +127,10 @@ Interpretation:
 
 - **Rh-enamide, Heck relay, Pd 1,4-conj, and Rh 1,4-conj improve
   substantially** under the q2mm JAX-backend objective.
-- **Pd-allyl does not improve in a statistically meaningful way.**  The
-  optimizer converges quickly, the executor-ratio gate is healthy, and the 10-sample
-  confidence interval excludes any hidden >0.4% improvement.  This is a local
-  minimum of the current objective, not a failed run.
+- **Pd-allyl's reported endpoints show little movement.** Its legacy
+  sample interval does not establish a hidden-improvement bound for a
+  different executor or prove a local minimum. Local-basin methodology and
+  canonical publication convergence remain separate scientific questions.
 - **Small L-BFGS-B iteration counts are expected.**  In the JAX executor path,
   SciPy evaluates the surrogate many times internally; the Python executor is
   called only for the initial baseline and final validation.
