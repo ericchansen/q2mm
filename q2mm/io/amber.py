@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import contextlib
+import math
+from collections.abc import Sequence
+from dataclasses import dataclass
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -148,6 +152,100 @@ def _parse_floats(text: str) -> list[float]:
     return vals
 
 
+def _valid_amber_dihe_types(types: Sequence[str]) -> bool:
+    """Check the existing four-native-type grammar without choosing a row interpretation."""
+    return (
+        len(types) == 4
+        and not types[0].startswith("#")
+        and not any(not 1 <= len(t) <= 2 or any(c.isspace() or c == "-" or not c.isascii() for c in t) for t in types)
+    )
+
+
+def _amber_dihe_key(types: Sequence[str]) -> tuple[str, ...]:
+    """Identify a proper torsion by its native types, up to full reversal."""
+    if not _valid_amber_dihe_types(types):
+        raise ValueError("AMBER DIHE requires four explicit one- or two-character atom types")
+    forward = tuple(types)
+    return min(forward, forward[::-1])
+
+
+@dataclass(frozen=True)
+class _AmberDihedralRow:
+    """File-only DIHE values; PN's sign is not physical parameter identity."""
+
+    atom_types: tuple[str, ...]
+    idivf: int
+    barrier: float
+    phase: float
+    pn: int
+    type_prefix: str
+
+    @property
+    def effective_idivf(self) -> int:
+        """Use LEaP's zero-as-one divisor without losing the encoded value."""
+        return self.idivf or 1
+
+
+def _amber_dihe_rows(lines: Sequence[str]) -> dict[int, _AmberDihedralRow]:
+    """Read contiguous positive-terminated chains, inheriting omitted native types."""
+    rows = {}
+    in_dihe = False
+    pending: tuple[str, ...] | None = None
+    seen: set[tuple[str, ...]] = set()
+    folds: set[int] = set()
+    for row, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if stripped in _FRCMOD_SECTIONS or not stripped:
+            if pending is not None:
+                raise ValueError(f"AMBER DIHE row {row}: continuation requires a positive-PN final component")
+            in_dihe = stripped == "DIHE"
+            continue
+        if not in_dihe or stripped.startswith("#"):
+            continue
+        types, rest = _parse_amber_types(line, 4)
+        explicit_values = (
+            _parse_floats(rest)
+            if len(line) >= 11 and all(line[i] == "-" for i in (2, 5, 8)) and _valid_amber_dihe_types(types)
+            else []
+        )
+        compact_values = _parse_floats(line)
+        if len(explicit_values) >= 4:
+            if pending is not None and len(compact_values) >= 4:
+                raise ValueError(f"AMBER DIHE row {row}: ambiguous explicit atom types and implicit numeric values")
+            type_prefix = line[:11]
+            values = explicit_values
+        elif len(compact_values) >= 4:
+            if pending is None:
+                raise ValueError(f"AMBER DIHE row {row}: implicit types require a preceding negative-PN component")
+            types = list(pending)
+            type_prefix = line[: len(line) - len(line.lstrip())]
+            values = compact_values
+        else:
+            raise ValueError(f"AMBER DIHE row {row}: requires atom types or a continuation and IDIVF, PK, PHASE, PN")
+        key = _amber_dihe_key(types)
+        idivf, barrier, phase, pn = values[:4]
+        if not all(math.isfinite(v) for v in values[:4]) or idivf != int(idivf) or pn == 0 or pn != int(pn):
+            raise ValueError(f"AMBER DIHE row {row}: requires finite values, integer IDIVF and nonzero integer PN")
+        if barrier != 0.0 and barrier / (idivf or 1.0) == 0.0:
+            raise ValueError(f"AMBER DIHE row {row}: amplitude scaling underflow")
+        if pending is not None and _amber_dihe_key(pending) != key:
+            raise ValueError(f"AMBER DIHE row {row}: interleaved continuation changes atom types")
+        if pending is None:
+            if key in seen:
+                raise ValueError(f"AMBER DIHE row {row}: multiple completed definitions for the same atom types")
+            seen.add(key)
+            folds = set()
+        fold = abs(int(pn))
+        if fold in folds:
+            raise ValueError(f"AMBER DIHE row {row}: duplicate periodicity in a continuation group")
+        folds.add(fold)
+        rows[row] = _AmberDihedralRow(tuple(types), int(idivf), barrier, phase, int(pn), type_prefix)
+        pending = tuple(types) if pn < 0 else None
+    if pending is not None:
+        raise ValueError("AMBER DIHE continuation requires a positive-PN final component before end of file")
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Public load / save
 # ---------------------------------------------------------------------------
@@ -159,9 +257,23 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
     Parses MASS, BOND, ANGLE/ANGL, DIHE, IMPROPER, and NONBON sections.
     Atom type → element mapping uses the MASS section when present,
     falling back to the GAFF convention (first character).
+
+    Negative DIHE PN marks another component, not negative physical
+    periodicity. Chains start with explicit atom types (allowing full
+    reversal); numeric-only continuations inherit the preceding negative-PN
+    component's type orientation. Components have distinct positive absolute
+    periodicities and a positive final PN. Integer IDIVF values retain their
+    sign; encoded zero uses an effective divisor of one, as in LEaP.
+    Ambiguous redefinitions, orphan implicit rows, and interrupted or
+    unterminated chains raise ``ValueError``. A pending row that can be read
+    as both explicit numeric atom types and compact values is rejected rather
+    than guessed. Raw IMPROPER PN must be a finite positive integer: unlike
+    DIHE continuation signs or zero IDIVF, no absolute-value/default-one
+    normalization is applied to improper source periodicities.
     """
     path = Path(path)
     lines = path.read_text(encoding="utf-8").splitlines()
+    dihe_rows = _amber_dihe_rows(lines)
 
     bonds: list[BondParam] = []
     angles: list[AngleParam] = []
@@ -230,27 +342,19 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
                 )
 
         elif section == "DIHE":
-            types, rest = _parse_amber_types(line, 4)
-            vals = _parse_floats(rest)
-            # vals: IDIVF, barrier, phase, periodicity
-            if len(types) == 4 and all(types) and len(vals) >= 4:
-                idivf = int(vals[0]) if vals[0] != 0 else 1
-                barrier = vals[1]
-                phase = vals[2]
-                periodicity = abs(int(vals[3]))
-                k = barrier / idivf
-                elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
-                torsions.append(
-                    TorsionParam(
-                        elements=elems,
-                        periodicity=periodicity or 1,
-                        force_constant=k,
-                        phase=phase,
-                        env_id="-".join(types),
-                        ff_row=row,
-                        label=f"frcmod row {row}",
-                    )
+            record = dihe_rows[row]
+            elems = tuple(_amber_type_to_element(t, mass_map) for t in record.atom_types)
+            torsions.append(
+                TorsionParam(
+                    elements=elems,
+                    periodicity=abs(record.pn),
+                    force_constant=record.barrier / record.effective_idivf,
+                    phase=record.phase,
+                    env_id="-".join(record.atom_types),
+                    ff_row=row,
+                    label=f"frcmod row {row}",
                 )
+            )
 
         elif section == "IMPROPER":
             types, rest = _parse_amber_types(line, 4)
@@ -258,11 +362,15 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
             # vals: barrier, phase, periodicity (no IDIVF)
             if len(types) == 4 and all(types) and len(vals) >= 3:
                 elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
-                periodicity = abs(int(vals[2]))
+                pn = vals[2]
+                # IMPROPER has neither DIHE's continuation sign nor a zero-to-one convention.
+                if not math.isfinite(pn) or pn <= 0 or pn != int(pn):
+                    raise ValueError(f"AMBER IMPROPER row {row}: raw PN must be a finite positive integer")
+                periodicity = int(pn)
                 torsions.append(
                     TorsionParam(
                         elements=elems,
-                        periodicity=periodicity or 1,
+                        periodicity=periodicity,
                         force_constant=vals[0],
                         phase=vals[1],
                         env_id="-".join(types),
@@ -316,6 +424,37 @@ def save_amber_frcmod(
     If *template_path* is provided (or the ForceField was loaded from a
     .frcmod file), the template is updated in-place, preserving comments
     and unrelated sections.  Otherwise a standalone file is generated.
+
+    Standalone DIHE components are grouped by atom types up to full reversal,
+    preserving each component's orientation, amplitude and explicit phase.
+    All but the last component receive negative PN; the final PN is positive,
+    regardless of periodicity order. Source rows and labels do not define
+    groups. Templates retain their valid continuation signs and IDIVF;
+    proper and improper components must bind one-to-one. Additions/removals
+    or ambiguous bindings raise ``ValueError`` before the destination is
+    opened. Proper template bindings recognize full
+    reversal of types and elements without changing source-column orientation;
+    source rows, when present, must still match exactly. Improper bindings
+    retain native atom-type/element ordering rather than applying DIHE
+    reversal equivalence. Without a source row, each component needs a unique
+    type/periodicity binding. Both proper and improper torsions require
+    positive integer canonical periodicities and finite amplitudes/phases,
+    which are emitted without exponent tokens or precision truncation.
+    Templates preserve implicit type prefixes and encoded IDIVF, including
+    zero's effective-one convention. Unchanged improper rows retain their text
+    only after raw source PN validation; zero, negative, fractional or
+    nonfinite improper periods are not silently mapped to canonical values.
+
+    This is file-format preservation, not validation of AMBER engine energies
+    or a change to signed-dihedral conventions.
+
+    References:
+        https://ambermd.org/FileFormats.php (parameter card 6 and frcmod DIHE)
+        https://github.com/ParmEd/ParmEd/blob/4.3.1/parmed/amber/parameters.py
+        https://github.com/Amber-MD/AmberClassic/blob/8e55e97ada48b96eefaec2e6a3fa849018aaeea5/src/leap/amber.c
+        https://github.com/Amber-MD/AmberClassic/blob/8e55e97ada48b96eefaec2e6a3fa849018aaeea5/src/msander/set.F90
+        https://github.com/ParmEd/ParmEd/blob/4.3.1/parmed/topologyobjects.py
+
     """
     _validate_form_for_format(ff, "amber_frcmod")
     output_path = Path(path)
@@ -334,14 +473,17 @@ def save_amber_frcmod(
 # ---------------------------------------------------------------------------
 
 
-def _extract_amber_trailing(line: str, n_types: int, n_values: int) -> str:
+def _extract_amber_trailing(line: str, n_types: int, n_values: int, *, prefix_length: int | None = None) -> str:
     """Extract trailing comment/text after the numeric fields in a frcmod line.
 
     *n_types* is the number of atom types (2 for BOND, 3 for ANGLE, etc.)
     and *n_values* is the expected count of numeric columns.  Returns the
     trailing text (including any leading whitespace) or empty string.
     """
-    _, rest = _parse_amber_types(line, n_types)
+    if prefix_length is None:
+        _, rest = _parse_amber_types(line, n_types)
+    else:
+        rest = line[prefix_length:]
     # Walk through *rest* consuming numeric tokens
     pos = 0
     consumed = 0
@@ -372,14 +514,36 @@ def _format_amber_angle_line(types: list[str], k: float, theta0: float, suffix: 
     return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2} {k:12.4f} {theta0:10.4f}{suffix}\n"
 
 
+def _amber_torsion_decimal_values(k: float, phase: float, *, section: str) -> tuple[str, str]:
+    """Retain finite float precision in the readers' exponent-free decimal syntax."""
+    if not math.isfinite(k) or not math.isfinite(phase):
+        raise ValueError(f"AMBER {section} exported amplitude and phase must be finite")
+    # Decimal notation retains float precision without exponent tokens that
+    # some frcmod readers (including ParmEd) do not accept. These are minimum
+    # display widths, not numeric limits for their whitespace-delimited fields.
+    return format(Decimal(str(float(k))), "f"), format(Decimal(str(float(phase))), "f")
+
+
 def _format_amber_dihe_line(
-    types: list[str], k: float, phase: float, periodicity: int, suffix: str = "", *, idivf: int = 1
+    types: list[str],
+    k: float,
+    phase: float,
+    periodicity: int,
+    suffix: str = "",
+    *,
+    idivf: int = 1,
+    type_prefix: str | None = None,
 ) -> str:
-    return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2}-{types[3]:<2}   {idivf} {k:10.4f} {phase:8.3f} {float(periodicity):8.3f}{suffix}\n"
+    barrier, phase_text = _amber_torsion_decimal_values(k, phase, section="DIHE")
+    prefix = "-".join(f"{atom:<2}" for atom in types) if type_prefix is None else type_prefix
+    separator = "   " if prefix.strip() else ""
+    return f"{prefix}{separator}{idivf} {barrier:>10} {phase_text:>8} {periodicity}.0{suffix}\n"
 
 
 def _format_amber_improper_line(types: list[str], k: float, phase: float, periodicity: int, suffix: str = "") -> str:
-    return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2}-{types[3]:<2} {k:10.4f} {phase:8.1f} {float(periodicity):8.1f}{suffix}\n"
+    barrier, phase_text = _amber_torsion_decimal_values(k, phase, section="IMPROPER")
+    # LEaP skips the first 15 characters before scanning improper numeric fields.
+    return f"{types[0]:<2}-{types[1]:<2}-{types[2]:<2}-{types[3]:<2}    {barrier:>10} {phase_text:>8} {int(periodicity)}.0{suffix}\n"
 
 
 def _format_amber_nonbon_line(atom_type: str, radius: float, epsilon: float, suffix: str = "") -> str:
@@ -394,8 +558,38 @@ def _amber_env_types(env_id: str, elements: tuple[str, ...]) -> list[str]:
     return [e.lower() for e in elements]
 
 
+def _amber_proper_groups(torsions: Sequence[TorsionParam]) -> dict[tuple[str, ...], list[TorsionParam]]:
+    """Group native proper types without conflating source-row provenance."""
+    groups: dict[tuple[str, ...], list[TorsionParam]] = {}
+    for tor in torsions:
+        section = "IMPROPER" if tor.is_improper else "DIHE"
+        if len(tor.elements) != 4:
+            raise ValueError(f"AMBER {section} requires four elements.")
+        if not math.isfinite(tor.force_constant) or not math.isfinite(tor.phase):
+            raise ValueError(f"AMBER {section} amplitude and phase must be finite")
+        if (
+            isinstance(tor.periodicity, bool)
+            or not math.isfinite(tor.periodicity)
+            or tor.periodicity <= 0
+            or tor.periodicity != int(tor.periodicity)
+        ):
+            raise ValueError(f"AMBER {section} canonical periodicity must be a positive integer")
+        types = [part.strip() for part in tor.env_id.split("-")] if tor.env_id else _amber_env_types("", tor.elements)
+        if not _valid_amber_dihe_types(types):
+            raise ValueError(f"AMBER {section} requires four explicit one- or two-character atom types")
+        if tor.is_improper:
+            continue
+        key = _amber_dihe_key(types)
+        group = groups.setdefault(key, [])
+        if any(t.periodicity == tor.periodicity for t in group):
+            raise ValueError("AMBER DIHE cannot represent duplicate periodicities for the same atom types")
+        group.append(tor)
+    return groups
+
+
 def _save_amber_frcmod_standalone(ff: ForceField, output_path: Path, remark: str) -> Path:
     """Generate a standalone .frcmod file from scratch."""
+    proper_groups = _amber_proper_groups(ff.torsions)
     lines = [f"{remark}\n"]
 
     if ff.bonds:
@@ -413,13 +607,14 @@ def _save_amber_frcmod_standalone(ff: ForceField, output_path: Path, remark: str
         lines.append("\n")
 
     if ff.torsions:
-        proper = [t for t in ff.torsions if not t.is_improper]
         improper = [t for t in ff.torsions if t.is_improper]
-        if proper:
+        if proper_groups:
             lines.append("DIHE\n")
-            for tor in proper:
-                types = _amber_env_types(tor.env_id, tor.elements)
-                lines.append(_format_amber_dihe_line(types, tor.force_constant, tor.phase, tor.periodicity))
+            for group in proper_groups.values():
+                for index, tor in enumerate(group):
+                    types = _amber_env_types(tor.env_id, tor.elements)
+                    pn = int(tor.periodicity) if index == len(group) - 1 else -int(tor.periodicity)
+                    lines.append(_format_amber_dihe_line(types, tor.force_constant, tor.phase, pn))
             lines.append("\n")
         if improper:
             lines.append("IMPROPER\n")
@@ -438,12 +633,51 @@ def _save_amber_frcmod_standalone(ff: ForceField, output_path: Path, remark: str
     return output_path
 
 
+def _bind_amber_template_torsions(
+    torsions: Sequence[TorsionParam], originals: Sequence[TorsionParam], *, section: str
+) -> dict[int, TorsionParam]:
+    if len(torsions) != len(originals):
+        raise ValueError(f"AMBER {section} template cannot represent component additions or removals")
+    reversible = section == "DIHE"
+
+    def key(term: TorsionParam) -> tuple[str, ...]:
+        types = _amber_env_types(term.env_id, term.elements)
+        return _amber_dihe_key(types) if reversible else tuple(types)
+
+    bindings: dict[int, TorsionParam] = {}
+    for tor in torsions:
+        target_key = key(tor)
+        elements = tuple(tor.elements)
+        candidates = [
+            before
+            for before in originals
+            if target_key == key(before)
+            and (elements == tuple(before.elements) or (reversible and elements == tuple(before.elements)[::-1]))
+            and (tor.ff_row == before.ff_row if tor.ff_row is not None else tor.periodicity == before.periodicity)
+        ]
+        if len(candidates) != 1:
+            raise ValueError(f"AMBER {section} template component has missing or ambiguous source-row binding")
+        row = candidates[0].ff_row
+        assert row is not None
+        if row in bindings:
+            raise ValueError(f"AMBER {section} template component has duplicate source-row binding")
+        bindings[row] = tor
+    return bindings
+
+
 def _save_amber_frcmod_template(ff: ForceField, output_path: Path, template: Path) -> Path:
     """Update parameter values in an existing .frcmod template."""
     src_lines = template.read_text(encoding="utf-8").splitlines(keepends=True)
+    dihe_rows = _amber_dihe_rows(src_lines)
+    original = load_amber_frcmod(template)
+    original_impropers = {t.ff_row: t for t in original.improper_torsions}
+    _amber_proper_groups(ff.torsions)
     bond_by_row = {b.ff_row: b for b in ff.bonds if b.ff_row is not None}
     angle_by_row = {a.ff_row: a for a in ff.angles if a.ff_row is not None}
-    torsion_by_row = {t.ff_row: t for t in ff.torsions if t.ff_row is not None}
+    torsion_by_row = _bind_amber_template_torsions(ff.proper_torsions, original.proper_torsions, section="DIHE")
+    torsion_by_row.update(
+        _bind_amber_template_torsions(ff.improper_torsions, original.improper_torsions, section="IMPROPER")
+    )
     vdw_by_row = {v.ff_row: v for v in ff.vdws if v.ff_row is not None}
 
     section: str | None = None
@@ -481,17 +715,38 @@ def _save_amber_frcmod_template(ff: ForceField, output_path: Path, template: Pat
         elif section in ("DIHE", "IMPROPER") and row in torsion_by_row:
             t = torsion_by_row[row]
             types, rest = _parse_amber_types(line, 4)
-            n_vals = 3 if section == "IMPROPER" else 4
-            suffix = _extract_amber_trailing(line, 4, n_vals)
             if section == "IMPROPER":
-                out_lines.append(_format_amber_improper_line(types, t.force_constant, t.phase, t.periodicity, suffix))
+                before = original_impropers[row]
+                if (t.force_constant, t.phase, t.periodicity) == (
+                    before.force_constant,
+                    before.phase,
+                    before.periodicity,
+                ):
+                    out_lines.append(line)
+                else:
+                    suffix = _extract_amber_trailing(line, 4, 3)
+                    out_lines.append(
+                        _format_amber_improper_line(types, t.force_constant, t.phase, t.periodicity, suffix)
+                    )
             else:
                 # Preserve the template's IDIVF and reconstruct the barrier
-                # so the written line matches the original IDIVF column.
-                orig_vals = _parse_floats(rest)
-                idivf = int(orig_vals[0]) if orig_vals and orig_vals[0] != 0 else 1
-                barrier = t.force_constant * idivf
-                out_lines.append(_format_amber_dihe_line(types, barrier, t.phase, t.periodicity, suffix, idivf=idivf))
+                # before the formatter checks finiteness: even a finite
+                # canonical amplitude can overflow when multiplied by IDIVF.
+                record = dihe_rows[row]
+                suffix = _extract_amber_trailing(line, 4, 4, prefix_length=len(record.type_prefix))
+                barrier = t.force_constant * record.effective_idivf
+                pn = -int(t.periodicity) if record.pn < 0 else int(t.periodicity)
+                out_lines.append(
+                    _format_amber_dihe_line(
+                        list(record.atom_types),
+                        barrier,
+                        t.phase,
+                        pn,
+                        suffix,
+                        idivf=record.idivf,
+                        type_prefix=record.type_prefix,
+                    )
+                )
             updated = True
         elif section == "NONBON" and row in vdw_by_row:
             v = vdw_by_row[row]
