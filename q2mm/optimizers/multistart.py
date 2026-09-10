@@ -17,6 +17,7 @@ force field is mutated — the evaluator operates on full vectors only.
 from __future__ import annotations
 
 import logging
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -33,6 +34,10 @@ logger = logging.getLogger(__name__)
 
 class MultiStartOptimizer:
     """Meta-optimizer: run from N deterministic starts, keep the best."""
+
+    _name = "multi-start"
+    _candidate_name = "run"
+    _failure_gradient_mode = "none"
 
     def __init__(
         self,
@@ -51,6 +56,9 @@ class MultiStartOptimizer:
         self.perturbation_pct = perturbation_pct
         self.seed = seed
         self.verbose = verbose
+
+    def _result_method(self, selected: OptimizationResult | None) -> str:
+        return self._name if selected is None else f"{self._name}({selected.method})"
 
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the inner optimizer from multiple starts; keep the best."""
@@ -141,7 +149,7 @@ class MultiStartOptimizer:
             # preserves every candidate record rather than raising.
             return OptimizationResult(
                 success=False,
-                message=f"multi-start: all {self.n_starts} runs failed",
+                message=f"{self._name}: all {self.n_starts} {self._candidate_name}s failed",
                 initial_score=true_initial_score,
                 final_score=float("inf"),
                 n_iterations=0,
@@ -151,17 +159,17 @@ class MultiStartOptimizer:
                 initial_params=baseline,
                 final_params=baseline,
                 history=(true_initial_score,),
-                method="multi-start",
-                gradient_mode="none",
+                method=self._result_method(None),
+                gradient_mode=self._failure_gradient_mode,
                 candidates=candidates_t,
             )
 
         overall_success = best_converged is not None
         if overall_success:
-            message = f"multi-start best of {n_converged}/{self.n_starts} converged: {selected.message}"
+            message = f"{self._name} best of {n_converged}/{self.n_starts} converged: {selected.message}"
         else:
             message = (
-                f"multi-start: no converged run ({n_failed}/{self.n_starts} failed); "
+                f"{self._name}: no converged {self._candidate_name} ({n_failed}/{self.n_starts} failed); "
                 f"best nonconverged score {selected.final_score:.6g}"
             )
         if self.verbose:
@@ -172,21 +180,16 @@ class MultiStartOptimizer:
                 n_failed,
             )
 
-        return OptimizationResult(
+        return replace(
+            selected,
             success=overall_success,
             message=message,
             initial_score=true_initial_score,
-            final_score=selected.final_score,
-            n_iterations=selected.n_iterations,
             n_evaluations=total_evals,
             n_params=n_params,
             layout_fingerprint=fingerprint,
             initial_params=baseline,
-            final_params=selected.final_params,
-            history=selected.history,
-            method=f"multi-start({selected.method})",
-            gradient_mode=selected.gradient_mode,
-            fd_step=selected.fd_step,
+            method=self._result_method(selected),
             candidates=candidates_t,
         )
 

@@ -280,7 +280,7 @@ q2mm/
 │   ├── jaxopt_opt.py     # JaxOptOptimizer (L-BFGS, L-BFGS-B — end-to-end differentiable)
 │   ├── basinhopping.py   # BasinHoppingOptimizer (stochastic global search)
 │   ├── multistart.py     # MultiStartOptimizer (best-of-N perturbed starts)
-│   ├── jax_multistart.py # JaxMultiStartOptimizer (JAX multi-start)
+│   ├── jax_multistart.py # JaxMultiStartOptimizer (JaxOpt construction adapter)
 │   └── cycling.py        # grad-simp parameter cycling (OptimizationLoop, sensitivity)
 │
 ├── io/                   # File format I/O
