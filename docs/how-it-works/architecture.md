@@ -355,6 +355,12 @@ q2mm/
     └── method_e2.py      # MethodE2Workflow (two-stage)
 ```
 
+The architecture guards compare full package-relative paths, not just file
+names. Moving a module to another layer therefore requires updating this map.
+Dependency checks follow absolute and relative imports, including imports
+inside functions; retired module paths must stay absent. Historical prose
+and unrelated identifiers are not treated as executable dependencies.
+
 `q2mm.application` depends on canonical models, backend contracts, objectives,
 optimizers, workflows, and format savers. It never imports benchmark systems or
 preparation code. `q2mm.preparation` depends only on canonical models and
