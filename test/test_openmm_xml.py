@@ -420,3 +420,16 @@ def test_duplicate_vdw_emitted_class_includes_element_fallback(tmp_path: Path) -
     )
     with pytest.raises(ValueError, match="multiple.*vdW"):
         save_openmm_xml(field, tmp_path / "vdw-fallback.xml")
+
+
+@pytest.mark.parametrize("element", [" H ", "\tH", "H\t", " ", 1, ("H",)])
+def test_invalid_vdw_fallback_classes_fail_before_output(tmp_path: Path, element: object) -> None:
+    field = ForceField(
+        vdws=(VdwParam("", 1.2, 0.02, element=element),),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = tmp_path / "fallback.xml"
+    path.write_bytes(b"original XML")
+    with pytest.raises(ValueError, match="atom classes"):
+        save_openmm_xml(field, path)
+    assert path.read_bytes() == b"original XML"

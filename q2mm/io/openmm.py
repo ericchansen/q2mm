@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,7 +21,17 @@ def _is_wildcard_atom_type(atom_type: str) -> bool:
     return re.fullmatch(r"[+-]?0+", atom_type.strip()) is not None
 
 
+def _validate_atom_classes(classes: Sequence[object]) -> None:
+    for atom_type in classes:
+        if not isinstance(atom_type, str) or not atom_type.strip() or atom_type != atom_type.strip():
+            raise ValueError(f"Standalone OpenMM XML requires complete unpadded atom classes, got {classes!r}.")
+        if _is_wildcard_atom_type(atom_type):
+            raise ValueError(f"Standalone OpenMM XML cannot represent wildcard atom types in {classes!r}.")
+
+
 def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
+    vdw_classes = [vdw.atom_type or vdw.element for vdw in ff.vdws]
+    _validate_atom_classes(vdw_classes)
     unsupported = []
     if any(angle.ub_force_constant is not None or angle.ub_equilibrium is not None for angle in ff.angles):
         unsupported.append("Urey-Bradley terms")
@@ -38,14 +49,11 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
         unsupported.append("bond-context selectors")
     if any(vdw.reduction != 0.0 for vdw in ff.vdws):
         unsupported.append("reduced vdW sites")
-    if any(_is_wildcard_atom_type(vdw.atom_type or vdw.element) for vdw in ff.vdws):
-        unsupported.append("wildcard vdW atom types")
     if ff.nonbonded_excluded_atom_types:
         unsupported.append("nonbonded-excluded atom types")
     if unsupported:
         raise ValueError(f"Standalone OpenMM XML cannot represent {', '.join(unsupported)}.")
 
-    vdw_classes = [vdw.atom_type or vdw.element for vdw in ff.vdws]
     if len(set(vdw_classes)) != len(vdw_classes):
         raise ValueError("Standalone OpenMM XML cannot represent multiple vdW definitions for the same atom class.")
 
@@ -59,12 +67,9 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
             ):
                 raise ValueError(f"Standalone OpenMM XML requires exactly {arity} nonempty string elements.")
             classes = tuple(term.env_id.split("-")) if term.env_id else tuple(term.elements)
-            if len(classes) != arity or any(
-                not isinstance(value, str) or not value.strip() or value != value.strip() for value in classes
-            ):
+            if len(classes) != arity:
                 raise ValueError(f"Standalone OpenMM XML requires complete atom classes, got {classes!r}.")
-            if any(_is_wildcard_atom_type(atom_type) for atom_type in classes):
-                raise ValueError(f"Standalone OpenMM XML cannot represent wildcard atom types in {classes!r}.")
+            _validate_atom_classes(classes)
             key = min(classes, classes[::-1])
             if key in seen_classes:
                 raise ValueError(
