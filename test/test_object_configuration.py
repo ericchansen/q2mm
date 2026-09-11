@@ -410,7 +410,10 @@ def test_unknown_objects_and_unconfigured_subclasses_are_rejected(kind: str, mon
     for component in (
         (UnknownOptimizer(), DerivedScipy()) if kind == "optimizer" else (UnknownWorkflow(), DerivedWorkflow())
     ):
-        _assert_preflight_failure(component, kind, monkeypatch)
+        error = _assert_preflight_failure(component, kind, monkeypatch)
+        assert "implement ConfigurationProvider.configuration_settings()" in str(error)
+        assert "does not apply to subclasses" in str(error)
+        assert isinstance(error.__cause__, AttributeError)
 
 
 def test_nested_unsupported_optimizer_and_recursive_configuration_fail(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -489,6 +492,8 @@ def test_provider_failure_boundary_preserves_causes_and_interrupts(
         assert caught.__cause__ is failure
         assert f"{type(component).__module__}.{type(component).__qualname__}" in str(caught)
         assert "configuration_settings" in str(caught)
+        if boundary == "call":
+            assert "implement ConfigurationProvider" not in str(caught)
     assert component.calls == 0
 
 
