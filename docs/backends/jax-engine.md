@@ -122,9 +122,10 @@ or `JAX (harmonic, cpu)`).
 
 ## Limitations
 
-- **No 1-4 pair scaling** — non-bonded energies differ from OpenMM/JAX-MD
-  for molecules with 1-4 interactions.  See the
-  [compatibility notes](index.md#when-becomes).
+- **No 1-4 pair scaling** — non-bonded energies can differ from scaled
+  OpenMM harmonic or JAX-MD configurations for molecules with 1-4 interactions.
+  Other model differences still matter; see the
+  [compatibility qualifications](index.md#compatibility-matrix).
 - **No periodic boundaries** — gas-phase only.
 
 ---

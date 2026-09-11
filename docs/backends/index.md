@@ -3,6 +3,8 @@
 Q2MM supports multiple MM backends for energy evaluation, frequency
 calculation, and geometry optimization.  This page compares their capabilities
 and documents when optimized parameters can be transferred between backends.
+Shared interfaces and canonical units do not imply the same physical model.
+Term coverage, mixing rules, exclusions, and native conventions must also match.
 
 For detailed information on each backend, see the individual pages:
 
@@ -30,14 +32,14 @@ included in the MM comparison tables below.
 | **Improper torsions** | [Cosine model](openmm.md#supported-energy-terms) | ❌ | [Cosine model](jax-engine.md#supported-energy-terms) | [Rejected](jax-md.md#preparation-gates) |
 | **vdW (LJ 12-6)** | ✅ Harmonic mode | ❌ | ✅ | ✅ |
 | **vdW (Buckingham exp-6)** | ✅ MM3 mode | ✅ | ✅ MM3 mode | ❌ |
-| **Electrostatics** | ❌ | Tinker default | [MM3 bond dipoles](jax-engine.md#preparation-gates) | Infrastructure only (charges zeroed) |
+| **Electrostatics** | [Canonical bond dipoles rejected](openmm.md#preparation-gates) | [Native template terms are not canonical support](tinker.md#limitations) | [MM3 bond dipoles](jax-engine.md#preparation-gates) | [No general requested point-charge model](#populated-term-preparation-gates) |
 | **1-4 scaling** | ✅ AMBER (ε/2) in Harmonic | MM3 default | ❌ Not implemented | ✅ Configurable (default AMBER) |
 | **Periodic boundaries** | ❌ | ❌ | ❌ | ✅ |
 | **Neighbor lists** | ❌ | ❌ | ❌ | ✅ (jax-md native) |
 | **Runtime param updates** | ✅ | ❌ (subprocess per call) | ✅ | ✅ |
-| **Analytical gradients** | ⚠️ bond/angle only | ❌ | ✅ via `jax.grad` | ✅ via `jax.grad` |
+| **Parameter gradients** | [Analytical bond/angle/torsion; numerical vdW](openmm.md#capabilities) | [Not exposed](tinker.md#capabilities) | [AD on supported paths](jax-engine.md) | [AD on supported paths](jax-md.md) |
 | **JIT compilation** | N/A | N/A | ✅ | ✅ |
-| **Platform** | Linux, macOS, Windows | Linux, macOS | Linux, macOS, WSL2 | Linux, macOS, WSL2 |
+| **Platform** | [Linux, macOS, Windows](openmm.md#installation) | [Linux, macOS, Windows with compatible binaries](tinker.md#installation) | [Linux/macOS and native Windows CPU](jax-engine.md#installation) | [Supported Linux/macOS environments, including WSL2](jax-md.md#installation) |
 
 ---
 
@@ -114,13 +116,19 @@ Supported by: **OpenMM** (Harmonic mode), **JAX** (Harmonic mode), **JAX-MD**
 
 ### MM3
 
-Allinger's MM3 potential with higher-order anharmonic corrections:
+MM3-style models include higher-order anharmonic corrections. In canonical
+coordinate units, their schematic terms are:
 
-- **Bonds:** `E = k·(10·Δr)²·(1 − 2.55·(10·Δr) + 4.7266·(10·Δr)²)`
-- **Angles:** `E = k·Δθ²·(1 − 0.014·Δθ° + 5.6×10⁻⁵·Δθ°² − …)`
+- **Bonds:** `E = k·Δr²·(1 − c3·Δr + c4·Δr²)`, with `Δr` in Angstrom.
+- **Angles:** `E = k·Δθ_rad²·(1 + a3·Δθ_deg + a4·Δθ_deg² + …)`.
 - **vdW:** Buckingham exp-6: `E = ε·[184000·exp(−12r/rᵥ) − 2.25·(rᵥ/r)⁶]`
 
 Supported by: **OpenMM**, **JAX**, **Tinker**
+
+The exact coefficients, damping, short-range modifications, and native
+prefactors are part of each implementation's model. The schematic form
+does not assert that all three implementations use identical policies;
+see the [compatibility qualifications](#compatibility-matrix).
 
 !!! info "JAX MM3 support"
     The JAX backend supports both harmonic and MM3 functional forms, including
@@ -156,16 +164,25 @@ non-bonded interactions.  **This is a key compatibility difference:**
     The JAX backend does not implement 1-4 pair scaling.  For molecules with
     1-4 non-bonded interactions (anything with 4+ atoms in a chain), JAX
     will compute slightly different non-bonded energies than OpenMM or
-    JAX-MD.  For small molecules where the bonded energy dominates (bonds +
-    angles only), this difference is negligible.
+    JAX-MD. If a system has no such pairs, this particular scaling difference
+    does not apply. That does not eliminate other differences or establish
+    cross-backend equivalence.
 
 ### Combining rules
 
-All backends use **geometric** combining rules for cross-term vdW
-parameters:
+Combining rules are backend/form policies, not a consequence of the
+canonical length and energy units:
 
-- `σ_ij = √(σ_i · σ_j)`
-- `ε_ij = √(ε_i · ε_j)`
+| Backend/form | LJ sigma mixing | LJ epsilon mixing | Source |
+|--------------|-----------------|-------------------|--------|
+| OpenMM harmonic | Arithmetic: `(sigma_i + sigma_j) / 2` | Geometric | [Native NonbondedForce and 1-4 construction](https://github.com/ericchansen/q2mm/blob/a03e518463bf1b7f8a37333927e9cd13fb3f3e17/q2mm/backends/mm/openmm.py) |
+| JAX harmonic | Geometric: `sqrt(sigma_i * sigma_j)` | Geometric | [`_lj_12_6_energy`](https://github.com/ericchansen/q2mm/blob/a03e518463bf1b7f8a37333927e9cd13fb3f3e17/q2mm/backends/mm/jax_engine.py) |
+| JAX-MD harmonic | Geometric | Geometric | [Explicit pair-energy construction](https://github.com/ericchansen/q2mm/blob/a03e518463bf1b7f8a37333927e9cd13fb3f3e17/q2mm/backends/mm/jax_md_engine.py) |
+
+Different sigma rules can produce different mixed-species energies even
+without any 1-4 pairs. Neither rule is silently substituted for the other.
+MM3 and native Tinker conventions must be considered separately, including
+their radius definitions, template settings, and functional coefficients.
 
 ### Cutoffs
 
@@ -185,44 +202,34 @@ on whether the backends compute the same energy for the same force field.
 
 ### Compatibility matrix
 
-| From ↓ / To → | OpenMM (Harmonic) | OpenMM (MM3) | Tinker | JAX | JAX-MD |
-|----------------|:-:|:-:|:-:|:-:|:-:|
-| **OpenMM (Harmonic)** | ✅ | ❌ | ❌ | ⚠️ | ✅ |
-| **OpenMM (MM3)** | ❌ | ✅ | ✅ | ✅ | ❌ |
-| **Tinker** | ❌ | ✅ | ✅ | ✅ | ❌ |
-| **JAX** | ⚠️ | ✅ | ✅ | ✅ | ⚠️ |
-| **JAX-MD** | ✅ | ❌ | ❌ | ⚠️ | ✅ |
+There is no blanket machine-precision transfer guarantee between backend
+names, even when both accept the same `FunctionalForm`.
 
-**Legend:**
+| Comparison | Required qualification |
+|------------|------------------------|
+| Harmonic OpenMM, JAX, and JAX-MD | Match [mixing rules](#combining-rules), [exclusions](#exclusions), [1-4 scaling](#1-4-scaling), [cutoff/nonbonded settings](#cutoffs), [charge models](#backend-overview), and supported terms for the actual system; validate relevant objective/derivative agreement, not identical differentiation implementations. |
+| MM3 OpenMM, JAX, and Tinker | Check [populated-term coverage](#populated-term-preparation-gates), [cutoffs](#cutoffs), [exclusions](#exclusions), [electrostatic models](#backend-overview), native/template coefficients, damping, short-range behavior, and signed interactions; see [Tinker limitations](tinker.md#limitations). |
+| Any backend or configuration change | Re-establish the intended energy, gradient, Hessian, and objective agreement with the recorded settings; [API conformance](authoring.md) alone is not physical conformance. |
 
-- ✅ **Identical** — same energy to machine precision
-- ⚠️ **Bonded terms match, non-bonded may differ** — see notes below
-- ❌ **Incompatible** — different functional form
+Removing vdW terms or 1-4 pairs only removes those specific contributions.
+It does not prove equality of torsion conventions, damping, other populated
+terms, or the complete objective. In particular, the Tinker standalone
+writer retains its own angle-sextic coefficient rather than silently
+adopting the JAX/OpenMM value; see the
+[native writer](https://github.com/ericchansen/q2mm/blob/a03e518463bf1b7f8a37333927e9cd13fb3f3e17/q2mm/backends/mm/tinker.py).
 
-### When ⚠️ Becomes ✅
+### Case-specific parity evidence
 
-The ⚠️ entries (OpenMM Harmonic ↔ JAX, JAX ↔ JAX-MD) produce identical
-energies when:
+Historical small-system comparisons are described in the
+[benchmark results](../systems/small-molecules.md#interpretation).
+Such results apply to their recorded inputs, parameter assignments,
+software versions, and settings. They do not establish arbitrary
+cross-backend transfer, full native-model support, or publication
+reproduction.
 
-1. **The molecule has no 1-4 non-bonded pairs** (e.g., water, CH₃F with
-   only 3–5 atoms) — then the missing 1-4 scaling in JAX doesn't matter.
-2. **vdW parameters are zero** (only optimizing bonded terms) — then
-   non-bonded differences vanish entirely.
-
-For molecules with significant 1-4 interactions (longer chains, rings),
-the JAX backend will give different non-bonded energies than OpenMM or
-JAX-MD.
-
-### Verified parity
-
-Cross-backend energy and frequency agreement has been measured on CH₃F
-(see [benchmarks](../systems/small-molecules.md#interpretation)):
-
-- **JAX ↔ JAX-MD:** < 10⁻²⁰ kcal/mol energy difference (machine precision)
-- **JAX ↔ OpenMM:** < 10⁻¹⁸ kcal/mol energy difference
-- **Frequencies:** < 0.001 cm⁻¹ max deviation across all backends
-
-CH₃F has no 1-4 pairs, so all three harmonic backends agree exactly.
+Record cutoff, periodic-boundary, charge-model, and nonbonded settings
+alongside the force field. If historical artifacts omit a setting, do not
+assume that the current backend default was used or that two runs shared it.
 
 ---
 
@@ -231,9 +238,9 @@ CH₃F has no 1-4 pairs, so all three harmonic backends agree exactly.
 | Use Case | Recommended Backend | Why |
 |----------|-------------------|-----|
 | **Fast optimization** | JAX or JAX-MD | Fastest harmonic / analytical-gradient options in the current benchmark set; see [benchmarks](../benchmarks/index.md) for workload-specific comparisons |
-| **MM3 force fields** | OpenMM, Tinker, or JAX | Backends supporting MM3 functional forms |
+| **MM3 force fields** | OpenMM, Tinker, or JAX | Check [populated-term coverage](#populated-term-preparation-gates) and native conventions, not just the form name |
 | **Periodic systems** | JAX-MD | Only backend with periodic boundary support |
-| **Torsion optimization** | OpenMM, Tinker, JAX, or JAX-MD | All backends support torsions |
+| **Torsion optimization** | Select for the required torsion model | Check [wildcards](#wildcard-torsion-boundary), proper/improper coverage, and signed conventions before choosing |
 | **Widest compatibility** | OpenMM | Supports both Harmonic and MM3, mature ecosystem |
 | **Gradient-based optimizers** | JAX or JAX-MD | Analytical `jax.grad` eliminates finite-difference overhead |
 
