@@ -121,9 +121,34 @@ keeping all evaluations behind the typed prepared-session contract.
 ## Serialization
 
 Standalone force-field XML can be written with
-`q2mm.io.save_openmm_xml(force_field, path, molecule=...)`. The new backend
-surface does not expose a generic `System` XML exporter; prepared sessions are
-for typed evaluations, not file I/O.
+`q2mm.io.save_openmm_xml(force_field, path, molecule=...)`. This exports a
+limited MM3 subset, not an arbitrary prepared system. Unsupported
+Urey-Bradley, stretch-bend, CMAP, improper, bond-dipole, reduced-site,
+nonbonded-exclusion, and wildcard content raises `ValueError` before the
+destination is replaced. Native integer-zero wildcard types are rejected
+in vdW records as well as bonded terms. Every nonzero vdW reduction,
+including 1.0, is rejected because this format does not retain that declaration.
+Nonempty bond-order selectors and non-generic bond contexts are also rejected:
+the XML records contain atom classes, not those additional selectors.
+Class names must be unpadded, and repeated bond/angle class tuples or vdW
+classes fail instead of allowing native matching to select an arbitrary
+definition.
+When molecules are supplied, selected force-field rows must map to their
+actual atom classes. Element-only fallback or source-row bindings that
+would require a different native class mapping are rejected, not silently
+dropped. Use matching explicit classes or the prepared-System serializer.
+
+Proper torsions use OpenMM's `<Proper>` schema. Only one Fourier component
+per atom-class tuple is supported: OpenMM's custom torsion loader selects
+the first matching definition rather than summing repeated definitions.
+Multiple components are therefore rejected instead of partially exported.
+The XML's vdW expression is Buckingham exp-6; this format does not imply
+complete equivalence with a backend's physical policies.
+
+For topology-specific serialization of an already prepared OpenMM system,
+use `q2mm.io.openmm.save_openmm_system_xml(prepared, path)` and
+`q2mm.io.openmm.load_openmm_system_xml(path)`. These are I/O functions, separate
+from the backend's typed evaluation interface.
 
 ---
 
