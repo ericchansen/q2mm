@@ -12,6 +12,9 @@ The inner optimizer is driven with the same
 :class:`~q2mm.objectives.protocols.ObjectiveEvaluator`; each start is a
 distinct rebased :class:`~q2mm.models.parameters.ActiveParameterSpace`.  No
 force field is mutated — the evaluator operates on full vectors only.
+Evaluation counts aggregate recorded work across the outer baseline and
+every start. History and iterations belong to the selected inner run;
+the result message labels these distinct scopes and the selected index.
 """
 
 from __future__ import annotations
@@ -77,6 +80,8 @@ class MultiStartOptimizer:
 
         best_converged: OptimizationResult | None = None
         best_any: OptimizationResult | None = None
+        best_converged_index: int | None = None
+        best_any_index: int | None = None
         candidates: list[CandidateRecord] = []
         n_converged = 0
         n_failed = 0
@@ -137,19 +142,25 @@ class MultiStartOptimizer:
                 )
             if best_any is None or result.final_score < best_any.final_score:
                 best_any = result
+                best_any_index = i
             if converged and (best_converged is None or result.final_score < best_converged.final_score):
                 best_converged = result
+                best_converged_index = i
 
         total_evals = evaluator.n_evaluations - n_eval_before
         candidates_t = tuple(candidates)
         selected = best_converged if best_converged is not None else best_any
+        selected_index = best_converged_index if best_converged is not None else best_any_index
 
         if selected is None:
             # Every start raised: return a canonical failed result that
             # preserves every candidate record rather than raising.
             return OptimizationResult(
                 success=False,
-                message=f"{self._name}: all {self.n_starts} {self._candidate_name}s failed",
+                message=(
+                    f"{self._name}: all {self.n_starts} {self._candidate_name}s failed; "
+                    "accounting[n_evaluations=aggregate; history=initial-baseline; n_iterations=none]"
+                ),
                 initial_score=true_initial_score,
                 final_score=float("inf"),
                 n_iterations=0,
@@ -172,6 +183,10 @@ class MultiStartOptimizer:
                 f"{self._name}: no converged {self._candidate_name} ({n_failed}/{self.n_starts} failed); "
                 f"best nonconverged score {selected.final_score:.6g}"
             )
+        message += (
+            "; accounting[n_evaluations=aggregate; history=selected-run; "
+            f"n_iterations=selected-run; selected_candidate={selected_index}]"
+        )
         if self.verbose:
             logger.info(
                 "Multi-start best: %.6f (%d converged, %d failed)",

@@ -9,6 +9,8 @@ from __future__ import annotations
 from q2mm.backends.registry import load_backend
 
 import importlib.util
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 import pytest
@@ -154,8 +156,12 @@ class TestJaxMultiStartValidation:
 
 
 @pytest.mark.parametrize("n_starts", [1, 2])
-def test_bounded_native_adapter(n_starts: int) -> None:
+def test_bounded_native_adapter(
+    n_starts: int, monkeypatch: pytest.MonkeyPatch, record_property: Callable[[str, object], None]
+) -> None:
     """Real JaxOpt/executor wiring, not a scientific convergence test."""
+    import jax
+
     from q2mm.models.observations import ObservationSet
     from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
     from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
@@ -170,10 +176,30 @@ def test_bounded_native_adapter(n_starts: int) -> None:
     space = obj.plan.active_space.with_baseline(baseline).with_active_indices([1])
     obj.value(obj.plan.active_space.baseline)
     count_before = obj.n_evaluations
+    completed_calls: list[tuple[str, float]] = []
+    native = obj.value_and_grad_jax
+    host = obj.value
+
+    def observed_native(full_vector: object) -> tuple[Any, Any]:
+        value, gradient = native(full_vector)
+        jax.debug.callback(lambda score: completed_calls.append(("native", float(score))), value, ordered=True)
+        return value, gradient
+
+    def observed_host(full_vector: np.ndarray) -> float:
+        value = host(full_vector)
+        jax.effects_barrier()
+        completed_calls.append(("host", value))
+        return value
+
+    monkeypatch.setattr(obj, "value_and_grad_jax", observed_native)
+    monkeypatch.setattr(obj, "value", observed_host)
     optimizer = JaxMultiStartOptimizer(
         n_starts=n_starts, maxiter=1, tol=1e-12, perturbation_pct=0.05, seed=2, verbose=False
     )
     result = optimizer.optimize(obj, space)
+    jax.effects_barrier()
+    host_positions = [i for i, (kind, _) in enumerate(completed_calls) if kind == "host"]
+    native_count = sum(kind == "native" for kind, _ in completed_calls)
 
     assert result.method == "jaxopt-multi:lbfgs"
     assert result.gradient_mode == "analytical"
@@ -183,9 +209,18 @@ def test_bounded_native_adapter(n_starts: int) -> None:
     assert result.n_iterations == 1
     assert not result.success
     assert len(result.candidates) == n_starts
-    # Native gradient dispatches are not host-recorded objective evaluations.
-    assert result.n_evaluations == obj.n_evaluations - count_before == 1 + 2 * n_starts
-    assert len(result.history) == 2
+    assert len(host_positions) == 1 + 2 * n_starts
+    assert native_count > 0
+    assert result.n_evaluations == obj.n_evaluations - count_before == len(completed_calls)
+    assert result.n_evaluations == 1 + 2 * n_starts + native_count
+    assert obj.history[count_before:] == tuple(score for _, score in completed_calls)
+    assert obj.n_gradient_evaluations == 0
+    assert "n_evaluations=aggregate" in result.message
+    assert "history=selected-run" in result.message
+    assert "n_iterations=selected-run" in result.message
+    record_property("aggregate_evaluations", result.n_evaluations)
+    record_property("host_evaluations", len(host_positions))
+    record_property("native_callbacks", native_count)
     assert result.initial_score == pytest.approx(obj.sample(baseline))
     assert result.final_score == pytest.approx(obj.sample(result.final_params))
     assert 0.0 < result.final_score < result.initial_score
@@ -212,13 +247,29 @@ def test_bounded_native_adapter(n_starts: int) -> None:
     assert selected.index == n_starts - 1
     assert result.final_score == selected.final_score
     np.testing.assert_array_equal(result.final_params, selected.final_params)
-    assert result.history == (selected.initial_score, selected.final_score)
+    # Each inner run is bracketed by its existing initial/final host calls.
+    first = host_positions[1 + 2 * selected.index]
+    last = host_positions[2 + 2 * selected.index]
+    assert result.history == tuple(score for _, score in completed_calls[first : last + 1])
+    assert result.history[0] == selected.initial_score
+    assert result.history[-1] == selected.final_score
+    assert f"selected_candidate={selected.index}]" in result.message
+    record_property("selected_history_size", len(result.history))
 
+    plain_count_before = obj.n_evaluations
+    plain_calls_before = len(completed_calls)
     plain = JaxOptOptimizer(maxiter=1, tol=1e-12, verbose=False).optimize(obj, space)
+    jax.effects_barrier()
+    plain_calls = completed_calls[plain_calls_before:]
     np.testing.assert_allclose(result.candidates[0].final_params, plain.final_params, rtol=0.0, atol=1e-12)
     assert result.candidates[0].final_score == pytest.approx(plain.final_score)
     assert plain.n_iterations == result.n_iterations
-    assert plain.n_evaluations == 2
+    assert sum(kind == "host" for kind, _ in plain_calls) == 2
+    assert any(kind == "native" for kind, _ in plain_calls)
+    assert plain.n_evaluations == obj.n_evaluations - plain_count_before == len(plain_calls)
+    assert plain.history == tuple(score for _, score in plain_calls)
+    record_property("plain_evaluations", plain.n_evaluations)
+    record_property("plain_native_callbacks", sum(kind == "native" for kind, _ in plain_calls))
     np.testing.assert_array_equal(space.baseline, baseline)
     np.testing.assert_array_equal(obj.plan.active_space.baseline, _params(ff))
     np.testing.assert_array_equal(_params(ff), [2.0, 0.80])
@@ -416,3 +467,8 @@ class TestJaxMultiStartBackendGuard:
         assert len(result.candidates) == 2
         assert all(c.status == "failure" for c in result.candidates)
         assert "LBFGSB is not supported" in caplog.text
+        assert result.n_evaluations == obj.n_evaluations == 1 + optimizer.n_starts
+        assert result.history == (result.initial_score,)
+        assert "n_evaluations=aggregate" in result.message
+        assert "history=initial-baseline" in result.message
+        assert "n_iterations=none" in result.message

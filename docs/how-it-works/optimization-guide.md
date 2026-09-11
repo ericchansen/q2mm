@@ -118,6 +118,40 @@ catalog options are still rejected, including false-valued unknown options.
 Identical bound constructor requests build equivalent solvers, while
 different named/caller policies remain different and recorded.
 
+### Evaluation counts and history scopes
+
+`n_evaluations` counts completed, recorded full-objective calls, not
+iterations or individual molecule kernels. A scalar call counts once; a
+value/gradient pair also counts once, not once for each component. JaxOpt
+records each concrete native callback through the evaluator's existing
+`record_evaluation` method, including line-search calls and its final
+native value/gradient probe. Its existing initial and final host `value`
+calls each remain one additional evaluation. No endpoint is re-evaluated
+just to count it.
+
+Abstract tracing does not count. A returned nonfinite scalar is still a
+completed call and remains nonfinite; a call that raises before returning
+a scalar does not fabricate a history entry. Work completed before a
+later optimizer/start failure stays in the aggregate count. The pure
+`value_and_grad_jax` interface remains uncounted when called directly.
+
+For multi-start, `n_evaluations` covers the outer baseline and recorded
+work from every start, while `history` and `n_iterations` come from the
+selected inner result. Its message explicitly labels
+`n_evaluations=aggregate`, `history=selected-run`, and the selected candidate
+index. If every start raises, history contains only the outer baseline and
+the message labels `history=initial-baseline` and `n_iterations=none`.
+Existing candidate records and selected-run stages are retained. The labels
+also survive in workflow messages rather than creating extra execution stages.
+
+These are accounting scopes, not a universal runtime-cost metric.
+Executor-owned finite-difference sub-evaluations remain separately exposed
+as `n_gradient_evaluations`; that field is not an analytical-gradient call
+count. Sampling/rich evaluation and optimizer-specific iteration scopes
+retain their existing semantics. Cycling still reports cycles and its
+post-initial-evaluation counter delta. This instrumentation does not
+redesign those broader accounting contracts.
+
 ---
 
 ## Configuration of supplied objects
