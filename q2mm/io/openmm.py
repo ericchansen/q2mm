@@ -2,21 +2,36 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from q2mm.io._helpers import _validate_form_for_format
 from q2mm.models.forcefield import ForceField
 
-# This exporter does not translate MM3/Tinker wildcard atom types.
-_WILDCARD_TYPES = frozenset({"00"})
-
 if TYPE_CHECKING:
     from q2mm.backends.mm.openmm import PreparedOpenMM
+    from q2mm.models.forcefield import AngleParam, BondParam, TorsionParam
     from q2mm.models.molecule import Molecule
 
 
+def _is_wildcard_atom_type(atom_type: str) -> bool:
+    """Recognize MM3 00 and native integer-zero wildcard spellings."""
+    return re.fullmatch(r"[+-]?0+", atom_type.strip()) is not None
+
+
+def _validate_atom_classes(classes: Sequence[object]) -> None:
+    for atom_type in classes:
+        if not isinstance(atom_type, str) or not atom_type.strip() or atom_type != atom_type.strip():
+            raise ValueError(f"Standalone OpenMM XML requires complete unpadded atom classes, got {classes!r}.")
+        if _is_wildcard_atom_type(atom_type):
+            raise ValueError(f"Standalone OpenMM XML cannot represent wildcard atom types in {classes!r}.")
+
+
 def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
+    vdw_classes = [vdw.atom_type or vdw.element for vdw in ff.vdws]
+    _validate_atom_classes(vdw_classes)
     unsupported = []
     if any(angle.ub_force_constant is not None or angle.ub_equilibrium is not None for angle in ff.angles):
         unsupported.append("Urey-Bradley terms")
@@ -28,29 +43,83 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
         unsupported.append("improper torsions")
     if any(bond.dipole_moment != 0.0 for bond in ff.bonds):
         unsupported.append("bond dipoles")
-    if any(vdw.reduction not in (0.0, 1.0) for vdw in ff.vdws):
+    if any(bond.bond_order for bond in ff.bonds):
+        unsupported.append("bond-order selectors")
+    if any(bond.context not in ("", "0000 0000") for bond in ff.bonds):
+        unsupported.append("bond-context selectors")
+    if any(vdw.reduction != 0.0 for vdw in ff.vdws):
         unsupported.append("reduced vdW sites")
+    if ff.nonbonded_excluded_atom_types:
+        unsupported.append("nonbonded-excluded atom types")
     if unsupported:
         raise ValueError(f"Standalone OpenMM XML cannot represent {', '.join(unsupported)}.")
 
-    for terms in (ff.bonds, ff.angles, ff.torsions):
-        for term in terms:
-            classes = term.env_id.split("-") if term.env_id else term.elements
-            if len(classes) != len(term.elements) or any(not value for value in classes):
-                raise ValueError(f"Standalone OpenMM XML requires complete atom classes, got {classes!r}.")
-            if _WILDCARD_TYPES.intersection(classes):
-                raise ValueError(f"Standalone OpenMM XML cannot represent wildcard atom types in {classes!r}.")
+    if len(set(vdw_classes)) != len(vdw_classes):
+        raise ValueError("Standalone OpenMM XML cannot represent multiple vdW definitions for the same atom class.")
 
-    torsion_classes: set[tuple[str, ...]] = set()
-    for torsion in ff.torsions:
-        classes = tuple(torsion.env_id.split("-")) if torsion.env_id else torsion.elements
-        key = min(classes, classes[::-1])
-        if key in torsion_classes:
+    for terms, arity, family in ((ff.bonds, 2, "bond"), (ff.angles, 3, "angle"), (ff.torsions, 4, "torsion")):
+        seen_classes: set[tuple[str, ...]] = set()
+        for term in terms:
+            if (
+                not isinstance(term.elements, (tuple, list))
+                or len(term.elements) != arity
+                or any(not isinstance(element, str) or not element.strip() for element in term.elements)
+            ):
+                raise ValueError(f"Standalone OpenMM XML requires exactly {arity} nonempty string elements.")
+            classes = tuple(term.env_id.split("-")) if term.env_id else tuple(term.elements)
+            if len(classes) != arity:
+                raise ValueError(f"Standalone OpenMM XML requires complete atom classes, got {classes!r}.")
+            _validate_atom_classes(classes)
+            key = min(classes, classes[::-1])
+            if key in seen_classes:
+                raise ValueError(
+                    f"Standalone OpenMM XML cannot represent multiple {family} definitions for classes "
+                    f"{classes!r}; native class matching cannot retain their separate selection."
+                )
+            seen_classes.add(key)
+
+
+def _validate_molecule_class_bindings(ff: ForceField, molecule: Molecule) -> None:
+    """Reject selected element/source-row mappings that native classes cannot express."""
+    atom_types = molecule.atom_types or molecule.symbols
+
+    def check(parameter: BondParam | AngleParam | TorsionParam, indices: tuple[int, ...]) -> None:
+        if any(index < 0 or index >= len(atom_types) for index in indices):
+            raise ValueError("Standalone OpenMM XML class mapping contains invalid atom indices.")
+        native = tuple(atom_types[index] or molecule.symbols[index] for index in indices)
+        declared = tuple(parameter.env_id.split("-")) if parameter.env_id else tuple(parameter.elements)
+        if declared not in (native, native[::-1]):
             raise ValueError(
-                "Standalone OpenMM XML cannot represent multiple Fourier components for the same torsion "
-                f"classes {classes!r}; OpenMM selects only the first matching CustomTorsionForce definition."
+                f"Standalone OpenMM XML cannot preserve class mapping {declared!r} to {native!r}; "
+                "supply matching explicit atom classes or serialize the prepared System."
             )
-        torsion_classes.add(key)
+
+    for bond in molecule.bonds or ():
+        parameter = ff.match_bond(
+            bond.elements,
+            env_id=bond.env_id,
+            ff_row=bond.ff_row,
+            bond_order=bond.bond_order,
+            bond_length=bond.length,
+        )
+        if parameter is not None:
+            check(parameter, (bond.atom_i, bond.atom_j))
+    for angle in molecule.angles or ():
+        angle_parameter = ff.match_angle(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
+        if angle_parameter is not None:
+            check(angle_parameter, (angle.atom_i, angle.atom_j, angle.atom_k))
+    for torsion in molecule.torsions or ():
+        for torsion_parameter in ff.match_torsion(
+            torsion.elements, env_id=torsion.env_id, ff_row=torsion.ff_row, is_improper=False
+        ):
+            check(torsion_parameter, (torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
+    for atom_type, symbol in zip(atom_types, molecule.symbols):
+        vdw = ff.get_vdw(atom_type=atom_type, element=symbol)
+        if vdw is not None and (vdw.atom_type or vdw.element) != (atom_type or symbol):
+            raise ValueError(
+                "Standalone OpenMM XML cannot preserve an element-fallback vdW class mapping; "
+                "supply matching explicit atom classes or serialize the prepared System."
+            )
 
 
 def save_openmm_system_xml(prepared: PreparedOpenMM, path: str | Path) -> Path:
@@ -115,14 +184,20 @@ def save_openmm_xml(
 
     Unsupported populated terms and wildcard types are rejected before
     writing, including Urey-Bradley, stretch-bend, CMAP, improper torsions,
-    bond dipoles, reduced vdW sites, and multiple proper components for
-    the same class tuple.
+    bond dipoles, bond-order/context selectors, reduced vdW sites, excluded
+    nonbonded atom types, and repeated bonded definitions for the same class
+    tuple. Native zero-type wildcards are rejected in vdW records as well
+    as bonded terms; class names must not contain padding.
 
     A *molecule* (or iterable of molecules) can be provided to generate
     ``<Residues>`` and ``<AtomTypes>`` sections.  If omitted, only the
     ``<CustomBondForce>``, ``<CustomAngleForce>``, ``<CustomTorsionForce>``,
     and ``<CustomNonbondedForce>`` definitions are written — the user must
     supply their own topology when loading.
+
+    Selected canonical bindings for supplied molecules must already match
+    the emitted atom classes. Element-fallback or source-row remapping is
+    not implemented by this format and is rejected before writing.
 
     Args:
         ff (ForceField): Force field to export.
@@ -173,6 +248,9 @@ def save_openmm_xml(
             molecules = [molecule]
         else:
             molecules = list(molecule)
+
+    for mol in molecules:
+        _validate_molecule_class_bindings(ff, mol)
 
     if molecules:
         atom_types_el = ET.SubElement(root, "AtomTypes")
