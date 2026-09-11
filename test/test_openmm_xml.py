@@ -16,6 +16,7 @@ from q2mm.models.forcefield import (
     TorsionParam,
     VdwParam,
 )
+from q2mm.models.molecule import Molecule
 
 
 @pytest.mark.parametrize(
@@ -329,3 +330,93 @@ def test_generic_bond_context_remains_supported(tmp_path: Path, context: str) ->
     )
     path = save_openmm_xml(ff, tmp_path / "generic.xml")
     assert ET.parse(path).getroot().find("CustomBondForce/Bond") is not None
+
+
+@pytest.mark.parametrize("same_values", [False, True])
+def test_duplicate_vdw_classes_are_rejected_before_writing(tmp_path: Path, same_values: bool) -> None:
+    first = VdwParam("H", 1.2, 0.02)
+    second = VdwParam("H", 1.2 if same_values else 1.5, 0.02 if same_values else 0.05)
+    ff = ForceField(vdws=(first, second), functional_form=FunctionalForm.MM3)
+    path = tmp_path / "duplicate-vdw.xml"
+    path.write_bytes(b"original XML")
+    with pytest.raises(ValueError, match="multiple.*vdW"):
+        save_openmm_xml(ff, path)
+    assert path.read_bytes() == b"original XML"
+
+
+def _typed_molecule_case(family: str) -> tuple[Molecule, ForceField]:
+    if family == "bond":
+        molecule = Molecule(symbols=("C", "H"), atom_types=("c3", "hc"), geometry=[[0, 0, 0], [1.2, 0, 0]])
+        field = ForceField(bonds=(BondParam(("C", "H"), 1.1, 100.0),), functional_form=FunctionalForm.MM3)
+    elif family == "angle":
+        molecule = Molecule(
+            symbols=("O", "H", "H"),
+            atom_types=("o", "h1", "h2"),
+            geometry=[[0, 0, 0], [0.96, 0, 0], [-0.24, 0.93, 0]],
+        )
+        field = ForceField(angles=(AngleParam(("H", "O", "H"), 104.5, 30.0),), functional_form=FunctionalForm.MM3)
+    elif family == "torsion":
+        molecule = Molecule(
+            symbols=("C",) * 4,
+            atom_types=("c1", "c2", "c3", "c4"),
+            geometry=[[0, 0, 0], [1.5, 0, 0], [2.5, 1, 0], [3.4, 1.5, 1]],
+        )
+        field = ForceField(torsions=(TorsionParam(("C",) * 4, force_constant=1.0),), functional_form=FunctionalForm.MM3)
+    else:
+        molecule = Molecule(symbols=("H", "H"), atom_types=("h1", "h2"), geometry=[[0, 0, 0], [3, 0, 0]])
+        field = ForceField(vdws=(VdwParam("H", 1.2, 0.02),), functional_form=FunctionalForm.MM3)
+    return molecule, field
+
+
+@pytest.mark.parametrize("family", ["bond", "angle", "torsion", "vdw"])
+def test_element_fallback_cannot_silently_change_native_class_mapping(tmp_path: Path, family: str) -> None:
+    molecule, field = _typed_molecule_case(family)
+    path = tmp_path / "mapping.xml"
+    path.write_bytes(b"original XML")
+    with pytest.raises(ValueError, match="class mapping"):
+        save_openmm_xml(field, path, molecule=molecule)
+    assert path.read_bytes() == b"original XML"
+
+
+@pytest.mark.parametrize("family", ["bond", "angle", "torsion", "vdw"])
+def test_matching_explicit_molecule_classes_remain_supported(tmp_path: Path, family: str) -> None:
+    from dataclasses import replace
+
+    molecule, field = _typed_molecule_case(family)
+    if family == "bond":
+        field = replace(field, bonds=(replace(field.bonds[0], env_id=molecule.bonds[0].env_id),))
+    elif family == "angle":
+        field = replace(field, angles=(replace(field.angles[0], env_id=molecule.angles[0].env_id),))
+    elif family == "torsion":
+        field = replace(field, torsions=(replace(field.torsions[0], env_id=molecule.torsions[0].env_id),))
+    else:
+        field = replace(field, vdws=tuple(VdwParam(t, 1.2, 0.02, element="H") for t in molecule.atom_types))
+    path = save_openmm_xml(field, tmp_path / "typed.xml", molecule=molecule)
+    assert ET.parse(path).getroot().find("AtomTypes") is not None
+
+
+def test_source_row_binding_cannot_be_replaced_by_another_native_class(tmp_path: Path) -> None:
+    from dataclasses import replace
+
+    molecule = Molecule(symbols=("C", "H"), geometry=[[0, 0, 0], [1.2, 0, 0]])
+    molecule = replace(molecule, bonds=(replace(molecule.bonds[0], ff_row=20),))
+    field = ForceField(
+        bonds=(
+            BondParam(("C", "H"), 1.1, 100.0, env_id="C-H", ff_row=10),
+            BondParam(("C", "H"), 1.2, 200.0, env_id="c3-hc", ff_row=20),
+        ),
+        functional_form=FunctionalForm.MM3,
+    )
+    path = tmp_path / "source-row.xml"
+    with pytest.raises(ValueError, match="class mapping"):
+        save_openmm_xml(field, path, molecule=molecule)
+    assert not path.exists()
+
+
+def test_duplicate_vdw_emitted_class_includes_element_fallback(tmp_path: Path) -> None:
+    field = ForceField(
+        vdws=(VdwParam("H", 1.2, 0.02), VdwParam("", 1.5, 0.03, element="H")),
+        functional_form=FunctionalForm.MM3,
+    )
+    with pytest.raises(ValueError, match="multiple.*vdW"):
+        save_openmm_xml(field, tmp_path / "vdw-fallback.xml")

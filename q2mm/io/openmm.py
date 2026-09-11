@@ -11,6 +11,7 @@ from q2mm.models.forcefield import ForceField
 
 if TYPE_CHECKING:
     from q2mm.backends.mm.openmm import PreparedOpenMM
+    from q2mm.models.forcefield import AngleParam, BondParam, TorsionParam
     from q2mm.models.molecule import Molecule
 
 
@@ -44,6 +45,10 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
     if unsupported:
         raise ValueError(f"Standalone OpenMM XML cannot represent {', '.join(unsupported)}.")
 
+    vdw_classes = [vdw.atom_type or vdw.element for vdw in ff.vdws]
+    if len(set(vdw_classes)) != len(vdw_classes):
+        raise ValueError("Standalone OpenMM XML cannot represent multiple vdW definitions for the same atom class.")
+
     for terms, arity, family in ((ff.bonds, 2, "bond"), (ff.angles, 3, "angle"), (ff.torsions, 4, "torsion")):
         seen_classes: set[tuple[str, ...]] = set()
         for term in terms:
@@ -67,6 +72,49 @@ def _validate_forcefield_xml_coverage(ff: ForceField) -> None:
                     f"{classes!r}; native class matching cannot retain their separate selection."
                 )
             seen_classes.add(key)
+
+
+def _validate_molecule_class_bindings(ff: ForceField, molecule: Molecule) -> None:
+    """Reject selected element/source-row mappings that native classes cannot express."""
+    atom_types = molecule.atom_types or molecule.symbols
+
+    def check(parameter: BondParam | AngleParam | TorsionParam, indices: tuple[int, ...]) -> None:
+        if any(index < 0 or index >= len(atom_types) for index in indices):
+            raise ValueError("Standalone OpenMM XML class mapping contains invalid atom indices.")
+        native = tuple(atom_types[index] or molecule.symbols[index] for index in indices)
+        declared = tuple(parameter.env_id.split("-")) if parameter.env_id else tuple(parameter.elements)
+        if declared not in (native, native[::-1]):
+            raise ValueError(
+                f"Standalone OpenMM XML cannot preserve class mapping {declared!r} to {native!r}; "
+                "supply matching explicit atom classes or serialize the prepared System."
+            )
+
+    for bond in molecule.bonds or ():
+        parameter = ff.match_bond(
+            bond.elements,
+            env_id=bond.env_id,
+            ff_row=bond.ff_row,
+            bond_order=bond.bond_order,
+            bond_length=bond.length,
+        )
+        if parameter is not None:
+            check(parameter, (bond.atom_i, bond.atom_j))
+    for angle in molecule.angles or ():
+        angle_parameter = ff.match_angle(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
+        if angle_parameter is not None:
+            check(angle_parameter, (angle.atom_i, angle.atom_j, angle.atom_k))
+    for torsion in molecule.torsions or ():
+        for torsion_parameter in ff.match_torsion(
+            torsion.elements, env_id=torsion.env_id, ff_row=torsion.ff_row, is_improper=False
+        ):
+            check(torsion_parameter, (torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
+    for atom_type, symbol in zip(atom_types, molecule.symbols):
+        vdw = ff.get_vdw(atom_type=atom_type, element=symbol)
+        if vdw is not None and (vdw.atom_type or vdw.element) != (atom_type or symbol):
+            raise ValueError(
+                "Standalone OpenMM XML cannot preserve an element-fallback vdW class mapping; "
+                "supply matching explicit atom classes or serialize the prepared System."
+            )
 
 
 def save_openmm_system_xml(prepared: PreparedOpenMM, path: str | Path) -> Path:
@@ -142,6 +190,10 @@ def save_openmm_xml(
     and ``<CustomNonbondedForce>`` definitions are written — the user must
     supply their own topology when loading.
 
+    Selected canonical bindings for supplied molecules must already match
+    the emitted atom classes. Element-fallback or source-row remapping is
+    not implemented by this format and is rejected before writing.
+
     Args:
         ff (ForceField): Force field to export.
         path (str | Path): Output file path.
@@ -191,6 +243,9 @@ def save_openmm_xml(
             molecules = [molecule]
         else:
             molecules = list(molecule)
+
+    for mol in molecules:
+        _validate_molecule_class_bindings(ff, mol)
 
     if molecules:
         atom_types_el = ET.SubElement(root, "AtomTypes")

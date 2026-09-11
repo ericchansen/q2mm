@@ -130,8 +130,13 @@ in vdW records as well as bonded terms. Every nonzero vdW reduction,
 including 1.0, is rejected because this format does not retain that declaration.
 Nonempty bond-order selectors and non-generic bond contexts are also rejected:
 the XML records contain atom classes, not those additional selectors.
-Class names must be unpadded, and repeated bond or angle class tuples fail
-instead of allowing native matching to select an arbitrary definition.
+Class names must be unpadded, and repeated bond/angle class tuples or vdW
+classes fail instead of allowing native matching to select an arbitrary
+definition.
+When molecules are supplied, selected force-field rows must map to their
+actual atom classes. Element-only fallback or source-row bindings that
+would require a different native class mapping are rejected, not silently
+dropped. Use matching explicit classes or the prepared-System serializer.
 
 Proper torsions use OpenMM's `<Proper>` schema. Only one Fourier component
 per atom-class tuple is supported: OpenMM's custom torsion loader selects
