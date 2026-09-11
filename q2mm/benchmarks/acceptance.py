@@ -23,6 +23,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any
 
 from q2mm.objectives.metrics import fractional_improvement
 
@@ -32,6 +33,7 @@ __all__ = [
     "AcceptanceDecision",
     "AcceptancePolicy",
     "improvement_percent",
+    "classify_ratio",
 ]
 
 
@@ -52,6 +54,24 @@ def improvement_percent(initial_score: float, final_score: float) -> float:
     disagree.  Returns ``0.0`` when *initial* is zero.
     """
     return 100.0 * fractional_improvement(initial_score, final_score)
+
+
+def classify_ratio(ratio: float, tol: float | None) -> dict[str, Any]:
+    """Classify the JAX-executor / objective-score ratio for the safety gate."""
+    if not math.isfinite(ratio):
+        return {
+            "executor_ratio": None,
+            "executor_ratio_status": "diverged" if math.isinf(ratio) else "nan",
+            "executor_ratio_passes": False,
+        }
+    if tol is None:
+        return {"executor_ratio": ratio, "executor_ratio_status": "ok_bypassed", "executor_ratio_passes": True}
+    passes = (1.0 - tol) <= ratio <= (1.0 + tol)
+    return {
+        "executor_ratio": ratio,
+        "executor_ratio_status": "ok" if passes else "out_of_band",
+        "executor_ratio_passes": passes,
+    }
 
 
 @dataclass(frozen=True)

@@ -1,18 +1,26 @@
 """Generic optimizer catalog and strict construction.
 
 The catalog is dependency-light: optional optimizer implementations are
-imported only when their entry is explicitly resolved.
+imported only when their entry is explicitly resolved. Effective settings
+include the Q2MM constructors' bound defaults and nested Q2MM solvers;
+they do not inspect arbitrary custom optimizer objects or runtime state.
+Catalog and cycling policies supply explicit options to one bound
+construction graph used for both object creation and settings capture.
 """
 
 from __future__ import annotations
 
+import inspect
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from q2mm.models.results import OptimizationResult, deep_freeze
+
+if TYPE_CHECKING:
+    from q2mm.optimizers.protocols import _Optimizer
 
 EVALUATORS = frozenset({"python", "jax"})
 GRADIENT_MODES = frozenset({"analytical", "finite_difference", "none"})
@@ -161,7 +169,164 @@ class _CyclingOptimizer:
     def optimize(self, evaluator: Any, space: Any) -> OptimizationResult:
         from q2mm.optimizers.cycling import OptimizationLoop
 
-        return OptimizationLoop(evaluator, space, verbose=False, **self._kwargs).run()
+        return OptimizationLoop(evaluator, space, **self._kwargs).run()
+
+
+def _constructor_arguments(constructor: Callable[..., object], overrides: Mapping[str, Any]) -> dict[str, Any]:
+    """Bind known built-in constructor arguments, including their declared defaults."""
+    bound = inspect.signature(constructor).bind_partial(**overrides)
+    bound.apply_defaults()
+    return dict(bound.arguments)
+
+
+def _scipy_scaling_settings(settings: dict[str, Any], gradient_mode: str) -> dict[str, Any]:
+    applicable = settings["method"] == "L-BFGS-B" and settings["use_bounds"] and gradient_mode != "none"
+    return {
+        **settings,
+        "analytical_parameter_scaling": "bound-normalized" if applicable else "none",
+        "parameter_scaling_requires": "finite nondegenerate active bounds" if applicable else None,
+    }
+
+
+@dataclass(frozen=True)
+class _Construction:
+    """One bound constructor graph, shared by execution and settings capture."""
+
+    constructor: Callable[..., _Optimizer]
+    kind: str
+    arguments: Mapping[str, Any]
+    extra_settings: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "arguments", MappingProxyType(dict(self.arguments)))
+        object.__setattr__(self, "extra_settings", MappingProxyType(dict(self.extra_settings)))
+
+    def build(self) -> _Optimizer:
+        """Construct this graph once without consulting another resolver."""
+        arguments = {
+            name: value.build() if isinstance(value, _Construction) else value for name, value in self.arguments.items()
+        }
+        return self.constructor(**arguments)
+
+    def settings(self, gradient_mode: str = "none") -> dict[str, Any]:
+        """Describe the same bound arguments without constructing any object."""
+        settings = {
+            "kind": self.kind,
+            **{
+                name: value.settings(gradient_mode) if isinstance(value, _Construction) else value
+                for name, value in {**self.arguments, **self.extra_settings}.items()
+            },
+        }
+        return _scipy_scaling_settings(settings, gradient_mode) if self.kind == "scipy" else settings
+
+
+def _leaf(constructor: Callable[..., _Optimizer], kind: str, **arguments: Any) -> _Construction:
+    return _Construction(constructor, kind, _constructor_arguments(constructor, arguments))
+
+
+def _constructor_settings(constructor: Callable[..., _Optimizer], kind: str, **overrides: Any) -> dict[str, Any]:
+    return _leaf(constructor, kind, **overrides).settings()
+
+
+_Syntax = Literal["catalog", "cycling", "scipy"]
+
+
+def _method_family(method: str, syntax: _Syntax = "catalog") -> str:
+    if syntax == "scipy":
+        return "scipy"
+    if method == "cycling" and syntax == "catalog":
+        return "cycling"
+    for prefix, family in (
+        ("optax:", "optax"),
+        ("jaxopt:", "jaxopt"),
+        ("basinhopping", "basinhopping"),
+        ("multi:", "multistart"),
+    ):
+        if method.startswith(prefix):
+            return family
+    return "scipy"
+
+
+def _optimizer_construction(
+    method: str,
+    options: Mapping[str, Any],
+    *,
+    syntax: _Syntax = "catalog",
+    inner_options: Mapping[str, Any] | None = None,
+) -> _Construction:
+    """Own method parsing, concrete constructor choice, and nested construction."""
+    family = _method_family(method, syntax)
+    if family == "cycling":
+        from q2mm.optimizers.cycling import OptimizationLoop
+
+        arguments = _constructor_arguments(OptimizationLoop, options)
+        return _Construction(_CyclingOptimizer, family, arguments, _cycling_constructions(arguments))
+    if family == "optax":
+        from q2mm.optimizers.optax import OptaxOptimizer
+
+        name = method.split(":", 1)[1]
+        parsed: dict[str, Any] = {"optimizer": name}
+        if syntax == "cycling" and "+" in name:
+            parsed["optimizer"], parsed["schedule"] = name.split("+", 1)
+        return _leaf(OptaxOptimizer, family, **{**parsed, **options})
+    if family == "jaxopt":
+        from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+
+        return _leaf(JaxOptOptimizer, family, **{"method": method.split(":", 1)[1], **options})
+    if family == "basinhopping":
+        from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
+
+        parsed = {}
+        if syntax == "cycling":
+            parsed["local_method"] = (method.split(":", 1)[1].strip() or "L-BFGS-B") if ":" in method else "L-BFGS-B"
+        return _leaf(BasinHoppingOptimizer, family, **{**parsed, **options})
+    if family == "multistart":
+        from q2mm.optimizers.multistart import MultiStartOptimizer
+
+        inner = _optimizer_construction(
+            method.split(":", 1)[1], {} if inner_options is None else inner_options, syntax="scipy"
+        )
+        plan = _leaf(MultiStartOptimizer, family, **{"optimizer": inner, **options})
+        if syntax == "catalog":
+            return _Construction(
+                plan.constructor,
+                plan.kind,
+                plan.arguments,
+                {"inner_method": inner.arguments["method"], "inner_maxiter": inner.arguments["maxiter"]},
+            )
+        return plan
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+    return _leaf(ScipyOptimizer, family, **{"method": method, **options})
+
+
+def _cycling_constructions(settings: Mapping[str, Any]) -> dict[str, _Construction]:
+    """Supply cycling's explicit phase policies to the shared construction owner."""
+    maxiter = settings["full_maxiter"]
+    scipy_options = {"maxiter": maxiter, "eps": settings["eps"], "verbose": False}
+    policies = {
+        "scipy": scipy_options,
+        "optax": {"max_steps": maxiter, "verbose": False},
+        "jaxopt": {"maxiter": maxiter, "verbose": False},
+        "basinhopping": {"local_maxiter": maxiter, "verbose": False},
+        "multistart": {"n_starts": 5, "verbose": False},
+    }
+    family = _method_family(settings["full_method"], "cycling")
+    return {
+        "full_optimizer": _optimizer_construction(
+            settings["full_method"], policies[family], syntax="cycling", inner_options=scipy_options
+        ),
+        "simplex_optimizer": _optimizer_construction(
+            settings["simp_method"],
+            {"maxiter": settings["simp_maxiter"], "eps": settings["eps"], "verbose": False},
+            syntax="scipy",
+        ),
+    }
+
+
+def _cycling_nested_settings(settings: Mapping[str, Any], gradient_mode: str) -> dict[str, Any]:
+    """Serialize the same phase plans used by cycling execution."""
+    return {name: plan.settings(gradient_mode) for name, plan in _cycling_constructions(settings).items()}
 
 
 _COMMON_DEFAULTS: Mapping[str, Any] = MappingProxyType(
@@ -190,19 +355,17 @@ def optimizer_spec(value: str | OptimizerSpec) -> OptimizerSpec:
 
 
 def _allowed_options(method: str) -> frozenset[str]:
-    if method in ("L-BFGS-B", "Nelder-Mead", "Powell"):
-        return frozenset({"maxiter", "ftol", "fc_fraction", "eq_fraction"})
-    if method == "cycling":
-        return frozenset({"maxiter", "max_params", "max_cycles", "convergence"})
-    if method.startswith("optax:"):
-        return frozenset({"maxiter", "learning_rate"})
-    if method.startswith("jaxopt:"):
-        return frozenset({"maxiter"})
-    if method.startswith("basinhopping"):
-        return frozenset({"maxiter", "seed"})
-    if method.startswith("multi:"):
-        return frozenset({"maxiter", "seed"})
-    return frozenset()
+    family = _method_family(method)
+    if family == "scipy" and method not in ("L-BFGS-B", "Nelder-Mead", "Powell"):
+        return frozenset()
+    return {
+        "scipy": frozenset({"maxiter", "ftol", "fc_fraction", "eq_fraction"}),
+        "cycling": frozenset({"maxiter", "max_params", "max_cycles", "convergence"}),
+        "optax": frozenset({"maxiter", "learning_rate"}),
+        "jaxopt": frozenset({"maxiter"}),
+        "basinhopping": frozenset({"maxiter", "seed"}),
+        "multistart": frozenset({"maxiter", "seed"}),
+    }[family]
 
 
 def optimizer_option_names(value: str | OptimizerSpec) -> frozenset[str]:
@@ -210,121 +373,79 @@ def optimizer_option_names(value: str | OptimizerSpec) -> frozenset[str]:
     return _allowed_options(optimizer_spec(value).method)
 
 
+def _catalog_options(spec: OptimizerSpec, cfg: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Supply named-catalog policy values, not a second constructor dispatch."""
+    method = spec.method
+    extra = spec.extra
+    maxiter = cfg["maxiter"]
+    family = _method_family(method)
+    if family == "scipy":
+        if method not in ("L-BFGS-B", "Nelder-Mead", "Powell"):
+            raise ValueError(f"Unknown optimizer method {method!r}.")
+        return {
+            "maxiter": 500 if maxiter is None else int(maxiter),
+            "ftol": float(cfg["ftol"]),
+            "verbose": False,
+            "fc_fraction": cfg["fc_fraction"],
+            "eq_fraction": cfg["eq_fraction"],
+        }, None
+    if family == "cycling":
+        arguments: dict[str, Any] = {
+            "max_params": int(cfg["max_params"]),
+            "convergence": float(cfg["convergence"]),
+            "max_cycles": int(cfg["max_cycles"]),
+            "verbose": False,
+        }
+        if maxiter is not None:
+            arguments["full_maxiter"] = int(maxiter)
+            arguments["simp_maxiter"] = int(maxiter)
+        if "full_method" in extra:
+            arguments["full_method"] = extra["full_method"]
+        return arguments, None
+    if family == "optax":
+        arguments = {
+            "max_steps": 2000 if maxiter is None else int(maxiter),
+            "learning_rate": float(cfg["learning_rate"]),
+            "verbose": False,
+        }
+        if "schedule" in extra:
+            arguments["schedule"] = extra["schedule"]
+        return arguments, None
+    if family == "jaxopt":
+        return {"maxiter": 200 if maxiter is None else int(maxiter), "verbose": False}, None
+    if family == "basinhopping":
+        arguments = {
+            "verbose": False,
+            "local_maxiter": 200 if maxiter is None else int(maxiter),
+            "seed": int(cfg["seed"]),
+        }
+        if "niter" in extra:
+            arguments["niter"] = int(extra["niter"])
+        if "T" in extra:
+            arguments["T"] = float(extra["T"])
+        return arguments, None
+    if family == "multistart":
+        arguments = {"verbose": False, "seed": int(cfg["seed"])}
+        if "n_starts" in extra:
+            arguments["n_starts"] = int(extra["n_starts"])
+        return arguments, {"maxiter": 500 if maxiter is None else int(maxiter), "verbose": False}
+    raise ValueError(f"Unknown optimizer method {method!r}.")
+
+
 def resolve_optimizer(
     value: str | OptimizerSpec,
     options: Mapping[str, Any] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
-    """Construct an optimizer and return its exact effective settings."""
+    """Resolve explicit catalog policy through the shared construction owner."""
     spec = optimizer_spec(value)
     supplied = dict(options or {})
     unknown = set(supplied) - _allowed_options(spec.method)
     if unknown:
         raise ValueError(f"Unknown options for optimizer {spec.key!r}: {sorted(unknown)}.")
     cfg = {**_COMMON_DEFAULTS, **supplied}
-    method = spec.method
-    extra = spec.extra
-    maxiter = cfg["maxiter"]
-
-    if method in ("L-BFGS-B", "Nelder-Mead", "Powell"):
-        from q2mm.optimizers.scipy_opt import ScipyOptimizer
-
-        effective = 500 if maxiter is None else int(maxiter)
-        opt: Any = ScipyOptimizer(
-            method=method,
-            maxiter=effective,
-            ftol=float(cfg["ftol"]),
-            verbose=False,
-            fc_fraction=cfg["fc_fraction"],
-            eq_fraction=cfg["eq_fraction"],
-        )
-        return opt, {
-            "kind": "scipy",
-            "method": method,
-            "maxiter": effective,
-            "ftol": float(cfg["ftol"]),
-            "gtol": opt.gtol,
-            "maxls": opt.maxls,
-            "eps": opt.eps,
-            "fc_fraction": cfg["fc_fraction"],
-            "eq_fraction": cfg["eq_fraction"],
-            "use_bounds": opt.use_bounds,
-            "analytical_parameter_scaling": "bound-normalized",
-        }
-    if method == "cycling":
-        effective_cfg: dict[str, Any] = {
-            "max_params": int(cfg["max_params"]),
-            "convergence": float(cfg["convergence"]),
-            "max_cycles": int(cfg["max_cycles"]),
-        }
-        if maxiter is not None:
-            effective_cfg["full_maxiter"] = int(maxiter)
-            effective_cfg["simp_maxiter"] = int(maxiter)
-        if "full_method" in extra:
-            effective_cfg["full_method"] = extra["full_method"]
-        return _CyclingOptimizer(**effective_cfg), {"kind": "cycling", **effective_cfg}
-    if method.startswith("optax:"):
-        from q2mm.optimizers.optax import OptaxOptimizer
-
-        steps = 2000 if maxiter is None else int(maxiter)
-        kwargs: dict[str, Any] = {
-            "optimizer": method.split(":", 1)[1],
-            "max_steps": steps,
-            "learning_rate": float(cfg["learning_rate"]),
-            "verbose": False,
-        }
-        if "schedule" in extra:
-            kwargs["schedule"] = extra["schedule"]
-        return OptaxOptimizer(**kwargs), {
-            "kind": "optax",
-            "optimizer": kwargs["optimizer"],
-            "max_steps": steps,
-            "schedule": extra.get("schedule"),
-            "learning_rate": float(cfg["learning_rate"]),
-        }
-    if method.startswith("jaxopt:"):
-        from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-
-        effective = 200 if maxiter is None else int(maxiter)
-        name = method.split(":", 1)[1]
-        return JaxOptOptimizer(method=name, maxiter=effective, verbose=False), {
-            "kind": "jaxopt",
-            "method": name,
-            "maxiter": effective,
-        }
-    if method.startswith("basinhopping"):
-        from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
-
-        local_maxiter = 200 if maxiter is None else int(maxiter)
-        kwargs = {"verbose": False, "local_maxiter": local_maxiter, "seed": int(cfg["seed"])}
-        if "niter" in extra:
-            kwargs["niter"] = int(extra["niter"])
-        if "T" in extra:
-            kwargs["T"] = float(extra["T"])
-        return BasinHoppingOptimizer(**kwargs), {
-            "kind": "basinhopping",
-            "local_maxiter": local_maxiter,
-            "niter": extra.get("niter"),
-            "T": extra.get("T"),
-            "seed": int(cfg["seed"]),
-        }
-    if method.startswith("multi:"):
-        from q2mm.optimizers.multistart import MultiStartOptimizer
-        from q2mm.optimizers.scipy_opt import ScipyOptimizer
-
-        inner_maxiter = 500 if maxiter is None else int(maxiter)
-        inner_name = method.split(":", 1)[1]
-        inner = ScipyOptimizer(method=inner_name, maxiter=inner_maxiter, verbose=False)
-        kwargs = {"optimizer": inner, "verbose": False, "seed": int(cfg["seed"])}
-        if "n_starts" in extra:
-            kwargs["n_starts"] = int(extra["n_starts"])
-        return MultiStartOptimizer(**kwargs), {
-            "kind": "multistart",
-            "inner_method": inner_name,
-            "inner_maxiter": inner_maxiter,
-            "n_starts": extra.get("n_starts"),
-            "seed": int(cfg["seed"]),
-        }
-    raise ValueError(f"Unknown optimizer method {method!r}.")
+    arguments, inner_arguments = _catalog_options(spec, cfg)
+    plan = _optimizer_construction(spec.method, arguments, inner_options=inner_arguments)
+    return plan.build(), plan.settings(spec.gradient_mode)
 
 
 def expected_result_gradient(spec: OptimizerSpec) -> str:

@@ -174,7 +174,7 @@ class Mol2:
             path (str): Absolute path of the mol2 file.
 
         """
-        self._lines = None
+        self._lines: list[str] | None = None
         self.path = os.path.abspath(path)
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
@@ -217,6 +217,7 @@ class Mol2:
         """
         if self._records is None:
             self.parse_lines()
+        assert self._records is not None
         return self._records
 
     @property

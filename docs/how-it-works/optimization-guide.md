@@ -39,6 +39,131 @@ an executor explicitly:
 
 ---
 
+## Inspect effective catalog settings
+
+Catalog provenance records the Q2MM constructor arguments actually selected,
+including defaults, so an omitted override is not confused with a `None`
+value. Inspecting these settings does not run an optimization:
+
+```python
+from q2mm.optimizers import resolve_optimizer
+
+optimizer, settings = resolve_optimizer("basinhopping")
+assert settings["T"] == optimizer.T == 1.0
+```
+
+The record includes each built-in constructor's controls, such as stopping
+tolerances, bounds flags, schedules, seeds, and verbosity. Multi-start's
+`optimizer` entry describes its constructed inner solver. Cycling records
+its deferred loop arguments plus `full_optimizer` and `simplex_optimizer`;
+a multi-start full phase includes its own inner solver. Construction and
+these snapshots use the same bound constructor graph, including nested
+solvers. Cycling supplies its existing phase choices rather than applying
+the standalone catalog's potentially different defaults.
+
+Catalog and SDK/CLI overrides retain their existing precedence, including
+meaningful zero and `False` values. SciPy's `analytical_parameter_scaling`
+entry describes the configured policy, not a claim that scaling was used:
+bound normalization also requires finite, nondegenerate active bounds at
+execution. No algorithm, bound policy, or candidate-hashing rule changes.
+Resolved identity already includes optimizer settings, so corrected or
+expanded records can change resolved IDs without changing the hash rule.
+These records cover Q2MM constructors, not arbitrary custom optimizer
+objects, third-party internal defaults, or adaptive solver state.
+
+### One construction owner, explicit caller policies
+
+`q2mm.optimizers.catalog` owns method parsing, concrete constructor choice,
+argument binding, nested construction, and settings serialization. Named
+catalog presets and cycling phase adapters supply explicit options to that
+owner; neither maintains a second constructor implementation. Application
+resolution applies recipe/override rules and calls the public
+`resolve_optimizer` API. Supplied objects remain the original objects and
+use the explicit capture contract below; they are not reconstructed.
+
+These entry-point differences are intentional and remain visible:
+
+| Entry point or preset | Function tolerance | Fractional bounds | Workflow default |
+| --- | --- | --- | --- |
+| SDK recommended ground state | `1e-8` | None | `single-stage` |
+| SDK recommended transition state | `1e-12` | Force constants `0.20`, equilibria `0.05` | `single-stage` |
+| Ordinary CLI single/matrix | `1e-8` | None | `single-stage` |
+| Ordinary CLI batch | `1e-8` | None | `method-e2` |
+| Explicit QFUERZA publication profile | `1e-12` | Force constants `0.20`, equilibria `0.05` | `RunProfile` default: `single-stage` |
+| Explicit Heck QFUERZA publication profile | `1e-12` | Force constants `0.05`, equilibria `0.05` | `RunProfile` default: `single-stage` |
+
+The explicit publication-profile helper is not automatically substituted
+for ordinary CLI or SDK requests. Caller overrides retain precedence.
+This consolidation does not choose a new scientific or local-basin policy.
+
+Constructor defaults also differ by caller: the catalog supplies 500
+iterations for SciPy and 2000 steps for Optax; cycling uses its 200-step
+full-phase cap by default. Catalog basin-hopping uses 25 hops and seed 0;
+cycling retains the 50-hop constructor default and no seed. Catalog
+multi-start supplies seed 0 and a 500-iteration inner cap; cycling keeps
+an unseeded five-start wrapper and its own full-phase cap and `eps`.
+Cycling's simplex phase remains a SciPy constructor.
+
+Spelling rules are preserved rather than silently broadened: cycling
+accepts `optax:adam+cosine` and `basinhopping:Powell`; catalog presets
+take schedules from their declared settings and retain their existing
+local-method defaults rather than interpreting cycling suffixes. Unknown
+catalog options are still rejected, including false-valued unknown options.
+Identical bound constructor requests build equivalent solvers, while
+different named/caller policies remain different and recorded.
+
+---
+
+## Configuration of supplied objects
+
+Passing an optimizer or workflow object executes that same object, but
+the application must first capture enough configuration to distinguish
+different effective runs. Exact built-in types are supported automatically:
+SciPy, Optax, JaxOpt, basin-hopping, both multi-start constructors, the
+catalog's deferred cycling optimizer, `SingleStageWorkflow`, and
+`MethodE2Workflow`. Capture reads their current settings rather than
+reconstructing them from defaults. Nested optimizer objects are captured
+recursively; deferred inner-solver settings reuse the catalog capture.
+
+Other types, **including subclasses of built-ins**, must implement the
+separate `q2mm.application.ConfigurationProvider` protocol. Its one method
+is:
+
+```python
+def configuration_settings(self) -> dict[str, object]:
+    return {
+        "maxiter": self.maxiter,
+        "damping": self.damping,
+        "implementation_version": "1",
+    }
+```
+
+The example illustrates the hook, not a complete optimizer. Keep the
+existing `optimize(evaluator, space)` implementation, or a workflow's
+`name` and `run(...)` implementation. The provider must describe **all**
+consequential settings of its concrete type, including inherited and
+nested controls. It must not run an optimization or mutate the component.
+Return string-keyed mappings, ordered JSON arrays, and finite JSON scalar
+values; convert other representations explicitly. Unknown objects, paths,
+sets, circular data, nonfinite numbers, and secret-like fields are rejected.
+
+This is a deliberate compatibility change: an unsupported supplied object
+no longer proceeds with only class/module provenance. Missing, noncallable,
+or invalid capture raises `ApplicationConfigurationError` before
+optimization. The execution protocols and backend API v1 gain no mandatory
+method.
+
+Captured object records retain `class` and `module`, with controls under
+`parameters`. Built-ins reuse the available Q2MM `version`; custom providers
+should include relevant implementation/version context explicitly. There
+is no new custom dependency-version discovery or Git-revision inference;
+the available version may be a development placeholder. Settings are validated and
+deeply snapshotted, so later object or returned-mapping mutation cannot
+change a run's configuration. Gradient/finite-difference precedence,
+workflow science, and schema/fingerprint algorithms are unchanged.
+
+---
+
 ## Workflow A: Small + Smooth
 
 **When:** ≤ 10 parameters, harmonic functional form, analytical gradients

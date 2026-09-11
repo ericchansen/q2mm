@@ -22,6 +22,7 @@ from q2mm.optimizers.catalog import (
 from q2mm.optimizers.protocols import _Optimizer
 from q2mm.workflows import MethodE2Workflow, SingleStageWorkflow, Workflow, make_evaluator_factory
 
+from .configuration import _component_settings, _workflow_settings
 from .models import (
     ApplicationConfigurationError,
     ApplicationOptimizationError,
@@ -94,11 +95,6 @@ def _recommended_defaults(kind: StationaryPointKind) -> tuple[str, dict[str, obj
     )
 
 
-def _custom_component_settings(value: object) -> dict[str, str]:
-    cls = type(value)
-    return {"class": cls.__qualname__, "module": cls.__module__}
-
-
 def _resolve_workflow(
     value: str | Workflow,
     options: Mapping[str, Any] | None,
@@ -109,8 +105,10 @@ def _resolve_workflow(
             raise ApplicationConfigurationError("workflow_options cannot be applied to a workflow object.")
         if not isinstance(value, Workflow):
             raise ApplicationConfigurationError("workflow object does not implement the Workflow protocol.")
-        key = str(value.name)
-        return value, ResolvedWorkflowConfiguration(key=key, settings=_custom_component_settings(value))
+        key = value.name
+        if not isinstance(key, str) or not key:
+            raise ApplicationConfigurationError("Workflow configuration requires a non-empty string name.")
+        return value, ResolvedWorkflowConfiguration(key=key, settings=_component_settings(value))
     if value == "single-stage":
         if supplied:
             raise ApplicationConfigurationError(
@@ -133,13 +131,7 @@ def _resolve_workflow(
             workflow = MethodE2Workflow(**supplied)
         except (TypeError, ValueError) as exc:
             raise ApplicationConfigurationError(f"Invalid method-e2 workflow options: {exc}") from exc
-        settings = {
-            "name": "method-e2",
-            "negative_fc_threshold": workflow.negative_fc_threshold,
-            "replace_with_round2": workflow.replace_with_round2,
-            "allow_negative": workflow.allow_negative,
-            "near_zero_replace_with": dict(workflow.near_zero_replace_with),
-        }
+        settings = _workflow_settings(workflow)
         return workflow, ResolvedWorkflowConfiguration(key="method-e2", settings=settings)
     raise ApplicationConfigurationError("Unknown workflow; expected 'single-stage', 'method-e2', or a Workflow object.")
 
@@ -217,14 +209,14 @@ def _resolve_optimizer(
         raise ApplicationConfigurationError("A custom JAX optimizer requires analytical gradient mode.")
     if requested_fd_step is not None and gradient != "finite_difference":
         raise ApplicationConfigurationError("fd_step applies only to finite-difference executor configurations.")
-    settings = _custom_component_settings(value)
+    component_settings = _component_settings(value, gradient_mode=gradient)
     return (
         value,
         ResolvedOptimizerConfiguration(
             key=f"custom:{type(value).__module__}.{type(value).__qualname__}",
             label=type(value).__qualname__,
             method=type(value).__qualname__,
-            settings=settings,
+            settings=component_settings,
             expected_result_gradient_mode=_result_gradient_mode(value, gradient),
         ),
         executor,
@@ -327,7 +319,10 @@ def optimize(
     gradient-based methods report SciPy-owned finite differences. Other custom
     optimizer objects must report the executor's declared gradient mode; their
     solver capabilities are not inferred from attributes or probed at runtime.
-    Arbitrary object settings are not captured beyond class/module identity.
+    Exact supported built-in objects have their current configuration
+    snapshotted. Other objects, including built-in subclasses, must implement
+    ``ConfigurationProvider.configuration_settings()`` and return complete
+    JSON-safe settings; unsupported capture fails before optimization.
     """
     if not isinstance(problem, OptimizationProblem):
         raise ApplicationConfigurationError("optimize requires an OptimizationProblem.")

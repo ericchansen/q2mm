@@ -29,7 +29,7 @@ the YAML file's directory.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
 import numpy as np
 import yaml
@@ -38,12 +38,12 @@ from q2mm.constants import DEFAULT_BOND_TOLERANCE
 from q2mm.io.xyz import load_xyz
 from q2mm.models.hessian import HessianProvenance, HessianUnits
 from q2mm.models.molecule import Molecule
-from q2mm.models.observations import Observation, ObservationSet
+from q2mm.models.observations import Observation, ObservationSet, ObservationValue, _ObservationKind
 
 # Reference-value kinds accepted by the schema.
 # Note: ``eigenmatrix`` is also supported as a special bulk-loading directive
 # handled directly in :func:`_load_molecule` (not via :func:`_parse_datum`).
-_VALID_KINDS: frozenset[str] = frozenset(
+_VALID_KINDS: frozenset[_ObservationKind] = frozenset(
     {
         "energy",
         "frequency",
@@ -80,9 +80,14 @@ def _require_key(mapping: dict[str, Any], key: str, context: str) -> Any:
     return mapping[key]
 
 
-def _validate_kind(kind: str, context: str) -> str:
+def _is_reference_kind(kind: str) -> TypeGuard[_ObservationKind]:
+    """Narrow the existing YAML kind whitelist to the canonical scalar vocabulary."""
+    return kind in _VALID_KINDS
+
+
+def _validate_kind(kind: str, context: str) -> _ObservationKind:
     """Validate that *kind* is one of the accepted reference value types."""
-    if kind not in _VALID_KINDS:
+    if not _is_reference_kind(kind):
         raise ReferenceYAMLError(f"Unknown kind '{kind}' in {context}. Must be one of: {sorted(_VALID_KINDS)}")
     return kind
 
@@ -309,7 +314,7 @@ def _load_molecule(
     mol_dict: dict[str, Any],
     base_dir: Path,
     molecule_idx: int,
-) -> tuple[Molecule, list[Observation]]:
+) -> tuple[Molecule, list[ObservationValue]]:
     """Parse one molecule entry from the YAML.
 
     Args:
@@ -364,7 +369,7 @@ def _load_molecule(
             raise ReferenceYAMLError(
                 f"'symbols' must be a list of element symbols, not a {type(symbols_raw).__name__} in {ctx}.geometry."
             )
-        symbols = [str(s) for s in symbols_raw]
+        symbols = tuple(str(s) for s in symbols_raw)
         coords = _require_key(geo, "coordinates", f"{ctx}.geometry")
         try:
             coords_arr = np.array(coords, dtype=float)
@@ -379,13 +384,14 @@ def _load_molecule(
                 f"Number of symbols ({len(symbols)}) must match rows in "
                 f"coordinates ({coords_arr.shape[0]}) in {ctx}.geometry."
             )
-        atom_types = geo.get("atom_types")
-        if atom_types is not None:
-            if not isinstance(atom_types, list):
+        atom_types_raw = geo.get("atom_types")
+        atom_types: tuple[str, ...] | None = None
+        if atom_types_raw is not None:
+            if not isinstance(atom_types_raw, list):
                 raise ReferenceYAMLError(
-                    f"'atom_types' must be a list of type labels, not a {type(atom_types).__name__} in {ctx}.geometry."
+                    f"'atom_types' must be a list of type labels, not a {type(atom_types_raw).__name__} in {ctx}.geometry."
                 )
-            atom_types = [str(t) for t in atom_types]
+            atom_types = tuple(str(t) for t in atom_types_raw)
         mol = Molecule(
             symbols=symbols,
             geometry=coords_arr,
@@ -415,7 +421,7 @@ def _load_molecule(
         )
 
     # ---- Data entries -----------------------------------------------------
-    ref_values: list[Observation] = []
+    ref_values: list[ObservationValue] = []
     data_list = mol_dict.get("data", [])
     if not isinstance(data_list, list):
         raise ReferenceYAMLError(f"'data' must be a list in {ctx}, got {type(data_list).__name__}.")
@@ -518,7 +524,7 @@ def load_reference_yaml(path: str | Path) -> tuple[ObservationSet, list[Molecule
 
     base_dir = path.parent
     molecules: list[Molecule] = []
-    all_values: list[Observation] = []
+    all_values: list[ObservationValue] = []
 
     for idx, mol_dict in enumerate(mol_list):
         if not isinstance(mol_dict, dict):
@@ -527,7 +533,7 @@ def load_reference_yaml(path: str | Path) -> tuple[ObservationSet, list[Molecule
         molecules.append(mol)
         all_values.extend(values)
 
-    return ObservationSet(values=all_values), molecules
+    return ObservationSet(values=tuple(all_values)), molecules
 
 
 # ---------------------------------------------------------------------------
@@ -535,8 +541,8 @@ def load_reference_yaml(path: str | Path) -> tuple[ObservationSet, list[Molecule
 # ---------------------------------------------------------------------------
 
 
-def _reference_value_to_dict(rv: Observation) -> dict[str, Any]:
-    """Convert a single :class:`Observation` to a YAML-friendly dict.
+def _reference_value_to_dict(rv: ObservationValue) -> dict[str, Any]:
+    """Convert an observation's existing scalar fields to a YAML-friendly dict.
 
     Args:
         rv: The reference value to serialise.
@@ -552,27 +558,28 @@ def _reference_value_to_dict(rv: Observation) -> dict[str, Any]:
     if rv.label:
         d["label"] = rv.label
 
-    if rv.kind in ("bond_length", "bond_angle", "torsion_angle"):
-        if rv.atom_indices is not None:
-            d["atoms"] = list(rv.atom_indices)
-        else:
+    if isinstance(rv, Observation):
+        if rv.kind in ("bond_length", "bond_angle", "torsion_angle"):
+            if rv.atom_indices is not None:
+                d["atoms"] = list(rv.atom_indices)
+            else:
+                d["data_idx"] = rv.data_idx
+        elif rv.kind == "frequency":
             d["data_idx"] = rv.data_idx
-    elif rv.kind == "frequency":
-        d["data_idx"] = rv.data_idx
-    elif rv.kind == "eig_diagonal":
-        d["mode_idx"] = rv.data_idx
-    elif rv.kind == "eig_offdiagonal":
-        if rv.atom_indices is not None:
-            d["row"] = rv.atom_indices[0]
-            d["col"] = rv.atom_indices[1]
-        else:
-            raise ReferenceYAMLError("eig_offdiagonal requires row/col (atom_indices)")
-    elif rv.kind == "hessian_element":
-        if rv.atom_indices is not None:
-            d["row"] = rv.atom_indices[0]
-            d["col"] = rv.atom_indices[1]
-        else:
-            raise ReferenceYAMLError("hessian_element requires row/col (atom_indices)")
+        elif rv.kind == "eig_diagonal":
+            d["mode_idx"] = rv.data_idx
+        elif rv.kind == "eig_offdiagonal":
+            if rv.atom_indices is not None:
+                d["row"] = rv.atom_indices[0]
+                d["col"] = rv.atom_indices[1]
+            else:
+                raise ReferenceYAMLError("eig_offdiagonal requires row/col (atom_indices)")
+        elif rv.kind == "hessian_element":
+            if rv.atom_indices is not None:
+                d["row"] = rv.atom_indices[0]
+                d["col"] = rv.atom_indices[1]
+            else:
+                raise ReferenceYAMLError("hessian_element requires row/col (atom_indices)")
 
     return d
 

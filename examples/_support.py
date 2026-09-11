@@ -95,6 +95,10 @@ class BoundedExampleOptimizer:
     def __init__(self) -> None:
         self.entered = False
 
+    def configuration_settings(self) -> dict[str, object]:
+        """Declare the bounded example's fixed, non-optimizing behavior."""
+        return {"mode": "one-evaluation", "parameter_updates": False, "convergence_claim": False}
+
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Evaluate once, proving optimizer entry without claiming convergence."""
         self.entered = True

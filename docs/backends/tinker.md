@@ -100,6 +100,23 @@ backend = TinkerBackend(
 | `params_file` | `str \| None` | `None` | Path to MM3 base parameter file |
 | `bond_tolerance` | `float` | `1.3` | Multiplier for covalent-radius bond detection |
 
+### Minimization controls
+
+`MinimizationRequest.max_iterations` is forwarded through Tinker's native
+`MAXITER` key for that request. A positive integer up to 2147483647 is
+supported; booleans, fractional values, and out-of-range values fail before
+input files are created. `None` leaves the native iteration default unset.
+The limit counts optimizer iterations, not individual energy/gradient calls.
+
+`tolerance` retains its native RMS-gradient-per-atom meaning and existing
+0.01 default. Controls do not leak into later requests. Honoring an iteration
+limit is **not a convergence certificate**: the current geometry-result
+contract still parses a finite terminal geometry, including an iteration-limit
+termination. Terminal convergence interpretation is a separate boundary.
+
+The native keyword and stopping rule are defined in
+[Tinker's L-BFGS routine](https://github.com/TinkerTools/tinker/blob/87050685eff8840d312e2a332cc82c33f63c7c3d/source/lbfgs.f).
+
 ---
 
 ## Capabilities

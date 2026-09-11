@@ -65,6 +65,9 @@ _REQUIRED_PHASE2_PATHS = (
 _REQUIRED_PHASE5_PATHS = (
     PACKAGE_ROOT / "benchmarks" / "profiles.py",
     PACKAGE_ROOT / "benchmarks" / "acceptance.py",
+    PACKAGE_ROOT / "benchmarks" / "analysis.py",
+    PACKAGE_ROOT / "benchmarks" / "records.py",
+    PACKAGE_ROOT / "benchmarks" / "artifacts.py",
     PACKAGE_ROOT / "benchmarks" / "runner.py",
     PACKAGE_ROOT / "benchmarks" / "cli.py",
 )

@@ -205,6 +205,33 @@ conflict-priority, conformance, and packaging details.
 
 ---
 
+## Benchmark ownership
+
+The benchmark runner coordinates a candidate's lifecycle; it does not own
+every operation needed by a run. `run_profile` and `run_profiles` remain the
+single execution/promotion path, including status classification and the
+decision to publish accepted candidates.
+
+| Owner | Responsibility and reused boundary |
+|-------|------------------------------------|
+| `benchmarks.profiles` | Requested/resolved identities and configuration adapters; optimizer construction uses `optimizers.catalog`, and external roots use `benchmarks.systems._paths` |
+| `benchmarks.acceptance` | Existing acceptance policy and executor-ratio classification |
+| `benchmarks.analysis` | Frequency, PES-distortion, and labeled optimizer-sample diagnostics; objective metric formulas remain in `objectives.metrics` |
+| `benchmarks.records` | Candidate/outcome envelopes and provenance; optimization fields use `_result_serialization.result_payload`, scientific digests use the application model APIs |
+| `benchmarks.artifacts` | JSON files and accepted-artifact mechanics; force-field serialization and temporary/cleanup helpers come from `application.persistence` |
+| `benchmarks.runner` | Resolution/execution order, score-of-record evaluation, acceptance and publication gates, incremental persistence and promotion decisions |
+
+Historical public imports from `benchmarks.runner` are direct re-exports of
+their owners. There is no second runner or result-projection field list.
+Analysis, records, artifacts, and profile helpers do not import the runner,
+and importing these modules does not load optional computational runtimes.
+
+Benchmark promotion retains its copy-snapshot transaction contract. The SDK
+has a different rename/reservation installation contract; replacing one
+with the other would change failure behavior. This ownership split reuses
+the available shared helpers without changing either transaction or any
+execution/acceptance policy.
+
 ## Module organization
 
 ```
@@ -218,6 +245,7 @@ q2mm/
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
 ├── application/          # Data-independent evaluate, optimize, and atomic save services
 │   ├── models.py        # Immutable resolved configuration + OptimizationRun/SavedOutput
+│   ├── configuration.py # Exact built-in capture + optional ConfigurationProvider protocol
 │   ├── evaluation.py    # Typed OptimizationProblem and reference-property evaluation
 │   ├── optimization.py  # Strict recipe/component resolution and generic execution
 │   └── persistence.py   # Semantic FF formats + deterministic run manifests
@@ -225,9 +253,12 @@ q2mm/
 ├── benchmarks/           # Benchmark systems, explicit profiles, acceptance, and publication persistence
 │   ├── cases.py         # BenchmarkCase wrapper around OptimizationProblem
 │   ├── publications.py  # Canonical source-completeness records and blocked rows
-│   ├── profiles.py      # Immutable RunProfile + deterministic ResolvedProfile/provenance/fingerprint
-│   ├── acceptance.py    # Closed candidate-status vocabulary + the single no-progress decision
-│   ├── runner.py        # The one execution/result/persistence/promotion path (single/batch/matrix)
+│   ├── profiles.py      # Profile identities + configuration/data-root adapters over existing resolvers
+│   ├── acceptance.py    # Candidate status, no-progress/worsening policy, and executor-ratio classification
+│   ├── analysis.py      # Frequency, PES-distortion, and optimizer-sample diagnostics
+│   ├── records.py       # Immutable candidate/outcome envelopes + canonical projection/provenance adapters
+│   ├── artifacts.py     # Strict JSON storage + accepted-artifact staging, snapshots, rollback, cleanup
+│   ├── runner.py        # The one execution/promotion coordinator (run_profile/run_profiles)
 │   ├── cli.py           # q2mm-benchmark console entry point (list/preflight/single/batch/matrix/load)
 │   └── systems/         # load_system(), SYSTEM_KEYS, per-system modules
 │       └── ferrocene.py # Wahlers Chapter 4 seven-structure ground-state profile
@@ -273,7 +304,7 @@ q2mm/
 │   └── metrics.py        # Shared residual, regularization, and category metric helpers
 │
 ├── optimizers/           # Parameter fitting machinery
-│   ├── catalog.py        # Generic optimizer specifications and strict construction
+│   ├── catalog.py        # Explicit presets + canonical constructor/settings graphs
 │   ├── protocols.py      # Shared _Optimizer structural protocol
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)

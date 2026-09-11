@@ -194,4 +194,5 @@ lazy system registry (CH₃F, Rh-enamide, Heck relay, …). Every requested
 candidate is resolved to a provenance-complete run profile, evaluated
 against one acceptance policy, and persisted incrementally; only accepted
 candidates are promoted to canonical result/force-field names. Frequency
-and PES-distortion analysis run as benchmark analysis inside the runner.
+and PES-distortion analysis belong to `q2mm.benchmarks.analysis`, called by
+the runner's single coordinator path.
