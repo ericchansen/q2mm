@@ -257,9 +257,16 @@ where multi-start and global search methods show material differences:
 - Analytical frequency gradients produce the best results on the harmonic
   problem. The top harmonic results all use analytical frequency
   gradients (A) or analytical-fallback (FD with JAX-MD).
-- On identical parameters, JAX, JAX-MD, and OpenMM agree to machine precision
-  when the functional form matches: energy deltas stay at or below
-  3 × 10⁻¹⁸ kcal/mol and frequency deltas stay below 0.001 cm⁻¹.
+- Backend comparisons here are specific to the recorded CH₃F inputs and
+  settings, not consequences of a matching functional-form name. For example,
+  the [harmonic JAX-MD L-BFGS-B record](https://github.com/ericchansen/q2mm-data/blob/8724a128a22e9867ba937999026224f075762884/benchmarks/ch3f/results/ch3f_jax-md_harmonic_gpu_lbfgsb_auto.json)
+  records one molecule, eight bond/angle parameters, B3LYP/6-31+G(d)
+  frequency targets, `jac_mode="auto"`, and a finite-difference frequency
+  gradient path. It does not record a complete cutoff/charge-model
+  configuration. These artifacts therefore do not establish a general
+  machine-precision transfer guarantee; apply the
+  [case-specific backend compatibility conditions](../backends/index.md#parameter-transferability)
+  and validate the relevant objective and derivative agreement.
 - The optimization loop dominates runtime; QFUERZA estimation is effectively
   free by comparison and serves mainly as a starting point, not as the
   expensive step.
