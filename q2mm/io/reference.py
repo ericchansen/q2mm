@@ -38,7 +38,13 @@ from q2mm.constants import DEFAULT_BOND_TOLERANCE
 from q2mm.io.xyz import load_xyz
 from q2mm.models.hessian import HessianProvenance, HessianUnits
 from q2mm.models.molecule import Molecule
-from q2mm.models.observations import Observation, ObservationSet, ObservationValue, _ObservationKind
+from q2mm.models.observations import (
+    Observation,
+    ObservationSet,
+    ObservationValue,
+    _ObservationKind,
+    observation_payload,
+)
 
 # Reference-value kinds accepted by the schema.
 # Note: ``eigenmatrix`` is also supported as a special bulk-loading directive
@@ -177,7 +183,7 @@ def _parse_datum(
                 kind="frequency",
                 value=v,
                 weight=weight,
-                label=label or f"mode {idx}",
+                label=label if "label" in datum else f"mode {idx}",
                 case_id=case_id,
                 data_idx=idx,
             )
@@ -249,7 +255,7 @@ def _parse_datum(
                 kind="eig_diagonal",
                 value=value,
                 weight=weight,
-                label=label or f"eig[{mode_idx}]",
+                label=label if "label" in datum else f"eig[{mode_idx}]",
                 case_id=case_id,
                 data_idx=mode_idx,
             )
@@ -266,7 +272,7 @@ def _parse_datum(
                 kind="eig_offdiagonal",
                 value=value,
                 weight=weight,
-                label=label or f"eig[{row},{col}]",
+                label=label if "label" in datum else f"eig[{row},{col}]",
                 case_id=case_id,
                 atom_indices=(row, col),
             )
@@ -283,7 +289,7 @@ def _parse_datum(
                 kind="hessian_element",
                 value=value,
                 weight=weight,
-                label=label or f"hess[{row},{col}]",
+                label=label if "label" in datum else f"hess[{row},{col}]",
                 case_id=case_id,
                 atom_indices=(row, col),
             )
@@ -300,7 +306,7 @@ def _parse_datum(
                 kind="frequency",
                 value=value,
                 weight=weight,
-                label=label or f"mode {data_idx}",
+                label=label if "label" in datum else f"mode {data_idx}",
                 case_id=case_id,
                 data_idx=data_idx,
             )
@@ -492,6 +498,9 @@ def _load_molecule(
 def load_reference_yaml(path: str | Path) -> tuple[ObservationSet, list[Molecule]]:
     """Load reference data and molecules from a YAML file.
 
+    Explicit labels, including empty strings, are retained. Missing labels
+    keep the established kind-specific defaults.
+
     Args:
         path: Path to the YAML reference file.
 
@@ -542,7 +551,7 @@ def load_reference_yaml(path: str | Path) -> tuple[ObservationSet, list[Molecule
 
 
 def _reference_value_to_dict(rv: ObservationValue) -> dict[str, Any]:
-    """Convert a single :class:`Observation` to a YAML-friendly dict.
+    """Return a faithful scalar YAML representation or reject the observation.
 
     Args:
         rv: The reference value to serialise.
@@ -550,18 +559,22 @@ def _reference_value_to_dict(rv: ObservationValue) -> dict[str, Any]:
     Returns:
         Dictionary suitable for YAML output.
 
+    Raises:
+        ReferenceYAMLError: If the observation's kind or metadata cannot
+            survive the existing scalar schema and loader.
+
     """
-    if not isinstance(rv, Observation):
+    context = f"{rv.kind} observation for case {rv.case_id!r}"
+    if not isinstance(rv, Observation) or not _is_reference_kind(rv.kind):
         raise ReferenceYAMLError(
-            f"Cannot save {rv.kind} observation for case {rv.case_id!r}: "
-            "its typed or grouped metadata is not represented by reference YAML."
+            f"Cannot save {context}: its typed or grouped metadata is not represented by reference YAML. "
+            f"Supported scalar kinds: {sorted(_VALID_KINDS)}."
         )
     d: dict[str, Any] = {"kind": rv.kind, "value": float(rv.value)}
 
     if rv.weight != 1.0:
         d["weight"] = float(rv.weight)
-    if rv.label:
-        d["label"] = rv.label
+    d["label"] = rv.label
 
     if rv.kind in ("bond_length", "bond_angle", "torsion_angle"):
         if rv.atom_indices is not None:
@@ -572,19 +585,22 @@ def _reference_value_to_dict(rv: ObservationValue) -> dict[str, Any]:
         d["data_idx"] = rv.data_idx
     elif rv.kind == "eig_diagonal":
         d["mode_idx"] = rv.data_idx
-    elif rv.kind == "eig_offdiagonal":
-        if rv.atom_indices is not None:
-            d["row"] = rv.atom_indices[0]
-            d["col"] = rv.atom_indices[1]
-        else:
-            raise ReferenceYAMLError("eig_offdiagonal requires row/col (atom_indices)")
-    elif rv.kind == "hessian_element":
-        if rv.atom_indices is not None:
-            d["row"] = rv.atom_indices[0]
-            d["col"] = rv.atom_indices[1]
-        else:
-            raise ReferenceYAMLError("hessian_element requires row/col (atom_indices)")
+    elif rv.kind in ("eig_offdiagonal", "hessian_element"):
+        if rv.atom_indices is None:
+            raise ReferenceYAMLError(f"{rv.kind} requires row/col (atom_indices) for case {rv.case_id!r}.")
+        if len(rv.atom_indices) != 2:
+            raise ReferenceYAMLError(f"{context} requires exactly two row/col indices; got {len(rv.atom_indices)}.")
+        d["row"] = rv.atom_indices[0]
+        d["col"] = rv.atom_indices[1]
 
+    reloaded = _parse_datum(d, rv.case_id, context)
+    if len(reloaded) != 1:
+        raise ReferenceYAMLError(f"{context} does not reload as exactly one scalar observation.")
+    original_payload = observation_payload(rv)
+    reloaded_payload = observation_payload(reloaded[0])
+    changed = [key for key in original_payload if original_payload[key] != reloaded_payload[key]]
+    if changed:
+        raise ReferenceYAMLError(f"{context} cannot preserve {', '.join(changed)} on reference-YAML reload.")
     return d
 
 
@@ -598,8 +614,9 @@ def _molecule_to_dict(mol: Molecule) -> dict[str, Any]:
         Dictionary suitable for YAML output.
 
     Raises:
-        ReferenceYAMLError: If inline geometry would lose a Hessian or
-            authoritative topology, or change the resolved topology.
+        ReferenceYAMLError: If inline geometry would lose a Hessian,
+            authoritative topology or partial charges, or change the
+            resolved topology.
 
     """
     if mol.hessian is not None:
@@ -620,6 +637,11 @@ def _molecule_to_dict(mol: Molecule) -> dict[str, Any]:
         raise ReferenceYAMLError(
             f"Molecule {mol.name!r} has authoritative topology ({', '.join(explicit_topology)}) "
             "that inline reference YAML cannot preserve."
+        )
+
+    if mol.partial_charges is not None:
+        raise ReferenceYAMLError(
+            f"Molecule {mol.name!r} has partial_charges that inline reference YAML cannot preserve."
         )
 
     d: dict[str, Any] = {"name": mol.name}
@@ -664,9 +686,13 @@ def save_reference_yaml(
     stable-ID binding :func:`load_reference_yaml` uses on load).
 
     This writer is not a complete molecular-state package. It rejects
-    typed or grouped observations outside the scalar YAML schema, attached
-    Hessians, authoritative topology (including explicit empty connectivity),
-    and retained graphs that inline geometry would re-infer differently.
+    attached Hessians, authoritative topology (including explicit empty
+    connectivity), and retained graphs that inline geometry would re-infer
+    differently, as well as molecular partial-charge tuples (including zero
+    or all-None entries). Rich/grouped observation types and scalar index
+    metadata that cannot survive the existing loader are also rejected.
+    Explicit empty labels use the existing ``label`` field; omitted labels
+    in hand-authored input retain their established defaults.
     All observations and molecules are checked before opening the destination.
     Loading hand-authored YAML with an external ``hessian`` path remains
     supported; this writer does not create or copy dependency sidecars.
@@ -680,8 +706,9 @@ def save_reference_yaml(
     Raises:
         ReferenceYAMLError: If *molecules* have duplicate names, or if
             *ref* contains observations whose ``case_id`` does not match
-            any molecule's name, or if observation metadata, molecular
-            dependencies or topology cannot survive the inline schema.
+            any molecule's name, or if a molecule has dependencies or
+            topology, partial charges, or observation metadata that the
+            existing schema cannot preserve.
 
     """
     path = Path(path)
