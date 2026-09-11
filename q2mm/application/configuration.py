@@ -47,24 +47,32 @@ def _builtin_for_json(value: object) -> object:
     return _mapping_for_json(value)
 
 
+_PROVIDER_GUIDANCE = (
+    "implement ConfigurationProvider.configuration_settings(). Automatic built-in capture does not apply to subclasses."
+)
+
+
 def _provider_settings(value: object) -> Mapping[str, Any]:
     # Attribute lookup can execute a user-defined descriptor, just like the hook.
+    lookup = True
     try:
         provider = getattr(value, "configuration_settings")
         if not callable(provider):
             raise ApplicationConfigurationError(
-                f"Cannot capture configuration for {type(value).__qualname__}; "
-                "implement ConfigurationProvider.configuration_settings(). "
-                "Automatic built-in capture does not apply to subclasses."
+                f"Cannot capture configuration for {type(value).__qualname__}; {_PROVIDER_GUIDANCE}"
             )
+        lookup = False
         settings = provider()
     except ApplicationConfigurationError:
         raise
     except Exception as exc:
         cls = type(value)
-        raise ApplicationConfigurationError(
+        message = (
             f"Cannot capture configuration for {cls.__module__}.{cls.__qualname__} via configuration_settings(): {exc}"
-        ) from exc
+        )
+        if lookup and isinstance(exc, AttributeError):
+            message += f"; {_PROVIDER_GUIDANCE}"
+        raise ApplicationConfigurationError(message) from exc
     if not isinstance(settings, Mapping):
         raise ApplicationConfigurationError("ConfigurationProvider.configuration_settings() must return a mapping.")
     # Validate the provider's original values, before canonical normalization
