@@ -19,7 +19,7 @@ back.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from types import MappingProxyType
@@ -37,6 +37,7 @@ __all__ = [
     "UnsupportedObservationError",
     "Evaluation",
     "ObjectiveEvaluator",
+    "SelectedGradientEvaluator",
 ]
 
 
@@ -233,4 +234,26 @@ class ObjectiveEvaluator(Protocol):
 
     def reset(self) -> None:
         """Clear the evaluation counter and history."""
+        ...
+
+
+@runtime_checkable
+class SelectedGradientEvaluator(Protocol):
+    """Optional requested-coordinate interface for executor-owned FD.
+
+    Inputs remain full-length parameter vectors. The returned derivative
+    array has exactly ``len(indices)`` entries in the supplied index order;
+    it is not a zero-padded full gradient. Indices must be one-dimensional,
+    unique, in range, and integer-typed (not booleans or floats). An empty subset is
+    valid. This interface does not change :class:`ObjectiveEvaluator`.
+    """
+
+    def value_and_gradient_selected(
+        self, full_vector: np.ndarray, indices: Sequence[int] | np.ndarray
+    ) -> tuple[float, np.ndarray]:
+        """Return the value and requested derivatives in explicit FD mode.
+
+        Record one completed value/gradient request and only the actual
+        additional FD scalar work, just as the full-gradient interface does.
+        """
         ...

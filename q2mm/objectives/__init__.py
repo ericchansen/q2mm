@@ -22,6 +22,7 @@ from q2mm.objectives.protocols import (
     ObjectiveError,
     ObjectiveEvaluator,
     ObjectiveGradientError,
+    SelectedGradientEvaluator,
     UnsupportedObservationError,
 )
 from q2mm.objectives.python import PythonObjectiveExecutor
@@ -36,6 +37,7 @@ __all__ = [
     "ObjectiveGradientError",
     "UnsupportedObservationError",
     "ObjectiveEvaluator",
+    "SelectedGradientEvaluator",
     "PythonObjectiveExecutor",
     "JaxObjectiveExecutor",
 ]

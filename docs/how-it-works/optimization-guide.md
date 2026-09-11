@@ -152,6 +152,54 @@ retain their existing semantics. Cycling still reports cycles and its
 post-initial-evaluation counter delta. This instrumentation does not
 redesign those broader accounting contracts.
 
+### Explicit requested finite-difference coordinates
+
+The default `value_and_gradient(full_vector)` and `gradient(full_vector)`
+interfaces still return derivatives for **every** full-vector coordinate.
+They never replace uncomputed derivatives with zeros. Analytical and
+JAX-native full-gradient validation paths are unchanged.
+
+Executors may additionally implement
+`q2mm.objectives.SelectedGradientEvaluator`:
+
+```python
+value, selected_gradient = evaluator.value_and_gradient_selected(
+    full_vector, [3, 1]
+)
+```
+
+The result above has two derivative entries, for full-vector coordinates
+3 and 1 in that order. Python executors support this optional method when
+configured explicitly with `GradientMode.FINITE_DIFFERENCE`. Selectors must
+be one-dimensional integer sequences with unique, in-range entries.
+Booleans, floats, duplicates, unordered collections, and out-of-range
+indices are rejected before evaluation. NumPy selectors require an integer
+dtype even when empty; empty lists and tuples remain valid. An empty valid
+selector returns the value and an empty derivative array without perturbation probes.
+
+For `k` requested coordinates, executor-owned central differences perform
+`2*k` perturbation evaluations using the existing absolute `fd_step` and
+plus/minus direction. The value and requested derivatives retain the full
+objective's weighting and regularization. One completed value/gradient
+request is recorded in `n_evaluations`; each completed FD perturbation is
+counted in `n_gradient_evaluations`, including work completed before a
+later probe fails.
+
+SciPy minimize, Optax, and basin-hopping request the **current**
+`ActiveParameterSpace.active_indices` through a shared adapter. This
+includes rebased multi-start inputs and cycling's derived subspaces, not
+the potentially stale active space stored in the original objective plan.
+Executors without the optional interface retain the full-gradient-and-pack
+fallback. Non-FD modes continue through the full-gradient interface.
+
+Least-squares is deliberately separate: this codebase's residual Jacobian
+is owned by SciPy and already probes only the active-coordinate residual
+callback. Its existing forward-difference/relative-step behavior and
+`ScipyOptimizer.eps` provenance remain unchanged, even when the Python
+executor is configured for FD. Those residual probes are recorded by the
+existing residual callback, not as executor-owned `n_gradient_evaluations`.
+No backend full-Jacobian contract or mandatory execution protocol changes.
+
 ---
 
 ## Configuration of supplied objects
