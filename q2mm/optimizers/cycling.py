@@ -28,7 +28,8 @@ from q2mm.models.results import OptimizationResult, StageRecord
 from q2mm.objectives.protocols import ObjectiveEvaluator
 
 if TYPE_CHECKING:
-    pass
+    from q2mm.optimizers.catalog import _Construction
+    from q2mm.optimizers.protocols import _Optimizer
 
 logger = logging.getLogger(__name__)
 
@@ -145,8 +146,6 @@ class OptimizationLoop:
 
     def run(self) -> OptimizationResult:
         """Execute the grad-simp cycling loop."""
-        from q2mm.optimizers.scipy_opt import ScipyOptimizer
-
         evaluator = self.evaluator
         layout = evaluator.plan.layout
         space = self.space
@@ -167,11 +166,6 @@ class OptimizationLoop:
         stages: list[StageRecord] = []
         converged = False
 
-        use_optax = self.full_method.startswith("optax:")
-        use_jaxopt = self.full_method.startswith("jaxopt:")
-        use_basinhopping = self.full_method.startswith("basinhopping")
-        use_multistart = self.full_method.startswith("multi:")
-
         candidate_step_sizes = layout.steps.copy()
         frozen_mask = np.ones(len(layout), dtype=bool)
         frozen_mask[space.active_indices] = False
@@ -188,9 +182,7 @@ class OptimizationLoop:
                 cycle_eval_start = evaluator.n_evaluations
                 cycle_space = space.with_baseline(current_full)
 
-                full_opt = self._build_full_optimizer(
-                    use_optax, use_jaxopt, use_basinhopping, use_multistart, ScipyOptimizer
-                )
+                full_opt = self._build_full_optimizer()
                 full_result = full_opt.optimize(evaluator, cycle_space)
                 score_after_grad = full_result.final_score
                 current_full = np.asarray(full_result.final_params, dtype=float)
@@ -219,12 +211,7 @@ class OptimizationLoop:
                     )
 
                 simp_space = space.with_baseline(current_full).with_active_indices(selected)
-                simp_result = ScipyOptimizer(
-                    method=self.simp_method,
-                    maxiter=self.simp_maxiter,
-                    eps=self.eps,
-                    verbose=False,
-                ).optimize(
+                simp_result = self._build_simplex_optimizer().optimize(
                     evaluator,
                     simp_space,
                 )
@@ -290,36 +277,21 @@ class OptimizationLoop:
             stages=tuple(stages),
         )
 
-    def _build_full_optimizer(
-        self,
-        use_optax: bool,
-        use_jaxopt: bool,
-        use_basinhopping: bool,
-        use_multistart: bool,
-        scipy_cls: type,
-    ) -> object:
-        if use_optax:
-            from q2mm.optimizers.optax import OptaxOptimizer
+    def _phase_constructions(self) -> dict[str, _Construction]:
+        from q2mm.optimizers.catalog import _cycling_constructions
 
-            optax_spec = self.full_method.split(":", 1)[1]
-            if "+" in optax_spec:
-                optax_name, schedule = optax_spec.split("+", 1)
-            else:
-                optax_name, schedule = optax_spec, None
-            return OptaxOptimizer(optimizer=optax_name, max_steps=self.full_maxiter, schedule=schedule, verbose=False)
-        if use_jaxopt:
-            from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
+        return _cycling_constructions(
+            {
+                "full_method": self.full_method,
+                "simp_method": self.simp_method,
+                "full_maxiter": self.full_maxiter,
+                "simp_maxiter": self.simp_maxiter,
+                "eps": self.eps,
+            }
+        )
 
-            return JaxOptOptimizer(method=self.full_method.split(":", 1)[1], maxiter=self.full_maxiter, verbose=False)
-        if use_basinhopping:
-            from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
+    def _build_full_optimizer(self) -> _Optimizer:
+        return self._phase_constructions()["full_optimizer"].build()
 
-            bh_spec = self.full_method.split(":", 1)[1].strip() or "L-BFGS-B" if ":" in self.full_method else "L-BFGS-B"
-            return BasinHoppingOptimizer(local_method=bh_spec, local_maxiter=self.full_maxiter, verbose=False)
-        if use_multistart:
-            from q2mm.optimizers.multistart import MultiStartOptimizer
-
-            ms_spec = self.full_method.split(":", 1)[1]
-            inner_opt = scipy_cls(method=ms_spec, maxiter=self.full_maxiter, eps=self.eps, verbose=False)
-            return MultiStartOptimizer(optimizer=inner_opt, n_starts=5, verbose=False)
-        return scipy_cls(method=self.full_method, maxiter=self.full_maxiter, eps=self.eps, verbose=False)
+    def _build_simplex_optimizer(self) -> _Optimizer:
+        return self._phase_constructions()["simplex_optimizer"].build()

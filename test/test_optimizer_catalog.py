@@ -47,13 +47,7 @@ def _assert_cycling_settings(optimizer: Any, recorded: dict[str, Any]) -> None:
         if name not in ("evaluator", "space"):
             assert name in recorded, f"OptimizationLoop.{name} is unrecorded"
             assert recorded[name] == getattr(loop, name), name
-    full = loop._build_full_optimizer(
-        loop.full_method.startswith("optax:"),
-        loop.full_method.startswith("jaxopt:"),
-        loop.full_method.startswith("basinhopping"),
-        loop.full_method.startswith("multi:"),
-        ScipyOptimizer,
-    )
+    full = loop._build_full_optimizer()
     _assert_constructor_settings(full, recorded["full_optimizer"])
     simplex = ScipyOptimizer(method=loop.simp_method, maxiter=loop.simp_maxiter, eps=loop.eps, verbose=False)
     _assert_constructor_settings(simplex, recorded["simplex_optimizer"])

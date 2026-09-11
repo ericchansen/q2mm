@@ -56,9 +56,10 @@ The record includes each built-in constructor's controls, such as stopping
 tolerances, bounds flags, schedules, seeds, and verbosity. Multi-start's
 `optimizer` entry describes its constructed inner solver. Cycling records
 its deferred loop arguments plus `full_optimizer` and `simplex_optimizer`;
-a multi-start full phase includes its own inner solver. These nested
-snapshots preserve the existing cycling choices rather than applying the
-standalone catalog's potentially different defaults.
+a multi-start full phase includes its own inner solver. Construction and
+these snapshots use the same bound constructor graph, including nested
+solvers. Cycling supplies its existing phase choices rather than applying
+the standalone catalog's potentially different defaults.
 
 Catalog and SDK/CLI overrides retain their existing precedence, including
 meaningful zero and `False` values. SciPy's `analytical_parameter_scaling`
@@ -69,6 +70,47 @@ Resolved identity already includes optimizer settings, so corrected or
 expanded records can change resolved IDs without changing the hash rule.
 These records cover Q2MM constructors, not arbitrary custom optimizer
 objects, third-party internal defaults, or adaptive solver state.
+
+### One construction owner, explicit caller policies
+
+`q2mm.optimizers.catalog` owns method parsing, concrete constructor choice,
+argument binding, nested construction, and settings serialization. Named
+catalog presets and cycling phase adapters supply explicit options to that
+owner; neither maintains a second constructor implementation. Application
+resolution applies recipe/override rules and calls the public
+`resolve_optimizer` API. Supplied objects remain the original objects and
+use the explicit capture contract below; they are not reconstructed.
+
+These entry-point differences are intentional and remain visible:
+
+| Entry point or preset | Function tolerance | Fractional bounds | Workflow default |
+| --- | --- | --- | --- |
+| SDK recommended ground state | `1e-8` | None | `single-stage` |
+| SDK recommended transition state | `1e-12` | Force constants `0.20`, equilibria `0.05` | `single-stage` |
+| Ordinary CLI single/matrix | `1e-8` | None | `single-stage` |
+| Ordinary CLI batch | `1e-8` | None | `method-e2` |
+| Explicit QFUERZA publication profile | `1e-12` | Force constants `0.20`, equilibria `0.05` | `RunProfile` default: `single-stage` |
+| Explicit Heck QFUERZA publication profile | `1e-12` | Force constants `0.05`, equilibria `0.05` | `RunProfile` default: `single-stage` |
+
+The explicit publication-profile helper is not automatically substituted
+for ordinary CLI or SDK requests. Caller overrides retain precedence.
+This consolidation does not choose a new scientific or local-basin policy.
+
+Constructor defaults also differ by caller: the catalog supplies 500
+iterations for SciPy and 2000 steps for Optax; cycling uses its 200-step
+full-phase cap by default. Catalog basin-hopping uses 25 hops and seed 0;
+cycling retains the 50-hop constructor default and no seed. Catalog
+multi-start supplies seed 0 and a 500-iteration inner cap; cycling keeps
+an unseeded five-start wrapper and its own full-phase cap and `eps`.
+Cycling's simplex phase remains a SciPy constructor.
+
+Spelling rules are preserved rather than silently broadened: cycling
+accepts `optax:adam+cosine` and `basinhopping:Powell`; catalog presets
+take schedules from their declared settings and retain their existing
+local-method defaults rather than interpreting cycling suffixes. Unknown
+catalog options are still rejected, including false-valued unknown options.
+Identical bound constructor requests build equivalent solvers, while
+different named/caller policies remain different and recorded.
 
 ---
 

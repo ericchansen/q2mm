@@ -274,7 +274,7 @@ q2mm/
 │   └── metrics.py        # Shared residual, regularization, and category metric helpers
 │
 ├── optimizers/           # Parameter fitting machinery
-│   ├── catalog.py        # Generic optimizer specifications and strict construction
+│   ├── catalog.py        # Explicit presets + canonical constructor/settings graphs
 │   ├── protocols.py      # Shared _Optimizer structural protocol
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
