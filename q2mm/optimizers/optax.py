@@ -21,6 +21,7 @@ import numpy as np
 
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator, ObjectiveGradientError
+from q2mm.optimizers.protocols import _active_value_and_gradient
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
@@ -149,8 +150,7 @@ class OptaxOptimizer:
             return evaluator.value(space.expand(x_active, base=baseline))
 
         def value_and_grad(x_active: np.ndarray) -> tuple[float, np.ndarray]:
-            val, full_grad = evaluator.value_and_gradient(space.expand(x_active, base=baseline))
-            return val, space.pack(full_grad)
+            return _active_value_and_gradient(evaluator, space, space.expand(x_active, base=baseline))
 
         initial_score = value_only(x0)
 

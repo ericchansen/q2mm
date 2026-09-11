@@ -17,6 +17,9 @@ backend sessions, so a case is prepared exactly once per executor lifetime.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from numbers import Integral
+
 import numpy as np
 
 from q2mm.objectives.metrics import (
@@ -96,6 +99,26 @@ class BaseObjectiveExecutor:
         if not np.all(np.isfinite(arr)):
             raise ValueError("full_vector must be finite.")
         return arr
+
+    def _as_derivative_indices(self, indices: Sequence[int] | np.ndarray) -> np.ndarray:
+        """Validate requested coordinates without sorting or coercing their meaning."""
+        if isinstance(indices, np.ndarray):
+            if indices.ndim != 1:
+                raise ValueError("Derivative indices must be one-dimensional.")
+            if not np.issubdtype(indices.dtype, np.integer):
+                raise TypeError("Derivative indices must use an integer array dtype.")
+        elif not isinstance(indices, Sequence) or isinstance(indices, (str, bytes)):
+            raise TypeError("Derivative indices must be a one-dimensional integer sequence.")
+        values = list(indices)
+        if any(isinstance(value, (bool, np.bool_)) or not isinstance(value, Integral) for value in values):
+            raise TypeError("Derivative indices must contain integers, not booleans or other types.")
+        if any(value < 0 or value >= self._plan.n_params for value in values):
+            raise ValueError(f"Derivative indices must be in [0, {self._plan.n_params}).")
+        if len(set(values)) != len(values):
+            raise ValueError("Derivative indices must be unique.")
+        selected = np.array(values, dtype=int)
+        selected.setflags(write=False)
+        return selected
 
     # -- abstract computation hooks ---------------------------------------
 
@@ -204,7 +227,25 @@ class BaseObjectiveExecutor:
     def gradient(self, full_vector: np.ndarray) -> np.ndarray:
         return self.value_and_gradient(full_vector)[1]
 
-    def _finite_difference_gradient(self, full_vector: np.ndarray) -> np.ndarray:
+    def value_and_gradient_selected(
+        self, full_vector: np.ndarray, indices: Sequence[int] | np.ndarray
+    ) -> tuple[float, np.ndarray]:
+        """Return only requested FD derivatives, in ``indices`` order.
+
+        The full-gradient API is unchanged. This optional path requires
+        explicit ``finite_difference`` mode; analytical/native consumers
+        continue through their full-gradient validation path.
+        """
+        full = self._as_full(full_vector)
+        selected = self._as_derivative_indices(indices)
+        if self.gradient_mode is not GradientMode.FINITE_DIFFERENCE:
+            raise ObjectiveGradientError("Selected derivatives require explicit gradient_mode=finite_difference.")
+        value = self._total(full)
+        gradient = self._finite_difference_gradient(full, selected)
+        self._record(value)
+        return value, gradient
+
+    def _finite_difference_gradient(self, full_vector: np.ndarray, indices: np.ndarray | None = None) -> np.ndarray:
         """Central finite-difference gradient of ``_total`` (includes reg).
 
         Sub-evaluations are tracked in :attr:`n_gradient_evaluations` so the
@@ -212,15 +253,16 @@ class BaseObjectiveExecutor:
         evaluation count or history.
         """
         step = self._fd_step
-        n = len(full_vector)
-        grad = np.zeros(n, dtype=float)
-        for j in range(n):
+        selected = np.arange(len(full_vector)) if indices is None else indices
+        grad = np.empty(len(selected), dtype=float)
+        for column, j in enumerate(selected):
             plus = full_vector.copy()
             plus[j] += step
             minus = full_vector.copy()
             minus[j] -= step
             f_plus = self._total(plus)
+            self._n_gradient_eval += 1
             f_minus = self._total(minus)
-            self._n_gradient_eval += 2
-            grad[j] = (f_plus - f_minus) / (2.0 * step)
+            self._n_gradient_eval += 1
+            grad[column] = (f_plus - f_minus) / (2.0 * step)
         return grad

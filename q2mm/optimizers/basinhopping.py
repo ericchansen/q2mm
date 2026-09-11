@@ -21,6 +21,7 @@ import numpy as np
 
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator
+from q2mm.optimizers.protocols import _active_value_and_gradient
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
@@ -96,7 +97,7 @@ class BasinHoppingOptimizer:
         if use_evaluator_gradient:
 
             def jac_fn(x_active: np.ndarray) -> np.ndarray:  # noqa: F811
-                return space.pack(evaluator.value_and_gradient(space.expand(x_active, base=baseline))[1])
+                return _active_value_and_gradient(evaluator, space, space.expand(x_active, base=baseline))[1]
         else:
             options["eps"] = 1e-3
 

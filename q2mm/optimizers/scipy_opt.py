@@ -34,6 +34,7 @@ import numpy as np
 
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator
+from q2mm.optimizers.protocols import _active_value_and_gradient
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
@@ -313,9 +314,8 @@ class ScipyOptimizer:
 
         def value_and_grad(x_solver: np.ndarray) -> tuple[float, np.ndarray]:
             x_active = to_physical(x_solver)
-            val, full_grad = evaluator.value_and_gradient(space.expand(x_active, base=baseline))
+            val, active_grad = _active_value_and_gradient(evaluator, space, space.expand(x_active, base=baseline))
             remember(x_active, val)
-            active_grad = space.pack(full_grad)
             return val, active_grad * half_widths if use_bound_scaling else active_grad
 
         callback = self._make_callback(evaluator, initial_score, value_only)
