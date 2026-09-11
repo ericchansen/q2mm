@@ -43,7 +43,9 @@ import numpy as np
 from q2mm.models.identifiers import canonicalize_torsion_env_id
 
 if TYPE_CHECKING:
-    from q2mm.models.forcefield import ForceField
+    from q2mm.models.forcefield import AngleParam, BondParam, ForceField, StretchBendParam, TorsionParam, VdwParam
+
+    _MembershipParameter = BondParam | AngleParam | StretchBendParam | TorsionParam | VdwParam
 
 __all__ = [
     "ParameterKind",
@@ -841,66 +843,91 @@ def opt_substructure_membership(force_field: ForceField, opt_force_field: ForceF
     Parameters are matched first
     by shared ``ff_row`` (only when both force fields share the same
     resolved ``source_path``), then by semantic chemical-identity
-    multiset matching (occurrence-order, not value-based), including bond
-    order and context for bonds. Used by the
+    multiset matching, including bond order and context for bonds.
+    Partial selection from indistinguishable candidates raises ``ValueError``
+    rather than choosing by occurrence order or scalar value. Same-source
+    torsion rows also distinguish periodicity and proper/improper kind.
+    Each subset entry can be consumed only once. Used by the
     QFUERZA publication-system loaders to build an
     :class:`ActiveParameterSpace` via :meth:`ActiveParameterSpace.from_membership`
     that keeps the literature MM3 backbone frozen and only the
     OPT-substructure rows active.
     """
+    from q2mm.models.forcefield import TorsionParam
+
     same_source = (
         force_field.source_path is not None
         and opt_force_field.source_path is not None
         and force_field.source_path.resolve() == opt_force_field.source_path.resolve()
     )
 
-    def match(attr: str, family: str) -> frozenset[int]:
-        collection = getattr(force_field, attr)
-        opt_collection = getattr(opt_force_field, attr)
-        opt_rows = Counter(p.ff_row for p in opt_collection if p.ff_row is not None)
+    def row_key(param: _MembershipParameter) -> tuple[int, ...]:
+        assert param.ff_row is not None
+        if isinstance(param, TorsionParam):
+            return (param.ff_row, param.periodicity, param.is_improper)
+        return (param.ff_row,)
+
+    def match(
+        indexed: Sequence[tuple[int, _MembershipParameter]],
+        opt_collection: Sequence[_MembershipParameter],
+        family: str,
+        label: str,
+    ) -> frozenset[int]:
         opt_ids = Counter(_membership_identity(family, p) for p in opt_collection)
+        source_groups: dict[tuple[int, ...], list[int]] = {}
+        opt_source_groups: dict[tuple[int, ...], list[_MembershipParameter]] = {}
+        fallback_groups: dict[tuple[Any, ...], list[int]] = {}
         active: set[int] = set()
-        for i, param in enumerate(collection):
+        for i, param in indexed:
             if same_source and param.ff_row is not None:
-                if opt_rows[param.ff_row] > 0:
-                    active.add(i)
-                    opt_rows[param.ff_row] -= 1
-                continue
-            ident = _membership_identity(family, param)
-            if opt_ids[ident] > 0:
-                active.add(i)
-                opt_ids[ident] -= 1
+                source_groups.setdefault(row_key(param), []).append(i)
+            else:
+                fallback_groups.setdefault(_membership_identity(family, param), []).append(i)
+        if same_source:
+            for param in opt_collection:
+                if param.ff_row is not None:
+                    opt_source_groups.setdefault(row_key(param), []).append(param)
+            for key, indices in source_groups.items():
+                requested = opt_source_groups.get(key, [])
+                count = min(len(requested), len(indices))
+                if 0 < count < len(indices):
+                    raise ValueError(f"Ambiguous {label} subset selection for source row {key}.")
+                if count:
+                    active.update(indices)
+                    # Repeated references to one source identity are not
+                    # additional requests for unrelated rowless parameters.
+                    for param in requested:
+                        opt_ids[_membership_identity(family, param)] -= 1
+        for ident, indices in fallback_groups.items():
+            count = min(opt_ids[ident], len(indices))
+            if 0 < count < len(indices):
+                raise ValueError(
+                    f"Ambiguous {label} subset selection without a shared source-row identity: {ident!r}. "
+                    "Supply an unambiguous source row or explicit active indices."
+                )
+            if count:
+                active.update(indices)
         return frozenset(active)
 
-    def match_urey_bradley() -> frozenset[int]:
-        ub_indexed = [
-            (i, a)
-            for i, a in enumerate(force_field.angles)
-            if a.ub_force_constant is not None and a.ub_equilibrium is not None
-        ]
-        opt_ub = [a for a in opt_force_field.angles if a.ub_force_constant is not None and a.ub_equilibrium is not None]
-        opt_ub_rows = Counter(a.ff_row for a in opt_ub if a.ff_row is not None)
-        opt_ub_ids = Counter(_membership_identity("angle", a) for a in opt_ub)
-        active: set[int] = set()
-        for i, angle in ub_indexed:
-            if same_source and angle.ff_row is not None:
-                if opt_ub_rows[angle.ff_row] > 0:
-                    active.add(i)
-                    opt_ub_rows[angle.ff_row] -= 1
-                continue
-            ident = _membership_identity("angle", angle)
-            if opt_ub_ids[ident] > 0:
-                active.add(i)
-                opt_ub_ids[ident] -= 1
-        return frozenset(active)
-
+    ub_indexed = [
+        (i, angle)
+        for i, angle in enumerate(force_field.angles)
+        if angle.ub_force_constant is not None and angle.ub_equilibrium is not None
+    ]
+    opt_ub = [
+        angle
+        for angle in opt_force_field.angles
+        if angle.ub_force_constant is not None and angle.ub_equilibrium is not None
+    ]
     return OptSubstructureMembership(
-        bonds=match("bonds", "bond"),
-        angles=match("angles", "angle"),
-        stretch_bends=match("stretch_bends", "stretch_bend"),
-        torsions=match("torsions", "torsion"),
-        vdws=match("vdws", "vdw"),
-        urey_bradley=match_urey_bradley(),
+        bonds=match(list(enumerate(force_field.bonds)), opt_force_field.bonds, "bond", "bonds"),
+        angles=match(list(enumerate(force_field.angles)), opt_force_field.angles, "angle", "angles"),
+        stretch_bends=match(
+            list(enumerate(force_field.stretch_bends)), opt_force_field.stretch_bends, "stretch_bend", "stretch-bend"
+        ),
+        torsions=match(list(enumerate(force_field.torsions)), opt_force_field.torsions, "torsion", "torsions"),
+        vdws=match(list(enumerate(force_field.vdws)), opt_force_field.vdws, "vdw", "vdW"),
+        urey_bradley=match(ub_indexed, opt_ub, "angle", "Urey-Bradley"),
     )
 
 
