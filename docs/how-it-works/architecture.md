@@ -1,8 +1,9 @@
 # Architecture
 
-This page describes Q2MM's internal architecture — the module layout,
-data model design, and invariants that hold across all backends and
-formats.
+Q2MM fits force-field parameters to quantum-mechanical reference data.
+This page explains which components own the scientific data, unit
+conversions, and execution contracts, so they can be composed without
+confusing a shared representation with identical physical behavior.
 
 ---
 
@@ -10,22 +11,24 @@ formats.
 
 ### 1. Format-agnostic data models
 
-All scientific algorithms operate on **format-neutral data structures**:
+Fitting code operates on **format-neutral data structures**:
 
 | Structure | Purpose |
 |-----------|---------|
-| `ForceField` | Immutable bond, angle, torsion, and vdW parameters with metadata |
-| `Molecule` | Cartesian geometry, topology, and optional Hessian |
-| `ObservationSet` | QM reference targets (energies, frequencies, geometries, eigenmatrix terms) |
+| `ForceField` | Immutable parameters, functional-form identity, and source metadata |
+| `Molecule` | Immutable atomic symbols, geometry, topology, and optional Hessian |
+| `ObservationSet` | Immutable typed reference observations and their training-case bindings |
 
-These models have no knowledge of MM3, AMBER, CHARMM, or any file format.
-Parsers and savers translate between external formats and internal models at
-the boundary.
+The models can record a functional form or source identifier without owning
+a native file parser or computational engine. Parsers and savers translate
+external representations; backend adapters implement the requested
+calculations. The optimizer consumes the resulting numerical contracts,
+not native parameter-file records.
 
 ### 2. Canonical internal units
 
-To decouple the optimizer from any particular force field convention, Q2MM
-uses a **canonical unit system** internally:
+A canonical unit specifies how to interpret a stored number. Q2MM uses
+the following **canonical units** for force-field parameters:
 
 | Quantity | Canonical Unit | Convention |
 |----------|----------------|------------|
@@ -37,125 +40,82 @@ uses a **canonical unit system** internally:
 | Angle equilibrium | degrees | — |
 | vdW radius | Å | — |
 
-This is an AMBER-like convention and the most common in computational
-chemistry. The key insight is that the **optimization pipeline** — step sizes,
-bounds, convergence criteria, and objective function weights — is calibrated
-once in canonical units and works for any force field.
+The harmonic expressions state a coefficient convention, not the complete
+energy function for every functional form. Other quantities, such as
+Hessians, have their own canonical representations. The
+[conversion helpers](https://github.com/ericchansen/q2mm/blob/0ebdece9b4042ccc41ea8650484722232ce5c871/q2mm/models/units.py)
+define mappings for particular quantities and conventions.
+
+Canonical units make data exchange consistent; they do not supply a
+universal choice of parameter bounds, step sizes, observation weights, or
+stopping criteria. Those remain explicit parts of the problem, backend,
+and optimizer configuration.
 
 **Conversion happens at the boundary:**
 
 ```mermaid
-graph TB
-    subgraph canonical ["Canonical Unit Space"]
-        direction LR
-        Q[QFUERZA] --> FF[ForceField] --> OBJ[Objective] --> OPT[Optimizer]
-        OBJ <--> ENG[MM Backend]
-    end
+flowchart LR
+    F["Native files<br/>MM3 / AMBER / Tinker"]
+    L["I/O loaders<br/>quantity- and format-specific mappings"]
+    C["Canonical models<br/>numeric values and metadata"]
+    S["I/O savers<br/>supported output mappings"]
+    B["Backend adapters<br/>native quantity conventions"]
+    E["Engine or numerical kernel"]
 
-    L["Loaders<br/><em>format → canonical</em>"] -->|"↑ on read"| canonical
-    canonical -->|"↓ on write"| R["Savers<br/><em>canonical → format</em>"]
-
-    MM3_in["MM3 .fld<br/>×71.94"] --> L
-    AMBER_in["AMBER .frcmod<br/>(identity)"] --> L
-    Tinker_in["Tinker .prm<br/>×71.94"] --> L
-
-    R --> MM3_out["MM3 .fld<br/>÷71.94"]
-    R --> AMBER_out["AMBER .frcmod<br/>(identity)"]
-    R --> Tinker_out["Tinker .prm<br/>÷71.94"]
+    F --> L --> C
+    C --> S --> F
+    C <-->|requests and results| B
+    B <--> E
 ```
 
-Each loader (e.g., `load_mm3_fld`) multiplies by the appropriate conversion
-factor on read; each saver divides on write. The optimizer never sees
-format-specific values.
+There is no single conversion factor for an entire `.fld`, `.prm`, or
+`.frcmod` file. For example, the MM3 bond, angle, and stretch-bend helpers
+use distinct mappings. OpenMM conversions also distinguish a custom force
+using `E = k(x - x0)^2` from a harmonic force using `E = 0.5 k(x - x0)^2`;
+matching unit labels alone cannot identify that coefficient convention.
+Lengths, angles, torsion coefficients, and Hessians require their own
+appropriate mappings. Some values already have canonical units, but that
+does not make a whole file or physical model an identity conversion.
 
 #### Unit type system: NewType vs Pint
 
-The conversion functions in `q2mm/models/units.py` use Python's
-[`NewType`](https://docs.python.org/3/library/typing.html#newtype) to give
-every unit quantity a distinct static type (`KcalPerMolAngSq`,
-`KJPerMolNmSq`, etc.).  At runtime these are plain `float` values — zero
-overhead.  Static type checkers (mypy, pyright) catch mismatched conversions
-at development time.
+Scalar conversion signatures use Python's
+[`NewType`](https://docs.python.org/3/library/typing.html#newtype) labels,
+such as `KcalPerMolAngSq` and `KJPerMolNmSq`, to distinguish units where
+those annotations are used. Runtime values remain numbers. These labels
+are not runtime dimensional checks and do not provide complete unit safety
+for bare floats or arrays.
 
-[Pint](https://pint.readthedocs.io/) was evaluated as an alternative because it
-provides **runtime** dimensional analysis that catches unit mismatches in
-`numpy` arrays (which `NewType` cannot cover, since `NewType` wraps scalar
-`float` only).  A real double-conversion bug in the Jaguar Hessian parser was
-found during that evaluation that `NewType` did not catch — the parser was
-incorrectly applying a unit conversion before returning a `numpy.ndarray`,
-and downstream code applied the same conversion again, inflating every force
-constant by ~9,376×.  That bug was fixed independently; see the
-[published FF validation](../benchmarks/published-ff-validation.md) work.
+[Pint](https://pint.readthedocs.io/en/stable/getting/tutorial.html) provides
+optional runtime unit tags at supported input boundaries.
+[`JaguarIn.get_hessian`](https://github.com/ericchansen/q2mm/blob/0ebdece9b4042ccc41ea8650484722232ce5c871/q2mm/io/jaguar.py)
+returns a bare NumPy array by default. With `tag_units=True` and Pint
+available, it returns a quantity tagged as `hartree/bohr**2`; Pint and its
+unit registry are loaded lazily. If Pint is absent, the current method
+still returns the bare array, even when tagging was requested.
 
-The performance evaluation found Pint's overhead to be unacceptable for
-Q2MM's hot loops:
+[`Molecule.with_hessian`](https://github.com/ericchansen/q2mm/blob/0ebdece9b4042ccc41ea8650484722232ce5c871/q2mm/models/molecule.py)
+treats bare arrays as already in canonical atomic units. Its
+[Hessian normalization helper](https://github.com/ericchansen/q2mm/blob/0ebdece9b4042ccc41ea8650484722232ce5c871/q2mm/models/hessian.py)
+converts unit-tagged inputs through `.to(...)` and extracts their numeric
+magnitude. Incompatible conversions propagate an error. Bare arrays in
+other supported units must be normalized explicitly with
+`hessian_to_atomic_units`; units cannot be inferred from the numbers alone.
 
-| Approach | µs / call | vs bare multiply |
-|----------|----------:|:----------------:|
-| Bare multiply (`k * 418.4`) | 0.05 | 1× |
-| Pint full parse (`ureg.Quantity(k, 'kcal/mol/Å²').to('kJ/mol/nm²')`) | ~111 | **~2,400×** |
-| Pint prebuilt units (reuse parsed unit objects) | ~10 | **~220×** |
-| Pint factor-only (precompute once, then bare multiply) | 0.04 | 1× |
+Internal model arrays stay numeric. The
+[JAX backend array boundary](https://github.com/ericchansen/q2mm/blob/0ebdece9b4042ccc41ea8650484722232ce5c871/q2mm/backends/mm/_jax_common.py)
+constructs JAX arrays for traced calculations rather than passing Pint
+quantities into those kernels. This describes the current data path, not
+a blanket claim about every library's JAX interoperability.
 
-The 220–2,400× overhead far exceeds the 5× acceptance threshold for hot-loop
-code.  Additional constraints:
-
-- Pint quantities are **not JAX-traceable** and cannot enter `jax.jit` or
-  `jax.grad` contexts.  Conversions must remain at the FF↔backend boundary
-  (which is already the case), but wrapping `numpy.ndarray` Hessians with
-  Pint `Quantity` objects would add friction at that boundary.
-- Q2MM's conversion functions are called millions of times during a single
-  Nelder-Mead optimization run across all parameters and molecules.
-
-**Revised position: two-tier approach.**
-
-The 5× threshold was designed for hot loops — millions of scalar calls per
-optimization.  Parser/loader boundary code runs *once per file load*.  A
-220× overhead on a 0.05 µs operation called once is ~11 µs — immeasurable.
-
-The Jaguar double-conversion bug was exactly the class of silent error that
-Pint at parser boundaries catches: if the parser had tagged its return value
-as `kJ/(mol·Å²)` and the caller had requested `.to('hartree/bohr**2')`,
-Pint would have raised a `DimensionalityError` (the `/mol` dimension is
-incompatible), surfacing the bug instead of silently inflating every force
-constant by 9,376×.
-
-**Adopted architecture:**
-
-- **I/O boundary (parsers):** can return `pint.Quantity` when callers
-  opt in (e.g. `get_hessian(tag_units=True)`) — forces callers to
-  name the target unit; raises `DimensionalityError` on incompatible unit
-  systems (e.g. molar `kJ/(mol·Å²)` vs molecular `Hartree/Bohr²`).
-  The default (`tag_units=False`) always returns a bare `np.ndarray`.
-- **Internal models and hot loops:** bare `np.ndarray` — zero overhead,
-  JAX-traceable; `NewType` for static type safety on scalar conversions.
-
-```python
-# q2mm/io/jaguar.py  — cold path: tags once per file load (opt-in)
-def get_hessian(self, num_atoms: int, *, tag_units: bool = False) -> np.ndarray:
-    ...
-    if tag_units:
-        ureg = _get_pint_ureg()
-        if ureg is not None:
-            return ureg.Quantity(hessian, "hartree/bohr**2")
-    return hessian  # bare ndarray by default
-
-# q2mm/models/molecule.py  — strips pint tags at the model boundary
-def with_hessian(self, hessian, provenance=None) -> Molecule:
-    if hessian is not None and hasattr(hessian, "magnitude") and hasattr(hessian, "to"):
-        # pint.Quantity: convert to canonical AU and extract magnitude
-        hessian = np.asarray(hessian.to("hartree/bohr**2").magnitude)
-    ...
-```
-
-If a future parser accidentally returns `kJ/(mol·Å²)` data tagged as
-`hartree/bohr**2`, the `.to("hartree/bohr**2")` call is a silent no-op —
-but the magnitude will be wrong, and the QFUERZA force constants will be
-obviously inflated.  If the data is tagged correctly as `kJ/(mol·Å²)`, the
-`.to("hartree/bohr**2")` call raises `DimensionalityError` immediately,
-surfacing the bug before it can silently corrupt any results.
-
-See `scripts/bench_pint.py` for the microbenchmark.
+Unit checks rely on truthful labels: neither a static unit type nor a
+runtime quantity can prove that the declared units match the supplied
+magnitudes or that two physical models are equivalent. Format-specific
+tests and scientific validation remain necessary. The
+[optional microbenchmark script](https://github.com/ericchansen/q2mm/blob/0ebdece9b4042ccc41ea8650484722232ce5c871/scripts/bench_pint.py)
+describes measurement workloads; its expected-output example is not a
+portable timing guarantee. This architecture does not depend on a fixed
+speed ratio.
 
 ### 3. Pluggable backends
 
@@ -179,9 +139,18 @@ prepared = backend.prepare(
 energy = prepared.energy(EnergyRequest(parameters=full_vector)).energy
 ```
 
-Each backend declares its capabilities up front and handles its own unit
-conversions between canonical units and whatever the underlying library
-expects (e.g., OpenMM uses kJ/mol internally, Tinker uses kcal/mol).
+Backend adapters own the conversions required by their native quantity
+conventions. Shared canonical units do **not** establish backend physical
+equivalence: implemented terms, interaction rules, coefficient conventions,
+and numerical controls must be checked separately before claiming
+equivalent calculations.
+
+Nor is there a universal minimizer tolerance. The
+[`MinimizationRequest` contract](https://github.com/ericchansen/q2mm/blob/0ebdece9b4042ccc41ea8650484722232ce5c871/q2mm/backends/contracts.py#L499-L518)
+defines tolerance in the backend's native units, with `None` selecting its
+native default. The same numeric value must not be assumed to select the
+same stopping criterion across engines. Correct units and finite returned
+coordinates alone do not establish convergence validity.
 
 Both built-in backends and out-of-tree plugins are declared as JSON-safe
 *manifest* mappings and validated by a single path
@@ -564,9 +533,10 @@ Columns:
 
 ## Design invariants
 
-1. **Canonical units everywhere inside the pipeline.** No format-specific unit
-   ever reaches the optimizer. Loaders convert on input; savers convert on
-   output; backends convert at their own boundary.
+1. **Explicit unit contracts at boundaries.** Models expose documented
+   canonical quantities. I/O and backend adapters own the relevant
+   conversions; unit labels do not replace input validation or prove
+   physical equivalence.
 
 2. **Immutable scientific models.** `Molecule` topology (bonds, angles) is
    fixed at construction, and `ForceField` rows are frozen dataclass values.
@@ -579,6 +549,7 @@ Columns:
    such as an OpenMM `Context`, but topology changes require a new prepared
    session.
 
-4. **Functional form consistency.** A `ForceField` carries its `functional_form`
-   from load to save. Backends and savers validate compatibility — you cannot
-   accidentally evaluate an MM3 force field with a harmonic backend.
+4. **Functional form compatibility is not complete equivalence.** A
+   `ForceField` carries its `functional_form` from load to save. Backend and
+   saver compatibility checks do not, by themselves, establish term coverage,
+   identical potentials, or matching numerical stopping rules.
