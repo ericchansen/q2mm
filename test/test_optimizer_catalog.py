@@ -265,7 +265,7 @@ def test_cycling_snapshot_and_execution_use_the_same_construction_decision(monke
     spec = replace(OPTIMIZER_CATALOG["grad-simp"], extra={"full_method": "shared-test-method"})
     optimizer, recorded = resolve_optimizer(spec)
     assert decisions == ["shared"]
-    assert builds == []
+    assert builds == ["cycling"]
     assert recorded["full_optimizer"] == plans["full_optimizer"].settings()
     assert recorded["simplex_optimizer"] == plans["simplex_optimizer"].settings()
     recorded["full_optimizer"]["optimizer"]["maxiter"] = 999
@@ -276,7 +276,7 @@ def test_cycling_snapshot_and_execution_use_the_same_construction_decision(monke
     full = loop._build_full_optimizer()
     simplex = loop._build_simplex_optimizer()
     assert decisions == ["shared"] * 3
-    assert builds == ["multistart", "scipy", "scipy"]
+    assert builds == ["cycling", "multistart", "scipy", "scipy"]
     assert isinstance(full, MultiStartOptimizer)
     assert full.n_starts == 2 and full.seed == 0
     assert isinstance(full.optimizer, ScipyOptimizer)
