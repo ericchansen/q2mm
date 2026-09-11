@@ -1,0 +1,5317 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Quantum-guided molecular mechanics force field optimization">
+      
+      
+      
+        <link rel="canonical" href="https://ericchansen.github.io/q2mm/reference/q2mm/io/tinker/">
+      
+      
+        <link rel="prev" href="../reference/">
+      
+      
+        <link rel="next" href="../xyz/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>tinker - Q2MM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#q2mm.io.tinker" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../../.." title="Q2MM" class="md-header__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Q2MM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              tinker
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../../.." title="Q2MM" class="md-nav__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Q2MM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../platform-support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    How It Works
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../how-it-works/theory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theory & Methods
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../how-it-works/fitting-objectives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fitting Objectives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../how-it-works/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../how-it-works/data-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../how-it-works/optimization-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimization Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../how-it-works/comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Differences from v4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Engines
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backend Engines
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/authoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring a Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenMM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/jax-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/jax-md/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX-MD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../backends/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Psi4 (Reference)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/optimizer-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimizer Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU Acceleration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/crossover/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    When Analytical Wins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/published-ff-validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Published FF Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/qfuerza-validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QFUERZA Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../benchmarks/qfuerza-recovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QFUERZA Recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Systems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Systems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../systems/small-molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Small Molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../systems/rh-enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh-Enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../systems/heck-relay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heck Relay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../systems/pd-allyl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pd-Allyl
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../systems/pd-conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pd 1,4-Conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../systems/rh-conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh 1,4-Conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../systems/ferrocene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ferrocene
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    q2mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1" id="__nav_9_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_1_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    q2mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../application/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    application
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_1" id="__nav_9_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    application
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../application/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../application/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../application/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../application/optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../application/persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backends/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    backends
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2" id="__nav_9_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/conformance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    conformance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    discovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backends/mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2_4" id="__nav_9_1_2_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/batched/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    batched
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/jax_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/jax_md_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_md_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/mm/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backends/qm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2_5" id="__nav_9_1_2_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    qm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/qm/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    psi4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2_6" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../backends/reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2_6" id="__nav_9_1_2_6_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_2_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/reference/ase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/reference/qcengine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qcengine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../benchmarks/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3" id="__nav_9_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/acceptance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    acceptance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/artifacts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    artifacts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    publications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/records/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    records
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/runner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    runner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../benchmarks/systems/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systems
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_10" id="__nav_9_1_3_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    systems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/systems/ch3f/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ch3f
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/systems/ch3f_sn2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ch3f_sn2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/systems/ferrocene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ferrocene
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/systems/heck_relay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    heck_relay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/systems/pd_allyl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pd_allyl
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/systems/pd_conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pd_conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/systems/rh_conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rh_conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../benchmarks/systems/rh_enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rh_enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../constants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    constants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../elements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    elements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_7" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    io
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_7" id="__nav_9_1_7_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_9_1_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    io
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../amber/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    amber
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../fchk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fchk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gaussian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    gaussian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../jaguar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaguar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../macromodel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macromodel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mm3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../mol2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mol2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qcelemental/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qcelemental
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#q2mm.io.tinker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-module"></code>&nbsp;tinker
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label=" tinker">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.io.tinker.load_tinker_prm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;load_tinker_prm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.io.tinker.save_tinker_prm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;save_tinker_prm
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../xyz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    xyz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../models/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_8" id="__nav_9_1_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    models
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/forcefield/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    forcefield
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/hessian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    hessian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/identifiers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    identifiers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/molecule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/observations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    observations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/parameters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    parameters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/problem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    problem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/publication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    publication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/seminario/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    seminario
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../models/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../objectives/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    objectives
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_9" id="__nav_9_1_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    objectives
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../objectives/jax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../objectives/metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../objectives/plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../objectives/protocols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    protocols
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../objectives/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    python
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../optimizers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimizers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_10" id="__nav_9_1_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    optimizers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/basinhopping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    basinhopping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/cycling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cycling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/jax_multistart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_multistart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/jaxopt_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaxopt_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/multistart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    multistart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/optax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optax
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/protocols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    protocols
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../optimizers/scipy_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scipy_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../preparation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    preparation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_13" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    workflows
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_13" id="__nav_9_1_13_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_13_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_13">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/method_e2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    method_e2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../workflows/single_stage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    single_stage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#q2mm.io.tinker" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-module"></code>&nbsp;tinker
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label=" tinker">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.io.tinker.load_tinker_prm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;load_tinker_prm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#q2mm.io.tinker.save_tinker_prm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;save_tinker_prm
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+  <h1>tinker</h1>
+
+<div class="doc doc-object doc-module">
+
+
+
+<h2 id="q2mm.io.tinker" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-module"></code>            <span class="doc doc-object-name doc-module-name">tinker</span>
+
+
+<a href="#q2mm.io.tinker" class="headerlink" title="Permanent link">&para;</a></h2>
+
+    <div class="doc doc-contents first">
+
+        <p>Tinker .prm file format I/O.</p>
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="q2mm.io.tinker.load_tinker_prm" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">load_tinker_prm</span>
+
+
+<a href="#q2mm.io.tinker.load_tinker_prm" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">load_tinker_prm</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="n"><span title="str">str</span></span> <span class="o">|</span> <span class="n"><span title="pathlib.Path">Path</span></span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n"><a class="autorefs autorefs-internal" title="            ForceField
+
+
+  
+      dataclass
+   (q2mm.models.forcefield.ForceField)" href="../../models/forcefield/#q2mm.models.forcefield.ForceField">ForceField</a></span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Load supported bond, angle, proper torsion and vdW parameters.</p>
+<p>Only complete <code>Q2MM</code> and <code>OPT</code> comment-header tokens select sections.
+Marked files expose only OPT sections; unmarked files expose supported
+rows throughout. Bond/angle conversions retain the MM3 convention.
+Torsion coefficients are <code>torsionunit * amplitude</code> in kcal/mol, with
+the source phase (degrees) and fold retained. The default scale is 1;
+finite nonzero file overrides are supported, but keyfiles are not read.
+Ring-specific torsions, duplicate folds and malformed triples fail.
+Other template records are retained on save, not modeled here.</p>
+
+
+<details class="references" open>
+  <summary>References</summary>
+  <p>https://tinkerdoc.readthedocs.io/en/latest/text/key/index.html#key-torsion
+https://tinkerdoc.readthedocs.io/en/latest/text/key/index.html#key-torsionunit</p>
+</details>
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>q2mm/io/tinker.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-397">397</a></span>
+<span class="normal"><a href="#__codelineno-0-398">398</a></span>
+<span class="normal"><a href="#__codelineno-0-399">399</a></span>
+<span class="normal"><a href="#__codelineno-0-400">400</a></span>
+<span class="normal"><a href="#__codelineno-0-401">401</a></span>
+<span class="normal"><a href="#__codelineno-0-402">402</a></span>
+<span class="normal"><a href="#__codelineno-0-403">403</a></span>
+<span class="normal"><a href="#__codelineno-0-404">404</a></span>
+<span class="normal"><a href="#__codelineno-0-405">405</a></span>
+<span class="normal"><a href="#__codelineno-0-406">406</a></span>
+<span class="normal"><a href="#__codelineno-0-407">407</a></span>
+<span class="normal"><a href="#__codelineno-0-408">408</a></span>
+<span class="normal"><a href="#__codelineno-0-409">409</a></span>
+<span class="normal"><a href="#__codelineno-0-410">410</a></span>
+<span class="normal"><a href="#__codelineno-0-411">411</a></span>
+<span class="normal"><a href="#__codelineno-0-412">412</a></span>
+<span class="normal"><a href="#__codelineno-0-413">413</a></span>
+<span class="normal"><a href="#__codelineno-0-414">414</a></span>
+<span class="normal"><a href="#__codelineno-0-415">415</a></span>
+<span class="normal"><a href="#__codelineno-0-416">416</a></span>
+<span class="normal"><a href="#__codelineno-0-417">417</a></span>
+<span class="normal"><a href="#__codelineno-0-418">418</a></span>
+<span class="normal"><a href="#__codelineno-0-419">419</a></span>
+<span class="normal"><a href="#__codelineno-0-420">420</a></span>
+<span class="normal"><a href="#__codelineno-0-421">421</a></span>
+<span class="normal"><a href="#__codelineno-0-422">422</a></span>
+<span class="normal"><a href="#__codelineno-0-423">423</a></span>
+<span class="normal"><a href="#__codelineno-0-424">424</a></span>
+<span class="normal"><a href="#__codelineno-0-425">425</a></span>
+<span class="normal"><a href="#__codelineno-0-426">426</a></span>
+<span class="normal"><a href="#__codelineno-0-427">427</a></span>
+<span class="normal"><a href="#__codelineno-0-428">428</a></span>
+<span class="normal"><a href="#__codelineno-0-429">429</a></span>
+<span class="normal"><a href="#__codelineno-0-430">430</a></span>
+<span class="normal"><a href="#__codelineno-0-431">431</a></span>
+<span class="normal"><a href="#__codelineno-0-432">432</a></span>
+<span class="normal"><a href="#__codelineno-0-433">433</a></span>
+<span class="normal"><a href="#__codelineno-0-434">434</a></span>
+<span class="normal"><a href="#__codelineno-0-435">435</a></span>
+<span class="normal"><a href="#__codelineno-0-436">436</a></span>
+<span class="normal"><a href="#__codelineno-0-437">437</a></span>
+<span class="normal"><a href="#__codelineno-0-438">438</a></span>
+<span class="normal"><a href="#__codelineno-0-439">439</a></span>
+<span class="normal"><a href="#__codelineno-0-440">440</a></span>
+<span class="normal"><a href="#__codelineno-0-441">441</a></span>
+<span class="normal"><a href="#__codelineno-0-442">442</a></span>
+<span class="normal"><a href="#__codelineno-0-443">443</a></span>
+<span class="normal"><a href="#__codelineno-0-444">444</a></span>
+<span class="normal"><a href="#__codelineno-0-445">445</a></span>
+<span class="normal"><a href="#__codelineno-0-446">446</a></span>
+<span class="normal"><a href="#__codelineno-0-447">447</a></span>
+<span class="normal"><a href="#__codelineno-0-448">448</a></span>
+<span class="normal"><a href="#__codelineno-0-449">449</a></span>
+<span class="normal"><a href="#__codelineno-0-450">450</a></span>
+<span class="normal"><a href="#__codelineno-0-451">451</a></span>
+<span class="normal"><a href="#__codelineno-0-452">452</a></span>
+<span class="normal"><a href="#__codelineno-0-453">453</a></span>
+<span class="normal"><a href="#__codelineno-0-454">454</a></span>
+<span class="normal"><a href="#__codelineno-0-455">455</a></span>
+<span class="normal"><a href="#__codelineno-0-456">456</a></span>
+<span class="normal"><a href="#__codelineno-0-457">457</a></span>
+<span class="normal"><a href="#__codelineno-0-458">458</a></span>
+<span class="normal"><a href="#__codelineno-0-459">459</a></span>
+<span class="normal"><a href="#__codelineno-0-460">460</a></span>
+<span class="normal"><a href="#__codelineno-0-461">461</a></span>
+<span class="normal"><a href="#__codelineno-0-462">462</a></span>
+<span class="normal"><a href="#__codelineno-0-463">463</a></span>
+<span class="normal"><a href="#__codelineno-0-464">464</a></span>
+<span class="normal"><a href="#__codelineno-0-465">465</a></span>
+<span class="normal"><a href="#__codelineno-0-466">466</a></span>
+<span class="normal"><a href="#__codelineno-0-467">467</a></span>
+<span class="normal"><a href="#__codelineno-0-468">468</a></span>
+<span class="normal"><a href="#__codelineno-0-469">469</a></span>
+<span class="normal"><a href="#__codelineno-0-470">470</a></span>
+<span class="normal"><a href="#__codelineno-0-471">471</a></span>
+<span class="normal"><a href="#__codelineno-0-472">472</a></span>
+<span class="normal"><a href="#__codelineno-0-473">473</a></span>
+<span class="normal"><a href="#__codelineno-0-474">474</a></span>
+<span class="normal"><a href="#__codelineno-0-475">475</a></span>
+<span class="normal"><a href="#__codelineno-0-476">476</a></span>
+<span class="normal"><a href="#__codelineno-0-477">477</a></span>
+<span class="normal"><a href="#__codelineno-0-478">478</a></span>
+<span class="normal"><a href="#__codelineno-0-479">479</a></span>
+<span class="normal"><a href="#__codelineno-0-480">480</a></span>
+<span class="normal"><a href="#__codelineno-0-481">481</a></span>
+<span class="normal"><a href="#__codelineno-0-482">482</a></span>
+<span class="normal"><a href="#__codelineno-0-483">483</a></span>
+<span class="normal"><a href="#__codelineno-0-484">484</a></span>
+<span class="normal"><a href="#__codelineno-0-485">485</a></span>
+<span class="normal"><a href="#__codelineno-0-486">486</a></span>
+<span class="normal"><a href="#__codelineno-0-487">487</a></span>
+<span class="normal"><a href="#__codelineno-0-488">488</a></span>
+<span class="normal"><a href="#__codelineno-0-489">489</a></span>
+<span class="normal"><a href="#__codelineno-0-490">490</a></span>
+<span class="normal"><a href="#__codelineno-0-491">491</a></span>
+<span class="normal"><a href="#__codelineno-0-492">492</a></span>
+<span class="normal"><a href="#__codelineno-0-493">493</a></span>
+<span class="normal"><a href="#__codelineno-0-494">494</a></span>
+<span class="normal"><a href="#__codelineno-0-495">495</a></span>
+<span class="normal"><a href="#__codelineno-0-496">496</a></span>
+<span class="normal"><a href="#__codelineno-0-497">497</a></span>
+<span class="normal"><a href="#__codelineno-0-498">498</a></span>
+<span class="normal"><a href="#__codelineno-0-499">499</a></span>
+<span class="normal"><a href="#__codelineno-0-500">500</a></span>
+<span class="normal"><a href="#__codelineno-0-501">501</a></span>
+<span class="normal"><a href="#__codelineno-0-502">502</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-397" name="__codelineno-0-397"></a><span class="k">def</span><span class="w"> </span><span class="nf">load_tinker_prm</span><span class="p">(</span><span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">ForceField</span><span class="p">:</span>
+<a id="__codelineno-0-398" name="__codelineno-0-398"></a><span class="w">    </span><span class="sd">"""Load supported bond, angle, proper torsion and vdW parameters.</span>
+<a id="__codelineno-0-399" name="__codelineno-0-399"></a>
+<a id="__codelineno-0-400" name="__codelineno-0-400"></a><span class="sd">    Only complete ``Q2MM`` and ``OPT`` comment-header tokens select sections.</span>
+<a id="__codelineno-0-401" name="__codelineno-0-401"></a><span class="sd">    Marked files expose only OPT sections; unmarked files expose supported</span>
+<a id="__codelineno-0-402" name="__codelineno-0-402"></a><span class="sd">    rows throughout. Bond/angle conversions retain the MM3 convention.</span>
+<a id="__codelineno-0-403" name="__codelineno-0-403"></a><span class="sd">    Torsion coefficients are ``torsionunit * amplitude`` in kcal/mol, with</span>
+<a id="__codelineno-0-404" name="__codelineno-0-404"></a><span class="sd">    the source phase (degrees) and fold retained. The default scale is 1;</span>
+<a id="__codelineno-0-405" name="__codelineno-0-405"></a><span class="sd">    finite nonzero file overrides are supported, but keyfiles are not read.</span>
+<a id="__codelineno-0-406" name="__codelineno-0-406"></a><span class="sd">    Ring-specific torsions, duplicate folds and malformed triples fail.</span>
+<a id="__codelineno-0-407" name="__codelineno-0-407"></a><span class="sd">    Other template records are retained on save, not modeled here.</span>
+<a id="__codelineno-0-408" name="__codelineno-0-408"></a>
+<a id="__codelineno-0-409" name="__codelineno-0-409"></a><span class="sd">    References:</span>
+<a id="__codelineno-0-410" name="__codelineno-0-410"></a><span class="sd">        https://tinkerdoc.readthedocs.io/en/latest/text/key/index.html#key-torsion</span>
+<a id="__codelineno-0-411" name="__codelineno-0-411"></a><span class="sd">        https://tinkerdoc.readthedocs.io/en/latest/text/key/index.html#key-torsionunit</span>
+<a id="__codelineno-0-412" name="__codelineno-0-412"></a>
+<a id="__codelineno-0-413" name="__codelineno-0-413"></a><span class="sd">    """</span>
+<a id="__codelineno-0-414" name="__codelineno-0-414"></a>    <span class="n">rows</span><span class="p">,</span> <span class="n">lines</span> <span class="o">=</span> <span class="n">_tinker_import_ff</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+<a id="__codelineno-0-415" name="__codelineno-0-415"></a>    <span class="n">torsion_unit</span> <span class="o">=</span> <span class="n">_tinker_torsion_unit</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+<a id="__codelineno-0-416" name="__codelineno-0-416"></a>    <span class="n">bonds</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-417" name="__codelineno-0-417"></a>    <span class="n">angles</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-418" name="__codelineno-0-418"></a>    <span class="n">torsions</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-419" name="__codelineno-0-419"></a>    <span class="n">vdws</span> <span class="o">=</span> <span class="p">[]</span>
+<a id="__codelineno-0-420" name="__codelineno-0-420"></a>    <span class="n">atom_elements</span> <span class="o">=</span> <span class="n">_parse_tinker_atom_elements</span><span class="p">(</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">))</span>
+<a id="__codelineno-0-421" name="__codelineno-0-421"></a>
+<a id="__codelineno-0-422" name="__codelineno-0-422"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">_elem</span><span class="p">(</span><span class="n">atom_type</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
+<a id="__codelineno-0-423" name="__codelineno-0-423"></a>        <span class="k">return</span> <span class="n">atom_elements</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">atom_type</span><span class="o">.</span><span class="n">strip</span><span class="p">(),</span> <span class="n">_extract_element</span><span class="p">(</span><span class="n">atom_type</span><span class="p">))</span>
+<a id="__codelineno-0-424" name="__codelineno-0-424"></a>
+<a id="__codelineno-0-425" name="__codelineno-0-425"></a>    <span class="n">eq_lookup</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="p">{}</span>
+<a id="__codelineno-0-426" name="__codelineno-0-426"></a>    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+<a id="__codelineno-0-427" name="__codelineno-0-427"></a>        <span class="k">if</span> <span class="n">row</span><span class="o">.</span><span class="n">ptype</span> <span class="o">==</span> <span class="s2">"be"</span> <span class="ow">or</span> <span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">ptype</span> <span class="o">==</span> <span class="s2">"ae"</span> <span class="ow">and</span> <span class="n">row</span><span class="o">.</span><span class="n">ff_col</span> <span class="o">==</span> <span class="mi">2</span><span class="p">):</span>
+<a id="__codelineno-0-428" name="__codelineno-0-428"></a>            <span class="n">eq_lookup</span><span class="p">[(</span><span class="n">row</span><span class="o">.</span><span class="n">ptype</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">)]</span> <span class="o">=</span> <span class="n">row</span><span class="o">.</span><span class="n">value</span>
+<a id="__codelineno-0-429" name="__codelineno-0-429"></a>
+<a id="__codelineno-0-430" name="__codelineno-0-430"></a>    <span class="k">for</span> <span class="n">row</span> <span class="ow">in</span> <span class="n">rows</span><span class="p">:</span>
+<a id="__codelineno-0-431" name="__codelineno-0-431"></a>        <span class="n">atom_types</span> <span class="o">=</span> <span class="n">_clean_atom_types</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">atom_types</span><span class="p">,</span> <span class="mi">4</span><span class="p">)</span>
+<a id="__codelineno-0-432" name="__codelineno-0-432"></a>
+<a id="__codelineno-0-433" name="__codelineno-0-433"></a>        <span class="k">if</span> <span class="n">row</span><span class="o">.</span><span class="n">ptype</span> <span class="o">==</span> <span class="s2">"bf"</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">atom_types</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+<a id="__codelineno-0-434" name="__codelineno-0-434"></a>            <span class="n">elems</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_elem</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">atom_types</span><span class="p">[:</span><span class="mi">2</span><span class="p">])</span>
+<a id="__codelineno-0-435" name="__codelineno-0-435"></a>            <span class="n">env_id</span> <span class="o">=</span> <span class="n">canonicalize_bond_env_id</span><span class="p">(</span><span class="n">atom_types</span><span class="p">[:</span><span class="mi">2</span><span class="p">])</span>
+<a id="__codelineno-0-436" name="__codelineno-0-436"></a>            <span class="n">eq_val</span> <span class="o">=</span> <span class="n">eq_lookup</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="s2">"be"</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">)</span>
+<a id="__codelineno-0-437" name="__codelineno-0-437"></a>            <span class="n">bonds</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+<a id="__codelineno-0-438" name="__codelineno-0-438"></a>                <span class="n">BondParam</span><span class="p">(</span>
+<a id="__codelineno-0-439" name="__codelineno-0-439"></a>                    <span class="n">elements</span><span class="o">=</span><span class="n">elems</span><span class="p">,</span>
+<a id="__codelineno-0-440" name="__codelineno-0-440"></a>                    <span class="n">equilibrium</span><span class="o">=</span><span class="n">eq_val</span><span class="p">,</span>
+<a id="__codelineno-0-441" name="__codelineno-0-441"></a>                    <span class="n">force_constant</span><span class="o">=</span><span class="n">mm3_bond_k_to_canonical</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">value</span><span class="p">),</span>
+<a id="__codelineno-0-442" name="__codelineno-0-442"></a>                    <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">"Tinker row </span><span class="si">{</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+<a id="__codelineno-0-443" name="__codelineno-0-443"></a>                    <span class="n">env_id</span><span class="o">=</span><span class="n">env_id</span><span class="p">,</span>
+<a id="__codelineno-0-444" name="__codelineno-0-444"></a>                    <span class="n">ff_row</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">,</span>
+<a id="__codelineno-0-445" name="__codelineno-0-445"></a>                <span class="p">)</span>
+<a id="__codelineno-0-446" name="__codelineno-0-446"></a>            <span class="p">)</span>
+<a id="__codelineno-0-447" name="__codelineno-0-447"></a>        <span class="k">elif</span> <span class="n">row</span><span class="o">.</span><span class="n">ptype</span> <span class="o">==</span> <span class="s2">"af"</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">atom_types</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">3</span><span class="p">:</span>
+<a id="__codelineno-0-448" name="__codelineno-0-448"></a>            <span class="n">elems</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_elem</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">atom_types</span><span class="p">[:</span><span class="mi">3</span><span class="p">])</span>
+<a id="__codelineno-0-449" name="__codelineno-0-449"></a>            <span class="n">env_id</span> <span class="o">=</span> <span class="n">canonicalize_angle_env_id</span><span class="p">(</span><span class="n">atom_types</span><span class="p">[:</span><span class="mi">3</span><span class="p">])</span>
+<a id="__codelineno-0-450" name="__codelineno-0-450"></a>            <span class="n">eq_val</span> <span class="o">=</span> <span class="n">eq_lookup</span><span class="o">.</span><span class="n">get</span><span class="p">((</span><span class="s2">"ae"</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">),</span> <span class="mf">0.0</span><span class="p">)</span>
+<a id="__codelineno-0-451" name="__codelineno-0-451"></a>            <span class="n">angles</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+<a id="__codelineno-0-452" name="__codelineno-0-452"></a>                <span class="n">AngleParam</span><span class="p">(</span>
+<a id="__codelineno-0-453" name="__codelineno-0-453"></a>                    <span class="n">elements</span><span class="o">=</span><span class="n">elems</span><span class="p">,</span>
+<a id="__codelineno-0-454" name="__codelineno-0-454"></a>                    <span class="n">equilibrium</span><span class="o">=</span><span class="n">eq_val</span><span class="p">,</span>
+<a id="__codelineno-0-455" name="__codelineno-0-455"></a>                    <span class="n">force_constant</span><span class="o">=</span><span class="n">mm3_angle_k_to_canonical</span><span class="p">(</span><span class="n">row</span><span class="o">.</span><span class="n">value</span><span class="p">),</span>
+<a id="__codelineno-0-456" name="__codelineno-0-456"></a>                    <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">"Tinker row </span><span class="si">{</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+<a id="__codelineno-0-457" name="__codelineno-0-457"></a>                    <span class="n">env_id</span><span class="o">=</span><span class="n">env_id</span><span class="p">,</span>
+<a id="__codelineno-0-458" name="__codelineno-0-458"></a>                    <span class="n">ff_row</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">,</span>
+<a id="__codelineno-0-459" name="__codelineno-0-459"></a>                <span class="p">)</span>
+<a id="__codelineno-0-460" name="__codelineno-0-460"></a>            <span class="p">)</span>
+<a id="__codelineno-0-461" name="__codelineno-0-461"></a>        <span class="k">elif</span> <span class="n">row</span><span class="o">.</span><span class="n">ptype</span> <span class="o">==</span> <span class="s2">"df"</span> <span class="ow">and</span> <span class="nb">len</span><span class="p">(</span><span class="n">atom_types</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">4</span><span class="p">:</span>
+<a id="__codelineno-0-462" name="__codelineno-0-462"></a>            <span class="n">elems</span> <span class="o">=</span> <span class="nb">tuple</span><span class="p">(</span><span class="n">_elem</span><span class="p">(</span><span class="n">t</span><span class="p">)</span> <span class="k">for</span> <span class="n">t</span> <span class="ow">in</span> <span class="n">atom_types</span><span class="p">[:</span><span class="mi">4</span><span class="p">])</span>
+<a id="__codelineno-0-463" name="__codelineno-0-463"></a>            <span class="n">env_id</span> <span class="o">=</span> <span class="n">canonicalize_torsion_env_id</span><span class="p">(</span><span class="n">atom_types</span><span class="p">[:</span><span class="mi">4</span><span class="p">])</span>
+<a id="__codelineno-0-464" name="__codelineno-0-464"></a>            <span class="n">amplitude</span><span class="p">,</span> <span class="n">phase</span><span class="p">,</span> <span class="n">periodicity</span> <span class="o">=</span> <span class="n">_tinker_torsion_terms</span><span class="p">(</span><span class="n">_tinker_tokens</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span> <span class="o">-</span> <span class="mi">1</span><span class="p">]),</span> <span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">)[</span>
+<a id="__codelineno-0-465" name="__codelineno-0-465"></a>                <span class="n">row</span><span class="o">.</span><span class="n">ff_col</span> <span class="o">-</span> <span class="mi">1</span>
+<a id="__codelineno-0-466" name="__codelineno-0-466"></a>            <span class="p">]</span>
+<a id="__codelineno-0-467" name="__codelineno-0-467"></a>            <span class="n">coefficient</span> <span class="o">=</span> <span class="n">_tinker_scaled_torsion</span><span class="p">(</span><span class="n">amplitude</span><span class="p">,</span> <span class="n">torsion_unit</span><span class="p">,</span> <span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">)</span>
+<a id="__codelineno-0-468" name="__codelineno-0-468"></a>            <span class="n">torsions</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+<a id="__codelineno-0-469" name="__codelineno-0-469"></a>                <span class="n">TorsionParam</span><span class="p">(</span>
+<a id="__codelineno-0-470" name="__codelineno-0-470"></a>                    <span class="n">elements</span><span class="o">=</span><span class="n">elems</span><span class="p">,</span>
+<a id="__codelineno-0-471" name="__codelineno-0-471"></a>                    <span class="n">periodicity</span><span class="o">=</span><span class="n">periodicity</span><span class="p">,</span>
+<a id="__codelineno-0-472" name="__codelineno-0-472"></a>                    <span class="n">force_constant</span><span class="o">=</span><span class="n">coefficient</span><span class="p">,</span>
+<a id="__codelineno-0-473" name="__codelineno-0-473"></a>                    <span class="n">phase</span><span class="o">=</span><span class="n">phase</span><span class="p">,</span>
+<a id="__codelineno-0-474" name="__codelineno-0-474"></a>                    <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">"Tinker row </span><span class="si">{</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="si">}</span><span class="s2"> V</span><span class="si">{</span><span class="n">periodicity</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+<a id="__codelineno-0-475" name="__codelineno-0-475"></a>                    <span class="n">env_id</span><span class="o">=</span><span class="n">env_id</span><span class="p">,</span>
+<a id="__codelineno-0-476" name="__codelineno-0-476"></a>                    <span class="n">ff_row</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">,</span>
+<a id="__codelineno-0-477" name="__codelineno-0-477"></a>                <span class="p">)</span>
+<a id="__codelineno-0-478" name="__codelineno-0-478"></a>            <span class="p">)</span>
+<a id="__codelineno-0-479" name="__codelineno-0-479"></a>        <span class="k">elif</span> <span class="n">row</span><span class="o">.</span><span class="n">ptype</span> <span class="o">==</span> <span class="s2">"vdw"</span><span class="p">:</span>
+<a id="__codelineno-0-480" name="__codelineno-0-480"></a>            <span class="n">parts</span> <span class="o">=</span> <span class="n">_tinker_tokens</span><span class="p">(</span><span class="n">lines</span><span class="p">[</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span> <span class="o">-</span> <span class="mi">1</span><span class="p">])</span>
+<a id="__codelineno-0-481" name="__codelineno-0-481"></a>            <span class="n">vdws</span><span class="o">.</span><span class="n">append</span><span class="p">(</span>
+<a id="__codelineno-0-482" name="__codelineno-0-482"></a>                <span class="n">VdwParam</span><span class="p">(</span>
+<a id="__codelineno-0-483" name="__codelineno-0-483"></a>                    <span class="n">atom_type</span><span class="o">=</span><span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">],</span>
+<a id="__codelineno-0-484" name="__codelineno-0-484"></a>                    <span class="n">radius</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">value</span><span class="p">,</span>
+<a id="__codelineno-0-485" name="__codelineno-0-485"></a>                    <span class="n">epsilon</span><span class="o">=</span><span class="n">_tinker_float</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span> <span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">),</span>
+<a id="__codelineno-0-486" name="__codelineno-0-486"></a>                    <span class="n">reduction</span><span class="o">=</span><span class="n">_tinker_float</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">4</span><span class="p">],</span> <span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">)</span> <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">parts</span><span class="p">)</span> <span class="o">==</span> <span class="mi">5</span> <span class="k">else</span> <span class="mf">0.0</span><span class="p">,</span>
+<a id="__codelineno-0-487" name="__codelineno-0-487"></a>                    <span class="n">element</span><span class="o">=</span><span class="n">_elem</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span>
+<a id="__codelineno-0-488" name="__codelineno-0-488"></a>                    <span class="n">label</span><span class="o">=</span><span class="sa">f</span><span class="s2">"Tinker row </span><span class="si">{</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+<a id="__codelineno-0-489" name="__codelineno-0-489"></a>                    <span class="n">ff_row</span><span class="o">=</span><span class="n">row</span><span class="o">.</span><span class="n">ff_row</span><span class="p">,</span>
+<a id="__codelineno-0-490" name="__codelineno-0-490"></a>                <span class="p">)</span>
+<a id="__codelineno-0-491" name="__codelineno-0-491"></a>            <span class="p">)</span>
+<a id="__codelineno-0-492" name="__codelineno-0-492"></a>
+<a id="__codelineno-0-493" name="__codelineno-0-493"></a>    <span class="k">return</span> <span class="n">ForceField</span><span class="p">(</span>
+<a id="__codelineno-0-494" name="__codelineno-0-494"></a>        <span class="n">name</span><span class="o">=</span><span class="sa">f</span><span class="s2">"Tinker from </span><span class="si">{</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">"</span><span class="p">,</span>
+<a id="__codelineno-0-495" name="__codelineno-0-495"></a>        <span class="n">bonds</span><span class="o">=</span><span class="n">bonds</span><span class="p">,</span>
+<a id="__codelineno-0-496" name="__codelineno-0-496"></a>        <span class="n">angles</span><span class="o">=</span><span class="n">angles</span><span class="p">,</span>
+<a id="__codelineno-0-497" name="__codelineno-0-497"></a>        <span class="n">torsions</span><span class="o">=</span><span class="n">torsions</span><span class="p">,</span>
+<a id="__codelineno-0-498" name="__codelineno-0-498"></a>        <span class="n">vdws</span><span class="o">=</span><span class="n">vdws</span><span class="p">,</span>
+<a id="__codelineno-0-499" name="__codelineno-0-499"></a>        <span class="n">source_path</span><span class="o">=</span><span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">),</span>
+<a id="__codelineno-0-500" name="__codelineno-0-500"></a>        <span class="n">source_format</span><span class="o">=</span><span class="s2">"tinker_prm"</span><span class="p">,</span>
+<a id="__codelineno-0-501" name="__codelineno-0-501"></a>        <span class="n">functional_form</span><span class="o">=</span><span class="n">FunctionalForm</span><span class="o">.</span><span class="n">MM3</span><span class="p">,</span>
+<a id="__codelineno-0-502" name="__codelineno-0-502"></a>    <span class="p">)</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="q2mm.io.tinker.save_tinker_prm" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">save_tinker_prm</span>
+
+
+<a href="#q2mm.io.tinker.save_tinker_prm" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="doc-signature highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">save_tinker_prm</span><span class="p">(</span><span class="n">ff</span><span class="p">:</span> <span class="n"><a class="autorefs autorefs-internal" title="            ForceField
+
+
+  
+      dataclass
+   (q2mm.models.forcefield.ForceField)" href="../../models/forcefield/#q2mm.models.forcefield.ForceField">ForceField</a></span><span class="p">,</span> <span class="n">path</span><span class="p">:</span> <span class="n"><span title="str">str</span></span> <span class="o">|</span> <span class="n"><span title="pathlib.Path">Path</span></span><span class="p">,</span> <span class="n">template_path</span><span class="p">:</span> <span class="n"><span title="str">str</span></span> <span class="o">|</span> <span class="n"><span title="pathlib.Path">Path</span></span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">section_name</span><span class="p">:</span> <span class="n"><span title="str">str</span></span> <span class="o">=</span> <span class="s1">'Generated'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n"><span title="pathlib.Path">Path</span></span>
+</code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Write the force field to Tinker .prm format.</p>
+<p>If a template path is provided, or this force field came from
+:func:<code>load_tinker_prm</code>, only changed scalar tokens are replaced.
+Unmodified bytes, comments and extra angle equilibria are preserved.
+Source rows disambiguate repeated environments. Torsion components bind
+by environment, source row and fold, not tuple position or object edit
+history. Missing/ambiguous identities, additions/removals and non-scalar
+differences within a bound identity fail before output is opened.
+Only the existing generic bond contexts <code>""</code> and <code>"0000 0000"</code>
+compare as equivalent; bound parameters and source columns are not
+rewritten for this alias.
+A row's original fold set and column order are retained; balanced
+permutations of the requested components serialize by those identities.
+Torsion phase edits are supported, and amplitudes are divided by the
+template's torsionunit.
+Forward/reversed proper-torsion identities and element tuples bind by
+the model's existing equivalence without changing source atom order.
+Serialized amplitudes must reconstruct finite coefficients without
+underflow; required data must fit Tinker's 240-byte records. Comment
+tails beginning with # or ! may extend beyond that limit.
+Otherwise, a minimal Q2MM bond/angle/vdW section is written; proper
+torsions require a template. Every emitted standalone scalar must be
+finite before and after conversion. Generated bond/angle atom types
+must have the expected arity and each be a nonempty unquoted token.
+Their existing environment/default-element inference is unchanged.
+vdW types obey the same token rule but do not infer a class from an element.
+Native wildcard class 0 remains supported.
+Generated standalone bond/angle/vdW identities must be unique, including
+reversal and integer-class aliases. Metadata and scalar differences do
+not distinguish duplicate native rows. Symbolic labels stay case-sensitive,
+emitted tokens stay unchanged, and template row binding is unaffected.
+This is not a complete Tinker FF writer.</p>
+<p>Populated canonical stretch-bend, Urey-Bradley, bond dipole, bond order,
+non-generic bond context, improper, CMAP and nonbonded exclusion content
+raises <code>ValueError</code> before writing. Opaque native template records
+remain untouched; they do not establish support for corresponding
+canonical terms. vdW reduction is supported both with and without a
+template.</p>
+
+
+            <details class="mkdocstrings-source">
+              <summary>Source code in <code>q2mm/io/tinker.py</code></summary>
+              <div class="highlight"><table class="highlighttable"><tr><td class="linenos"><div class="linenodiv"><pre><span></span><span class="normal"><a href="#__codelineno-0-624">624</a></span>
+<span class="normal"><a href="#__codelineno-0-625">625</a></span>
+<span class="normal"><a href="#__codelineno-0-626">626</a></span>
+<span class="normal"><a href="#__codelineno-0-627">627</a></span>
+<span class="normal"><a href="#__codelineno-0-628">628</a></span>
+<span class="normal"><a href="#__codelineno-0-629">629</a></span>
+<span class="normal"><a href="#__codelineno-0-630">630</a></span>
+<span class="normal"><a href="#__codelineno-0-631">631</a></span>
+<span class="normal"><a href="#__codelineno-0-632">632</a></span>
+<span class="normal"><a href="#__codelineno-0-633">633</a></span>
+<span class="normal"><a href="#__codelineno-0-634">634</a></span>
+<span class="normal"><a href="#__codelineno-0-635">635</a></span>
+<span class="normal"><a href="#__codelineno-0-636">636</a></span>
+<span class="normal"><a href="#__codelineno-0-637">637</a></span>
+<span class="normal"><a href="#__codelineno-0-638">638</a></span>
+<span class="normal"><a href="#__codelineno-0-639">639</a></span>
+<span class="normal"><a href="#__codelineno-0-640">640</a></span>
+<span class="normal"><a href="#__codelineno-0-641">641</a></span>
+<span class="normal"><a href="#__codelineno-0-642">642</a></span>
+<span class="normal"><a href="#__codelineno-0-643">643</a></span>
+<span class="normal"><a href="#__codelineno-0-644">644</a></span>
+<span class="normal"><a href="#__codelineno-0-645">645</a></span>
+<span class="normal"><a href="#__codelineno-0-646">646</a></span>
+<span class="normal"><a href="#__codelineno-0-647">647</a></span>
+<span class="normal"><a href="#__codelineno-0-648">648</a></span>
+<span class="normal"><a href="#__codelineno-0-649">649</a></span>
+<span class="normal"><a href="#__codelineno-0-650">650</a></span>
+<span class="normal"><a href="#__codelineno-0-651">651</a></span>
+<span class="normal"><a href="#__codelineno-0-652">652</a></span>
+<span class="normal"><a href="#__codelineno-0-653">653</a></span>
+<span class="normal"><a href="#__codelineno-0-654">654</a></span>
+<span class="normal"><a href="#__codelineno-0-655">655</a></span>
+<span class="normal"><a href="#__codelineno-0-656">656</a></span>
+<span class="normal"><a href="#__codelineno-0-657">657</a></span>
+<span class="normal"><a href="#__codelineno-0-658">658</a></span>
+<span class="normal"><a href="#__codelineno-0-659">659</a></span>
+<span class="normal"><a href="#__codelineno-0-660">660</a></span>
+<span class="normal"><a href="#__codelineno-0-661">661</a></span>
+<span class="normal"><a href="#__codelineno-0-662">662</a></span>
+<span class="normal"><a href="#__codelineno-0-663">663</a></span>
+<span class="normal"><a href="#__codelineno-0-664">664</a></span>
+<span class="normal"><a href="#__codelineno-0-665">665</a></span>
+<span class="normal"><a href="#__codelineno-0-666">666</a></span>
+<span class="normal"><a href="#__codelineno-0-667">667</a></span>
+<span class="normal"><a href="#__codelineno-0-668">668</a></span>
+<span class="normal"><a href="#__codelineno-0-669">669</a></span>
+<span class="normal"><a href="#__codelineno-0-670">670</a></span>
+<span class="normal"><a href="#__codelineno-0-671">671</a></span>
+<span class="normal"><a href="#__codelineno-0-672">672</a></span>
+<span class="normal"><a href="#__codelineno-0-673">673</a></span>
+<span class="normal"><a href="#__codelineno-0-674">674</a></span>
+<span class="normal"><a href="#__codelineno-0-675">675</a></span>
+<span class="normal"><a href="#__codelineno-0-676">676</a></span>
+<span class="normal"><a href="#__codelineno-0-677">677</a></span>
+<span class="normal"><a href="#__codelineno-0-678">678</a></span>
+<span class="normal"><a href="#__codelineno-0-679">679</a></span>
+<span class="normal"><a href="#__codelineno-0-680">680</a></span>
+<span class="normal"><a href="#__codelineno-0-681">681</a></span>
+<span class="normal"><a href="#__codelineno-0-682">682</a></span>
+<span class="normal"><a href="#__codelineno-0-683">683</a></span>
+<span class="normal"><a href="#__codelineno-0-684">684</a></span>
+<span class="normal"><a href="#__codelineno-0-685">685</a></span>
+<span class="normal"><a href="#__codelineno-0-686">686</a></span>
+<span class="normal"><a href="#__codelineno-0-687">687</a></span>
+<span class="normal"><a href="#__codelineno-0-688">688</a></span>
+<span class="normal"><a href="#__codelineno-0-689">689</a></span>
+<span class="normal"><a href="#__codelineno-0-690">690</a></span>
+<span class="normal"><a href="#__codelineno-0-691">691</a></span>
+<span class="normal"><a href="#__codelineno-0-692">692</a></span>
+<span class="normal"><a href="#__codelineno-0-693">693</a></span>
+<span class="normal"><a href="#__codelineno-0-694">694</a></span>
+<span class="normal"><a href="#__codelineno-0-695">695</a></span>
+<span class="normal"><a href="#__codelineno-0-696">696</a></span>
+<span class="normal"><a href="#__codelineno-0-697">697</a></span>
+<span class="normal"><a href="#__codelineno-0-698">698</a></span>
+<span class="normal"><a href="#__codelineno-0-699">699</a></span>
+<span class="normal"><a href="#__codelineno-0-700">700</a></span>
+<span class="normal"><a href="#__codelineno-0-701">701</a></span>
+<span class="normal"><a href="#__codelineno-0-702">702</a></span>
+<span class="normal"><a href="#__codelineno-0-703">703</a></span>
+<span class="normal"><a href="#__codelineno-0-704">704</a></span>
+<span class="normal"><a href="#__codelineno-0-705">705</a></span>
+<span class="normal"><a href="#__codelineno-0-706">706</a></span>
+<span class="normal"><a href="#__codelineno-0-707">707</a></span>
+<span class="normal"><a href="#__codelineno-0-708">708</a></span></pre></div></td><td class="code"><div><pre><span></span><code><a id="__codelineno-0-624" name="__codelineno-0-624"></a><span class="k">def</span><span class="w"> </span><span class="nf">save_tinker_prm</span><span class="p">(</span>
+<a id="__codelineno-0-625" name="__codelineno-0-625"></a>    <span class="n">ff</span><span class="p">:</span> <span class="n">ForceField</span><span class="p">,</span>
+<a id="__codelineno-0-626" name="__codelineno-0-626"></a>    <span class="n">path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span><span class="p">,</span>
+<a id="__codelineno-0-627" name="__codelineno-0-627"></a>    <span class="n">template_path</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="n">Path</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span>
+<a id="__codelineno-0-628" name="__codelineno-0-628"></a>    <span class="o">*</span><span class="p">,</span>
+<a id="__codelineno-0-629" name="__codelineno-0-629"></a>    <span class="n">section_name</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="s2">"Generated"</span><span class="p">,</span>
+<a id="__codelineno-0-630" name="__codelineno-0-630"></a><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Path</span><span class="p">:</span>
+<a id="__codelineno-0-631" name="__codelineno-0-631"></a><span class="w">    </span><span class="sd">"""Write the force field to Tinker .prm format.</span>
+<a id="__codelineno-0-632" name="__codelineno-0-632"></a>
+<a id="__codelineno-0-633" name="__codelineno-0-633"></a><span class="sd">    If a template path is provided, or this force field came from</span>
+<a id="__codelineno-0-634" name="__codelineno-0-634"></a><span class="sd">    :func:`load_tinker_prm`, only changed scalar tokens are replaced.</span>
+<a id="__codelineno-0-635" name="__codelineno-0-635"></a><span class="sd">    Unmodified bytes, comments and extra angle equilibria are preserved.</span>
+<a id="__codelineno-0-636" name="__codelineno-0-636"></a><span class="sd">    Source rows disambiguate repeated environments. Torsion components bind</span>
+<a id="__codelineno-0-637" name="__codelineno-0-637"></a><span class="sd">    by environment, source row and fold, not tuple position or object edit</span>
+<a id="__codelineno-0-638" name="__codelineno-0-638"></a><span class="sd">    history. Missing/ambiguous identities, additions/removals and non-scalar</span>
+<a id="__codelineno-0-639" name="__codelineno-0-639"></a><span class="sd">    differences within a bound identity fail before output is opened.</span>
+<a id="__codelineno-0-640" name="__codelineno-0-640"></a><span class="sd">    Only the existing generic bond contexts ``""`` and ``"0000 0000"``</span>
+<a id="__codelineno-0-641" name="__codelineno-0-641"></a><span class="sd">    compare as equivalent; bound parameters and source columns are not</span>
+<a id="__codelineno-0-642" name="__codelineno-0-642"></a><span class="sd">    rewritten for this alias.</span>
+<a id="__codelineno-0-643" name="__codelineno-0-643"></a><span class="sd">    A row's original fold set and column order are retained; balanced</span>
+<a id="__codelineno-0-644" name="__codelineno-0-644"></a><span class="sd">    permutations of the requested components serialize by those identities.</span>
+<a id="__codelineno-0-645" name="__codelineno-0-645"></a><span class="sd">    Torsion phase edits are supported, and amplitudes are divided by the</span>
+<a id="__codelineno-0-646" name="__codelineno-0-646"></a><span class="sd">    template's torsionunit.</span>
+<a id="__codelineno-0-647" name="__codelineno-0-647"></a><span class="sd">    Forward/reversed proper-torsion identities and element tuples bind by</span>
+<a id="__codelineno-0-648" name="__codelineno-0-648"></a><span class="sd">    the model's existing equivalence without changing source atom order.</span>
+<a id="__codelineno-0-649" name="__codelineno-0-649"></a><span class="sd">    Serialized amplitudes must reconstruct finite coefficients without</span>
+<a id="__codelineno-0-650" name="__codelineno-0-650"></a><span class="sd">    underflow; required data must fit Tinker's 240-byte records. Comment</span>
+<a id="__codelineno-0-651" name="__codelineno-0-651"></a><span class="sd">    tails beginning with # or ! may extend beyond that limit.</span>
+<a id="__codelineno-0-652" name="__codelineno-0-652"></a><span class="sd">    Otherwise, a minimal Q2MM bond/angle/vdW section is written; proper</span>
+<a id="__codelineno-0-653" name="__codelineno-0-653"></a><span class="sd">    torsions require a template. Every emitted standalone scalar must be</span>
+<a id="__codelineno-0-654" name="__codelineno-0-654"></a><span class="sd">    finite before and after conversion. Generated bond/angle atom types</span>
+<a id="__codelineno-0-655" name="__codelineno-0-655"></a><span class="sd">    must have the expected arity and each be a nonempty unquoted token.</span>
+<a id="__codelineno-0-656" name="__codelineno-0-656"></a><span class="sd">    Their existing environment/default-element inference is unchanged.</span>
+<a id="__codelineno-0-657" name="__codelineno-0-657"></a><span class="sd">    vdW types obey the same token rule but do not infer a class from an element.</span>
+<a id="__codelineno-0-658" name="__codelineno-0-658"></a><span class="sd">    Native wildcard class 0 remains supported.</span>
+<a id="__codelineno-0-659" name="__codelineno-0-659"></a><span class="sd">    Generated standalone bond/angle/vdW identities must be unique, including</span>
+<a id="__codelineno-0-660" name="__codelineno-0-660"></a><span class="sd">    reversal and integer-class aliases. Metadata and scalar differences do</span>
+<a id="__codelineno-0-661" name="__codelineno-0-661"></a><span class="sd">    not distinguish duplicate native rows. Symbolic labels stay case-sensitive,</span>
+<a id="__codelineno-0-662" name="__codelineno-0-662"></a><span class="sd">    emitted tokens stay unchanged, and template row binding is unaffected.</span>
+<a id="__codelineno-0-663" name="__codelineno-0-663"></a><span class="sd">    This is not a complete Tinker FF writer.</span>
+<a id="__codelineno-0-664" name="__codelineno-0-664"></a>
+<a id="__codelineno-0-665" name="__codelineno-0-665"></a><span class="sd">    Populated canonical stretch-bend, Urey-Bradley, bond dipole, bond order,</span>
+<a id="__codelineno-0-666" name="__codelineno-0-666"></a><span class="sd">    non-generic bond context, improper, CMAP and nonbonded exclusion content</span>
+<a id="__codelineno-0-667" name="__codelineno-0-667"></a><span class="sd">    raises ``ValueError`` before writing. Opaque native template records</span>
+<a id="__codelineno-0-668" name="__codelineno-0-668"></a><span class="sd">    remain untouched; they do not establish support for corresponding</span>
+<a id="__codelineno-0-669" name="__codelineno-0-669"></a><span class="sd">    canonical terms. vdW reduction is supported both with and without a</span>
+<a id="__codelineno-0-670" name="__codelineno-0-670"></a><span class="sd">    template.</span>
+<a id="__codelineno-0-671" name="__codelineno-0-671"></a><span class="sd">    """</span>
+<a id="__codelineno-0-672" name="__codelineno-0-672"></a>    <span class="n">_validate_form_for_format</span><span class="p">(</span><span class="n">ff</span><span class="p">,</span> <span class="s2">"tinker_prm"</span><span class="p">)</span>
+<a id="__codelineno-0-673" name="__codelineno-0-673"></a>    <span class="n">_validate_tinker_export_terms</span><span class="p">(</span><span class="n">ff</span><span class="p">,</span> <span class="n">supports_reduction</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<a id="__codelineno-0-674" name="__codelineno-0-674"></a>    <span class="n">output_path</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">path</span><span class="p">)</span>
+<a id="__codelineno-0-675" name="__codelineno-0-675"></a>    <span class="n">template</span> <span class="o">=</span> <span class="n">Path</span><span class="p">(</span><span class="n">template_path</span><span class="p">)</span> <span class="k">if</span> <span class="n">template_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span> <span class="k">else</span> <span class="kc">None</span>
+<a id="__codelineno-0-676" name="__codelineno-0-676"></a>    <span class="k">if</span> <span class="n">template</span> <span class="ow">is</span> <span class="kc">None</span> <span class="ow">and</span> <span class="n">ff</span><span class="o">.</span><span class="n">source_format</span> <span class="o">==</span> <span class="s2">"tinker_prm"</span> <span class="ow">and</span> <span class="n">ff</span><span class="o">.</span><span class="n">source_path</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-677" name="__codelineno-0-677"></a>        <span class="n">template</span> <span class="o">=</span> <span class="n">ff</span><span class="o">.</span><span class="n">source_path</span>
+<a id="__codelineno-0-678" name="__codelineno-0-678"></a>
+<a id="__codelineno-0-679" name="__codelineno-0-679"></a>    <span class="k">if</span> <span class="n">template</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<a id="__codelineno-0-680" name="__codelineno-0-680"></a>        <span class="n">lines</span> <span class="o">=</span> <span class="n">_tinker_template_lines</span><span class="p">(</span><span class="n">ff</span><span class="p">,</span> <span class="n">template</span><span class="p">)</span>
+<a id="__codelineno-0-681" name="__codelineno-0-681"></a>        <span class="n">_validate_tinker_record_lengths</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+<a id="__codelineno-0-682" name="__codelineno-0-682"></a>        <span class="k">with</span> <span class="n">output_path</span><span class="o">.</span><span class="n">open</span><span class="p">(</span><span class="s2">"w"</span><span class="p">,</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">,</span> <span class="n">newline</span><span class="o">=</span><span class="s2">""</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+<a id="__codelineno-0-683" name="__codelineno-0-683"></a>            <span class="n">f</span><span class="o">.</span><span class="n">writelines</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+<a id="__codelineno-0-684" name="__codelineno-0-684"></a>        <span class="k">return</span> <span class="n">output_path</span>
+<a id="__codelineno-0-685" name="__codelineno-0-685"></a>
+<a id="__codelineno-0-686" name="__codelineno-0-686"></a>    <span class="k">if</span> <span class="n">ff</span><span class="o">.</span><span class="n">torsions</span><span class="p">:</span>
+<a id="__codelineno-0-687" name="__codelineno-0-687"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="s2">"Tinker torsion export requires a source template"</span><span class="p">)</span>
+<a id="__codelineno-0-688" name="__codelineno-0-688"></a>    <span class="n">lines</span> <span class="o">=</span> <span class="p">[</span><span class="s2">"# Q2MM</span><span class="se">\n</span><span class="s2">"</span><span class="p">,</span> <span class="sa">f</span><span class="s2">"# OPT </span><span class="si">{</span><span class="n">section_name</span><span class="si">}</span><span class="se">\n</span><span class="s2">"</span><span class="p">]</span>
+<a id="__codelineno-0-689" name="__codelineno-0-689"></a>    <span class="n">identities</span><span class="p">:</span> <span class="nb">set</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="o">...</span><span class="p">]]]</span> <span class="o">=</span> <span class="nb">set</span><span class="p">()</span>
+<a id="__codelineno-0-690" name="__codelineno-0-690"></a>    <span class="k">for</span> <span class="n">bond</span> <span class="ow">in</span> <span class="n">ff</span><span class="o">.</span><span class="n">bonds</span><span class="p">:</span>
+<a id="__codelineno-0-691" name="__codelineno-0-691"></a>        <span class="n">_require_finite_tinker_values</span><span class="p">(</span><span class="n">bond</span><span class="o">.</span><span class="n">force_constant</span><span class="p">,</span> <span class="n">bond</span><span class="o">.</span><span class="n">equilibrium</span><span class="p">)</span>
+<a id="__codelineno-0-692" name="__codelineno-0-692"></a>        <span class="n">atom_types</span> <span class="o">=</span> <span class="n">_tinker_atom_types</span><span class="p">(</span><span class="n">bond</span><span class="o">.</span><span class="n">env_id</span><span class="p">,</span> <span class="n">bond</span><span class="o">.</span><span class="n">elements</span><span class="p">)</span>
+<a id="__codelineno-0-693" name="__codelineno-0-693"></a>        <span class="n">line</span> <span class="o">=</span> <span class="n">_format_tinker_bond_line</span><span class="p">(</span><span class="n">atom_types</span><span class="p">,</span> <span class="n">canonical_to_mm3_bond_k</span><span class="p">(</span><span class="n">bond</span><span class="o">.</span><span class="n">force_constant</span><span class="p">),</span> <span class="n">bond</span><span class="o">.</span><span class="n">equilibrium</span><span class="p">)</span>
+<a id="__codelineno-0-694" name="__codelineno-0-694"></a>        <span class="n">_require_unique_tinker_types</span><span class="p">(</span><span class="n">identities</span><span class="p">,</span> <span class="s2">"bond"</span><span class="p">,</span> <span class="n">atom_types</span><span class="p">)</span>
+<a id="__codelineno-0-695" name="__codelineno-0-695"></a>        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+<a id="__codelineno-0-696" name="__codelineno-0-696"></a>    <span class="k">for</span> <span class="n">angle</span> <span class="ow">in</span> <span class="n">ff</span><span class="o">.</span><span class="n">angles</span><span class="p">:</span>
+<a id="__codelineno-0-697" name="__codelineno-0-697"></a>        <span class="n">_require_finite_tinker_values</span><span class="p">(</span><span class="n">angle</span><span class="o">.</span><span class="n">force_constant</span><span class="p">,</span> <span class="n">angle</span><span class="o">.</span><span class="n">equilibrium</span><span class="p">)</span>
+<a id="__codelineno-0-698" name="__codelineno-0-698"></a>        <span class="n">atom_types</span> <span class="o">=</span> <span class="n">_tinker_atom_types</span><span class="p">(</span><span class="n">angle</span><span class="o">.</span><span class="n">env_id</span><span class="p">,</span> <span class="n">angle</span><span class="o">.</span><span class="n">elements</span><span class="p">)</span>
+<a id="__codelineno-0-699" name="__codelineno-0-699"></a>        <span class="n">line</span> <span class="o">=</span> <span class="n">_format_tinker_angle_line</span><span class="p">(</span><span class="n">atom_types</span><span class="p">,</span> <span class="n">canonical_to_mm3_angle_k</span><span class="p">(</span><span class="n">angle</span><span class="o">.</span><span class="n">force_constant</span><span class="p">),</span> <span class="n">angle</span><span class="o">.</span><span class="n">equilibrium</span><span class="p">)</span>
+<a id="__codelineno-0-700" name="__codelineno-0-700"></a>        <span class="n">_require_unique_tinker_types</span><span class="p">(</span><span class="n">identities</span><span class="p">,</span> <span class="s2">"angle"</span><span class="p">,</span> <span class="n">atom_types</span><span class="p">)</span>
+<a id="__codelineno-0-701" name="__codelineno-0-701"></a>        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+<a id="__codelineno-0-702" name="__codelineno-0-702"></a>    <span class="k">for</span> <span class="n">vdw</span> <span class="ow">in</span> <span class="n">ff</span><span class="o">.</span><span class="n">vdws</span><span class="p">:</span>
+<a id="__codelineno-0-703" name="__codelineno-0-703"></a>        <span class="n">line</span> <span class="o">=</span> <span class="n">_format_tinker_vdw_line</span><span class="p">(</span><span class="n">vdw</span><span class="o">.</span><span class="n">atom_type</span><span class="p">,</span> <span class="n">vdw</span><span class="o">.</span><span class="n">radius</span><span class="p">,</span> <span class="n">vdw</span><span class="o">.</span><span class="n">epsilon</span><span class="p">,</span> <span class="n">vdw</span><span class="o">.</span><span class="n">reduction</span><span class="p">)</span>
+<a id="__codelineno-0-704" name="__codelineno-0-704"></a>        <span class="n">_require_unique_tinker_types</span><span class="p">(</span><span class="n">identities</span><span class="p">,</span> <span class="s2">"vdW"</span><span class="p">,</span> <span class="p">(</span><span class="n">vdw</span><span class="o">.</span><span class="n">atom_type</span><span class="p">,))</span>
+<a id="__codelineno-0-705" name="__codelineno-0-705"></a>        <span class="n">lines</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">line</span><span class="p">)</span>
+<a id="__codelineno-0-706" name="__codelineno-0-706"></a>    <span class="n">_validate_tinker_record_lengths</span><span class="p">(</span><span class="n">lines</span><span class="p">)</span>
+<a id="__codelineno-0-707" name="__codelineno-0-707"></a>    <span class="n">output_path</span><span class="o">.</span><span class="n">write_text</span><span class="p">(</span><span class="s2">""</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">lines</span><span class="p">),</span> <span class="n">encoding</span><span class="o">=</span><span class="s2">"utf-8"</span><span class="p">)</span>
+<a id="__codelineno-0-708" name="__codelineno-0-708"></a>    <span class="k">return</span> <span class="n">output_path</span>
+</code></pre></div></td></tr></table></div>
+            </details>
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../../..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "toc.follow"], "search": "../../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+        <script src="../../../../javascripts/benchmarks.js"></script>
+      
+    
+  </body>
+</html>
