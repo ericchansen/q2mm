@@ -157,12 +157,21 @@ class ObjectiveEvaluator(Protocol):
 
     @property
     def n_evaluations(self) -> int:
-        """Number of scalar objective evaluations counted via :meth:`value`."""
+        """Completed recorded objective evaluations, not optimizer iterations.
+
+        A ``value`` call or value/gradient pair counts once. Native optimizer
+        callbacks use ``record_evaluation`` after returning a scalar; abstract
+        tracing and calls that raise before returning a scalar do not count.
+        """
         ...
 
     @property
     def n_gradient_evaluations(self) -> int:
-        """Extra evaluations spent inside finite-difference gradients."""
+        """Additional scalar work inside executor-owned finite differences.
+
+        This is not an analytical-gradient call count and is separate from
+        ``n_evaluations``.
+        """
         ...
 
     @property
@@ -181,7 +190,9 @@ class ObjectiveEvaluator(Protocol):
         :attr:`n_evaluations` **without** re-running the backend.  Used by
         optimizers (e.g. SciPy ``least_squares``) whose native callback
         already computed the residuals, so the evaluation count and history
-        track the true ``nfev`` with no duplicate backend work.
+        track completed calls with no duplicate backend work. JaxOpt's
+        concrete native value/gradient callback uses the same recorder,
+        once per returned pair, including a nonfinite returned scalar.
         """
         ...
 

@@ -6,6 +6,12 @@ Runs a jaxopt solver (L-BFGS by default) driven by a
 makes ``solver.run`` execute a Python while-loop that dispatches the
 per-molecule compiled functions each step, so no single XLA program ever
 contains all molecules.
+
+Each completed concrete native callback records one full-objective
+evaluation through the evaluator's existing recorder. This includes
+line-search calls and the final native probe, in addition to the existing
+initial/final host ``value`` calls. Tracing is not recorded, and counts are
+not inferred from solver iterations or state totals.
 """
 
 from __future__ import annotations
@@ -81,6 +87,10 @@ class JaxOptOptimizer:
 
         def vag_fn(x_active: Any):  # noqa: ANN202
             loss, full_grad = evaluator.value_and_grad_jax(expand_jax(x_active))
+            # jit=False dispatches concrete callbacks; abstract tracing is
+            # not an evaluation. A completed value/gradient pair counts once.
+            if not any(isinstance(value, jax.core.Tracer) for value in (x_active, loss, full_grad)):
+                evaluator.record_evaluation(float(loss))
             return loss, full_grad[active_indices_jax]
 
         method_str = f"jaxopt:{self.method}"
