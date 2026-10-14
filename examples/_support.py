@@ -161,15 +161,3 @@ def parameter_counts(problem: OptimizationProblem) -> dict[str, dict[str, int]]:
         }
         for kind in sorted(totals)
     }
-
-
-def with_final_force_field(problem: OptimizationProblem, final_vector: np.ndarray) -> OptimizationProblem:
-    """Return a problem whose baseline is the supplied full final vector."""
-    vector = np.array(final_vector, dtype=float, copy=True)
-    force_field = problem.layout.replace(problem.starting_force_field, vector)
-    active_space = ActiveParameterSpace(
-        layout=problem.layout,
-        baseline=vector,
-        active_indices=problem.active_space.active_indices,
-    )
-    return dataclasses.replace(problem, starting_force_field=force_field, active_space=active_space)

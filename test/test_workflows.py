@@ -9,6 +9,8 @@ metrics as the direct call.
 """
 
 from __future__ import annotations
+
+from q2mm.settings import ObjectiveSettings, ScipySettings, SingleStageSettings
 from q2mm.backends.registry import load_backend
 
 import numpy as np
@@ -32,6 +34,13 @@ class TestWorkflowProtocol:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         assert isinstance(ScipyOptimizer(), _Optimizer)
+
+    def test_single_stage_configuration_uses_supplied_immutable_settings(self) -> None:
+        settings = SingleStageSettings()
+        workflow = SingleStageWorkflow(settings)
+        assert workflow.settings is settings
+        assert workflow.name == settings.name
+        assert workflow.configuration_settings() == settings.model_dump(mode="json")
 
 
 class TestStageRecordDataclass:
@@ -204,10 +213,10 @@ class TestSingleStageWorkflowParity:
         make_evaluator_direct = make_evaluator_factory(
             backend,
             problem_direct.starting_force_field,
-            executor="jax",
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
         )
         obj_direct = make_evaluator_direct(ObjectivePlan.from_problem(problem_direct))
-        opt_direct = ScipyOptimizer(method="L-BFGS-B", maxiter=5, ftol=1e-6, verbose=False)
+        opt_direct = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=5, ftol=1e-06, verbose=False))
         direct_result = opt_direct.optimize(obj_direct, problem_direct.active_space)
 
         case_workflow, backend = self._load()
@@ -215,9 +224,9 @@ class TestSingleStageWorkflowParity:
         make_evaluator_workflow = make_evaluator_factory(
             backend,
             problem_workflow.starting_force_field,
-            executor="jax",
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
         )
-        opt_workflow = ScipyOptimizer(method="L-BFGS-B", maxiter=5, ftol=1e-6, verbose=False)
+        opt_workflow = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=5, ftol=1e-06, verbose=False))
         workflow_result = SingleStageWorkflow().run(problem_workflow, make_evaluator_workflow, opt_workflow, n_evals=0)
 
         np.testing.assert_array_equal(direct_result.final_params, workflow_result.final_params)
@@ -231,8 +240,12 @@ class TestSingleStageWorkflowParity:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = SingleStageWorkflow().run(problem, make_evaluator, opt, n_evals=0)
 
         assert result.category_metrics, "expected at least one residual category"
@@ -246,8 +259,12 @@ class TestSingleStageWorkflowParity:
         case, backend = self._load()
         problem = case.problem
 
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=2, ftol=1e-06, verbose=False))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = SingleStageWorkflow().run(problem, make_evaluator, opt, n_evals=0)
 
         np.testing.assert_array_equal(result.initial_params, problem.layout.vector(problem.starting_force_field))
@@ -258,8 +275,12 @@ class TestSingleStageWorkflowParity:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = SingleStageWorkflow().run(problem, make_evaluator, opt, n_evals=3)
         assert len(result.initial_samples) == 3
         assert len(result.final_samples) == 3
@@ -271,8 +292,12 @@ class TestSingleStageWorkflowParity:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = SingleStageWorkflow().run(problem, make_evaluator, opt, n_evals=0)
         assert result.initial_samples == ()
         assert result.final_samples == ()
@@ -286,7 +311,7 @@ class TestSingleStageWorkflowParity:
         make_evaluator = make_evaluator_factory(
             backend,
             problem.starting_force_field,
-            executor="jax",
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
         )
         obj = make_evaluator(ObjectivePlan.from_problem(problem))
         params = problem.layout.vector(problem.starting_force_field)

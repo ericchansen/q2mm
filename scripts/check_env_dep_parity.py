@@ -1,41 +1,18 @@
 #!/usr/bin/env python3
-"""Assert backend extras in pyproject.toml are present in matching CI env files.
+"""Check runtime and relevant extra dependencies in the six CI environments.
 
-Background
-----------
-Backend test jobs install q2mm with ``pip install -e . --no-deps`` and rely on
-the conda env baked into the CI container image to provide native deps. If a
-new dep is added to a ``[project.optional-dependencies]`` extra in
-``pyproject.toml`` but the matching ``.github/envs/<backend>.yml`` is not
-updated, the dep silently goes missing from CI — exactly the bug that bit
-PR #250 (jaxopt was in the ``[jax]`` extra but not in ``full.yml``).
-
-This script enforces two contracts:
-
-1. Every package declared in a backend extra must appear in both the
-   backend-specific env file and ``full.yml``.
-2. Every package in the core ``[project] dependencies`` list must appear in
-   *every* backend env file. ``pip install -e . --no-deps`` skips them, so a
-   core dep missing from a backend env breaks collection (e.g. PR #250 added
-   ``pyyaml`` as a core dep but no backend env declared it, and every backend
-   test job failed with ``ModuleNotFoundError: No module named 'yaml'``).
-
-Run manually:
-    python scripts/check_env_dep_parity.py
-
-Wired into CI lint job. Exit code 0 = parity OK, non-zero = drift detected.
+Image jobs install Q2MM with ``--no-deps`` and require ``pip check``. Each
+environment must therefore supply all core requirements plus the extras
+actually exercised by its native/pairwise jobs. Standalone JAX uses normal
+PyPI installation, not a native image. There is no kitchen-sink environment.
 """
 
 from __future__ import annotations
 
 import re
 import sys
+import tomllib
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # Python 3.10 — use the tomli backport (stdlib tomllib lands in 3.11)
-    import tomli as tomllib
 
 import yaml
 
@@ -44,17 +21,15 @@ PYPROJECT = REPO_ROOT / "pyproject.toml"
 ENVS_DIR = REPO_ROOT / ".github" / "envs"
 
 # Map a pyproject extra name to the env files it must be a subset of.
-# Extras not listed here (e.g. ``amber``, ``qcel``, ``optimize``, ``dev``,
+# Extras not listed here (e.g. ``amber``, ``qcel``, ``dev``,
 # ``docs``) are not enforced because they have no corresponding CI env file.
 EXTRA_TO_ENV_FILES: dict[str, tuple[str, ...]] = {
-    "openmm": ("openmm.yml", "full.yml"),
-    "jax": ("jax.yml", "full.yml"),
-    "jax-md": ("jax-md.yml", "full.yml"),
+    "openmm": ("openmm.yml", "openmm-jax.yml", "openmm-tinker.yml"),
+    "jax": ("openmm-jax.yml",),
+    "jax-md": ("jax-md.yml",),
+    "qcengine": ("psi4.yml",),
+    "optimize": ("openmm.yml", "tinker.yml", "jax-md.yml", "psi4.yml", "openmm-jax.yml", "openmm-tinker.yml"),
 }
-
-# Packages that are always present in every env file as baseline (python,
-# numpy, scipy, pytest, ruff). Listing them in extras shouldn't trigger drift.
-BASELINE_PACKAGES: frozenset[str] = frozenset({"python", "numpy", "scipy", "pytest", "ruff", "pip"})
 
 
 def _normalize(name: str) -> str:
@@ -93,8 +68,8 @@ def load_env_packages(env_file: Path) -> set[str]:
     pkgs: set[str] = set()
     for entry in data.get("dependencies", []):
         if isinstance(entry, str):
-            # ``python=3.12`` → python
-            pkgs.add(_normalize(entry.split("=", 1)[0].split("<", 1)[0]))
+            # ``python=3.14`` → python
+            pkgs.add(_strip_marker_and_specifier(entry))
         elif isinstance(entry, dict) and "pip" in entry:
             for pip_entry in entry["pip"]:
                 pkgs.add(_strip_marker_and_specifier(pip_entry))
@@ -113,7 +88,7 @@ def check_parity() -> list[str]:
             errors.append(f"pyproject.toml extra [{extra_name}] is missing — expected by check_env_dep_parity.py")
             continue
 
-        required = extras[extra_name] - BASELINE_PACKAGES
+        required = extras[extra_name]
         for env_filename in env_filenames:
             env_path = ENVS_DIR / env_filename
             if not env_path.exists():
@@ -121,7 +96,7 @@ def check_parity() -> list[str]:
                 continue
 
             present = load_env_packages(env_path)
-            missing = required - present - BASELINE_PACKAGES
+            missing = required - present
             if missing:
                 errors.append(
                     f"{env_filename} is missing packages from "
@@ -133,11 +108,11 @@ def check_parity() -> list[str]:
 
     # Contract 2: every core dep must appear in every backend env file.
     # `pip install -e . --no-deps` skips them, so the env must provide them.
-    required_core = core_deps - BASELINE_PACKAGES
+    required_core = core_deps
     if required_core:
         for env_path in sorted(ENVS_DIR.glob("*.yml")):
             present = load_env_packages(env_path)
-            missing = required_core - present - BASELINE_PACKAGES
+            missing = required_core - present
             if missing:
                 errors.append(
                     f"{env_path.name} is missing core deps from "

@@ -1,8 +1,8 @@
 """Parametrized contract tests for all MM backends.
 
-Uses the backend registry to discover available backends at collection
-time and runs the same behavioral tests on every backend.  This
-guarantees that all backends satisfy the :class:`Backend` ABC contract.
+Backend-specific parameter markers select each implementation explicitly.
+Missing optional backends are skipped, independently of which unrelated
+packages happen to be installed.
 
 Engine-specific tests (MM3 formula known-values, cross-backend parity,
 internal helpers, context/handle reuse) stay in their own backend files.
@@ -26,7 +26,7 @@ import numpy as np
 import pytest
 
 from q2mm.backends.contracts import Backend, Capability
-from q2mm.backends.registry import available_mm_backends, load_backend
+from q2mm.backends.registry import load_backend
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
 from q2mm.models.molecule import Molecule
 from q2mm.models.parameters import ParameterLayout
@@ -40,10 +40,17 @@ from test._shared import (
 )
 
 
-_AVAILABLE = sorted(name for name in set(available_mm_backends()) | {"tinker"} if backend_is_usable(name))
-
-if not _AVAILABLE:
-    pytest.skip("no MM backends available", allow_module_level=True)
+_BACKENDS = tuple(
+    pytest.param(
+        name,
+        id=name,
+        marks=(
+            getattr(pytest.mark, name.replace("-", "_")),
+            pytest.mark.skipif(not backend_is_usable(name), reason=f"{name} is not configured"),
+        ),
+    )
+    for name in ("openmm", "tinker", "jax", "jax-md")
+)
 
 
 def _functional_form(backend: Backend) -> FunctionalForm:
@@ -109,7 +116,7 @@ def _ethane_ff(backend: Backend, torsion_k: float = 0.15) -> ForceField:
     )
 
 
-@pytest.fixture(scope="module", params=_AVAILABLE, ids=_AVAILABLE)
+@pytest.fixture(scope="module", params=_BACKENDS)
 def engine_name(request: pytest.FixtureRequest) -> str:
     """Yield each available MM backend name in turn."""
     return request.param
@@ -714,7 +721,7 @@ class TestTorsionEnergy:
         """Cross-backend parity: torsion energy must agree with OpenMM reference."""
         if backend.info.name.startswith("OpenMM"):
             pytest.skip("Reference backend")
-        if "openmm" not in available_mm_backends():
+        if not backend_is_usable("openmm"):
             pytest.skip("OpenMM not available for reference comparison")
         openmm = load_backend("openmm")
         mol, ff = ethane

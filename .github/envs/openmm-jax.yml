@@ -1,0 +1,21 @@
+name: q2mm-openmm-jax
+# Both implementations and their Python closure are PyPI-owned.
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - pip
+  - pip:
+    - openmm==8.6.1
+    - jax==0.11.2
+    - jaxlib==0.11.2
+    - jaxopt
+    - optax
+    - numpy
+    - scipy
+    - pyyaml
+    - pydantic>=2.14.1,<3
+    - pydantic-settings>=2.16.0,<3
+    - pytest
+    - setuptools>=80
+    - setuptools-scm>=10.3.4

@@ -14,11 +14,13 @@ declare a non-``NONE`` gradient mode.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from importlib.util import find_spec
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from q2mm.settings import OptaxSettings
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator, ObjectiveGradientError
 from q2mm.optimizers.protocols import _active_value_and_gradient
@@ -57,69 +59,42 @@ _OPTIMIZER_REGISTRY: dict[str, str] = {"adam": "adam", "adamw": "adamw", "adagra
 class OptaxOptimizer:
     """Force field optimizer using optax gradient transformations."""
 
-    def __init__(
-        self,
-        optimizer: str = "adam",
-        learning_rate: float = 1e-3,
-        max_steps: int = 1000,
-        ftol: float = 1e-8,
-        grad_norm_tol: float = 1e-6,
-        patience: int = 20,
-        momentum: float = 0.9,
-        b1: float = 0.9,
-        b2: float = 0.999,
-        schedule: str | None = None,
-        decay_rate: float = 0.99,
-        use_bounds: bool = True,
-        divergence_factor: float | None = 3.0,
-        divergence_patience: int = 10,
-        verbose: bool = True,
-        log_interval: int = 50,
-    ) -> None:
-        if optimizer not in _OPTIMIZER_REGISTRY:
-            raise ValueError(f"Unknown optimizer '{optimizer}'. Choose from: {', '.join(sorted(_OPTIMIZER_REGISTRY))}")
-        self.optimizer_name = optimizer
-        self.learning_rate = learning_rate
-        self.max_steps = max_steps
-        self.ftol = ftol
-        self.grad_norm_tol = grad_norm_tol
-        self.patience = patience
-        self.momentum = momentum
-        self.b1 = b1
-        self.b2 = b2
-        self.schedule = schedule
-        self.decay_rate = decay_rate
-        self.use_bounds = use_bounds
-        self.divergence_factor = divergence_factor
-        self.divergence_patience = divergence_patience
-        self.verbose = verbose
-        self.log_interval = log_interval
+    def __init__(self, settings: OptaxSettings = OptaxSettings()) -> None:
+        self.settings = settings
+
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Return the immutable configured controls as JSON data."""
+        return self.settings.model_dump(mode="json")
 
     def _build_optimizer(self) -> object:
         ensure_optax()
         lr = self._build_schedule()
-        name = _OPTIMIZER_REGISTRY[self.optimizer_name]
+        name = _OPTIMIZER_REGISTRY[self.settings.optimizer]
         if name == "adam":
-            return optax.adam(learning_rate=lr, b1=self.b1, b2=self.b2)
+            return optax.adam(learning_rate=lr, b1=self.settings.b1, b2=self.settings.b2)
         if name == "adamw":
-            return optax.adamw(learning_rate=lr, b1=self.b1, b2=self.b2)
+            return optax.adamw(learning_rate=lr, b1=self.settings.b1, b2=self.settings.b2)
         if name == "adagrad":
             return optax.adagrad(learning_rate=lr)
         if name == "sgd":
-            return optax.sgd(learning_rate=lr, momentum=self.momentum)
+            return optax.sgd(learning_rate=lr, momentum=self.settings.momentum)
         raise ValueError(f"Unhandled optimizer: {name}")  # pragma: no cover
 
     def _build_schedule(self) -> float | object:
         ensure_optax()
-        if self.schedule is None:
-            return self.learning_rate
-        if self.schedule == "cosine":
-            return optax.cosine_decay_schedule(init_value=self.learning_rate, decay_steps=self.max_steps)
-        if self.schedule == "exponential":
-            return optax.exponential_decay(
-                init_value=self.learning_rate, transition_steps=self.max_steps, decay_rate=self.decay_rate
+        if self.settings.schedule is None:
+            return self.settings.learning_rate
+        if self.settings.schedule == "cosine":
+            return optax.cosine_decay_schedule(
+                init_value=self.settings.learning_rate, decay_steps=self.settings.max_steps
             )
-        raise ValueError(f"Unknown schedule '{self.schedule}'. Choose from: 'cosine', 'exponential', or None.")
+        if self.settings.schedule == "exponential":
+            return optax.exponential_decay(
+                init_value=self.settings.learning_rate,
+                transition_steps=self.settings.max_steps,
+                decay_rate=self.settings.decay_rate,
+            )
+        raise ValueError(f"Unknown schedule '{self.settings.schedule}'. Choose from: 'cosine', 'exponential', or None.")
 
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Run at most ``max_steps`` updates, returning the best evaluated point.
@@ -154,7 +129,7 @@ class OptaxOptimizer:
 
         initial_score = value_only(x0)
 
-        bounds_arr = space.bounds if self.use_bounds else None
+        bounds_arr = space.bounds if self.settings.use_bounds else None
         lower = upper = None
         if bounds_arr is not None and bounds_arr.size > 0:
             lower = bounds_arr[:, 0]
@@ -164,19 +139,19 @@ class OptaxOptimizer:
         params = jnp.array(x0, dtype=jnp.float64)
         opt_state = opt.init(params)
 
-        method_str = f"optax:{self.optimizer_name}"
-        if self.schedule:
-            method_str += f"+{self.schedule}"
+        method_str = f"optax:{self.settings.optimizer}"
+        if self.settings.schedule:
+            method_str += f"+{self.settings.schedule}"
 
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Starting %s: %d active params (%d total), initial score %.6f, lr=%.1e, max_steps=%d",
                 method_str,
                 space.n_active,
                 space.n_full,
                 initial_score,
-                self.learning_rate,
-                self.max_steps,
+                self.settings.learning_rate,
+                self.settings.max_steps,
             )
 
         if x0.size == 0:
@@ -200,13 +175,13 @@ class OptaxOptimizer:
         best_score = initial_score
         best_params = x0.copy()
         converged = False
-        message = f"Max steps ({self.max_steps}) reached"
+        message = f"Max steps ({self.settings.max_steps}) reached"
         stall_count = 0
         diverge_count = 0
         prev_score = initial_score
         n_updates = 0
 
-        for step in range(self.max_steps):
+        for step in range(self.settings.max_steps):
             params_np = np.asarray(params, dtype=np.float64)
             score, grad_active = value_and_grad(params_np)
             grad_np = np.asarray(grad_active, dtype=np.float64)
@@ -216,37 +191,37 @@ class OptaxOptimizer:
                 best_params = params_np.copy()
 
             grad_norm = float(np.linalg.norm(grad_np))
-            if self.verbose and (step + 1) % self.log_interval == 0:
+            if self.settings.verbose and (step + 1) % self.settings.log_interval == 0:
                 logger.info(
                     "  updates %4d  score %.6f  grad_norm %.2e  best %.6f", n_updates, score, grad_norm, best_score
                 )
 
-            if grad_norm < self.grad_norm_tol:
+            if grad_norm < self.settings.grad_norm_tol:
                 converged = True
-                message = f"Converged: gradient norm {grad_norm:.2e} < {self.grad_norm_tol:.2e}"
+                message = f"Converged: gradient norm {grad_norm:.2e} < {self.settings.grad_norm_tol:.2e}"
                 break
 
             if n_updates > 0 and prev_score > 0:
                 rel_change = abs(prev_score - score) / prev_score
-                if rel_change < self.ftol:
+                if rel_change < self.settings.ftol:
                     stall_count += 1
-                    if stall_count >= self.patience:
+                    if stall_count >= self.settings.patience:
                         converged = True
-                        message = f"Converged: score plateau for {self.patience} steps (rel_change < {self.ftol:.1e})"
+                        message = f"Converged: score plateau for {self.settings.patience} steps (rel_change < {self.settings.ftol:.1e})"
                         break
                 else:
                     stall_count = 0
 
-            if self.divergence_factor is not None and initial_score > 0:
-                threshold = initial_score * self.divergence_factor
+            if self.settings.divergence_factor is not None and initial_score > 0:
+                threshold = initial_score * self.settings.divergence_factor
                 if score > threshold:
                     diverge_count += 1
-                    if diverge_count >= self.divergence_patience:
+                    if diverge_count >= self.settings.divergence_patience:
                         message = (
                             f"Abandoned: score {score:.1f} > {threshold:.1f} "
-                            f"({self.divergence_factor:.0f}× initial) for {self.divergence_patience} steps"
+                            f"({self.settings.divergence_factor:.0f}× initial) for {self.settings.divergence_patience} steps"
                         )
-                        if self.verbose:
+                        if self.settings.verbose:
                             logger.warning(message)
                         break
                 else:
@@ -274,7 +249,7 @@ class OptaxOptimizer:
         final_params = space.expand(best_params, base=baseline)
         final_score = float(value_only(best_params))
 
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Optimization %s: score %.6f → %.6f (%d updates)",
                 "converged" if converged else "stopped",

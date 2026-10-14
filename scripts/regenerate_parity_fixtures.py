@@ -2,7 +2,7 @@
 """Regenerate legacy Seminario parity fixtures from an upstream worktree."""
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import importlib
 import importlib.util
 import json
@@ -141,7 +141,7 @@ def _generate_sn2_fixture(modules: dict[str, Any], upstream_commit: str) -> dict
     return {
         "metadata": {
             "system": "ch3f-sn2",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "generator": "scripts/regenerate_parity_fixtures.py",
             "upstream_commit": upstream_commit,
             "xyz_path": _relative(xyz_path),
@@ -244,7 +244,7 @@ def _generate_rh_fixture(modules: dict[str, Any], upstream_commit: str) -> dict[
     return {
         "metadata": {
             "system": "rh-enamide",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "generator": "scripts/regenerate_parity_fixtures.py",
             "upstream_commit": upstream_commit,
             "mm3_path": _relative(mm3_path),

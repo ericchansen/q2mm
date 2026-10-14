@@ -1,7 +1,7 @@
 """QCElemental interop for Q2MM molecules.
 
 Converts between :class:`~q2mm.models.molecule.Molecule` and
-``qcelemental.models.Molecule`` (geometry in Bohr, per QCElemental
+``qcelemental.models.v2.Molecule`` (geometry in Bohr, per QCElemental
 convention, vs. Q2MM's canonical Ångström).
 """
 
@@ -16,10 +16,12 @@ from q2mm.models.molecule import Bond, Molecule
 
 try:
     import qcelemental as qcel
+    from qcelemental.models.v2 import Molecule as _QCSchemaMolecule
 
     _HAS_QCEL = True
 except ImportError:  # pragma: no cover - exercised only without qcelemental installed
     qcel = None
+    _QCSchemaMolecule = None
     _HAS_QCEL = False
 
 
@@ -37,7 +39,7 @@ def molecule_from_qcel(mol: Any, name: str = "") -> Molecule:
     """Create a :class:`Molecule` from a QCElemental Molecule object.
 
     Args:
-        mol: QCElemental ``Molecule`` with geometry in Bohr.
+        mol: QCElemental v2 ``Molecule`` with geometry in Bohr.
         name: Display name for the molecule.
 
     Returns:
@@ -96,8 +98,10 @@ def molecule_to_qcel(molecule: Molecule) -> Any:
         molecule: Source molecule.
 
     Returns:
-        A ``qcelemental.models.Molecule`` with geometry in Bohr and
-        connectivity derived from detected/supplied bonds.
+        A ``qcelemental.models.v2.Molecule`` with geometry in Bohr in the
+        supplied coordinate frame. QCElemental rounds coordinates to eight
+        decimal places. Only explicitly supplied bonds become connectivity;
+        inferred topology remains unspecified.
 
     Raises:
         ImportError: If ``qcelemental`` is not installed.
@@ -111,6 +115,8 @@ def molecule_to_qcel(molecule: Molecule) -> Any:
         "geometry": coords_bohr.flatten().tolist(),
         "molecular_charge": molecule.charge,
         "molecular_multiplicity": molecule.multiplicity,
+        "fix_com": True,
+        "fix_orientation": True,
     }
     if molecule.bonds_explicit and molecule.bonds:
         connectivity = []
@@ -127,4 +133,4 @@ def molecule_to_qcel(molecule: Molecule) -> Any:
         kwargs["connectivity"] = connectivity
     elif molecule.bonds_explicit:
         kwargs["extras"] = {_EXPLICIT_EMPTY_CONNECTIVITY_KEY: True}
-    return qcel.models.Molecule(**kwargs)
+    return _QCSchemaMolecule(**kwargs)

@@ -40,6 +40,7 @@ from q2mm.models.seminario import qfuerza_fresh
 from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.settings import ScipySettings
 
 OUT_DIR = REPO_ROOT / "test" / "fixtures" / "full_loop"
 GS_FCHK = REPO_ROOT / "examples" / "ethane" / "GS.fchk"
@@ -109,7 +110,7 @@ def main() -> None:
     sem_score = evaluator.value(sem_vec)
 
     t0 = time.perf_counter()
-    opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+    opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
     result = opt.optimize(evaluator, space)
     t_opt = time.perf_counter() - t0
     final_vec = result.final_params

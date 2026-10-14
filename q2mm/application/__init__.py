@@ -24,10 +24,9 @@ from .models import (
 )
 
 _LAZY_EXPORTS = {
-    "ConfigurationProvider": ("q2mm.application.configuration", "ConfigurationProvider"),
     "evaluate": ("q2mm.application.evaluation", "evaluate"),
-    "evaluate_problem": ("q2mm.application.evaluation", "evaluate_problem"),
-    "evaluate_property": ("q2mm.application.evaluation", "evaluate_property"),
+    "evaluate_reference": ("q2mm.application.evaluation", "evaluate_reference"),
+    "capture_execution_configuration": ("q2mm.application.configuration", "capture_execution_configuration"),
     "optimize": ("q2mm.application.optimization", "optimize"),
     "MANIFEST_SUFFIX": ("q2mm.application.persistence", "MANIFEST_SUFFIX"),
     "save": ("q2mm.application.persistence", "save"),
@@ -49,7 +48,6 @@ def __getattr__(name: str) -> Any:
 
 __all__ = [
     "MANIFEST_SUFFIX",
-    "ConfigurationProvider",
     "ApplicationConfigurationError",
     "ApplicationError",
     "ApplicationEvaluationError",
@@ -65,8 +63,8 @@ __all__ = [
     "ResolvedWorkflowConfiguration",
     "SavedOutput",
     "evaluate",
-    "evaluate_problem",
-    "evaluate_property",
+    "evaluate_reference",
+    "capture_execution_configuration",
     "optimize",
     "problem_fingerprint",
     "problem_input_fingerprints",

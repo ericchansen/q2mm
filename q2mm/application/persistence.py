@@ -24,7 +24,8 @@ from .models import (
     SavedOutput,
 )
 
-MANIFEST_SUFFIX = ".manifest.json"
+MANIFEST_SUFFIX: str = ".manifest.json"
+"""Filename suffix for versioned optimization-run provenance sidecars."""
 _INTERNAL_ARTIFACT_NAME = re.compile(r"\..*\.q2mm-(?:reservation|.*-[0-9a-f]{32}\.tmp)", re.IGNORECASE | re.DOTALL)
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ def _persistence_errors(target: Path) -> Iterator[None]:
     """Share the existing write-error policy without changing interruption handling."""
     try:
         yield
-    except (OutputFormatError, OutputExistsError):
+    except OutputFormatError, OutputExistsError:
         raise
     except Exception as exc:
         raise PersistenceError(f"Could not save {target}: {exc}") from exc
@@ -151,7 +152,6 @@ def _configuration_payload(configuration: ResolvedExecutionConfiguration) -> dic
             "gradient_mode": executor.gradient_mode,
             "fd_step": executor.fd_step,
         },
-        "overrides": list(configuration.overrides),
         "regularization": configuration.regularization,
         "n_evals": configuration.n_evals,
         "ratio_tol": configuration.ratio_tol,
@@ -161,7 +161,7 @@ def _configuration_payload(configuration: ResolvedExecutionConfiguration) -> dic
 def _manifest_payload(run: OptimizationRun, format_name: str) -> dict[str, Any]:
     return {
         "schema": "q2mm.optimization-run-manifest",
-        "schema_version": 1,
+        "schema_version": run.schema_version,
         "force_field_format": format_name,
         "problem_fingerprint": run.problem_fingerprint,
         "layout_fingerprint": run.layout_fingerprint,

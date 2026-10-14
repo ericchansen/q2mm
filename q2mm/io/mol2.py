@@ -274,7 +274,7 @@ class Mol2:
             # partial_charge (column 9) comes as a string — cast to float
             try:
                 charge = float(atom_split[8])
-            except (IndexError, ValueError):
+            except IndexError, ValueError:
                 charge = None
             x, y, z = (float(v) for v in atom_split[2:5])
             atoms.append(

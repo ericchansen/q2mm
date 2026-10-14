@@ -14,6 +14,8 @@ Tests the full pipeline: QM data → Seminario → initial FF → scipy optimize
 """
 
 from __future__ import annotations
+
+from q2mm.settings import ScipySettings
 from q2mm.backends.contracts import (
     EnergyRequest,
     FrequencyRequest,
@@ -250,7 +252,7 @@ class TestSeminarioOptimizePipeline:
                 ref = ref.with_frequency(f, data_idx=j, weight=0.001, case_id="0")
 
         obj, _layout, space = _build_objective(ff, backend, [mol], ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=100, verbose=False))
         result = opt.optimize(obj, space)
 
         assert result.final_score < result.initial_score
@@ -283,7 +285,7 @@ class TestCrossBackendOptimization:
         for label, backend in [("OpenMM", load_backend("openmm")), ("Tinker", _tinker_backend())]:
             true_ff, guess_ff, mols, ref, eng = _make_energy_only_problem(backend=backend)
             obj, _layout, space = _build_objective(guess_ff, eng, mols, ref)
-            opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+            opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
             results[label] = opt.optimize(obj, space)
 
         for label, result in results.items():
@@ -311,10 +313,7 @@ class TestMultiMethodConvergence:
         for method in ["L-BFGS-B", "Nelder-Mead", "least_squares"]:
             obj, _layout, space = _build_objective(guess_ff, backend, mols, ref)
             opt = ScipyOptimizer(
-                method=method,
-                maxiter=300,
-                use_bounds=(method != "Nelder-Mead"),
-                verbose=False,
+                ScipySettings(method=method, maxiter=300, use_bounds=method != "Nelder-Mead", verbose=False)
             )
             results[method] = opt.optimize(obj, space)
 
@@ -384,7 +383,7 @@ class TestOptimizationRoundtrip:
         true_ff, guess_ff, mols, ref, backend = _make_water_problem()
 
         obj, layout, space = _build_objective(guess_ff, backend, mols, ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = opt.optimize(obj, space)
 
         true_params = layout.vector(true_ff)
@@ -402,7 +401,7 @@ class TestOptimizationRoundtrip:
         true_ff, guess_ff, mols, ref, backend = _make_water_problem()
 
         obj, _layout, space = _build_objective(guess_ff, backend, mols, ref)
-        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=100, use_bounds=False, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="Nelder-Mead", maxiter=100, use_bounds=False, verbose=False))
         result = opt.optimize(obj, space)
 
         assert result.final_score <= result.initial_score
@@ -416,7 +415,7 @@ class TestOptimizationRoundtrip:
         true_ff, guess_ff, mols, ref, backend = _make_energy_only_problem(backend=tinker)
 
         obj, layout, space = _build_objective(guess_ff, backend, mols, ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = opt.optimize(obj, space)
 
         assert result.improvement > 0.3, f"Tinker optimization only improved {result.improvement:.2%}"
@@ -460,7 +459,7 @@ class TestForceFieldExportRoundtrip:
         """Optimized FF survives replace→vector→replace→vector roundtrip."""
         true_ff, guess_ff, mols, ref, backend = _make_water_problem()
         obj, layout, space = _build_objective(guess_ff, backend, mols, ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=100, verbose=False))
         result = opt.optimize(obj, space)
 
         optimized_ff = layout.replace(guess_ff, result.final_params)
@@ -575,7 +574,7 @@ class TestOptimizationDeterminism:
         for _ in range(2):
             true_ff, guess_ff, mols, ref, backend = _make_water_problem()
             obj, _layout, space = _build_objective(guess_ff, backend, mols, ref)
-            opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+            opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
             results.append(opt.optimize(obj, space))
 
         np.testing.assert_array_almost_equal(
@@ -593,7 +592,7 @@ class TestOptimizationDeterminism:
         for _ in range(2):
             true_ff, guess_ff, mols, ref, backend = _make_water_problem()
             obj, _layout, space = _build_objective(guess_ff, backend, mols, ref)
-            opt = ScipyOptimizer(method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False)
+            opt = ScipyOptimizer(ScipySettings(method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False))
             results.append(opt.optimize(obj, space))
 
         np.testing.assert_array_almost_equal(
@@ -654,7 +653,7 @@ class TestGoldenFixtureRegression:
 
         true_ff, guess_ff, mols, ref, backend = _make_water_problem()
         obj, _layout, space = _build_objective(guess_ff, backend, mols, ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = opt.optimize(obj, space)
 
         assert len(result.final_params) == len(golden["final_params"]), (
@@ -672,7 +671,7 @@ class TestGoldenFixtureRegression:
 
         true_ff, guess_ff, mols, ref, backend = _make_water_problem()
         obj, _layout, space = _build_objective(guess_ff, backend, mols, ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = opt.optimize(obj, space)
 
         assert result.initial_score == pytest.approx(golden["initial_score"], rel=1e-4), (

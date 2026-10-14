@@ -61,6 +61,7 @@ from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.settings import ScipySettings
 
 # ---- Paths (test-specific) ----
 
@@ -236,7 +237,7 @@ class TestCH3FGroundState:
     ) -> tuple[ForceField, float, int]:
         """Q2MM-optimized FF: Seminario starting point -> optimize to match QM."""
         objective, space = _build_frequency_objective(ch3f_mol, seminario_ff, backend, qm_freqs)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         t0 = time.perf_counter()
         result = opt.optimize(objective, space)
         elapsed = time.perf_counter() - t0
@@ -696,7 +697,7 @@ class TestSN2TransitionState:
     ) -> tuple[ForceField, float, int]:
         """Q2MM-optimized TS FF."""
         objective, space = _build_frequency_objective(ts_mol, seminario_ff, backend, qm_freqs)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         t0 = time.perf_counter()
         result = opt.optimize(objective, space)
         elapsed = time.perf_counter() - t0

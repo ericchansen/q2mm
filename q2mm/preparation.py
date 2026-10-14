@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from numbers import Real
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal
 
 import numpy as np
 
@@ -39,6 +39,7 @@ from q2mm.models.problem import (
     TrainingCase,
 )
 from q2mm.models.seminario import qfuerza_fresh, qfuerza_into
+from q2mm.settings import PreparationSettings, QFuerzaSettings, FrequencyMatchingSettings
 
 _COMPATIBILITY_PROFILE = "repository-geometry-eigenmatrix-v1"
 _STATIONARY_POINT_PROFILE = "stationary-point-geometry-eigenmatrix-v1"
@@ -55,27 +56,6 @@ ActiveParameters = Literal["all"] | ForceField | ActiveParameterSpace
 
 class PreparationError(ValueError):
     """Raised when a convenience preparation request is invalid."""
-
-
-@dataclass(frozen=True)
-class QFuerzaConfig:
-    """Scientifically meaningful QFUERZA initialization settings."""
-
-    strategy: Literal["fuerza", "qfuerza"] = "qfuerza"
-    zero_torsions: bool = True
-    au_hessian: bool = True
-    invalid_policy: Literal["keep", "skip"] = "keep"
-    replace_with: float = 1.0
-
-    def __post_init__(self) -> None:
-        if self.strategy not in {"fuerza", "qfuerza"}:
-            raise PreparationError("QFuerzaConfig.strategy must be 'fuerza' or 'qfuerza'.")
-        if self.invalid_policy not in {"keep", "skip"}:
-            raise PreparationError("QFuerzaConfig.invalid_policy must be 'keep' or 'skip'.")
-        if not isinstance(self.zero_torsions, bool) or not isinstance(self.au_hessian, bool):
-            raise PreparationError("QFuerzaConfig boolean settings must be bool values.")
-        if not math.isfinite(self.replace_with) or self.replace_with <= 0.0:
-            raise PreparationError("QFuerzaConfig.replace_with must be positive and finite.")
 
 
 @dataclass(frozen=True)
@@ -135,30 +115,6 @@ class StationaryPointObservations(ObservationRecipe):
         object.__setattr__(self, "linearity_tolerance", float(tolerance))
 
 
-@dataclass(frozen=True)
-class MatchedFrequencyObservations(ObservationRecipe):
-    """Match sorted real QM modes to a configured MM backend's real modes."""
-
-    qm_frequencies: Sequence[float]
-    backend: Backend | str
-    threshold: float = 50.0
-    weight: float = 0.001
-    name: str = field(default="MatchedFrequencyObservations", init=False)
-    profile: str = field(default=_MATCHED_FREQUENCY_PROFILE, init=False)
-
-    def __post_init__(self) -> None:
-        frequencies = tuple(float(value) for value in self.qm_frequencies)
-        if not frequencies or any(not math.isfinite(value) for value in frequencies):
-            raise PreparationError("MatchedFrequencyObservations.qm_frequencies must be finite and non-empty.")
-        if not math.isfinite(self.threshold):
-            raise PreparationError("MatchedFrequencyObservations.threshold must be finite.")
-        if not math.isfinite(self.weight) or self.weight <= 0.0:
-            raise PreparationError("MatchedFrequencyObservations.weight must be positive and finite.")
-        if isinstance(self.backend, str) and not self.backend:
-            raise PreparationError("MatchedFrequencyObservations.backend must be non-empty.")
-        object.__setattr__(self, "qm_frequencies", frequencies)
-
-
 def _scientific_value(value: object) -> object:
     if isinstance(value, Path):
         return value.name
@@ -196,33 +152,6 @@ def _normalize_molecules(value: Molecule | Sequence[Molecule]) -> tuple[Molecule
     return molecules
 
 
-def _stationary_point(value: str | StationaryPointKind) -> StationaryPointKind:
-    if isinstance(value, StationaryPointKind):
-        return value
-    if not isinstance(value, str):
-        raise PreparationError(
-            "stationary_point must name one kind for the complete set; use direct OptimizationProblem "
-            "construction for mixed ground-state/transition-state sets."
-        )
-    normalized = value.strip().lower().replace("-", "_")
-    try:
-        return StationaryPointKind(normalized)
-    except ValueError as exc:
-        raise PreparationError(
-            "stationary_point must be 'ground_state' or 'transition_state'; mixed sets require direct "
-            "OptimizationProblem construction."
-        ) from exc
-
-
-def _functional_form(value: str | FunctionalForm | None) -> FunctionalForm | None:
-    if value is None or isinstance(value, FunctionalForm):
-        return value
-    try:
-        return FunctionalForm(value)
-    except ValueError as exc:
-        raise PreparationError(f"Unknown functional_form {value!r}.") from exc
-
-
 def _resolve_case_ids(
     molecules: tuple[Molecule, ...],
     case_ids: Sequence[str] | None,
@@ -242,26 +171,15 @@ def _resolve_case_ids(
     return resolved
 
 
-def _resolve_backend(recipe: MatchedFrequencyObservations, form: FunctionalForm) -> Backend:
-    backend: Backend
-    if isinstance(recipe.backend, str):
-        from q2mm.backends.registry import load_backend
-
-        try:
-            backend = load_backend(recipe.backend)
-        except Exception as exc:
-            raise PreparationError(f"Could not load matched-frequency backend {recipe.backend!r}: {exc}") from exc
-    else:
-        backend = recipe.backend
+def _validate_matching_backend(backend: Backend, form: FunctionalForm) -> None:
     if not hasattr(backend, "info") or not hasattr(backend, "prepare"):
-        raise PreparationError("MatchedFrequencyObservations.backend must implement the Backend protocol.")
+        raise PreparationError("Frequency matching requires a loaded Backend.")
     if backend.info.role is not BackendRole.MM:
-        raise PreparationError("MatchedFrequencyObservations requires an MM backend.")
+        raise PreparationError("Frequency matching requires an MM backend.")
     if Capability.FREQUENCIES not in backend.info.capabilities:
         raise PreparationError("Matched-frequency backend must declare the FREQUENCIES capability.")
     if not backend.info.supports_form(form.value):
         raise PreparationError(f"Matched-frequency backend does not support functional form {form.value!r}.")
-    return backend
 
 
 def _active_space(
@@ -285,7 +203,7 @@ def _active_space(
     raise PreparationError("active_parameters must be 'all', a ForceField subset, or an ActiveParameterSpace.")
 
 
-def _qfuerza_settings(config: QFuerzaConfig, stationary_point: StationaryPointKind) -> dict[str, object]:
+def _qfuerza_settings(config: QFuerzaSettings, stationary_point: StationaryPointKind) -> dict[str, object]:
     return {
         "strategy": config.strategy,
         "zero_torsions": config.zero_torsions,
@@ -300,7 +218,7 @@ def _project_template(
     force_field: ForceField,
     molecules: tuple[Molecule, ...],
     space: ActiveParameterSpace,
-    config: QFuerzaConfig,
+    config: QFuerzaSettings,
     stationary_point: StationaryPointKind,
 ) -> ForceField:
     layout = space.layout
@@ -512,7 +430,8 @@ def _stationary_point_observations(
 
 
 def _matched_observations(
-    recipe: MatchedFrequencyObservations,
+    qm_frequencies: tuple[float, ...],
+    settings: FrequencyMatchingSettings,
     backend: Backend,
     molecule: Molecule,
     case_id: str,
@@ -521,26 +440,28 @@ def _matched_observations(
 ) -> tuple[ObservationSet, dict[str, object]]:
     prepared = backend.prepare(PreparationRequest(case_id=case_id, molecule=molecule, force_field=force_field))
     result = prepared.frequencies(FrequencyRequest(parameters=layout.vector(force_field)))
-    qm_real = sorted(value for value in recipe.qm_frequencies if value > recipe.threshold)
-    mm_real_indices = sorted(index for index, value in enumerate(result.frequencies) if float(value) > recipe.threshold)
+    qm_real = sorted(value for value in qm_frequencies if value > settings.threshold)
+    mm_real_indices = sorted(
+        index for index, value in enumerate(result.frequencies) if float(value) > settings.threshold
+    )
     count = min(len(qm_real), len(mm_real_indices))
     observations = ObservationSet()
     for index in range(count):
         observations = observations.with_frequency(
             qm_real[index],
             data_idx=mm_real_indices[index],
-            weight=recipe.weight,
+            weight=settings.weight,
             case_id=case_id,
         )
     provenance = backend.info.provenance
     backend_key = provenance.backend if provenance is not None else backend.info.name
     return observations, {
-        "name": recipe.name,
-        "profile": recipe.profile,
-        "threshold": recipe.threshold,
-        "weight": recipe.weight,
-        "qm_frequency_count": len(recipe.qm_frequencies),
-        "qm_frequency_fingerprint": _fingerprint(recipe.qm_frequencies),
+        "name": "MatchedFrequencyObservations",
+        "profile": _MATCHED_FREQUENCY_PROFILE,
+        "threshold": settings.threshold,
+        "weight": settings.weight,
+        "qm_frequency_count": len(qm_frequencies),
+        "qm_frequency_fingerprint": _fingerprint(qm_frequencies),
         "matched_count": count,
         "backend": {
             "key": backend_key,
@@ -553,17 +474,59 @@ def _matched_observations(
     }
 
 
+def match_frequencies(
+    problem: OptimizationProblem,
+    qm_frequencies: Sequence[float],
+    *,
+    backend: Backend,
+    settings: FrequencyMatchingSettings,
+) -> OptimizationProblem:
+    """Match real modes once, returning a new problem with identical initialization.
+
+    Requires one explicitly prepared empty observation set. Pairing and the
+    final historical matched-frequency scientific/provenance identities are
+    unchanged; QFUERZA is not computed a second time.
+    """
+    provenance = problem.preparation_provenance
+    if len(problem.cases) != 1 or problem.observations.values:
+        raise PreparationError("Frequency matching requires one case and an explicitly empty ObservationSet.")
+    if provenance is None or provenance.profile != _EXPLICIT_PROFILE:
+        raise PreparationError("Frequency matching requires explicit-observation preparation provenance.")
+    frequencies = tuple(float(value) for value in qm_frequencies)
+    if not frequencies or any(not math.isfinite(value) for value in frequencies):
+        raise PreparationError("QM frequencies must be finite and non-empty.")
+    _validate_matching_backend(backend, problem.starting_force_field.functional_form)
+    case = problem.cases[0]
+    observations, details = _matched_observations(
+        frequencies,
+        settings,
+        backend,
+        case.molecule,
+        case.case_id,
+        problem.starting_force_field,
+        problem.layout,
+    )
+    inputs = {**provenance.input_fingerprints, "observations": _fingerprint(_observation_payload(observations))}
+    return dataclasses.replace(
+        problem,
+        observations=observations,
+        preparation_provenance=dataclasses.replace(
+            provenance,
+            profile=_MATCHED_FREQUENCY_PROFILE,
+            input_fingerprints=inputs,
+            observation_recipe=freeze_json_mapping(details, path="prepare.observation_recipe"),
+        ),
+    )
+
+
 def prepare(
     molecules: Molecule | Sequence[Molecule],
     *,
-    stationary_point: str | StationaryPointKind,
+    settings: PreparationSettings,
     force_field: ForceField | None = None,
     active_parameters: ActiveParameters = "all",
     observations: ObservationSet | ObservationRecipe | None = None,
     case_ids: Sequence[str] | None = None,
-    functional_form: str | FunctionalForm | None = None,
-    initialize: Initialize | None = None,
-    qfuerza: QFuerzaConfig | None = None,
 ) -> OptimizationProblem:
     """Build one canonical immutable optimization problem from user inputs.
 
@@ -572,29 +535,19 @@ def prepare(
     compatibility profile used by publication case loaders.
     """
     molecule_values = _normalize_molecules(molecules)
-    point = _stationary_point(stationary_point)
-    requested_form = _functional_form(functional_form)
+    point = StationaryPointKind(settings.stationary_point)
+    requested_form = None if settings.functional_form is None else FunctionalForm(settings.functional_form)
+    initialize = settings.initialize
     ids = _resolve_case_ids(molecule_values, case_ids, observations)
     if observations is not None and not isinstance(observations, (ObservationSet, ObservationRecipe)):
         raise PreparationError("observations must be an ObservationSet or a supported ObservationRecipe.")
     if isinstance(observations, ObservationRecipe) and type(observations) not in {
         MoleculeObservations,
         StationaryPointObservations,
-        MatchedFrequencyObservations,
     }:
         raise PreparationError(f"Unsupported observation recipe {type(observations).__name__}.")
 
-    config = QFuerzaConfig() if qfuerza is None else qfuerza
-    if not isinstance(config, QFuerzaConfig):
-        raise PreparationError("qfuerza must be a QFuerzaConfig.")
-
-    matched_recipe = (
-        cast(MatchedFrequencyObservations, observations)
-        if isinstance(observations, MatchedFrequencyObservations)
-        else None
-    )
-    if matched_recipe is not None and len(molecule_values) != 1:
-        raise PreparationError("MatchedFrequencyObservations currently requires exactly one molecule.")
+    config = settings.qfuerza
 
     if force_field is None:
         if requested_form is None:
@@ -622,10 +575,6 @@ def prepare(
         if initialize not in {"provided", "qfuerza"}:
             raise PreparationError("A supplied force_field requires initialize='provided' or 'qfuerza'.")
         initialize_source = initialize
-    if initialize_source == "provided" and qfuerza is not None:
-        raise PreparationError("qfuerza settings cannot be applied with initialize='provided'.")
-
-    backend = _resolve_backend(matched_recipe, resolved_form) if matched_recipe is not None else None
     needs_hessian = (
         initialize_source == "qfuerza"
         or observations is None
@@ -646,6 +595,7 @@ def prepare(
         )
 
     if force_field is None:
+        assert config is not None
         template = ForceField.create_for_molecule(
             molecule_values[0],
             name=f"QFUERZA FF for {molecule_values[0].name}",
@@ -671,11 +621,11 @@ def prepare(
         layout = ParameterLayout.from_force_field(force_field)
         initial_space = _active_space(active_parameters, layout, force_field)
         before_vector = layout.vector(force_field)
-        starting_force_field = (
-            force_field
-            if initialize_source == "provided"
-            else _project_template(force_field, molecule_values, initial_space, config, point)
-        )
+        if initialize_source == "provided":
+            starting_force_field = force_field
+        else:
+            assert config is not None
+            starting_force_field = _project_template(force_field, molecule_values, initial_space, config, point)
     after_vector = layout.vector(starting_force_field)
     active_space = ActiveParameterSpace(
         layout=layout,
@@ -704,16 +654,7 @@ def prepare(
         recipe_details = {"name": "explicit", "profile": _EXPLICIT_PROFILE}
         profile = _EXPLICIT_PROFILE
     else:
-        assert matched_recipe is not None and backend is not None
-        resolved_observations, recipe_details = _matched_observations(
-            matched_recipe,
-            backend,
-            molecule_values[0],
-            ids[0],
-            starting_force_field,
-            layout,
-        )
-        profile = _MATCHED_FREQUENCY_PROFILE
+        raise PreparationError(f"Unsupported observations {type(observations).__name__}.")
 
     unknown_case_ids = sorted({observation.case_id for observation in resolved_observations.values}.difference(ids))
     if unknown_case_ids:
@@ -731,7 +672,9 @@ def prepare(
         profile=profile,
         initialize_source=initialize_source,
         functional_form=resolved_form.value,
-        qfuerza_settings=(_qfuerza_settings(config, point) if initialize_source == "qfuerza" else {}),
+        qfuerza_settings=(
+            _qfuerza_settings(config, point) if initialize_source == "qfuerza" and config is not None else {}
+        ),
         pre_qfuerza_vector_fingerprint=_fingerprint(before_vector),
         parameter_counts=_parameter_counts(
             layout,
@@ -761,11 +704,10 @@ def prepare(
 
 
 __all__ = [
-    "MatchedFrequencyObservations",
     "MoleculeObservations",
     "ObservationRecipe",
     "PreparationError",
-    "QFuerzaConfig",
     "StationaryPointObservations",
     "prepare",
+    "match_frequencies",
 ]

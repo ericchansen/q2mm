@@ -8,12 +8,14 @@ solves retain per-case JIT and Python aggregation; replicas are not fused.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import ObjectiveEvaluator
 from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer, _require_jax_executor
 from q2mm.optimizers.multistart import MultiStartOptimizer
+from q2mm.settings import JaxMultiStartSettings, MultiStartSettings
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
@@ -28,34 +30,28 @@ class JaxMultiStartOptimizer(MultiStartOptimizer):
 
     def __init__(
         self,
-        *,
-        method: str = "lbfgs",
-        n_starts: int = 10,
-        maxiter: int = 200,
-        tol: float = 1e-6,
-        perturbation_pct: float = 0.1,
-        seed: int | None = None,
-        verbose: bool = True,
+        settings: JaxMultiStartSettings = JaxMultiStartSettings(),
     ) -> None:
-        self.method = method
-        self.maxiter = maxiter
-        self.tol = tol
         super().__init__(
-            optimizer=self._make_inner_optimizer(),
-            n_starts=n_starts,
-            perturbation_pct=perturbation_pct,
-            seed=seed,
-            verbose=verbose,
+            MultiStartSettings(
+                optimizer=settings.optimizer,
+                n_starts=settings.n_starts,
+                perturbation_pct=settings.perturbation_pct,
+                seed=settings.seed,
+                verbose=settings.verbose,
+            ),
+            optimizer=JaxOptOptimizer(settings.optimizer),
         )
+        self.settings = settings
 
-    def _make_inner_optimizer(self) -> JaxOptOptimizer:
-        return JaxOptOptimizer(method=self.method, maxiter=self.maxiter, tol=self.tol, verbose=False)
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Capture this adapter's settings and its actual constructed JaxOpt child."""
+        return super().configuration_settings()
 
     def _result_method(self, selected: OptimizationResult | None) -> str:
-        return f"jaxopt-multi:{self.method}"
+        return f"jaxopt-multi:{self.settings.optimizer.method}"
 
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Validate the JAX executor and delegate all multi-start execution."""
         _require_jax_executor(evaluator)
-        self.optimizer = self._make_inner_optimizer()
         return super().optimize(evaluator, space)

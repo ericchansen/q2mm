@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from q2mm.settings import MultiStartSettings, ScipySettings
+
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -51,7 +53,7 @@ class TestMultiStartOptimizer:
         """Should call the inner optimizer n_starts times."""
         obj = QuadraticEvaluator(np.array([1.0, 2.0]))
         inner = StubOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=5, verbose=False, seed=42)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=5, verbose=False, seed=42), optimizer=inner)
         opt.optimize(obj, obj.space)
         assert inner.call_count == 5
 
@@ -62,8 +64,8 @@ class TestMultiStartOptimizer:
 
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        inner = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=42)
+        inner = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=100, verbose=False))
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=42), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         assert result.final_score < 1.0
 
@@ -71,7 +73,7 @@ class TestMultiStartOptimizer:
         """First start should use original parameters (no perturbation)."""
         obj = QuadraticEvaluator(np.array([1.0]))
         inner = StubOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=0)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=0), optimizer=inner)
         original_baseline = obj.space.baseline.copy()
         opt.optimize(obj, obj.space)
         np.testing.assert_array_equal(inner.start_params[0], np.array([0.0]))
@@ -82,7 +84,9 @@ class TestMultiStartOptimizer:
         bounds = [(0.0, 2.0), (0.0, 2.0)]
         obj = QuadraticEvaluator(np.array([1.0, 1.0]), bounds=bounds, initial=np.array([1.0, 1.0]))
         inner = StubOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=20, perturbation_pct=0.5, verbose=False, seed=42)
+        opt = MultiStartOptimizer(
+            MultiStartSettings(n_starts=20, perturbation_pct=0.5, verbose=False, seed=42), optimizer=inner
+        )
         opt.optimize(obj, obj.space)
         for params in inner.start_params:
             assert np.all(params >= 0.0 - 1e-10)
@@ -95,15 +99,21 @@ class TestMultiStartOptimizer:
         obj2 = QuadraticEvaluator(target)
         inner1 = StubOptimizer()
         inner2 = StubOptimizer()
-        r1 = MultiStartOptimizer(inner1, n_starts=3, seed=99, verbose=False).optimize(obj1, obj1.space)
-        r2 = MultiStartOptimizer(inner2, n_starts=3, seed=99, verbose=False).optimize(obj2, obj2.space)
+        r1 = MultiStartOptimizer(MultiStartSettings(n_starts=3, seed=99, verbose=False), optimizer=inner1).optimize(
+            obj1, obj1.space
+        )
+        r2 = MultiStartOptimizer(MultiStartSettings(n_starts=3, seed=99, verbose=False), optimizer=inner2).optimize(
+            obj2, obj2.space
+        )
         assert r1.final_score == r2.final_score
 
     def test_method_name(self) -> None:
         """Result method should include 'multi-start'."""
         obj = QuadraticEvaluator(np.array([1.0]))
         inner = StubOptimizer()
-        result = MultiStartOptimizer(inner, n_starts=2, verbose=False, seed=0).optimize(obj, obj.space)
+        result = MultiStartOptimizer(MultiStartSettings(n_starts=2, verbose=False, seed=0), optimizer=inner).optimize(
+            obj, obj.space
+        )
         assert "multi-start" in result.method
 
     def test_returns_best_params_without_mutating_forcefield(self) -> None:
@@ -113,8 +123,8 @@ class TestMultiStartOptimizer:
 
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        inner = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False)
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=42)
+        inner = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=50, verbose=False))
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=42), optimizer=inner)
         original_baseline = obj.space.baseline.copy()
         result = opt.optimize(obj, obj.space)
         # REMOVED (Phase 4): objective is no longer mutated by optimizers.
@@ -126,7 +136,7 @@ class TestMultiStartOptimizer:
         """Evaluator n_evaluations should reflect all starts plus initial eval."""
         obj = QuadraticEvaluator(np.array([1.0, 2.0]))
         inner = StubOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=5, verbose=False, seed=42)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=5, verbose=False, seed=42), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         assert len(result.candidates) == 5
         assert obj.n_evaluations == 6
@@ -135,7 +145,7 @@ class TestMultiStartOptimizer:
         """History should come from the best run, not the last."""
         obj = QuadraticEvaluator(np.array([1.0]))
         inner = StubOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=42)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=42), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         assert len(result.history) == 1
         assert result.history[0] == result.final_score
@@ -171,7 +181,7 @@ class TestMultiStartOptimizer:
 
         obj = QuadraticEvaluator(np.array([1.0]))
         inner = FailOnSecondOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=0)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=0), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         assert "2/3" in result.message
 
@@ -189,7 +199,7 @@ class TestMultiStartOptimizer:
 
         obj = QuadraticEvaluator(np.array([1.0]))
         inner = AlwaysFailOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=0)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=0), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         assert result.success is False
         assert "all 3" in result.message
@@ -202,13 +212,13 @@ class TestMultiStartOptimizer:
 
     def test_n_starts_zero_raises(self) -> None:
         """n_starts < 1 must raise ValueError."""
-        with pytest.raises(ValueError, match="n_starts must be >= 1"):
-            MultiStartOptimizer(MagicMock(), n_starts=0)
+        with pytest.raises(ValueError, match="n_starts"):
+            MultiStartOptimizer(MultiStartSettings(n_starts=0), optimizer=MagicMock())
 
     def test_negative_perturbation_raises(self) -> None:
         """Negative perturbation_pct must raise ValueError."""
-        with pytest.raises(ValueError, match="perturbation_pct must be >= 0"):
-            MultiStartOptimizer(MagicMock(), perturbation_pct=-0.1)
+        with pytest.raises(ValueError, match="perturbation_pct"):
+            MultiStartOptimizer(MultiStartSettings(perturbation_pct=-0.1), optimizer=MagicMock())
 
     def test_initial_score_matches_original_params(self) -> None:
         """Initial_score must correspond to x0_original, not a perturbed start."""
@@ -216,7 +226,9 @@ class TestMultiStartOptimizer:
         obj = QuadraticEvaluator(target, initial=np.array([0.0, 0.0]))
 
         inner = StubOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=3, perturbation_pct=0.5, verbose=False, seed=42)
+        opt = MultiStartOptimizer(
+            MultiStartSettings(n_starts=3, perturbation_pct=0.5, verbose=False, seed=42), optimizer=inner
+        )
         result = opt.optimize(obj, obj.space)
 
         assert result.initial_score == pytest.approx(5.0, abs=1e-10)
@@ -259,7 +271,7 @@ class TestMultiStartOptimizer:
         obj = QuadraticEvaluator(np.array([1.0]))
         # converged 5.0, nonconverged 2.0 (lower!), converged 3.0.
         inner = self._scripted([(True, 5.0), (False, 2.0), (True, 3.0)])
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=1)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=1), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         # Converged is preferred even though a nonconverged start scored lower.
         assert result.success is True
@@ -275,7 +287,7 @@ class TestMultiStartOptimizer:
         """All starts ran but none converged -> success=False, best kept."""
         obj = QuadraticEvaluator(np.array([1.0]))
         inner = self._scripted([(False, 5.0), (False, 2.0), (False, 3.0)])
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=1)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=1), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         assert result.success is False
         assert result.final_score == pytest.approx(2.0)  # best nonconverged
@@ -286,7 +298,7 @@ class TestMultiStartOptimizer:
         """Among converged starts, the lowest final_score is selected."""
         obj = QuadraticEvaluator(np.array([1.0]))
         inner = self._scripted([(True, 5.0), (True, 1.0), (True, 3.0)])
-        opt = MultiStartOptimizer(inner, n_starts=3, verbose=False, seed=1)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=3, verbose=False, seed=1), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         assert result.success is True
         assert result.final_score == pytest.approx(1.0)
@@ -297,7 +309,7 @@ class TestMultiStartOptimizer:
         """Every candidate carries full-length read-only start/final vectors."""
         obj = QuadraticEvaluator(np.array([1.0, 2.0]))
         inner = StubOptimizer()
-        opt = MultiStartOptimizer(inner, n_starts=4, verbose=False, seed=7)
+        opt = MultiStartOptimizer(MultiStartSettings(n_starts=4, verbose=False, seed=7), optimizer=inner)
         result = opt.optimize(obj, obj.space)
         n = obj.plan.n_params
         assert len(result.candidates) == 4
@@ -311,8 +323,12 @@ class TestMultiStartOptimizer:
     def test_deterministic_candidate_vectors_and_seeds(self) -> None:
         """Same seed -> identical candidate start/final vectors and seed metadata."""
         target = np.array([1.0, 2.0])
-        opt_a = MultiStartOptimizer(StubOptimizer(), n_starts=5, perturbation_pct=0.3, verbose=False, seed=99)
-        opt_b = MultiStartOptimizer(StubOptimizer(), n_starts=5, perturbation_pct=0.3, verbose=False, seed=99)
+        opt_a = MultiStartOptimizer(
+            MultiStartSettings(n_starts=5, perturbation_pct=0.3, verbose=False, seed=99), optimizer=StubOptimizer()
+        )
+        opt_b = MultiStartOptimizer(
+            MultiStartSettings(n_starts=5, perturbation_pct=0.3, verbose=False, seed=99), optimizer=StubOptimizer()
+        )
         obj_a = QuadraticEvaluator(target)
         obj_b = QuadraticEvaluator(target)
         r_a = opt_a.optimize(obj_a, obj_a.space)

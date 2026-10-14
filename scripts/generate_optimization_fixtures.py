@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +30,7 @@ from q2mm.models.problem import StationaryPointKind
 from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.settings import ScipySettings
 
 OUTPUT_PATH = REPO_ROOT / "test" / "fixtures" / "optimization_golden.json"
 
@@ -134,13 +135,13 @@ def main() -> int:
         active_space=space,
     )
     evaluator = PythonObjectiveExecutor(plan, backend, guess_ff)
-    opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+    opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
     result = opt.optimize(evaluator, space)
 
     fixture = {
         "metadata": {
             "description": "Golden fixture for water FF optimization regression test.",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "method": "L-BFGS-B",
             "maxiter": 200,
             "system": "water (O, H, H)",

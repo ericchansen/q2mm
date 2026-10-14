@@ -12,7 +12,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -21,6 +21,7 @@ from q2mm._canonical import json_value
 from q2mm._result_serialization import result_payload, stage_payload
 from q2mm.benchmarks.acceptance import CandidateStatus
 from q2mm.models.results import deep_freeze
+from q2mm.optimizers.catalog import optimizer_method
 
 if TYPE_CHECKING:
     from q2mm.backends.contracts import BackendInfo
@@ -54,7 +55,7 @@ def _git_info(repo: Path) -> dict[str, Any]:
             ["git", "status", "--porcelain"], cwd=repo, stderr=subprocess.DEVNULL, text=True
         ).strip()
         return {"git_sha": sha, "git_dirty": bool(dirty)}
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except subprocess.CalledProcessError, FileNotFoundError:
         return {}
 
 
@@ -62,7 +63,7 @@ def build_run_provenance(*, generator: str, output_dir: Path) -> dict[str, Any]:
     """Build the run-level provenance block (timestamp/command are non-identity)."""
     return {
         "generator": generator,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(UTC).isoformat(),
         "command_line": shlex.join(sys.argv),
         "q2mm": _git_info(REPO_ROOT),
         "output_dir": str(output_dir),
@@ -169,7 +170,6 @@ def _resolved_summary(
     backend_info: BackendInfo,
     case: BenchmarkCase,
     form: str,
-    spec: Any,
     evaluator_kind: str,
     gradient_mode: str,
     expected_grad: str,
@@ -179,13 +179,13 @@ def _resolved_summary(
     problem = case.problem
     return {
         "system": profile.system,
-        "backend": profile.backend,
+        "backend": profile.backend.key,
         "backend_name": backend_info.name,
         "functional_form": form,
-        "workflow": profile.workflow,
-        "optimizer": profile.optimizer,
-        "optimizer_method": spec.method,
-        "optimizer_label": spec.label,
+        "workflow": profile.workflow.name,
+        "optimizer": profile.optimizer.kind,
+        "optimizer_method": optimizer_method(profile.optimizer),
+        "optimizer_label": optimizer_method(profile.optimizer),
         "evaluator": evaluator_kind,
         "gradient_mode": gradient_mode,
         "expected_result_gradient_mode": expected_grad,

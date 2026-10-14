@@ -218,15 +218,17 @@ q2mm/
 ├── elements.py           # Periodic table data
 ├── geometry.py           # Geometry helpers (distances, angles, alignment)
 ├── resources.py          # Installed scientific-resource lookup and integrity checks
-├── preparation.py        # Generic immutable prepare() + closed observation recipes
+├── settings.py           # Strict immutable preparation, final optimization and component settings
+├── configuration.py      # Dependency-neutral ConfigurationProvider + capture_component_settings
+├── preparation.py        # Data-only prepare() + explicit loaded-backend frequency matching
 ├── _result_serialization.py # Canonical full-result and stage-only projections
 ├── _jax_support.py       # Foundational lazy JAX import guard (has_jax/load_jax); shared by models.hessian and backends.mm._jax_common
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
 ├── application/          # Data-independent evaluate, optimize, and atomic save services
 │   ├── models.py        # Immutable resolved configuration + OptimizationRun/SavedOutput
-│   ├── configuration.py # Exact built-in capture + optional ConfigurationProvider protocol
-│   ├── evaluation.py    # Typed OptimizationProblem and reference-property evaluation
-│   ├── optimization.py  # Strict recipe/component resolution and generic execution
+│   ├── configuration.py # Execution envelope + neutral-capture to application-error translation
+│   ├── evaluation.py    # Full-vector evaluation + reference service + application-error adaptation
+│   ├── optimization.py  # Numerical problem + supplied-components execution returning OptimizationResult
 │   └── persistence.py   # Semantic FF formats + deterministic run manifests
 │
 ├── benchmarks/           # Benchmark systems, explicit profiles, acceptance, and publication persistence
@@ -281,7 +283,7 @@ q2mm/
 │       ├── qcengine.py   # QCEngine atomic energy, coordinate-gradient, and Hessian adapter
 │       └── ase.py        # Optional non-periodic ASE energy and force adapter
 │
-├── objectives/           # Objective planning, executor protocol, and residual semantics
+├── objectives/           # Shared create_evaluator + objective planning, executor protocol and residual semantics
 │   ├── plan.py           # ObjectivePlan: backend-neutral cases, observations, layout, active space
 │   ├── protocols.py      # ObjectiveEvaluator protocol, Evaluation, GradientMode, objective errors
 │   ├── python.py         # PythonObjectiveExecutor over the prepared-backend contract
@@ -289,7 +291,7 @@ q2mm/
 │   └── metrics.py        # Shared residual, regularization, and category metric helpers
 │
 ├── optimizers/           # Parameter fitting machinery
-│   ├── catalog.py        # Explicit presets + canonical constructor/settings graphs
+│   ├── catalog.py        # Pure named settings presets + explicit build_optimizer
 │   ├── protocols.py      # Shared _Optimizer structural protocol
 │   ├── scipy_opt.py      # ScipyOptimizer (L-BFGS-B, Nelder-Mead, etc.)
 │   ├── optax.py          # OptaxOptimizer (Adam, AdaGrad, SGD — JAX only)
@@ -297,7 +299,7 @@ q2mm/
 │   ├── basinhopping.py   # BasinHoppingOptimizer (stochastic global search)
 │   ├── multistart.py     # MultiStartOptimizer (best-of-N perturbed starts)
 │   ├── jax_multistart.py # JaxMultiStartOptimizer (JaxOpt construction adapter)
-│   └── cycling.py        # grad-simp parameter cycling (OptimizationLoop, sensitivity)
+│   └── cycling.py        # Configured CyclingOptimizer + private numerical session + sensitivity
 │
 ├── io/                   # File format I/O
 │   ├── __init__.py       # Re-exports public functions
@@ -318,7 +320,7 @@ q2mm/
 │   └── reference.py      # load_reference_yaml, save_reference_yaml
 │
 └── workflows/            # Multi-stage parameterization protocols
-    ├── base.py           # Workflow Protocol returning OptimizationResult + StageRecord data
+    ├── base.py           # Workflow Protocol + build_workflow + shared evaluator factory
     ├── single_stage.py   # SingleStageWorkflow
     └── method_e2.py      # MethodE2Workflow (two-stage)
 ```
@@ -331,18 +333,55 @@ and unrelated identifiers are not treated as executable dependencies.
 
 `q2mm.application` depends on canonical models, backend contracts, objectives,
 optimizers, workflows, and format savers. It never imports benchmark systems or
-preparation code. `q2mm.preparation` depends only on canonical models and
-dependency-light backend contracts; a matched-frequency recipe loads a named
-backend only when `prepare()` is called. Benchmark orchestration delegates
+preparation code. `q2mm.preparation` depends only on canonical models, immutable settings and
+dependency-light backend contracts. `prepare` is data-only; `match_frequencies`
+is a separate explicit service receiving a loaded MM backend. Benchmark orchestration delegates
 problem construction to preparation and generic execution/serialization to the
 application layer, while retaining benchmark-specific metadata, profiles,
 acceptance decisions, candidate retention, and promotion.
 
-The package root exposes only the workflow facade and its canonical return
-types: `prepare`, `evaluate`, `optimize`, and `save`. Importing `q2mm` does not
-load an optional backend, SciPy, JAX, ASE, QCEngine, OpenMM, or backend
-discovery. Advanced constructors and contracts remain in their existing
-namespaces.
+The package root lazily exports canonical objects, not forwarding wrappers.
+`prepare`, `match_frequencies`, evaluator construction/evaluation,
+optimizer/workflow builders, pre-run configuration capture,
+`optimize`, and `save` retain their owning implementations. Root scientific
+types and `ExternalDataRoots` are also direct lazy exports.
+Importing `q2mm` does not load an optional backend, SciPy, JAX, ASE, QCEngine,
+OpenMM, or backend discovery. Settings live in `q2mm.settings`.
+
+### Execution boundaries
+
+`OptimizationSettings` holds final declarative choices, not runtime objects
+or a separate request/effective-settings pipeline. The named
+`GroundStateOptimizationSettings` and `TransitionStateOptimizationSettings`
+models declare stationary-point-specific defaults; callers choose one based
+on their known problem. Native Pydantic nested default updates validate
+partial constructor dictionaries without a Q2MM merge engine or resolver.
+Only constructor input is read: ambient environment, dotenv and secret-file
+sources are disabled. Constructing settings imports no optional algorithm
+and performs no backend loading. The caller explicitly loads `settings.backend`, builds
+`settings.optimizer` and `settings.workflow`, then captures the actual
+objects before execution. Each built-in constructor consumes positional
+immutable settings; a custom component describes its consequential controls
+through `q2mm.configuration.ConfigurationProvider.configuration_settings()`.
+The dependency-neutral `capture_component_settings` primitive validates
+component descriptions, including nested optimizer components. Optimizers
+depend on that neutral primitive, not application services.
+`application.configuration` assembles the execution envelope and translates
+neutral capture failures to `ApplicationConfigurationError`.
+
+`q2mm.objectives.create_evaluator` is the shared construction owner; the root
+and application exports are that same object.
+`make_evaluator_factory` closes over the objective-layer service for workflow
+stages, without importing the application layer.
+`evaluate(evaluator, parameters)` evaluates a full vector.
+`evaluate_reference(molecule, backend=..., property=...)` is a separate typed
+reference service. Both keep application-level error adaptation in
+`application.evaluation`. Numerical `optimize` consumes supplied components and
+returns an `OptimizationResult` without selecting recipes, reconstructing
+components, persisting, or assembling provenance.
+`OptimizationRun.from_result(problem, result, configuration=...)` materializes
+the final field and run record; `save` persists it. See the
+[complete lifecycle](optimization-guide.md#canonical-application-lifecycle).
 
 ### Release and scientific-data boundary
 
@@ -394,7 +433,7 @@ flowchart TD
         scipy[ScipyOptimizer]
         optax_opt[OptaxOptimizer]
         jaxopt_opt[JaxOptOptimizer]
-        cycling[OptimizationLoop]
+        cycling[CyclingOptimizer]
     end
 
     subgraph Engines["Backends"]
@@ -505,11 +544,11 @@ Columns:
 | Optimizer                  | Uses JAX executor | Full XLA loop | Multi-start in XLA |
 | -------------------------- | :-----------: | :-----------: | :----------------: |
 | `ScipyOptimizer`           | ✅ when passed a JAX executor | ❌ | ❌ |
-| `OptimizationLoop` (cycling) | ✅ when passed a JAX executor [^cycling-jit] | ❌ | ❌ |
+| `CyclingOptimizer` | ✅ when passed a JAX executor [^cycling-jit] | ❌ | ❌ |
 | `OptaxOptimizer`           | ✅ | ❌ (Python step loop) | ❌ |
 | `JaxOptOptimizer` (`lbfgs`, `lbfgsb` [^lbfgsb-cpu], `gradient_descent`) | ✅ | ❌ (Python step loop) | ❌ |
 
-[^cycling-jit]: `OptimizationLoop` consumes the evaluator you pass in. A
+[^cycling-jit]: `CyclingOptimizer` consumes the evaluator you pass in. A
     `JaxObjectiveExecutor` gives the full-space phase analytical per-case JAX
     gradients; a default `PythonObjectiveExecutor` lets SciPy use finite
     differences.

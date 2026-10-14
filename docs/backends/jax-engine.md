@@ -111,7 +111,7 @@ or `JAX (harmonic, cpu)`).
 
 !!! tip "Analytical-gradient optimization"
     For multi-molecule transition-state systems, pair JaxBackend with
-    [`JaxObjectiveExecutor` + `ScipyOptimizer(method="L-BFGS-B")`](../how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax).
+    [`JaxObjectiveExecutor` + `ScipyOptimizer(ScipySettings(method="L-BFGS-B"))`](../how-it-works/optimization-guide.md#workflow-d-end-to-end-differentiable-jax).
     That route builds per-case JIT loss fragments and feeds analytical
     gradients to SciPy's L-BFGS-B implementation without placing all
     molecules in one XLA program. `JaxOptOptimizer` remains useful for

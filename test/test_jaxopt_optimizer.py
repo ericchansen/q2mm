@@ -5,6 +5,8 @@ on simple energy objectives.
 """
 
 from __future__ import annotations
+
+from q2mm.settings import JaxOptSettings, ScipySettings
 from q2mm.backends.contracts import (
     FrequencyRequest,
 )
@@ -119,15 +121,15 @@ class TestJaxOptOptimizerValidation:
     def test_invalid_method(self) -> None:
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
-        with pytest.raises(ValueError, match="Unknown method"):
-            JaxOptOptimizer(method="not_a_method")
+        with pytest.raises(ValueError, match="method"):
+            JaxOptOptimizer(JaxOptSettings(method="not_a_method"))
 
     def test_valid_methods(self) -> None:
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
         for method in ("lbfgs", "lbfgsb", "gradient_descent"):
-            opt = JaxOptOptimizer(method=method)
-            assert opt.method == method
+            opt = JaxOptOptimizer(JaxOptSettings(method=method))
+            assert opt.settings.method == method
 
     def test_backend_type_check(self) -> None:
         from unittest.mock import MagicMock
@@ -145,7 +147,7 @@ class TestJaxOptOptimizerValidation:
         plan = _make_plan(ff, [mol], ref)
         obj = PythonObjectiveExecutor(plan, fake_backend, ff)
 
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=10, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=10, verbose=False))
         with pytest.raises(TypeError, match="JaxObjectiveExecutor"):
             optimizer.optimize(obj, _all_active_space(obj))
 
@@ -169,7 +171,7 @@ class TestJaxOptOptimizerConvergence:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score <= result.initial_score
@@ -192,7 +194,7 @@ class TestJaxOptOptimizerConvergence:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgsb", maxiter=200, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgsb", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score <= result.initial_score
@@ -220,7 +222,7 @@ class TestJaxOptOptimizerConvergence:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         true_initial = float(obj.value(np.asarray(result.initial_params)))
@@ -244,7 +246,7 @@ class TestJaxOptOptimizerConvergence:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=10, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=10, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert isinstance(result, OptimizationResult)
@@ -272,7 +274,7 @@ class TestJaxOptOptimizerConvergence:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score <= result.initial_score
@@ -293,7 +295,7 @@ class TestJaxOptOptimizerConvergence:
         initial_params = _params(ff).copy()
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         np.testing.assert_array_equal(_params(ff), initial_params)
@@ -319,7 +321,7 @@ class TestJaxOptOptimizerConvergence:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=200, verbose=False))
         full_space = _all_active_space(obj)
         active_indices = [slot.index for slot in obj.plan.layout if slot.owner != "bonds"]
         constrained_space = full_space.with_active_indices(active_indices)
@@ -371,7 +373,7 @@ class TestJaxOptFrequencyConvergence:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score, (
@@ -440,7 +442,7 @@ class TestJaxOptBoundsActive:
 
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
-        result = JaxOptOptimizer(method="lbfgsb", maxiter=200, verbose=False).optimize(obj, space)
+        result = JaxOptOptimizer(JaxOptSettings(method="lbfgsb", maxiter=200, verbose=False)).optimize(obj, space)
         final_params = result.final_params
         bond_r0_final = final_params[1]
 
@@ -475,7 +477,7 @@ class TestScipyJaxObjectiveExecutorTelemetry:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=50, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.gradient_mode == "analytical"

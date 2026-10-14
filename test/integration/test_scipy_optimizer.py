@@ -1,6 +1,8 @@
 """Tests for q2mm.optimizers (objective, scipy_opt)."""
 
 from __future__ import annotations
+
+from q2mm.settings import ScipySettings
 from q2mm.backends.contracts import (
     EnergyRequest,
     FrequencyRequest,
@@ -281,7 +283,7 @@ class TestScipyOptimizer:
         guess_ff = _h2_ff(k=575.5, r0=0.78)
 
         obj, _layout, space = _build_objective(guess_ff, backend, [mol_short, mol_long], ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = opt.optimize(obj, space)
 
         assert result.final_score < 1e-3
@@ -301,7 +303,7 @@ class TestScipyOptimizer:
         ref = ref.with_energy(target_energy, weight=1.0)
 
         obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
-        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="Nelder-Mead", maxiter=200, use_bounds=False, verbose=False))
         result = opt.optimize(obj, space)
 
         assert result.final_score < result.initial_score
@@ -320,7 +322,7 @@ class TestScipyOptimizer:
         ref = ref.with_energy(target_energy, weight=1.0)
 
         obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
-        opt = ScipyOptimizer(method="least_squares", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="least_squares", maxiter=200, verbose=False))
         result = opt.optimize(obj, space)
 
         assert result.success
@@ -335,7 +337,7 @@ class TestScipyOptimizer:
         ref = ref.with_energy(prepare_case(backend, mol, ff).energy(EnergyRequest(parameters=param_vector(ff))).energy)
 
         obj, _layout, space = _build_objective(ff, backend, [mol], ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=10, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=10, verbose=False))
         result = opt.optimize(obj, space)
 
         summary = result.summary()
@@ -365,7 +367,7 @@ class TestScipyOptimizer:
             ref = ref.with_frequency(target_freqs[i], data_idx=i, weight=0.001)
 
         obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=100, verbose=False))
         result = opt.optimize(obj, space)
 
         assert result.final_score < result.initial_score
@@ -393,7 +395,7 @@ class TestScipyOptimizer:
         guess_ff = _h2_ff(k=575.5, r0=0.78)
 
         obj, layout, space = _build_objective(guess_ff, backend, [mol_short, mol_long], ref)
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = opt.optimize(obj, space)
 
         optimized_ff = layout.replace(guess_ff, result.final_params)

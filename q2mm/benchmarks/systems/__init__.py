@@ -20,8 +20,9 @@ from dataclasses import dataclass
 from typing import Any
 
 from q2mm.benchmarks.cases import BenchmarkCase
+from q2mm.benchmarks.systems._paths import ExternalDataRoots
 
-__all__ = ["SYSTEM_KEYS", "SystemMetadata", "load_system", "system_metadata"]
+__all__ = ["SYSTEM_KEYS", "ExternalDataRoots", "SystemMetadata", "load_system", "system_metadata"]
 
 # key -> module name under q2mm.benchmarks.systems.  Every module listed
 # here exposes exactly one public ``load(...) -> BenchmarkCase`` function;
