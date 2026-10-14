@@ -1,146 +1,118 @@
 # Q2MM
 
-**Quantum-guided molecular mechanics force-field optimization.**
+**Fit molecular mechanics force fields to quantum-mechanical reference data.**
 
 [![CI](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml/badge.svg)](https://github.com/ericchansen/q2mm/actions/workflows/ci.yml)
 [![PyPI](https://img.shields.io/pypi/v/q2mm)](https://pypi.org/project/q2mm/)
 [![Python](https://img.shields.io/pypi/pyversions/q2mm)](https://pypi.org/project/q2mm/)
 
-Q2MM turns quantum-mechanical structures and Hessians into a molecular
-mechanics fitting problem. It supports fresh force fields and
-literature-template workflows while keeping the scientific choices—stationary
-point, functional form, backend, optimizer, and bounds—explicit.
+A force field is a set of parameters for an inexpensive molecular energy
+model. Q2MM helps when standard parameters do not describe your chemistry:
+it builds starting parameters from a quantum-mechanical (QM) geometry and
+Hessian, then fits selected parameters against reference observations. A
+Hessian describes how energy curves when atoms move.
 
+**Alpha, breaking API:** the API and generated CLI below are unreleased.
+Use this source revision or a wheel built from it, not an arbitrary PyPI
+version. Python **3.15 final** is the primary runtime.
+
+**[First-run guide](docs/getting-started.md)** ·
+**[Tutorial](docs/tutorial.md)** ·
 **[Documentation](https://ericchansen.github.io/q2mm/)** ·
-**[Bring-your-own tutorial](https://ericchansen.github.io/q2mm/tutorial/)** ·
 **[Publication coverage](validation/published_ffs/README.md)**
 
-## Install
+## First success: a small CPU run
 
-```bash
-pip install q2mm                 # models, preparation, I/O, and application API
-pip install "q2mm[jax]"          # JAX MM backend + optional SciPy optimizer
+No QM installation, Hessian file of your own, publication archive, or GPU is
+needed. The source-only CH3F example reads the approved geometry and Hessian
+distributed as **installed q2mm package data**.
+
+In PowerShell, from a checkout of this revision:
+
+```powershell
+python --version  # must be Python 3.15 final
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+$env:PYYAML_FORCE_LIBYAML = "0"
+python -m pip install -e ".[jax]"
+$env:JAX_PLATFORMS = "cpu"
+python examples\ch3f\run.py --optimizer.maxiter 2 --output-root results\ch3f
 ```
 
-Q2MM is an alpha release. Add `--pre` if no stable PyPI release is available.
-SciPy is optional; core installation does not silently choose or install an
-optimizer.
+On Linux/macOS, activation is `source .venv/bin/activate`; use
+`PYYAML_FORCE_LIBYAML=0 python -m pip install -e ".[jax]"`, then
+`export JAX_PLATFORMS=cpu` and run `python examples/ch3f/run.py` with the same
+options. PyYAML's supported pure-Python build avoids a C compiler on 3.15.
 
-Python **3.15** is the primary runtime; **3.14** is also supported and runs
-required core checks. OpenMM 8.6.1 and the available JAX-MD dependency chain
-use Python 3.14 CPU lanes. Native and lightweight integration checks fail
-closed when affected; optional packages are not installed by `dev`. See
-[runtime installation notes](https://ericchansen.github.io/q2mm/getting-started/#native-dependency-availability)
-for separate native environments and PyYAML's compiler-free source build.
+The script performs **real JAX molecular mechanics on CPU**, enters SciPy
+L-BFGS-B with a two-iteration budget, prints JSON, and explicitly writes:
 
-## Bring your own calculation
-
-This complete path reads a Gaussian formatted checkpoint containing geometry
-and Cartesian force constants, prepares a fresh harmonic transition-state
-problem, evaluates it with JAX, runs the documented JAX/SciPy workflow, and
-saves an AMBER force-field file plus provenance manifest.
-
-```python
-from pathlib import Path
-
-import q2mm
-from q2mm.backends.registry import load_backend
-from q2mm.io import load_fchk_molecule
-from q2mm.objectives.plan import ObjectivePlan
-from q2mm.settings import BackendSettings, PreparationSettings, TransitionStateOptimizationSettings
-
-molecule = load_fchk_molecule(
-    Path("my-transition-state.fchk"),
-    bond_tolerance=1.4,
-)
-
-problem = q2mm.prepare(
-    molecule,
-    settings=PreparationSettings(stationary_point="transition_state", functional_form="harmonic"),
-)
-output_dir = Path("output")
-output_dir.mkdir(parents=True, exist_ok=True)
-settings = TransitionStateOptimizationSettings(backend=BackendSettings(key="jax"))
-backend = load_backend(settings.backend.key, **settings.backend.options)
-optimizer = q2mm.build_optimizer(settings.optimizer)
-workflow = q2mm.build_workflow(settings.workflow)
-configuration = q2mm.capture_execution_configuration(
-    settings, backend=backend, optimizer=optimizer, workflow=workflow
-)
-make_evaluator = q2mm.make_evaluator_factory(
-    backend, problem.starting_force_field, settings=settings.objective
-)
-plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
-baseline = q2mm.evaluate(make_evaluator(plan), problem.active_space.baseline)
-result = q2mm.optimize(
-    problem,
-    optimizer=optimizer,
-    workflow=workflow,
-    make_evaluator=make_evaluator,
-    regularization=settings.objective.regularization,
-    n_evals=settings.n_evals,
-)
-run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
-saved = q2mm.save(run, output_dir / "my-transition-state.frcmod")
-
-print(baseline.total)
-print(saved.force_field_path, saved.manifest_path)
+```text
+results/ch3f/ch3f.frcmod
+results/ch3f/ch3f.frcmod.manifest.json
 ```
 
-The choices above are intentional:
+This proves input loading, preparation, native evaluation, budget-limited
+optimization, and saving work together. **It does not prove convergence,
+force-field quality, or publication reproduction.** An iteration-limit
+message and `optimization.success=false` are valid budgeted outcomes;
+`convergence_claim` is always false. Existing files are not overwritten.
+The [first-run guide](docs/getting-started.md#read-the-result) explains the
+settings and output.
 
-- `stationary_point="transition_state"` drives TS curvature inversion;
-- `functional_form="harmonic"` is compatible with JAX and `.frcmod`;
-- `BackendSettings(key="jax")` declares the MM backend to load explicitly;
-- `TransitionStateOptimizationSettings` declares the JAX/SciPy TS defaults;
-- capture records the actual components **before** numerical execution.
+For a **software-path-only** check, install core with `pip install -e .`
+and add `--bounded-ci`. That mode returns zero energy, echoes the reference
+Hessian and geometry, and makes **no parameter update**. It is not a native
+MM calculation. Use a different chosen output directory for this proof.
 
-`optimize` returns a numerical `OptimizationResult`, not a run or force field.
-`OptimizationRun.from_result` materializes the final field and its provenance.
-See the [canonical lifecycle and breaking API notes](https://ericchansen.github.io/q2mm/how-it-works/optimization-guide/#canonical-application-lifecycle).
+## Your chemistry comes next
 
-An XYZ file carries symbols and coordinates, **not a Hessian**. If XYZ is your
-geometry source, attach a separately generated canonical Hartree/Bohr² Hessian
-with `molecule.with_hessian(...)` before calling `q2mm.prepare`.
+After the packaged example, the [tutorial](docs/tutorial.md) branches into:
 
-## Multi-structure template workflow
+- **One molecule:** a Gaussian FCHK containing geometry and Cartesian force
+  constants, or XYZ plus an explicitly supplied Hessian with units/provenance.
+- **Many structures:** a complete force field plus an OPT/custom field that
+  identifies the parameters allowed to change; the remaining parameters stay
+  frozen.
 
-For a production fitting set, supply one complete force field and a smaller
-OPT/custom field identifying the scalar slots that may change:
+The lifecycle has one owner per operation: `prepare` creates an immutable
+problem; `evaluate` scores an evaluator and parameter vector; `optimize`
+returns a numerical result using explicitly supplied components;
+`OptimizationRun.from_result` assembles the final field and provenance;
+`save` writes it. There is no hidden QM job or configuration resolver.
 
-```python
-problem = q2mm.prepare(
-    molecules,
-    settings=PreparationSettings(stationary_point="transition_state", initialize="qfuerza"),
-    force_field=complete_force_field,
-    active_parameters=opt_force_field,
-    observations=observations,
-    case_ids=case_ids,
-)
-```
+Settings are native Pydantic models. The generated CLI uses their typed fields,
+not a second option schema. `q2mm-benchmark list` is a cheap catalog;
+`single --show-config` only inspects requested policy, without loading engines,
+data, or saving. See [CLI documentation](docs/benchmarks/cli.md).
+Benchmark candidates are separate from these explicitly saved example files:
+rejected/skipped candidates are **not** automatically promoted to force fields.
 
-Then choose settings, load/build components, capture, optimize and assemble a
-run exactly as above, using this problem and an `.fld` output filename.
+## Installation and scientific boundaries
 
-The [Rh-enamide tutorial](https://ericchansen.github.io/q2mm/tutorial/#first-full-case-rh-enamide)
-shows the nine-structure form of this workflow and clearly labels its current
-geometry/eigenmatrix objective as a partial repository reproduction. The
-governing source is
-[Donoghue et al. 2008](https://doi.org/10.1021/ct800132a).
+Examples are **source-only**, excluded from wheels and sdists. The approved
+CH3F/SN2 resources are installed package data; see their
+[integrity/provenance manifest](q2mm/data/sn2/manifest.json).
+The [local-wheel proof](docs/getting-started.md#use-a-local-wheel) runs the same
+source script against an isolated installed wheel.
 
-## Source-only examples
+Python **3.14** is also supported and has required core checks. OpenMM 8.6.1
+and the available JAX-MD dependency chain use Python 3.14 CPU lanes; neither
+is required for this Python 3.15 JAX CPU path. Affected native and lightweight
+integration checks fail closed. JAX CUDA/JAX-MD are not available on native
+Windows. Other integrations are explicit extras; see
+[installation contexts](docs/getting-started.md#other-installation-contexts).
 
-- `examples/ch3f/` — fresh ground-state and caller-owned FCHK workflow
-- `examples/ch3f-sn2/` — fresh transition-state workflow
-- `examples/publication/` — six real multi-molecule case studies
-- `examples/backend-plugin/` — independently installable backend API v1 example
-
-Examples and Rh-enamide source inputs are excluded from wheel and sdist
-artifacts. Rh-enamide is tracked in the source repository; its
-redistribution/licensing is not established. Dissertation archives and the
-standalone MM3 base are never copied into q2mm artifacts.
+Current publication availability, missing targets, and methodology blockers
+are projected from canonical metadata on the
+[publication coverage page](validation/published_ffs/README.md).
+Do not infer exact reproduction from an executable example. Historical
+measurements and publication artifacts remain separate.
 
 ## License
 
-The q2mm software is MIT licensed; see [LICENSE](LICENSE). This statement does
-not grant rights to external scientific inputs or third-party force fields.
+The q2mm software is MIT licensed; see [LICENSE](LICENSE). This does not grant
+rights to external scientific inputs or third-party force fields. Rh-enamide
+source inputs are excluded from wheel and sdist artifacts;
+redistribution/licensing is not established. Recovered dissertation archives
+are never distributed in q2mm wheels or sdists.

@@ -1,60 +1,60 @@
 # Q2MM
 
-Q2MM builds molecular mechanics force fields from quantum-mechanical reference
-structures and Hessians. It matters when standard force fields do not describe
-your chemistry—especially transition states and metal-centered custom regions—
-and you need explicit control over what is fitted and what stays frozen.
+Q2MM fits molecular mechanics force fields to quantum-mechanical reference
+data. A force field is an inexpensive energy model whose parameters describe
+bonds, angles, and other interactions. Use Q2MM when standard parameters do not
+cover your chemistry and you need to control which parameters are fitted and
+which stay frozen.
 
-## One public workflow
+## Start without your own QM calculation
 
-```python
-import q2mm
-from q2mm.io import load_fchk_molecule
-from q2mm.settings import PreparationSettings
+The [first-run guide](getting-started.md#first-success-on-cpu) uses a small
+CH3F molecule with an approved, precomputed geometry and Hessian distributed
+inside q2mm. A Hessian describes the energy curvature as atoms move.
+There is no publication archive to recover and no GPU or QM installation to
+configure.
 
-molecule = load_fchk_molecule("my-transition-state.fchk", bond_tolerance=1.4)
-problem = q2mm.prepare(
-    molecule,
-    settings=PreparationSettings(stationary_point="transition_state", functional_form="harmonic"),
-)
+From the documented source installation, with `JAX_PLATFORMS=cpu` set:
+
+```powershell
+python examples\ch3f\run.py --optimizer.maxiter 2 --output-root results\ch3f
 ```
 
-Continue with the complete [execution lifecycle](getting-started.md#first-complete-problem):
-choose final immutable settings, load/build components, capture the actual
-configuration, create the evaluator, and optimize. The root exports are the
-same canonical objects as their owning modules, loaded only when accessed.
+This runs genuine JAX molecular mechanics on CPU and a budget-limited SciPy
+optimizer, then explicitly saves `ch3f.frcmod` and its provenance manifest in
+your chosen directory. **It is a first execution success, not a convergence
+or force-field quality claim.**
 
-1. **`prepare`** builds an immutable problem and records stationary point,
-   functional form, observations, active/frozen slots, and QFUERZA audit.
-2. **`evaluate(evaluator, parameters)`** scores an explicit full parameter vector.
-   Reference-property generation uses the separate `evaluate_reference` service.
-3. **`optimize`** executes the supplied optimizer, workflow and evaluator factory,
-   returning a numerical `OptimizationResult`. Build the final field and
-   provenance with `OptimizationRun.from_result`.
-4. **`save`** writes a semantic force-field format and, for a run, a provenance
-   manifest.
+The separate `--bounded-ci` mode is only a software-path proof: zero energy,
+an echoed reference Hessian/geometry, and no parameter update. Do not use it as
+native-backend or scientific validation.
 
-No function guesses whether a structure is a minimum or transition state.
-`prepare` does not launch hidden QM calculations. SciPy and all computational
-backends are optional dependencies.
+!!! warning "Use this source revision or its local wheel"
+    This breaking alpha API/CLI is unreleased. An arbitrary PyPI version may
+    not contain it. Examples are source-only; approved small-system inputs are
+    installed package data. Use Python **3.15 final** and the
+    [installation instructions](getting-started.md).
 
-## Two fitting patterns
+## Then choose your fitting problem
 
-- **Fresh one-molecule field:** bring one Hessian-bearing molecule and select a
-  functional form. QFUERZA creates the starting field.
-- **Multi-structure template:** bring many molecules, one complete field, and a
-  smaller OPT/custom field. Only the selected scalar slots change; the base
-  remains frozen.
+The [tutorial](tutorial.md) progresses from the executable example to your own
+inputs: one FCHK, XYZ plus an explicit Hessian, or several structures sharing
+a complete force field and an OPT/custom parameter subset. Stationary-point
+kind (minimum or transition state), force-field form, and runtime components
+are explicit choices, never inferred from filenames.
 
-The [tutorial](tutorial.md) starts with the real nine-structure Rh-enamide
-template workflow from
-[Donoghue et al. 2008](https://doi.org/10.1021/ct800132a), labels the current
-objective as a partial repository reproduction, and then swaps in user paths.
+There is one public lifecycle: **prepare → evaluate → optimize → assemble →
+save**. Settings construction loads no engines; `prepare` starts no hidden QM
+job. `optimize` returns a numerical result, while
+`OptimizationRun.from_result` builds the final force field and provenance.
+Read the [canonical lifecycle](how-it-works/optimization-guide.md#canonical-application-lifecycle)
+for the full API and breaking migration notes.
 
-## Where to go next
+## Continue
 
-- [Getting Started](getting-started.md) — installation and your first FCHK
-- [Tutorial](tutorial.md) — Rh-enamide, BYO templates, QCEngine, ASE, and manual problems
-- [Publication Coverage](benchmarks/published-ff-validation.md) — provisionable and blocked source rows
-- [Backend authoring](backends/authoring.md) — stable external backend API v1
-- [Theory & Methods](how-it-works/theory.md) — QFUERZA and TS curvature handling
+[Getting started](getting-started.md) covers installation, outputs, and a local
+wheel. [The tutorial](tutorial.md) explains inputs and settings in Python.
+[Publication coverage](benchmarks/published-ff-validation.md) gives the current
+source-linked availability and blockers; it does not claim exact reproduction.
+[Theory and methods](how-it-works/theory.md) explains Hessian-informed
+initialization and transition-state handling.

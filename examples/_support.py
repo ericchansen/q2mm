@@ -80,7 +80,7 @@ class _EchoPrepared(AbstractPreparedBackend):
 
 
 class BoundedEchoBackend:
-    """Deterministic MM backend for one-evaluation installed-wheel smoke runs."""
+    """Software-only echo: zero energy, reference geometry and reference Hessian."""
 
     info = _INFO
 
