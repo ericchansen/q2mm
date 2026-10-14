@@ -1,34 +1,185 @@
-# Getting started with your own files
+# Getting started
 
-Q2MM prepares and optimizes a molecular mechanics force field against
-quantum-mechanical reference data. The shortest safe workflow starts from a
-file that contains both an optimized geometry and a Cartesian Hessian, then
-requires you to choose the stationary-point kind, force-field form, and MM
-backend explicitly.
+Q2MM builds and fits molecular mechanics force fields against quantum-mechanical
+(QM) reference data. This guide gets you to a saved first result before you
+need your own QM files. The small CH3F example uses a precomputed geometry and
+Hessian (energy curvature as atoms move), then performs real CPU molecular
+mechanics with a deliberately small optimizer budget.
 
-## Install only what you use
+## Install this revision
 
 Python **3.15** is the primary development, docs, release and JAX CPU runtime.
 Python **3.14** is also supported and has required core checks. OpenMM and
 JAX-MD use separate Python 3.14 CPU environments; the remaining documented
 native and lightweight integration lanes use Python 3.15.
 
-```bash
-pip install q2mm
-pip install "q2mm[jax]"       # JAX backend and its optimization dependencies
-pip install "q2mm[openmm]"    # OpenMM backend, Python 3.14 environment
-pip install "q2mm[qcengine]"  # optional reference-property generation
-pip install "q2mm[ase]"       # optional ASE reference calculators
+The breaking alpha API and generated CLI described here are **unreleased**.
+Install the source revision containing this guide, or a wheel built from it.
+`pip install q2mm` from PyPI is not evidence that this API is available.
+
+Use **Python 3.15 final**, not a 3.15 prerelease. From the source checkout:
+
+=== "Windows PowerShell"
+
+    ```powershell
+    python --version
+    python -c "import sys; assert sys.version_info[:2] == (3, 15) and sys.version_info.releaselevel == 'final'"
+    python -m venv .venv
+    .\.venv\Scripts\Activate.ps1
+    $env:PYYAML_FORCE_LIBYAML = "0"
+    python -m pip install -e ".[jax]"
+    ```
+
+    If activation is disallowed, call `.\.venv\Scripts\python.exe` instead of
+    `python` in subsequent commands; no execution-policy change is needed.
+
+=== "Linux / macOS"
+
+    ```bash
+    python3.15 --version
+    python3.15 -c "import sys; assert sys.version_info.releaselevel == 'final'"
+    python3.15 -m venv .venv
+    source .venv/bin/activate
+    PYYAML_FORCE_LIBYAML=0 python -m pip install -e ".[jax]"
+    ```
+
+The `jax` extra installs JAX/jaxlib, SciPy, and the JAX optimizer dependencies.
+It does not require OpenMM or a QM program. Core dependencies include Pydantic
+and pydantic-settings. PyYAML's supported pure-Python source build
+(`PYYAML_FORCE_LIBYAML=0`) avoids a C compiler when no cp315 wheel is available.
+SciPy is optional in core; it is explicitly installed by this extra.
+
+## First success on CPU
+
+Select CPU **before starting Python**. Standalone scripts do not inherit
+pytest's CPU policy.
+
+=== "Windows PowerShell"
+
+    ```powershell
+    $env:JAX_PLATFORMS = "cpu"
+    python -c "import jax; assert all(d.platform == 'cpu' for d in jax.devices()); print(jax.devices())"
+    python examples\ch3f\run.py --optimizer.maxiter 2 --output-root results\ch3f
+    ```
+
+=== "Linux / macOS"
+
+    ```bash
+    export JAX_PLATFORMS=cpu
+    python -c "import jax; assert all(d.platform == 'cpu' for d in jax.devices()); print(jax.devices())"
+    python examples/ch3f/run.py --optimizer.maxiter 2 --output-root results/ch3f
+    ```
+
+The JAX CPU path refuses an unset or different `JAX_PLATFORMS` and checks the
+selected backend's CPU platform before creating an evaluator. It loads
+the approved installed `ch3f-optimized.xyz` and `ch3f-hessian.npy` resources,
+prepares a fresh harmonic **ground-state** field with QFUERZA, evaluates the
+generic geometry/eigenmatrix objective using JAX, and enters SciPy L-BFGS-B.
+No data download, reference QM job, or publication convergence run occurs.
+The [resource manifest](https://github.com/ericchansen/q2mm/blob/master/q2mm/data/sn2/manifest.json)
+records source generation, licensing, sizes and hashes.
+
+### Read the result
+
+One JSON document appears on stdout; diagnostics/warnings appear on stderr.
+The only output files are:
+
+```text
+results/ch3f/ch3f.frcmod
+results/ch3f/ch3f.frcmod.manifest.json
 ```
 
-SciPy is in optimizer extras such as `q2mm[jax]` and `q2mm[optimize]`; it is not
-an automatic core dependency. Q2MM never chooses a backend or runs a QM job
-inside `prepare`.
+`ch3f.frcmod` contains the harmonic parameters in AMBER format.
+The manifest records input/layout fingerprints, the baseline and active
+slots, preparation provenance, actual backend/optimizer/workflow settings,
+and the numerical result. Its `provenance.example` records the software/native
+mode and `convergence_claim=false`, while retaining the raw solver result
+unchanged. It is not an acceptance certificate.
 
-For an alpha release that is not yet stable on PyPI, add `--pre`. Developers
-can instead clone the repository and run `pip install -e ".[dev]"`. The
-development extra does not install OpenMM, ParmEd, ASE, QCEngine, or
-QCElemental; request their individual extras only when using those integrations.
+| Control or output | Meaning |
+| --- | --- |
+| `--output-root` | Your chosen results directory; all saved files go here. Existing files are not overwritten. |
+| `--optimizer.maxiter 2` | At most two outer SciPy iterations, **not** two energy evaluations or a wall-time limit. The example also defaults to `maxls=5` and a single-stage workflow. |
+| `--n-evals 0` (default) | No optional endpoint sampling; it does **not** disable optimization or its objective evaluations. |
+| `initial` / `final` | Objective totals and category scores from the selected executor, not an independent accuracy measurement. |
+| `optimization.success` / `message` | The raw solver status. An iteration-limit stop and `success=false` are valid budgeted outcomes. |
+| `optimization.convergence_claim` | Always `false` for this onboarding example, even if the solver reports success. |
+| `optimization.parameter_update_norm` | Size of the actual returned parameter change; the software-only mode reports zero. |
+
+**First success means the native execution/save path ran, not that the force
+field is converged, accurate, accepted by benchmark policy, or a publication
+reproduction.** Do not increase the budget and infer quality from the solver's
+success flag alone. See [fitting objectives](how-it-works/fitting-objectives.md)
+before designing a scientific fit.
+
+To inspect policy without calculation:
+
+```powershell
+python examples\ch3f\run.py --output-root results\ch3f --optimizer.maxiter 2 --show-config
+q2mm-benchmark single --system ch3f --backend.key jax --functional-form harmonic --optimizer.maxiter 2 --show-config
+```
+
+Both use native Pydantic CLI fields. `--show-config` loads no engines or
+scientific data, writes no files, and does **not** verify runtime availability,
+input completeness, or convergence. Settings read explicit constructor/CLI
+input, not ambient environment/dotenv/secret sources. CPU selection is a
+separate explicit JAX runtime environment choice.
+
+### Software-only proof without JAX
+
+In a core-only environment installed with `python -m pip install -e .`:
+
+```powershell
+python examples\ch3f\run.py --bounded-ci --output-root results\ch3f-software
+```
+
+This proves parsing, preparation, objective dispatch, optimizer entry, run
+assembly, and saving only. `BoundedEchoBackend` returns **zero energy** and
+the **reference geometry/Hessian**; `BoundedExampleOptimizer` returns the
+unchanged parameter vector. It is **not native MM**, optimizer convergence,
+force-field quality, or scientific reproduction. It records
+`execution_mode="software_path_only"`, versus `"budget_limited_native"` above.
+Numerical policy flags in this mode do not configure the echo/no-update proof;
+the saved manifest identifies the actual software components.
+
+## Use a local wheel
+
+The example scripts are **source-only and excluded from wheels and sdists**.
+The approved small-system resources are **installed package data**. To verify
+the same first-run path against an isolated wheel, keep the source checkout
+for the script but install only the wheel and its documented extra into a
+new environment. PowerShell, starting in the checkout:
+
+```powershell
+python -m pip install build
+python -m build --wheel
+$wheels = @(Get-ChildItem dist\q2mm-*.whl)
+if ($wheels.Count -ne 1) { throw "Expected exactly one locally built wheel in dist." }
+$wheel = $wheels[0]
+$example = (Resolve-Path examples\ch3f\run.py).Path
+python -m venv .wheel-venv
+.\.wheel-venv\Scripts\python.exe -m pip install "$($wheel.FullName)[jax]"
+$wheelPython = (Resolve-Path .wheel-venv\Scripts\python.exe).Path
+$env:JAX_PLATFORMS = "cpu"
+```
+
+Use a directory outside the checkout, such as a newly created empty project
+directory, as the working directory. Keep the absolute `$example` and
+`$wheelPython` paths captured above, then run:
+
+```powershell
+& $wheelPython -I -c "import q2mm; print(q2mm.__file__)"
+& $wheelPython -I $example --optimizer.maxiter 2 --output-root results\ch3f
+```
+
+The import must resolve under the new environment's `site-packages`, not the
+source tree. `-I` prevents accidental import from the working directory or
+`PYTHONPATH`. The script resolves its shared runner relative to itself, and
+inputs relative to the installed package, so an arbitrary working directory
+is supported. Outputs remain relative to your explicit `--output-root`.
+Add `--bounded-ci` for the distinct installed-wheel software-path proof.
+
+## Other installation contexts
 
 ### Native dependency availability
 
@@ -55,213 +206,44 @@ pulling images. Affected jobs require their pinned image, consistent packages,
 real imports and nonzero executed tests. These checks do not establish full
 scientific convergence, GPU performance or publication reproduction.
 
-PyYAML 6.0.3 also has no cp315 wheel, but supports a pure-Python source build.
-Set `PYYAML_FORCE_LIBYAML=0` before installing to avoid requiring a native C
-compiler. In PowerShell:
+JAX CUDA/JAX-MD are not available on native Windows. No GPU is needed here.
+See [platform support](platform-support.md) for other contexts.
 
-```powershell
-$env:PYYAML_FORCE_LIBYAML = "0"
-python -m pip install -e ".[dev]"
-```
+Install only the extras you need **from this revision**: `.[optimize]` for
+SciPy without JAX, `.[qcengine]` or `.[ase]` for explicit reference-property
+generation, and `.[openmm]` in its separate supported environment.
+`.[dev]` supplies development tools, not all optional backends.
 
-On Linux or macOS:
+Backend selection does not change the objective executor implicitly. In
+Python, supply `BackendSettings(key="openmm")` together with a complete typed
+`ObjectiveSettings(executor="python")` from `q2mm.settings`. Its native gradient
+default is scalar (`none`); solver tolerances and TS bounds remain the named
+preset's values. In the small example's CLI, explicitly pass
+`--backend.key openmm --objective.executor python --objective.gradient-mode none`
+because nested CLI updates retain the other existing fields.
+Incompatible JAX-objective/backend settings are rejected before backend
+construction, never silently switched.
+The small example uses `null` for optional unset values so the literal
+gradient mode `none` stays distinct; inspect its generated `--help`.
 
-```bash
-PYYAML_FORCE_LIBYAML=0 python -m pip install -e ".[dev]"
-```
+**OpenMM needs its own CPU selection**: `JAX_PLATFORMS` has no effect on it.
+Add `--backend.options '{"platform_name":"CPU"}'` to the OpenMM options above
+(in Python, `BackendSettings(key="openmm", options={"platform_name": "CPU"})`).
+Alternatively, explicitly set `OPENMM_DEFAULT_PLATFORM=CPU` before starting
+Python. A GPU option overrides that environment setting and is rejected.
+Absent or non-CPU OpenMM selection fails before the backend factory runs;
+the loaded backend's selected platform is checked again before any context
+preparation or evaluation. No backend/executor/option is silently rewritten.
+The selected CPU platform is recorded in stdout and the saved provenance;
+other custom native backends must report CPU platform provenance too.
 
-Pydantic v2 and pydantic-settings v2 are base dependencies, independent of
-optional computational backends.
-
-## First complete problem
-
-A Gaussian formatted checkpoint (`.fchk`) can carry the geometry and Cartesian
-force constants needed by QFUERZA:
-
-```python
-from pathlib import Path
-
-import q2mm
-from q2mm.backends.registry import load_backend
-from q2mm.io import load_fchk_molecule
-from q2mm.objectives.plan import ObjectivePlan
-from q2mm.settings import BackendSettings, PreparationSettings, TransitionStateOptimizationSettings
-
-input_file = Path("/data/project/ts.fchk")
-output_dir = Path("/data/project/q2mm-output")
-output_dir.mkdir(parents=True, exist_ok=True)
-
-molecule = load_fchk_molecule(input_file, bond_tolerance=1.4)
-problem = q2mm.prepare(
-    molecule,
-    settings=PreparationSettings(stationary_point="transition_state", functional_form="harmonic"),
-)
-settings = TransitionStateOptimizationSettings(backend=BackendSettings(key="jax"))
-backend = load_backend(settings.backend.key, **settings.backend.factory_options())
-optimizer = q2mm.build_optimizer(settings.optimizer)
-workflow = q2mm.build_workflow(settings.workflow)
-configuration = q2mm.capture_execution_configuration(
-    settings, backend=backend, optimizer=optimizer, workflow=workflow
-)
-make_evaluator = q2mm.make_evaluator_factory(
-    backend, problem.starting_force_field, settings=settings.objective
-)
-plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
-initial = q2mm.evaluate(make_evaluator(plan), problem.active_space.baseline)
-result = q2mm.optimize(
-    problem, optimizer=optimizer, workflow=workflow, make_evaluator=make_evaluator,
-    regularization=settings.objective.regularization, n_evals=settings.n_evals,
-)
-run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
-saved = q2mm.save(run, output_dir / "optimized.frcmod")
-```
-
-Choose `TransitionStateOptimizationSettings` for a declared TS, or
-`GroundStateOptimizationSettings` for a declared minimum. These immutable
-models hold final settings; loading a backend and constructing the
-optimizer/workflow are separate explicit actions. Capture the actual objects
-before execution; `optimize` returns only numerical results.
-`OptimizationRun.from_result` builds the final field and provenance without
-executing again. The package-root functions are lazy exports of those same
-canonical services, not a separate convenience execution API. Partial nested
-constructor input, such as
-`TransitionStateOptimizationSettings(optimizer={"maxiter": 100})`, uses native
-Pydantic validation and retains the other TS defaults. No resolver or
-requested/effective settings pipeline is involved.
-
-Backend selection does not implicitly change the objective executor. For a
-non-JAX backend, supply an explicit typed objective, for example
-`TransitionStateOptimizationSettings(backend=BackendSettings(key="openmm"),
-objective=ObjectiveSettings(executor="python"))`. Import `ObjectiveSettings`
-from `q2mm.settings`. The explicit executor selects its native gradient
-default (Python/scalar or JAX/analytical); solver tolerances and TS bounds
-remain the named preset's values. Incompatible JAX-objective/backend settings
-are rejected rather than silently switched.
-
-The output manifest records the resolved backend, optimizer, workflow, bounds,
-input fingerprints, active slots, preparation audit, and objective result.
-Saving never overwrites an existing file unless `overwrite=True` is explicit.
 The numerical result retains the regularization and endpoint-sampling controls
 actually used. Run assembly rejects a capture that disagrees with those
 controls or either endpoint's sample count; direct algorithm results without
 canonical execution-control capture are not ready-to-save run records.
 
-Omitting `observations` selects the stationary-point-aware generic recipe.
-See [Fitting objectives and reference data](how-it-works/fitting-objectives.md)
-for mode selection, near-linear overrides, and the distinct frozen recipe
-used by publication case loaders.
-
-!!! warning "XYZ is geometry only"
-    XYZ contains element labels and coordinates. It does not carry a Cartesian
-    Hessian. Load the Hessian from its actual source and attach it with
-    `molecule.with_hessian(hessian, provenance=...)`; never imply that
-    `load_xyz` supplied it.
-
-## Input bridges are explicit
-
-Q2MM does not guess file formats or which structure in a trajectory is intended.
-
-```python
-from q2mm.io import (
-    load_fchk_molecule,
-    load_gaussian_molecules,
-    load_jaguar_molecules,
-    load_macromodel_molecules,
-)
-
-one = load_fchk_molecule("minimum.fchk")
-gaussian = load_gaussian_molecules(
-    ["case-1.log", "case-2.log"],
-    structure_index=-1,
-    require_hessian=True,
-)
-jaguar = load_jaguar_molecules(
-    ["case-1.in", "case-2.in"],
-    structure_index=0,
-    require_hessian=True,
-)
-macromodel = load_macromodel_molecules(
-    ["training-set.mmo"],
-    structure_index=0,
-)
-```
-
-Gaussian, Jaguar, and MacroModel bridges require `structure_index`; the SDK
-does not silently choose first or last. Batch loading is all-or-nothing.
-
-## Template-backed multi-structure problems
-
-Use a complete field for evaluation and a smaller OPT/custom field to identify
-the rows that can change:
-
-```python
-import q2mm
-from q2mm.io import load_gaussian_molecules, load_mm3_fld
-from q2mm.settings import PreparationSettings
-
-paths = ["TS1.log", "TS2.log", "TS3.log"]
-molecules = load_gaussian_molecules(paths, structure_index=-1)
-case_ids = ("TS1", "TS2", "TS3")
-full_ff = load_mm3_fld("complete.fld")
-opt_ff = load_mm3_fld("custom-opt.fld", include_standard=False)
-
-problem = q2mm.prepare(
-    molecules,
-    settings=PreparationSettings(stationary_point="transition_state", initialize="qfuerza"),
-    force_field=full_ff,
-    active_parameters=opt_ff,
-    case_ids=case_ids,
-)
-```
-
-Only active scalar slots are re-estimated. Frozen slots remain bitwise equal to
-the supplied baseline. QFUERZA methodology is governed by
-[Farrugia et al.](https://doi.org/10.1021/acs.jctc.5c01751); transition-state
-curvature handling follows
-[Limé and Norrby](https://doi.org/10.1002/jcc.23797).
-
-To retain supplied values, use
-`PreparationSettings(stationary_point="transition_state", initialize="provided")`.
-Its `qfuerza` controls default to `None`; passing `qfuerza=None` explicitly is
-also valid. Other initialization choices default to `QFuerzaSettings()`.
-Validation checks the actual initialization/control combination, and the same
-settings remain valid after JSON serialization and reconstruction.
-
-## Publication data roots
-
-Publication examples never download scientific data. Supply the required roots
-as CLI arguments or through the loader's `ExternalDataRoots` object.
-
-| Root | Systems | Distribution status |
-|---|---|---|
-| `rh_enamide` / `Q2MM_RH_ENAMIDE` | Rh-enamide | Source-tracked at `examples/publication/rh-enamide`, excluded from wheel/sdist; redistribution/licensing not established. |
-| `supporting_info` / `Q2MM_SUPPORTING_INFO` | Heck, Pd/Rh conjugate, Pd-allyl, Ferrocene | Caller-supplied recovered/source archive; never packaged. |
-| `mm3_base` / `Q2MM_MM3_BASE` | Pd/Rh conjugate, Pd-allyl, Ferrocene | Caller-supplied MM3 base; never packaged. |
-
-PowerShell example:
-
-```powershell
-$env:Q2MM_RH_ENAMIDE = "C:\path\to\q2mm\examples\publication\rh-enamide"
-$env:Q2MM_SUPPORTING_INFO = "C:\path\to\publication-data"
-$env:Q2MM_MM3_BASE = "C:\path\to\mm3_base.fld"
-```
-
-The canonical source-linked status and blocker table is
-[Publication Force-Field Coverage](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md).
-
-## Run fast executable examples
-
-From a source checkout, while q2mm is installed:
-
-```bash
-python examples/ch3f/run.py --bounded-ci --output-root ./results/ch3f
-python examples/ch3f-sn2/run.py --bounded-ci --output-root ./results/ch3f-sn2
-```
-
-`--bounded-ci` constructs the real problem and enters its optimizer once. It is
-deliberately separate from the default scientific workflow and makes no
-convergence claim.
-
-Next, follow the [tutorial](tutorial.md) for the first full nine-structure
-Rh-enamide case, bring-your-own substitutions, reference backends, manual
-problem construction, blocked publication records, and an external plugin.
+Next, the [tutorial](tutorial.md) uses the same runner from Python, then
+branches into your own FCHK, XYZ plus Hessian, and multi-structure complete/OPT
+inputs. Current publication provisioning and methodology blockers live on the
+generated [publication coverage page](benchmarks/published-ff-validation.md);
+they are not the onboarding starting point.
