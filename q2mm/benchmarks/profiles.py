@@ -36,12 +36,12 @@ They are called by the coordinator, never during module import.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
+
 from pydantic import Field
 
 from q2mm._canonical import canonical_fingerprint as _canonical_fingerprint
@@ -53,15 +53,17 @@ from q2mm.benchmarks.publications import (
     REPOSITORY_OBJECTIVE_PROFILE,
 )
 from q2mm.models.results import deep_freeze
-from q2mm.optimizers.catalog import OPTIMIZER_CATALOG, OptimizerSpec
+from q2mm.optimizers.catalog import OPTIMIZER_CATALOG, OptimizerSpec, optimizer_method, optimizer_spec
 from q2mm.settings import (
-    OptimizerOverrides,
-    PathOptions,
-    OptimizationSettings,
+    Key,
     ObjectiveSettings,
-    BackendSettings,
-    SingleStageSettings,
-    MethodE2Settings,
+    OptimizationSettings,
+    OptimizerSettings,
+    PathOptions,
+    Positive,
+    ScipySettings,
+    Settings,
+    TransitionStateOptimizationSettings,
 )
 
 if TYPE_CHECKING:
@@ -80,6 +82,8 @@ __all__ = [
     "KNOWN_OBJECTIVE_PROFILES",
     "ConfigurationError",
     "RunProfile",
+    "QFuerzaPublicationProfile",
+    "HeckPublicationProfile",
     "ResolvedProfile",
     "canonical_json",
     "canonical_fingerprint",
@@ -87,7 +91,10 @@ __all__ = [
     "device_info",
     "resolve",
     "recommended_publication_profile",
-    "execution_settings",
+    "catalog_settings",
+    "BenchmarkSettings",
+    "BenchmarkSelection",
+    "PROFILE_VERSION",
 ]
 
 
@@ -179,112 +186,73 @@ class ConfigurationError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-class RunProfile(OptimizerOverrides):
-    """Immutable specification of one requested benchmark run.
+PROFILE_VERSION = "benchmark-profile-v2"
 
-    Attributes:
-        system: Registry key of the benchmark system (e.g. ``"ch3f"``).
-        backend: Registry key of the MM backend (e.g. ``"jax"``).
-        functional_form: Explicit form (``"harmonic"``/``"mm3"``), or
-            ``None`` to use the backend/system default.
-        starting_point: ``"qfuerza"`` (Farrugia 2025) or ``"published"``.
-        objective_profile: Explicit publication objective/completeness profile,
-            or ``None`` for the repository compatibility default on publication
-            systems and no publication profile on small-system fixtures.
-        workflow: ``"single-stage"`` or ``"method-e2"``.
-        optimizer: Key into :data:`OPTIMIZER_CATALOG`.
-        maxiter: Optimizer iteration cap (non-negative), or ``None`` for the
-            optimizer's own default.
-        ftol: Positive L-BFGS-B function-value tolerance.
-        fc_fraction / eq_fraction: Fractional bound widths in ``(0, 1]`` for
-            force-constant / equilibrium params, or ``None`` for sanity bounds.
-        regularization: Non-negative L2 penalty strength applied to the
-            objective plan (overrides the optimizer catalog's default when
-            > 0; otherwise the catalog's value is used).
-        n_evals: Non-negative post-hoc configured-executor samples per endpoint.
-        executor_ratio_tol: Non-negative JAX/Python score-ratio gate
-            tolerance; ``None`` disables the gate.
-        skip_optimization: Compute the baseline only; never optimize.
-        qfuerza_replace_with: Positive replacement (Hartree/Bohr^2) for the
-            negative TS-Hessian eigenvalue during QFUERZA construction.
-        platform: OpenMM platform override (ignored by other backends).
-        data_roots: Immutable mapping of external data-root keys (a subset of
-            :data:`DATA_ROOT_KEYS`) to filesystem path strings.
-        seed: Deterministic seed for stochastic optimizers.
-        label: Optional human-facing label; not part of run identity.
 
-    """
+class BenchmarkSettings(OptimizationSettings):
+    """Benchmark execution policy, using the same component models as the SDK."""
 
-    system: str
-    backend: str = "jax"
-    functional_form: str | None = None
-    starting_point: str = "qfuerza"
+    recipe_id: Key = "benchmark-v2"
+    optimizer: OptimizerSettings = OPTIMIZER_CATALOG["scipy-lbfgsb-jax"].settings
+    objective: ObjectiveSettings = ObjectiveSettings(executor="jax", gradient_mode="analytical")
+
+
+def catalog_settings(key: str) -> BenchmarkSettings:
+    """Select actual catalog defaults, without constructing engines or solvers."""
+    spec = optimizer_spec(key)
+    return BenchmarkSettings(
+        recipe_id=key,
+        optimizer=spec.settings,
+        objective=ObjectiveSettings(
+            executor=spec.evaluator,
+            gradient_mode=spec.gradient_mode,
+            fd_step=spec.fd_step if spec.gradient_mode == "finite_difference" else None,
+            regularization=spec.regularization,
+        ),
+    )
+
+
+class BenchmarkSelection(Settings):
+    """Scientific loader selections shared by single, batch, and matrix commands."""
+
+    functional_form: Literal["harmonic", "mm3"] | None = None
+    starting_point: Literal["qfuerza", "published"] = "qfuerza"
     objective_profile: str | None = None
-    workflow: str = "single-stage"
-    optimizer: str = "scipy-lbfgsb-jax"
-    regularization: float | None = None
-    n_evals: int = 1
-    executor_ratio_tol: float | None = None
     skip_optimization: bool = False
-    qfuerza_replace_with: float = 1.0
-    platform: str | None = None
+    qfuerza_replace_with: Positive = 1.0
     data_roots: PathOptions = Field(default_factory=dict)
     label: str = ""
 
     def model_post_init(self, context: Any) -> None:
-        """Validate benchmark vocabularies without constructing runtime components."""
-        if not self.system:
-            raise ValueError("RunProfile.system must be a non-empty registry key.")
-        if not self.backend:
-            raise ValueError("RunProfile.backend must be a non-empty registry key.")
-        if self.functional_form is not None and self.functional_form not in FUNCTIONAL_FORMS:
-            raise ValueError(
-                f"RunProfile.functional_form must be one of {FUNCTIONAL_FORMS} or None, got {self.functional_form!r}."
-            )
-        if self.starting_point not in STARTING_POINTS:
-            raise ValueError(f"RunProfile.starting_point must be one of {sorted(STARTING_POINTS)}.")
+        """Validate loader choices without reading data or environment sources."""
+        super().model_post_init(context)
         if self.objective_profile is not None and self.objective_profile not in KNOWN_OBJECTIVE_PROFILES:
-            raise ValueError(
-                f"RunProfile.objective_profile must be one of {sorted(KNOWN_OBJECTIVE_PROFILES)}, "
-                f"got {self.objective_profile!r}."
-            )
-        if self.system not in PUBLICATION_SYSTEM_KEYS and self.objective_profile is not None:
-            raise ValueError("objective_profile applies only to registered publication systems.")
-        if self.workflow not in WORKFLOWS:
-            raise ValueError(f"RunProfile.workflow must be one of {sorted(WORKFLOWS)}.")
-        if self.optimizer not in OPTIMIZER_CATALOG:
-            raise ValueError(
-                f"RunProfile.optimizer must be a catalog key {sorted(OPTIMIZER_CATALOG)}, got {self.optimizer!r}."
-            )
-        if self.regularization is not None and not (math.isfinite(self.regularization) and self.regularization >= 0.0):
-            raise ValueError(
-                f"RunProfile.regularization must be non-negative and finite or None, got {self.regularization!r}."
-            )
-        if not isinstance(self.n_evals, int) or self.n_evals < 0:
-            raise ValueError(f"RunProfile.n_evals must be a non-negative int, got {self.n_evals!r}.")
-        if self.executor_ratio_tol is not None and not (
-            math.isfinite(self.executor_ratio_tol) and self.executor_ratio_tol >= 0.0
-        ):
-            raise ValueError(
-                f"RunProfile.executor_ratio_tol must be non-negative and finite or None, got {self.executor_ratio_tol!r}."
-            )
-        if not (math.isfinite(self.qfuerza_replace_with) and self.qfuerza_replace_with > 0.0):
-            raise ValueError(
-                f"RunProfile.qfuerza_replace_with must be positive and finite, got {self.qfuerza_replace_with!r}."
-            )
+            raise ValueError(f"objective_profile must be one of {sorted(KNOWN_OBJECTIVE_PROFILES)}.")
         unknown_roots = set(self.data_roots) - DATA_ROOT_KEYS
         if unknown_roots:
             raise ValueError(
-                f"RunProfile.data_roots keys must be a subset of {sorted(DATA_ROOT_KEYS)}; got {sorted(unknown_roots)}."
+                f"data_roots keys must be a subset of {sorted(DATA_ROOT_KEYS)}; got {sorted(unknown_roots)}."
             )
-        for k, v in self.data_roots.items():
-            if not isinstance(v, str) or not v:
-                raise ValueError(f"RunProfile.data_roots[{k!r}] must be a non-empty path string, got {v!r}.")
+        for key, value in self.data_roots.items():
+            if not value.strip():
+                raise ValueError(f"data_roots[{key!r}] must be a non-empty path string.")
 
-    @property
-    def optimizer_spec(self) -> OptimizerSpec:
-        """The catalog entry for :attr:`optimizer`."""
-        return OPTIMIZER_CATALOG[self.optimizer]
+
+class RunProfile(BenchmarkSelection, BenchmarkSettings):
+    """One immutable benchmark request with authoritative typed execution settings.
+
+    ``canonical_dict`` is the explicitly versioned requested identity projection,
+    separate from model inspection. Existing persisted v1 candidates are read
+    unchanged, not reconstructed as v2 requests or assigned new fingerprints.
+    """
+
+    system: Key
+
+    def model_post_init(self, context: Any) -> None:
+        """Validate benchmark vocabularies without constructing runtime components."""
+        super().model_post_init(context)
+        if self.system not in PUBLICATION_SYSTEM_KEYS and self.objective_profile is not None:
+            raise ValueError("objective_profile applies only to registered publication systems.")
 
     @property
     def effective_objective_profile(self) -> str | None:
@@ -295,40 +263,41 @@ class RunProfile(OptimizerOverrides):
 
     @property
     def effective_regularization(self) -> float:
-        """L2 strength actually used.
+        """The objective's actual L2 strength."""
+        return self.objective.regularization
 
-        An explicit :attr:`regularization` (including ``0.0`` to disable an
-        optimizer's L2 preset) wins; otherwise the optimizer catalog's
-        default applies.
-        """
-        return self.optimizer_spec.regularization if self.regularization is None else float(self.regularization)
+    @property
+    def seed(self) -> int | None:
+        """Stochastic solver seed, when the selected family exposes one."""
+        from q2mm.settings import BasinHoppingSettings, JaxMultiStartSettings, MultiStartSettings
+
+        if isinstance(self.optimizer, (BasinHoppingSettings, MultiStartSettings, JaxMultiStartSettings)):
+            return self.optimizer.seed
+        return None
 
     def canonical_dict(self) -> dict[str, Any]:
         """Return the identity-relevant config as a JSON-safe dict (excludes label)."""
         return {
+            "version": PROFILE_VERSION,
             "system": self.system,
-            "backend": self.backend,
+            "recipe_id": self.recipe_id,
+            "backend": {"key": self.backend.key, "options": _jsonify(self.backend.options)},
             "functional_form": self.functional_form,
             "starting_point": self.starting_point,
             "objective_profile": self.effective_objective_profile,
-            "workflow": self.workflow,
-            "optimizer": self.optimizer,
-            "maxiter": self.maxiter,
-            "ftol": float(self.ftol),
-            "fc_fraction": None if self.fc_fraction is None else float(self.fc_fraction),
-            "eq_fraction": None if self.eq_fraction is None else float(self.eq_fraction),
-            "regularization": None if self.regularization is None else float(self.regularization),
-            "learning_rate": float(self.learning_rate),
-            "max_params": int(self.max_params),
-            "max_cycles": int(self.max_cycles),
-            "convergence": float(self.convergence),
+            "workflow": self.workflow.model_dump(mode="json"),
+            "optimizer": self.optimizer.model_dump(mode="json"),
+            "objective": {
+                "executor": self.objective.executor,
+                "gradient_mode": self.objective.gradient_mode,
+                "fd_step": self.objective.fd_step,
+                "regularization": self.objective.regularization,
+            },
             "n_evals": int(self.n_evals),
-            "executor_ratio_tol": None if self.executor_ratio_tol is None else float(self.executor_ratio_tol),
+            "ratio_tol": self.ratio_tol,
             "skip_optimization": bool(self.skip_optimization),
             "qfuerza_replace_with": float(self.qfuerza_replace_with),
-            "platform": self.platform,
             "data_roots": {k: self.data_roots[k] for k in sorted(self.data_roots)},
-            "seed": int(self.seed),
         }
 
     def fingerprint(self) -> str:
@@ -338,7 +307,7 @@ class RunProfile(OptimizerOverrides):
     def prefix(self) -> str:
         """Readable, filesystem-safe slug of the requested config (form may be ``auto``)."""
         form = self.functional_form or "auto"
-        parts = [self.system, self.backend, form, self.optimizer, self.starting_point]
+        parts = [self.system, self.backend.key, form, self.optimizer.kind, self.starting_point]
         if self.skip_optimization:
             parts.append("skip")
         return _slug(*parts)
@@ -348,10 +317,22 @@ class RunProfile(OptimizerOverrides):
         return f"{self.prefix()}__{_short(self.fingerprint())}"
 
 
+class QFuerzaPublicationProfile(RunProfile):
+    """Publication QFUERZA policy with native partial updates to TS basin bounds."""
+
+    optimizer: OptimizerSettings = TransitionStateOptimizationSettings().optimizer
+
+
+class HeckPublicationProfile(QFuerzaPublicationProfile):
+    """Heck-relay QFUERZA policy with the documented tighter force-constant bounds."""
+
+    optimizer: OptimizerSettings = ScipySettings(ftol=1e-12, fc_fraction=0.05, eq_fraction=0.05, verbose=False)
+
+
 def recommended_publication_profile(
     system: str,
     *,
-    starting_point: str = "qfuerza",
+    starting_point: Literal["qfuerza", "published"] = "qfuerza",
     objective_profile: str = REPOSITORY_OBJECTIVE_PROFILE,
     **overrides: Any,
 ) -> RunProfile:
@@ -359,33 +340,23 @@ def recommended_publication_profile(
 
     QFUERZA starts use the pre-flight ``ftol`` and fractional basin bounds.
     Heck's tighter force-constant fraction is deliberately visible here rather
-    than inferred by the generic optimizer/application service.
+    than inferred by the generic optimizer/application service. Partial component
+    dictionaries update the selected policy's defaults through BaseSettings;
+    complete typed components replace them.
     """
     publication_systems = {"rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate", "ferrocene"}
     if system not in publication_systems:
         raise ValueError(f"No canonical publication policy is defined for {system!r}.")
     if system == "ferrocene" and starting_point != "published":
         raise ValueError("Ferrocene has no QFUERZA policy; use the explicit published-start partial profile.")
-    settings: dict[str, Any] = {
-        "system": system,
-        "starting_point": starting_point,
-        "objective_profile": objective_profile,
-    }
+    profile_type: type[RunProfile]
     if starting_point == "qfuerza":
-        settings.update(
-            {
-                "ftol": 1e-12,
-                "fc_fraction": 0.05 if system == "heck-relay" else 0.20,
-                "eq_fraction": 0.05,
-                "executor_ratio_tol": None,
-            }
-        )
+        profile_type = HeckPublicationProfile if system == "heck-relay" else QFuerzaPublicationProfile
     elif starting_point == "published":
-        settings["ftol"] = 1e-8
+        profile_type = RunProfile
     else:
         raise ValueError("starting_point must be 'qfuerza' or 'published'.")
-    settings.update(overrides)
-    return RunProfile(**settings)
+    return profile_type(system=system, starting_point=starting_point, objective_profile=objective_profile, **overrides)
 
 
 # ---------------------------------------------------------------------------
@@ -485,7 +456,7 @@ class ResolvedProfile:
     resolved_data_roots: Mapping[str, str]
     dependency_versions: Mapping[str, str]
     device: Mapping[str, Any]
-    seed: int
+    seed: int | None
     settings: Mapping[str, Any]
 
     def __post_init__(self) -> None:
@@ -574,7 +545,7 @@ class ResolvedProfile:
     def prefix(self) -> str:
         """Readable slug embedding the concrete resolved functional form."""
         p = self.profile
-        parts = [p.system, p.backend, self.functional_form, p.optimizer, p.starting_point]
+        parts = [p.system, p.backend.key, self.functional_form, p.optimizer.kind, p.starting_point]
         if p.skip_optimization:
             parts.append("skip")
         return _slug(*parts)
@@ -647,7 +618,7 @@ def resolve(
     prov = backend_info.provenance
     return ResolvedProfile(
         profile=profile,
-        static_descriptor=_static_descriptor_map(descriptor, profile.backend),
+        static_descriptor=_static_descriptor_map(descriptor, profile.backend.key),
         runtime_backend_key="" if prov is None else prov.backend,
         backend_name=backend_info.name,
         backend_role=backend_info.role.value,
@@ -661,9 +632,9 @@ def resolve(
         expected_result_gradient_mode=expected_result_gradient_mode,
         fd_step=fd_step,
         effective_regularization=float(effective_regularization),
-        optimizer_method=profile.optimizer_spec.method,
+        optimizer_method=optimizer_method(profile.optimizer),
         optimizer_settings=dict(optimizer_settings),
-        workflow=profile.workflow,
+        workflow=profile.workflow.name,
         workflow_settings=dict(workflow_settings),
         layout_fingerprint=layout_fingerprint,
         n_active_params=int(n_active_params),
@@ -673,7 +644,7 @@ def resolve(
         resolved_data_roots=dict(resolved_data_roots),
         dependency_versions=dependency_versions(),
         device=device_info() if include_device else {},
-        seed=int(profile.seed),
+        seed=profile.seed,
         settings=profile.canonical_dict(),
     )
 
@@ -683,65 +654,26 @@ def resolve(
 # ---------------------------------------------------------------------------
 
 
-def execution_settings(profile: RunProfile) -> OptimizationSettings:
-    """Project benchmark caller policy into the canonical effective settings."""
-    from q2mm.optimizers.catalog import optimizer_override_fields, optimizer_settings
-
-    spec = profile.optimizer_spec
-    allowed = optimizer_override_fields(spec.settings)
-    options = OptimizerOverrides.model_validate({name: getattr(profile, name) for name in allowed})
-    return OptimizationSettings(
-        recipe_id="benchmark-v1",
-        backend=BackendSettings(
-            key=profile.backend,
-            options=(
-                {"platform_name": profile.platform}
-                if profile.backend == "openmm" and profile.platform is not None
-                else {}
-            ),
-        ),
-        optimizer=optimizer_settings(profile.optimizer, options),
-        workflow=MethodE2Settings() if profile.workflow == "method-e2" else SingleStageSettings(),
-        objective=ObjectiveSettings(
-            executor=spec.evaluator,
-            gradient_mode=spec.gradient_mode,
-            fd_step=spec.fd_step if spec.gradient_mode == "finite_difference" else None,
-            regularization=profile.effective_regularization,
-        ),
-        n_evals=profile.n_evals,
-        ratio_tol=profile.executor_ratio_tol,
-    )
-
-
 def _classify_backend(profile: RunProfile) -> tuple[Any, Any]:
     """Return ``(descriptor, backend)``.
 
-    Raises :class:`ConfigurationError` for an unknown backend key (typo) or a
-    broken/misconfigured factory; a registered backend whose cheap probe is
-    unhealthy raises :class:`~q2mm.backends.contracts.BackendUnavailableError`
-    (a graceful skip).
+    Explicit construction through the registry is authoritative, including
+    configured executable paths when the catalog's generic probe is unhealthy.
+    Actual missing dependencies propagate as
+    :class:`~q2mm.backends.contracts.BackendUnavailableError` (a graceful skip);
+    unknown keys and configuration/runtime-contract failures become
+    :class:`ConfigurationError`. Cheap probes are for listing only.
     """
-    from q2mm.backends.contracts import BackendUnavailableError
+    from q2mm.backends.contracts import BackendConfigurationError
     from q2mm.backends.registry import BackendNotRegistered, get_descriptor, load_backend
 
     try:
-        descriptor = get_descriptor(profile.backend)
+        descriptor = get_descriptor(profile.backend.key)
+        backend = load_backend(profile.backend.key, **profile.backend.model_dump(mode="json")["options"])
     except BackendNotRegistered as exc:
-        raise ConfigurationError(f"unknown backend {profile.backend!r}: {exc}") from exc
-
-    healthy, reason = descriptor.is_available()
-    if not healthy:
-        raise BackendUnavailableError(f"backend {profile.backend!r} unavailable: {reason}")
-
-    load_kwargs: dict[str, Any] = {}
-    if profile.backend == "openmm" and profile.platform is not None:
-        load_kwargs["platform_name"] = profile.platform
-    try:
-        backend = load_backend(profile.backend, **load_kwargs)
-    except BackendUnavailableError:
-        raise
-    except Exception as exc:  # broken/misconfigured factory -> configuration error
-        raise ConfigurationError(f"backend {profile.backend!r} failed to construct: {exc!r}") from exc
+        raise ConfigurationError(f"unknown backend {profile.backend.key!r}: {exc}") from exc
+    except BackendConfigurationError as exc:
+        raise ConfigurationError(f"backend {profile.backend.key!r} failed to construct: {exc}") from exc
     return descriptor, backend
 
 

@@ -466,10 +466,10 @@ metadata in this project.
 | **JIT-wrapping `JaxObjectiveExecutor` internals** | Wrapping the full multi-case objective in another `jax.jit()` or `jax.vmap()` re-inlines all molecules into one XLA program → compilation OOM | Use `JaxObjectiveExecutor.value_and_grad_jax()` (Python dispatch) or `JaxObjectiveExecutor.value_and_gradient()` instead. See §6 Objective Executors and Gradient Selection. |
 | **Frequency-only refs for TS** | Misses geometry + eigenmatrix targets that the papers actually used → wrong optimization | Use `ObservationSet.from_molecules()` + `invert_ts_curvature=True` for TS systems. See §6 Reference Data. |
 | **jaxopt zoom linesearch** | `jaxopt ≥ 0.8.5` LBFGS default `linesearch="zoom"` triggers 30–60 min extra XLA compilation post-JIT | Use `scipy-lbfgsb-jax` instead — same L-BFGS-B algorithm, completes in seconds post-JIT |
-| **TS executor-ratio gate** | Literature-scale TS systems can have JAX/Python executor ratios of 0.1–0.4 from poor starts; the optimizer no longer falls back silently | Pass `--executor-ratio-tol none` for documented TS runs when intentionally bypassing the gate. CLI key: `scipy-lbfgsb-jax` |
+| **TS executor-ratio gate** | Literature-scale TS systems can have JAX/Python executor ratios of 0.1–0.4 from poor starts; the optimizer no longer falls back silently | Pass `--ratio-tol none` for documented TS runs when intentionally bypassing the gate. Single/batch default to SciPy L-BFGS-B with a JAX analytical objective. |
 | **Heck relay bounds** | ±20% bounds cause 35–92% NaN rate due to fragile TS landscape with large negative FCs (−3753) | Use ±5% bounds for heck-relay specifically |
-| **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible objective-executor score change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--ftol` (e.g. `1e-12`); apply `--fc-fraction`/`--eq-fraction` to keep optimizer in starting basin; check the `executor_ratio`. The diagnostic warning in `scipy_opt._run_minimize` flags this. |
-| **Default sanity bounds for from-poor-start runs** | `DEFAULT_BOUNDS` (bond_k ±3600, bond_eq 0.5–3.0 Å) let L-BFGS-B escape the QFUERZA / random-default starting basin → final FF unrelated to start | Use `ScipyOptimizer(fc_fraction=0.20, eq_fraction=0.05)` (or CLI flags `--fc-fraction --eq-fraction`) to bound each param to a ± fraction of its current value. |
+| **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible objective-executor score change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--optimizer.ftol` (e.g. `1e-12`); apply `--optimizer.fc-fraction`/`--optimizer.eq-fraction` to keep optimizer in starting basin; check the `executor_ratio`. The diagnostic warning in `scipy_opt._run_minimize` flags this. |
+| **Default sanity bounds for from-poor-start runs** | `DEFAULT_BOUNDS` (bond_k ±3600, bond_eq 0.5–3.0 Å) let L-BFGS-B escape the QFUERZA / random-default starting basin → final FF unrelated to start | Use `ScipyOptimizer(ScipySettings(fc_fraction=0.20, eq_fraction=0.05))` (or CLI flags `--optimizer.fc-fraction --optimizer.eq-fraction`) to bound each param to a ± fraction of its current value. |
 | **Benchmark batch never optimized** | All systems exit at `nfev≤2` with no OF change but the batch reports "success" | The runner rejects no-progress candidates and `run_profiles` returns `outcome.ok is False` when optimizations ran but none was accepted (`q2mm/benchmarks/runner.py`). Re-tune `ftol` or bounds and re-run. See §11. |
 
 ---
@@ -554,9 +554,9 @@ Many hours of GPU time have been wasted on batches where the optimizer never act
    - If the user asked a specific scientific question (e.g. "do params end up near published?"), restate it verbatim and map each metric back to the question.
 
 2. **Sanity-check optimizer config** for the starting point:
-   - Canonical default (QFUERZA-start, `starting_point="qfuerza"`): use `--ftol 1e-12` and `--fc-fraction 0.20 --eq-fraction 0.05` (or `--fc-fraction 0.05` for heck-relay).
+   - Canonical default (QFUERZA-start, `starting_point="qfuerza"`): use `--optimizer.ftol 1e-12` and `--optimizer.fc-fraction 0.20 --optimizer.eq-fraction 0.05` (or `--optimizer.fc-fraction 0.05` for heck-relay).
    - Publication-baseline (`--starting-point published`): `ftol=1e-8`, sanity bounds → fine (starting FF is already in the published basin).
-   - Always pass `--executor-ratio-tol none` for TS systems when intentionally bypassing the executor-ratio gate (ratios can be 0.1–0.4).
+   - Always pass `--ratio-tol none` for TS systems when intentionally bypassing the executor-ratio gate (ratios can be 0.1–0.4).
 
 3. **Verify GPU + device** (§4 + §7): `python -c "import jax; print(jax.devices())"` → must show `CudaDevice`.
 

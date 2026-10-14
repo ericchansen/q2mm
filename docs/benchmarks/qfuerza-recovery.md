@@ -452,7 +452,7 @@ from the literature `.fld`.
 
 - Code: [`q2mm/benchmarks/systems/__init__.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/systems/__init__.py) (`load_system` registry); `starting_point` is accepted by each publication-system loader, e.g. [`q2mm/benchmarks/systems/rh_enamide.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/systems/rh_enamide.py)
 - Bounds: [`q2mm/models/parameters.py`](https://github.com/ericchansen/q2mm/blob/main/q2mm/models/parameters.py) (`fractional_bounds`)
-- CLI: [`q2mm-benchmark`](https://github.com/ericchansen/q2mm/blob/main/q2mm/benchmarks/cli.py) (`single`/`batch`/`matrix` with `--starting-point`, `--executor-ratio-tol`, `--ftol`, `--fc-fraction`, `--eq-fraction`)
+- CLI: [current `q2mm-benchmark` reference](cli.md) (`single`/`batch` with `--starting-point`, `--ratio-tol`, `--optimizer.ftol`, `--optimizer.fc-fraction`, `--optimizer.eq-fraction`; matrix selects catalog `--presets`). Historical commands and measurements above retain their original provenance.
 - Analysis scripts:
   - [`scripts/compare_opt_rows.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/compare_opt_rows.py) — per-param row-by-row comparison
   - [`scripts/build_qfuerza_recovery_tables.py`](https://github.com/ericchansen/q2mm/blob/main/scripts/build_qfuerza_recovery_tables.py) — R²/RMSD cross-system rollup

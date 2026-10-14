@@ -188,7 +188,7 @@ q2mm/q2mm includes a [`tools/`](https://github.com/Q2MM/q2mm/tree/b26404b/tools)
 directory with utility scripts (score graphing, FF formatting, structure
 setup) and a test suite.
 
-q2mm (this repo) provides the `q2mm-benchmark` CLI: explicit `list`,
+q2mm (this repo) provides the [model-driven `q2mm-benchmark` CLI](../benchmarks/cli.md): explicit `list`,
 `preflight`, `single`, `batch`, `matrix`, and `load` operations over a
 lazy system registry (CH₃F, Rh-enamide, Heck relay, …). Every requested
 candidate is resolved to a provenance-complete run profile, evaluated

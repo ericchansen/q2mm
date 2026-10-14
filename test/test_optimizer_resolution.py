@@ -270,32 +270,33 @@ def test_requested_fields_are_raw_python_presence_not_native_merged_defaults() -
 
 
 def test_sdk_cli_and_heck_presets_keep_their_existing_values() -> None:
-    from q2mm.benchmarks.cli import _build_parser
+    from test.test_benchmarks_cli import _parse
 
     gs = GroundStateOptimizationSettings()
     ts = TransitionStateOptimizationSettings()
-    cli = _build_parser().parse_args(["single", "--system", "rh-enamide"])
+    cli = _parse(["single", "--system", "rh-enamide"])
     assert gs.recipe_id == "recommended-jax-gs-v1" and gs.optimizer.ftol == 1e-8 and gs.ratio_tol == 10.0
     assert ts.recipe_id == "recommended-jax-ts-v1"
     assert (ts.optimizer.ftol, ts.optimizer.fc_fraction, ts.optimizer.eq_fraction) == (1e-12, 0.20, 0.05)
     assert ts.ratio_tol is None
-    assert (cli.ftol, cli.fc_fraction, cli.eq_fraction) == (1e-8, None, None)
+    assert (cli.optimizer.ftol, cli.optimizer.fc_fraction, cli.optimizer.eq_fraction) == (1e-8, None, None)
     heck = recommended_publication_profile("heck-relay")
     ordinary_ts = recommended_publication_profile("rh-enamide")
-    assert (heck.ftol, heck.fc_fraction, heck.eq_fraction) == (1e-12, 0.05, 0.05)
-    assert ordinary_ts.fc_fraction == 0.20
-    override = recommended_publication_profile("heck-relay", fc_fraction=0.12)
-    assert override.fc_fraction == 0.12
-    assert RunProfile(system="rh-enamide").workflow == "single-stage"
+    assert (heck.optimizer.ftol, heck.optimizer.fc_fraction, heck.optimizer.eq_fraction) == (1e-12, 0.05, 0.05)
+    assert ordinary_ts.optimizer.fc_fraction == 0.20
+    override = recommended_publication_profile("heck-relay", optimizer=ScipySettings(fc_fraction=0.12))
+    assert override.optimizer.fc_fraction == 0.12
+    assert RunProfile(system="rh-enamide").workflow.name == "single-stage"
 
 
 def test_cli_workflow_choices_are_not_changed_by_resolution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import q2mm.benchmarks.cli as cli
 
-    parser = cli._build_parser()
-    assert parser.parse_args(["single", "--system", "ch3f"]).workflow == "single-stage"
-    assert parser.parse_args(["batch", "--system", "rh-enamide"]).workflow == "method-e2"
-    assert parser.parse_args(["batch", "--workflow", "single-stage"]).workflow == "single-stage"
+    from test.test_benchmarks_cli import _parse
+
+    assert _parse(["single", "--system", "ch3f"]).workflow.name == "single-stage"
+    assert _parse(["batch", "--system", "rh-enamide"]).workflow.name == "method-e2"
+    assert _parse(["batch", "--workflow.name", "single-stage"]).workflow.name == "single-stage"
     profiles = []
 
     def capture(values: Any, **kwargs: Any) -> Any:
@@ -303,23 +304,21 @@ def test_cli_workflow_choices_are_not_changed_by_resolution(tmp_path: Path, monk
         return SimpleNamespace(ok=True, candidates=(), by_status=lambda _status: ())
 
     monkeypatch.setattr(cli, "run_profiles", capture)
-    args = parser.parse_args(
-        [
-            "matrix",
-            "--system",
-            "ch3f",
-            "--backend",
-            "jax",
-            "--form",
-            "harmonic",
-            "--optimizer",
-            "scipy-nm",
-            "--output",
-            str(tmp_path),
-        ]
-    )
-    assert args.func(args) == 0
-    assert len(profiles) == 1 and profiles[0].workflow == "single-stage"
+    args = [
+        "matrix",
+        "--system",
+        "ch3f",
+        "--backends",
+        "jax",
+        "--forms",
+        "harmonic",
+        "--presets",
+        "scipy-nm",
+        "--output",
+        str(tmp_path),
+    ]
+    assert cli.main(args) == 0
+    assert len(profiles) == 1 and profiles[0].workflow.name == "single-stage"
     assert list(tmp_path.iterdir()) == []
 
 

@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 from q2mm.backends.contracts import PreparationRequest
+from q2mm.application import configuration as execution_configuration
 from q2mm.benchmarks import acceptance, analysis, artifacts, profiles, records, runner
 from q2mm.benchmarks.cases import BenchmarkCase
 from q2mm.models.forcefield import ForceField, FunctionalForm
@@ -27,7 +28,6 @@ from test.test_architecture_doc import _imported_dotted_modules
 _OWNED_DEFINITIONS = {
     profiles: (
         "ConfigurationError",
-        "execution_settings",
         "_classify_backend",
         "_norm_path",
         "_load_kwargs",
@@ -88,7 +88,7 @@ def test_moved_definitions_have_one_owner_and_public_exports_are_direct() -> Non
             assert {module for module, found in definitions.items() if name in found} == {short_name}
             value = getattr(owner, name)
             assert value.__module__ == owner.__name__
-            if not name.startswith("_") and name != "execution_settings":
+            if not name.startswith("_"):
                 assert getattr(runner, name) is value
     assert runner.RunProfile is profiles.RunProfile
     assert runner.DATA_DIR_FOR_SYSTEM is profiles.DATA_DIR_FOR_SYSTEM
@@ -131,7 +131,15 @@ def owner_profile(monkeypatch: pytest.MonkeyPatch) -> profiles.RunProfile:
     monkeypatch.setattr(runner, "_is_jax_backend", lambda _backend: False)
     monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: case)
     monkeypatch.setattr("q2mm.application.optimization.optimize", lambda *_args, **_kwargs: result)
-    return profiles.RunProfile(system="ch3f", backend="synthetic-mm", optimizer="scipy-lbfgsb", regularization=0.0)
+    from q2mm.settings import BackendSettings
+
+    return profiles.RunProfile(
+        **{
+            **profiles.catalog_settings("scipy-lbfgsb").model_dump(),
+            "system": "ch3f",
+            "backend": BackendSettings(key="synthetic-mm"),
+        },
+    )
 
 
 def test_coordinator_and_cli_call_the_live_owners(
@@ -146,7 +154,7 @@ def test_coordinator_and_cli_call_the_live_owners(
         (profiles, "_classify_backend", 1),
         (profiles, "_default_form", 1),
         (profiles, "_load_kwargs", 1),
-        (profiles, "execution_settings", 1),
+        (execution_configuration, "capture_execution_configuration", 1),
         (records, "build_run_provenance", 1),
         (records, "_data_provenance", 1),
         (records, "_resolved_summary", 1),
@@ -187,7 +195,7 @@ def test_coordinator_and_cli_call_the_live_owners(
         (profiles, "_classify_backend", False),
         (profiles, "_default_form", False),
         (profiles, "_load_kwargs", False),
-        (profiles, "execution_settings", False),
+        (execution_configuration, "capture_execution_configuration", False),
         (records, "_data_provenance", False),
         (records, "_initial_summary", True),
         (records, "_optimization_summary", True),
@@ -216,7 +224,9 @@ def test_moved_owner_errors_keep_the_identity_boundary(
         assert candidate.candidate_id == owner_profile.candidate_id()
 
 
-@pytest.mark.parametrize("owner,name", [(profiles, "execution_settings"), (analysis, "_frequency_analysis")])
+@pytest.mark.parametrize(
+    "owner,name", [(execution_configuration, "capture_execution_configuration"), (analysis, "_frequency_analysis")]
+)
 def test_moved_owner_interruptions_propagate(
     owner_profile: profiles.RunProfile, monkeypatch: pytest.MonkeyPatch, owner: object, name: str
 ) -> None:
@@ -238,16 +248,14 @@ def test_ratio_gate_calls_acceptance_owner(owner_profile: profiles.RunProfile, m
     monkeypatch.setattr(acceptance, "classify_ratio", classify)
     candidate = runner.run_profile(owner_profile, analyze=False, include_device=False)
     assert candidate.accepted, candidate.reason
-    classify.assert_called_once_with(1.0, owner_profile.executor_ratio_tol)
+    classify.assert_called_once_with(1.0, owner_profile.ratio_tol)
 
 
 def test_existing_canonical_projection_and_gradient_resolution_are_reused() -> None:
     from q2mm._result_serialization import result_payload, stage_payload
-    from q2mm.optimizers.catalog import expected_result_gradient
 
     assert records.result_payload is result_payload
     assert records.stage_payload is stage_payload
-    assert runner._expected_result_gradient is expected_result_gradient
     tree = ast.parse((REPO_ROOT / "q2mm" / "benchmarks" / "artifacts.py").read_text(encoding="utf-8"))
     sdk_imports = {
         alias.name

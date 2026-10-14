@@ -21,6 +21,7 @@ from q2mm._canonical import json_value
 from q2mm._result_serialization import result_payload, stage_payload
 from q2mm.benchmarks.acceptance import CandidateStatus
 from q2mm.models.results import deep_freeze
+from q2mm.optimizers.catalog import optimizer_method
 
 if TYPE_CHECKING:
     from q2mm.backends.contracts import BackendInfo
@@ -169,7 +170,6 @@ def _resolved_summary(
     backend_info: BackendInfo,
     case: BenchmarkCase,
     form: str,
-    spec: Any,
     evaluator_kind: str,
     gradient_mode: str,
     expected_grad: str,
@@ -179,13 +179,13 @@ def _resolved_summary(
     problem = case.problem
     return {
         "system": profile.system,
-        "backend": profile.backend,
+        "backend": profile.backend.key,
         "backend_name": backend_info.name,
         "functional_form": form,
-        "workflow": profile.workflow,
-        "optimizer": profile.optimizer,
-        "optimizer_method": spec.method,
-        "optimizer_label": spec.label,
+        "workflow": profile.workflow.name,
+        "optimizer": profile.optimizer.kind,
+        "optimizer_method": optimizer_method(profile.optimizer),
+        "optimizer_label": optimizer_method(profile.optimizer),
         "evaluator": evaluator_kind,
         "gradient_mode": gradient_mode,
         "expected_result_gradient_mode": expected_grad,

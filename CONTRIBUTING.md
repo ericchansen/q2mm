@@ -145,18 +145,21 @@ devices.
 
 ```bash
 # Convergence run for one system (writes candidate + promoted artifacts)
-q2mm-benchmark single --system rh-enamide --backend jax --optimizer scipy-lbfgsb-jax \
-  --workflow method-e2 --output results/rh-enamide
+q2mm-benchmark single --system rh-enamide --backend.key jax \
+  --workflow.name method-e2 --output results/rh-enamide
 
 # Convergence batch across all systems
 q2mm-benchmark batch --output results
 
 # Backend x form x optimizer matrix for one system
-q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb \
+q2mm-benchmark matrix --system rh-enamide --backends jax --presets scipy-lbfgsb \
   --output results/rh-enamide
 ```
 
 **Rules:**
+
+The [current CLI reference](docs/benchmarks/cli.md) documents typed nested
+settings, generated help, side-effect-free inspection, and exit status.
 
 1. **Output is always persisted** — there is no `--no-save`; pass `--output`
    to choose the location (defaults to `./results`).

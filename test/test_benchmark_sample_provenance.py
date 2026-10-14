@@ -11,12 +11,13 @@ import pytest
 
 from q2mm.backends.contracts import Backend
 from q2mm.benchmarks.acceptance import CandidateStatus
-from q2mm.benchmarks.cases import BenchmarkCase
-from q2mm.benchmarks.profiles import RunProfile
 from q2mm.benchmarks.analysis import _score_interval_summary
+from q2mm.benchmarks.cases import BenchmarkCase
+from q2mm.benchmarks.profiles import RunProfile, catalog_settings
 from q2mm.benchmarks.runner import CandidateResult, persist_candidate, run_profile
 from q2mm.models.observations import ObservationSet
 from q2mm.models.results import StageRecord
+from q2mm.settings import BackendSettings, MethodE2Settings, ObjectiveSettings, SingleStageSettings
 from test.test_application import _EnergyBackend, _problem, _result
 
 
@@ -67,6 +68,8 @@ def test_workflow_samples_identify_their_executor(
         n_iterations=5,
         initial_samples=(1000.0, 1000.0),
         final_samples=(500.0, 500.0),
+        regularization=0.0,
+        n_evals=2,
     )
     result = dataclasses.replace(
         result,
@@ -92,14 +95,18 @@ def test_workflow_samples_identify_their_executor(
     monkeypatch.setattr("q2mm.application.optimization.optimize", lambda *_args, **_kwargs: result)
 
     profile = RunProfile(
-        system="ch3f",
-        backend=backend.info.provenance.backend,
-        functional_form="harmonic",
-        optimizer=optimizer,
-        workflow=workflow,
-        n_evals=2,
-        regularization=0.0,
-        executor_ratio_tol=None,
+        **{
+            **catalog_settings(optimizer).model_dump(),
+            "system": "ch3f",
+            "backend": BackendSettings(key=backend.info.provenance.backend),
+            "functional_form": "harmonic",
+            "workflow": MethodE2Settings() if workflow == "method-e2" else SingleStageSettings(),
+            "n_evals": 2,
+            "objective": ObjectiveSettings(
+                **{**catalog_settings(optimizer).objective.model_dump(), "regularization": 0.0}
+            ),
+            "ratio_tol": None,
+        }
     )
     candidate = run_profile(
         profile,

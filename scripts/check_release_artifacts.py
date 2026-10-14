@@ -358,6 +358,14 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
         env=environment,
         stdout=subprocess.DEVNULL,
     )
+    for command in ("list", "preflight", "single", "batch", "matrix", "load"):
+        subprocess.run(
+            [str(cli), command, "--help"],
+            check=True,
+            cwd=destination,
+            env=environment,
+            stdout=subprocess.DEVNULL,
+        )
     # The `list` subcommand must be side-effect-free (cheap backend catalog
     # probes only, no device/XLA/CUDA init) and work in a fresh install.
     subprocess.run(
@@ -367,6 +375,39 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
         env=environment,
         stdout=subprocess.DEVNULL,
     )
+    inspected = subprocess.run(
+        [
+            str(cli),
+            "single",
+            "--system",
+            "ch3f",
+            "--show-config",
+            "--optimizer.maxiter",
+            "0",
+            "--no-optimizer.verbose",
+            "--n-evals",
+            "0",
+            "--ratio-tol",
+            "none",
+            "--output",
+            str(destination / "inspection"),
+        ],
+        check=True,
+        cwd=destination,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    requested = json.loads(inspected.stdout)
+    if (
+        requested["optimizer"]["maxiter"] != 0
+        or requested["optimizer"]["verbose"] is not False
+        or requested["n_evals"] != 0
+        or requested["ratio_tol"] is not None
+        or (destination / "inspection").exists()
+    ):
+        raise ArtifactContractError("installed CLI inspection changed settings or wrote artifacts")
     # An installed single run against a registered-but-unavailable backend must
     # terminate as a persisted skipped candidate (exit 0), exercising the full
     # CLI wiring without requiring any optional backend in the smoke venv.
@@ -378,10 +419,10 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
             "single",
             "--system",
             "ch3f",
-            "--backend",
+            "--backend.key",
             "openmm",
-            "--optimizer",
-            "scipy-lbfgsb",
+            "--objective",
+            '{"executor":"python","gradient_mode":"none"}',
             "--output",
             str(single_out),
         ],
@@ -392,6 +433,96 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
     )
     if not list((single_out / "candidates").glob("*.json")):
         raise ArtifactContractError("installed `q2mm-benchmark single` wrote no candidate record")
+    subprocess.run(
+        [str(cli), "load", str(single_out)],
+        check=True,
+        cwd=destination,
+        env=environment,
+        stdout=subprocess.DEVNULL,
+    )
+    error_out = destination / "cli-error"
+    failed = subprocess.run(
+        [
+            str(cli),
+            "single",
+            "--system",
+            "ch3f",
+            "--backend.key",
+            "does-not-exist",
+            "--objective",
+            '{"executor":"python","gradient_mode":"none"}',
+            "--output",
+            str(error_out),
+        ],
+        cwd=destination,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if failed.returncode != 1 or not list((error_out / "candidates").glob("*.json")):
+        raise ArtifactContractError("installed CLI execution failure did not persist a candidate and exit 1")
+    invalid = subprocess.run(
+        [str(cli), "single", "--system", "ch3f", "--unrecognized-setting"],
+        cwd=destination,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if invalid.returncode != 2:
+        raise ArtifactContractError("installed CLI syntax failure did not exit 2")
+    invalid_matrix_out = destination / "cli-invalid-matrix"
+    invalid_matrix = subprocess.run(
+        [
+            str(cli),
+            "matrix",
+            "--system",
+            "ch3f",
+            "--backends",
+            "openmm",
+            "--forms",
+            "harmonic",
+            "--presets",
+            "scipy-lbfgsb,scipy-lbfgsb-jax",
+            "--output",
+            str(invalid_matrix_out),
+        ],
+        cwd=destination,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    if (
+        invalid_matrix.returncode != 2
+        or "The JAX objective requires backend='jax'" not in invalid_matrix.stderr
+        or invalid_matrix_out.exists()
+    ):
+        raise ArtifactContractError("installed CLI matrix did not fail before valid cells or output creation")
+    matrix_out = destination / "cli-matrix"
+    subprocess.run(
+        [
+            str(cli),
+            "matrix",
+            "--system",
+            "ch3f",
+            "--backends",
+            "openmm",
+            "--forms",
+            "harmonic",
+            "--presets",
+            "scipy-lbfgsb,scipy-nm",
+            "--output",
+            str(matrix_out),
+        ],
+        check=True,
+        cwd=destination,
+        env=environment,
+        stdout=subprocess.DEVNULL,
+    )
+    if len(list((matrix_out / "candidates").glob("*.json"))) != 2:
+        raise ArtifactContractError("installed CLI coherent matrix did not persist every created candidate")
     smoke_code = """
 import json
 import numpy as np
@@ -530,7 +661,7 @@ assert saved.manifest_path is not None and saved.manifest_path.is_file()
 manifest = json.loads(saved.manifest_path.read_text())
 assert manifest["result"]["regularization"] == manifest["configuration"]["regularization"]
 assert manifest["result"]["n_evals"] == manifest["configuration"]["n_evals"]
-print("installed-import=ok cli-help=ok cli-list=ok cli-single-skip=ok sn2-resource=ok "
+print("installed-import=ok cli-help=ok cli-list=ok cli-single-skip=ok cli-matrix=ok cli-matrix-fail-early=ok sn2-resource=ok "
       "ch3f-system=ok generic-prepare=ok generic-evaluate=ok optimizer-entry=ok generic-save=ok")
 """
     completed = subprocess.run(
