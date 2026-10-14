@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from q2mm.geometry import dihedral_angle
 from q2mm.models.identifiers import (
     canonicalize_angle_env_id,
     canonicalize_bond_env_id,
@@ -36,17 +37,6 @@ if TYPE_CHECKING:
 
 # Covalent radii — imported from the single-source-of-truth element table.
 from q2mm.elements import COVALENT_RADII
-
-
-def _dihedral_angle(p0: np.ndarray, p1: np.ndarray, p2: np.ndarray, p3: np.ndarray) -> float:
-    """Compute signed dihedral angle (degrees) for four points using atan2.
-
-    Delegates to :func:`q2mm.geometry.dihedral_angle`.
-    Returns a value in [-180, 180].
-    """
-    from q2mm.geometry import dihedral_angle
-
-    return dihedral_angle(p0, p1, p2, p3)
 
 
 def _immutable_array(values: Any, *, dtype: type = float) -> np.ndarray:
@@ -314,7 +304,7 @@ class Molecule:
                     if key in seen or key_rev in seen:
                         continue
                     seen.add(key)
-                    value = _dihedral_angle(self.geometry[a], self.geometry[b], self.geometry[c], self.geometry[d])
+                    value = dihedral_angle(self.geometry[a], self.geometry[b], self.geometry[c], self.geometry[d])
                     torsions.append(
                         Torsion(
                             atom_i=a,
@@ -356,7 +346,7 @@ class Molecule:
             if len(nbrs) != 3:
                 continue
             a, b, d = nbrs
-            value = _dihedral_angle(
+            value = dihedral_angle(
                 self.geometry[a],
                 self.geometry[centre],
                 self.geometry[b],
@@ -445,7 +435,7 @@ class Molecule:
         torsions = tuple(
             replace(
                 torsion,
-                value=_dihedral_angle(
+                value=dihedral_angle(
                     geometry[torsion.atom_i],
                     geometry[torsion.atom_j],
                     geometry[torsion.atom_k],

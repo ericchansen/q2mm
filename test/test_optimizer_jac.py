@@ -19,8 +19,7 @@ from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.protocols import GradientMode, ObjectiveGradientError
 from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
-from test._shared import make_diatomic
-from test.test_multistart import QuadraticEvaluator
+from test._shared import QuadraticEvaluator, make_diatomic
 
 
 def _mock_engine(supports_grad: bool) -> MagicMock:

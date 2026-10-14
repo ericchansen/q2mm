@@ -891,6 +891,8 @@ def test_jax_objective_executor_prepares_each_case_once() -> None:
     # building the per-case JIT objective.
     assert backend.prepare_calls == len(molecules)
     assert set(executor._sessions) == {"0", "1"}
+    assert set(executor._hess_fns) == {"0", "1"}
+    assert len({id(function) for function in executor._hess_fns.values()}) == 2
 
 
 # ---------------------------------------------------------------------------

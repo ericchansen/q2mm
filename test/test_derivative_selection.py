@@ -9,6 +9,8 @@ from typing import Any
 import numpy as np
 import pytest
 
+pytest.importorskip("scipy")
+
 import q2mm.objectives as objectives
 from q2mm.backends.contracts import EnergyRequest, PreparationRequest
 from q2mm.models.observations import ObservationSet
@@ -18,7 +20,7 @@ from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
 from q2mm.optimizers.multistart import MultiStartOptimizer
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 from test.test_application import _EnergyBackend
-from test.test_multistart import _synthetic_plan
+from test._shared import _synthetic_plan
 
 
 def _executor(*, step: float = 0.01) -> tuple[PythonObjectiveExecutor, list[np.ndarray]]:

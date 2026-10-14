@@ -60,6 +60,12 @@ pytest -m "not tinker"     # skip Tinker tests
 
 Available markers: `openmm`, `tinker`, `jax`, `jax_md`, `psi4`.
 
+The documentation table regression check uses only Node.js built-ins:
+
+```bash
+node test/test_benchmark_tables.js
+```
+
 ### Running backend tests with Docker
 
 If you don't have OpenMM, Tinker, or other backends installed locally, you can

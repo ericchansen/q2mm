@@ -407,10 +407,6 @@ ObservationValue: TypeAlias = (
 )
 
 
-def _energy_observation(value: float, *, weight: float, case_id: str, label: str) -> Observation:
-    return Observation(kind="energy", value=value, weight=weight, case_id=case_id, label=label)
-
-
 def _frequency_observation(value: float, *, data_idx: int, weight: float, case_id: str, label: str) -> Observation:
     return Observation(kind="frequency", value=value, weight=weight, case_id=case_id, data_idx=data_idx, label=label)
 
@@ -783,7 +779,7 @@ class ObservationSet:
             label (str): Human-readable label.
 
         """
-        return self._with(_energy_observation(value, weight=weight, case_id=case_id, label=label))
+        return self._with(Observation(kind="energy", value=value, weight=weight, case_id=case_id, label=label))
 
     def with_frequency(
         self,

@@ -848,5 +848,4 @@ def build_snapshot(
             )
         )
 
-    ordered = tuple(sorted(records, key=lambda record: record.sort_key))
-    return DiscoverySnapshot(descriptors=registered, records=ordered)
+    return DiscoverySnapshot(descriptors=registered, records=tuple(records))

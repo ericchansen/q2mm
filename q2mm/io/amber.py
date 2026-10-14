@@ -8,7 +8,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from q2mm.io._helpers import _validate_form_for_format
 from q2mm.models.forcefield import (
@@ -20,10 +19,6 @@ from q2mm.models.forcefield import (
     VdwParam,
 )
 from q2mm.models.identifiers import canonicalize_angle_env_id, canonicalize_bond_env_id
-
-if TYPE_CHECKING:
-    pass
-
 
 # ---------------------------------------------------------------------------
 # Constants

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 import math
-from importlib.util import find_spec
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -31,15 +30,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_HAS_JAXOPT = find_spec("jaxopt") is not None
 _METHOD_REGISTRY = frozenset({"lbfgs", "lbfgsb", "gradient_descent"})
-
-
-def _ensure_jaxopt() -> None:
-    """Lazily import jaxopt, configuring JAX float64 first."""
-    from q2mm.backends.mm._jax_common import ensure_jaxopt
-
-    ensure_jaxopt()
 
 
 def _require_jax_executor(evaluator: ObjectiveEvaluator) -> None:
@@ -66,7 +57,9 @@ class JaxOptOptimizer:
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the jaxopt optimization and return the canonical result."""
         _require_jax_executor(evaluator)
-        _ensure_jaxopt()
+        from q2mm.backends.mm._jax_common import ensure_jaxopt
+
+        ensure_jaxopt()
 
         import jaxopt
         from q2mm.backends.mm._jax_common import jax, jnp

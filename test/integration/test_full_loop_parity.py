@@ -776,28 +776,32 @@ def _rh_enamide_harmonic_pipeline(
     }
 
 
-@requires_jax
-@pytest.mark.jax
 @pytest.mark.nightly
-class TestRhEnamideFullLoopJax:
-    """Rh-enamide full pipeline with JaxBackend (harmonic functional form).
+@pytest.mark.parametrize(
+    "backend_name",
+    [
+        pytest.param("jax", id="jax", marks=[requires_jax, pytest.mark.jax]),
+        pytest.param("jax-md", id="jax-md", marks=[requires_jax_md, pytest.mark.jax_md]),
+    ],
+    scope="class",
+)
+class TestRhEnamideFullLoopHarmonic:
+    """Rh-enamide full pipeline with JAX or JAX-MD (harmonic functional form).
 
     Same 9 organometallic structures as TestRhEnamideFullLoop, but using
-    JaxBackend with harmonic energy expressions instead of OpenMM with MM3.
-    This validates JAX backend compatibility with real-world multi-molecule
-    systems and enables GPU benchmarking via ``pytest -m jax --run-nightly``.
+    harmonic energy expressions instead of OpenMM with MM3.
     """
 
     @pytest.fixture(scope="class")
-    def rh_molecules(self) -> list[Molecule]:
+    def rh_molecules(self, backend_name: str) -> list[Molecule]:
         if not MMO_PATH.exists():
             pytest.skip("rh-enamide dataset not found")
         return _load_rh_enamide_molecules()
 
     @pytest.fixture(scope="class")
-    def pipeline_result(self, rh_molecules: list[Molecule]) -> dict[str, object]:
-        """Run the full rh-enamide pipeline with JaxBackend."""
-        backend = load_backend("jax")
+    def pipeline_result(self, rh_molecules: list[Molecule], backend_name: str) -> dict[str, object]:
+        """Run the full rh-enamide pipeline once for each backend."""
+        backend = load_backend(backend_name)
         return _rh_enamide_harmonic_pipeline(backend, rh_molecules)
 
     def test_loads_9_molecules(self, pipeline_result: dict[str, object]) -> None:
@@ -829,76 +833,14 @@ class TestRhEnamideFullLoopJax:
     def test_uses_harmonic_form(self, pipeline_result: dict[str, object]) -> None:
         assert pipeline_result["functional_form"] == "harmonic"
 
-    def test_timing_report(self, pipeline_result: dict[str, object], capsys: pytest.CaptureFixture[str]) -> None:
+    def test_timing_report(
+        self, pipeline_result: dict[str, object], capsys: pytest.CaptureFixture[str], backend_name: str
+    ) -> None:
         r = pipeline_result
+        label = {"jax": "JAX", "jax-md": "JAX-MD"}[backend_name]
         with capsys.disabled():
             print(
-                f"\n  Rh-enamide JAX full loop ({r['n_molecules']} mols, {r['n_params']} params, "
-                f"{r['total_freq_refs']} freq refs):"
-                f"\n    Seminario: {r['t_seminario']:.3f}s"
-                f"\n    Optimize:  {r['t_optimize']:.1f}s (Nelder-Mead, maxiter=3)"
-                f"\n    Score:     {r['initial_score']:.1f} → {r['final_score']:.1f} "
-                f"({r['improvement'] * 100:.1f}% improvement)"
-            )
-
-
-@requires_jax_md
-@pytest.mark.jax_md
-@pytest.mark.nightly
-class TestRhEnamideFullLoopJaxMD:
-    """Rh-enamide full pipeline with JaxMdBackend (harmonic functional form).
-
-    Same 9 organometallic structures, using JaxMdBackend with harmonic energy
-    expressions. Validates JAX-MD backend on a real organometallic system.
-    Enables GPU benchmarking via ``pytest -m jax_md --run-nightly``.
-    """
-
-    @pytest.fixture(scope="class")
-    def rh_molecules(self) -> list[Molecule]:
-        if not MMO_PATH.exists():
-            pytest.skip("rh-enamide dataset not found")
-        return _load_rh_enamide_molecules()
-
-    @pytest.fixture(scope="class")
-    def pipeline_result(self, rh_molecules: list[Molecule]) -> dict[str, object]:
-        """Run the full rh-enamide pipeline with JaxMdBackend."""
-        backend = load_backend("jax-md")
-        return _rh_enamide_harmonic_pipeline(backend, rh_molecules)
-
-    def test_loads_9_molecules(self, pipeline_result: dict[str, object]) -> None:
-        assert pipeline_result["n_molecules"] == 9
-
-    def test_seminario_produces_params(self, pipeline_result: dict[str, object]) -> None:
-        assert pipeline_result["n_params"] == 182
-        assert pipeline_result["n_bonds"] == 8
-        assert pipeline_result["n_angles"] == 23
-
-    def test_all_molecules_have_frequencies(self, pipeline_result: dict[str, object]) -> None:
-        for i, n in enumerate(pipeline_result["n_freqs_per_mol"]):
-            assert n > 0, f"Molecule {i} contributed 0 frequency references"
-
-    def test_initial_score_is_finite(self, pipeline_result: dict[str, object]) -> None:
-        score = pipeline_result["initial_score"]
-        assert np.isfinite(score), f"Initial score is not finite: {score}"
-        assert score > 0, f"Initial score should be positive: {score}"
-
-    def test_final_score_is_finite(self, pipeline_result: dict[str, object]) -> None:
-        score = pipeline_result["final_score"]
-        assert np.isfinite(score), f"Final score is not finite: {score}"
-        assert score > 0, f"Final score should be positive: {score}"
-
-    def test_optimized_params_differ_from_seminario(self, pipeline_result: dict[str, object]) -> None:
-        diff = np.abs(pipeline_result["optimized_params"] - pipeline_result["seminario_params"])
-        assert np.any(diff > 1e-6), "Optimizer didn't change any parameters"
-
-    def test_uses_harmonic_form(self, pipeline_result: dict[str, object]) -> None:
-        assert pipeline_result["functional_form"] == "harmonic"
-
-    def test_timing_report(self, pipeline_result: dict[str, object], capsys: pytest.CaptureFixture[str]) -> None:
-        r = pipeline_result
-        with capsys.disabled():
-            print(
-                f"\n  Rh-enamide JAX-MD full loop ({r['n_molecules']} mols, {r['n_params']} params, "
+                f"\n  Rh-enamide {label} full loop ({r['n_molecules']} mols, {r['n_params']} params, "
                 f"{r['total_freq_refs']} freq refs):"
                 f"\n    Seminario: {r['t_seminario']:.3f}s"
                 f"\n    Optimize:  {r['t_optimize']:.1f}s (Nelder-Mead, maxiter=3)"

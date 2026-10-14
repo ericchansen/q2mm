@@ -9,7 +9,7 @@ from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionPar
 from q2mm.models.parameters import ActiveParameterSpace, ParameterKind, ParameterLayout
 from q2mm.models.results import OptimizationResult
 from q2mm.optimizers.cycling import OptimizationLoop
-from test.test_optax import QuadraticEvaluator
+from test._shared import QuadraticEvaluator
 
 
 def _full_ff() -> ForceField:

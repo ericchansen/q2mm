@@ -27,6 +27,33 @@ from q2mm.optimizers.protocols import _Optimizer
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
 
+def test_shared_quadratic_support_needs_no_optional_runtime() -> None:
+    code = """
+import importlib.abc
+import importlib.util
+import sys
+optional = {"scipy", "jax", "jaxopt", "optax", "openmm", "ase", "qcengine", "qcelemental"}
+find_spec = importlib.util.find_spec
+importlib.util.find_spec = lambda name, package=None: (
+    None if name.split(".")[0] in optional else find_spec(name, package)
+)
+class BlockOptional(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        assert fullname.split(".")[0] not in optional, fullname
+sys.meta_path.insert(0, BlockOptional())
+import numpy as np
+from test._shared import QuadraticEvaluator
+evaluator = QuadraticEvaluator(
+    np.array([1.0, 4.0]), initial=np.array([0.0, 6.0]), active_indices=np.array([0])
+)
+assert evaluator.value(evaluator.space.baseline) == 5.0
+assert evaluator.space.expand(np.array([1.0])).tolist() == [1.0, 6.0]
+assert not optional.intersection(sys.modules)
+"""
+    completed = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
+    assert completed.returncode == 0, completed.stderr
+
+
 def _assert_constructor_settings(optimizer: Any, recorded: dict[str, Any]) -> None:
     for name in inspect.signature(type(optimizer)).parameters:
         if name == "optimizer" and isinstance(optimizer, MultiStartOptimizer):
@@ -341,7 +368,9 @@ def test_cycling_run_builds_both_shared_phase_plans(monkeypatch: pytest.MonkeyPa
 
     from q2mm.optimizers.catalog import _Construction
     from q2mm.optimizers.cycling import SensitivityResult
-    from test.test_multistart import QuadraticEvaluator
+
+    pytest.importorskip("scipy")
+    from test._shared import QuadraticEvaluator
 
     evaluator = QuadraticEvaluator(np.ones(2), initial=np.array([3.0, 4.0]))
     space = evaluator.space.with_active_indices([0])

@@ -600,19 +600,6 @@ class BatchedHessianRequest:
         object.__setattr__(self, "parameters", _readonly_vector(self.parameters, name="parameters"))
 
 
-#: MM evaluation request types (used for request-family validation).
-_MM_REQUEST_TYPES = (
-    EnergyRequest,
-    MinimizationRequest,
-    HessianRequest,
-    FrequencyRequest,
-    ParameterGradientRequest,
-    HessianJacobianRequest,
-    BatchedEnergyRequest,
-    BatchedHessianRequest,
-)
-
-
 # ---------------------------------------------------------------------------
 # Reference evaluation requests (no parameter vectors — model fixed at prepare)
 # ---------------------------------------------------------------------------
@@ -648,16 +635,6 @@ class ReferenceGeometryOptimizationRequest:
 @dataclass(frozen=True)
 class ReferenceCoordinateGradientRequest:
     """Reference Cartesian coordinate-gradient request."""
-
-
-#: Reference evaluation request types (used for request-family validation).
-_REFERENCE_REQUEST_TYPES = (
-    ReferenceEnergyRequest,
-    ReferenceHessianRequest,
-    ReferenceFrequencyRequest,
-    ReferenceGeometryOptimizationRequest,
-    ReferenceCoordinateGradientRequest,
-)
 
 
 # ---------------------------------------------------------------------------

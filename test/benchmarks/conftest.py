@@ -10,7 +10,6 @@ from q2mm.backends.registry import load_backend
 
 from typing import TYPE_CHECKING
 
-import numpy as np
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -40,13 +39,7 @@ except ImportError:
         return _passthrough
 
 
-from test._shared import (
-    CH3F_ENERGY,
-    CH3F_FREQS,
-    CH3F_HESS,
-    CH3F_MODES,
-    CH3F_XYZ,
-)
+from test._shared import CH3F_XYZ
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
@@ -99,43 +92,6 @@ def ch3f_ff_harmonic(ch3f_ff: ForceField) -> ForceField:
     from q2mm.models.forcefield import FunctionalForm
 
     return dataclasses.replace(ch3f_ff, functional_form=FunctionalForm.HARMONIC)
-
-
-@pytest.fixture(scope="session")
-def ch3f_qm_freqs() -> np.ndarray:
-    """Load QM reference frequencies for CH3F (cm⁻¹)."""
-    if not CH3F_FREQS.exists():
-        pytest.skip("CH3F frequencies file not found")
-    return np.loadtxt(CH3F_FREQS)
-
-
-@pytest.fixture(scope="session")
-def ch3f_qm_hessian() -> np.ndarray:
-    """Load QM Hessian matrix for CH3F."""
-    if not CH3F_HESS.exists():
-        pytest.skip("CH3F Hessian file not found")
-    return np.load(CH3F_HESS)
-
-
-@pytest.fixture(scope="session")
-def ch3f_qm_energy() -> float:
-    """Load the QM reference energy for CH3F (hartrees)."""
-    if not CH3F_ENERGY.exists():
-        pytest.skip("CH3F energy file not found")
-    return float(np.loadtxt(CH3F_ENERGY))
-
-
-@pytest.fixture(scope="session")
-def ch3f_normal_modes() -> dict[str, np.ndarray] | None:
-    """Load QM normal modes for CH3F, or ``None`` if unavailable."""
-    if not CH3F_MODES.exists():
-        return None
-    data = np.load(CH3F_MODES)
-    return {
-        "eigenvalues": data["eigenvalues"],
-        "eigenvectors": data["eigenvectors"],
-        "masses_amu": data["masses_amu"],
-    }
 
 
 # ---------------------------------------------------------------------------

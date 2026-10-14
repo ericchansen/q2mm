@@ -10,16 +10,6 @@ const BENCHMARK_TABLES = [
     },
   },
   {
-    id: "rh-enamide",
-    filterColumns: [0, 1, 2, 3],
-    sortTypes: {
-      3: "status",
-      4: "result",
-      5: "number",
-      6: "duration",
-    },
-  },
-  {
     id: "gpu-comparisons",
     filterColumns: [0, 1, 2],
     sortTypes: {
@@ -39,10 +29,6 @@ function getCellText(cell) {
   return cleanText(cell.textContent || "");
 }
 
-function getHeaderText(header) {
-  return cleanText(header.textContent || "");
-}
-
 function parseNumber(value) {
   const text = cleanText(value).replace(/,/g, "");
   if (!text || text === "-") {
@@ -57,24 +43,6 @@ function parseNumber(value) {
   return Number(matches[0]);
 }
 
-function parseDuration(value) {
-  return parseNumber(value);
-}
-
-function parseResult(value) {
-  const text = cleanText(value).replace(/,/g, "");
-  if (!text || text === "-") {
-    return null;
-  }
-
-  const matches = text.match(/-?\d+(?:\.\d+)?/g);
-  if (!matches || matches.length === 0) {
-    return null;
-  }
-
-  return Number(matches[matches.length - 1]);
-}
-
 function parseRelativeSpeed(value) {
   const text = cleanText(value).toLowerCase();
   if (!text) {
@@ -86,27 +54,12 @@ function parseRelativeSpeed(value) {
   return parseNumber(text);
 }
 
-function parseStatus(value) {
-  const text = cleanText(value).toLowerCase();
-  const order = {
-    success: 0,
-    failed: 1,
-  };
-  return Object.prototype.hasOwnProperty.call(order, text) ? order[text] : 99;
-}
-
 function parseSortValue(value, type) {
   if (type === "duration") {
-    return parseDuration(value);
-  }
-  if (type === "result") {
-    return parseResult(value);
+    return parseNumber(value);
   }
   if (type === "relative-speed") {
     return parseRelativeSpeed(value);
-  }
-  if (type === "status") {
-    return parseStatus(value);
   }
   if (type === "number") {
     return parseNumber(value);
@@ -234,7 +187,7 @@ function buildFilterControl(columnIndex, headerText, rows, state, rerender) {
 
 function makeHeadersSortable(headers, state, rerender) {
   headers.forEach((header, columnIndex) => {
-    const label = getHeaderText(header);
+    const label = getCellText(header);
     header.dataset.benchmarkHeader = label;
     header.scope = "col";
 

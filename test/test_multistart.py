@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -10,96 +9,10 @@ import pytest
 
 pytest.importorskip("scipy")
 
-from q2mm.models.forcefield import ForceField, FunctionalForm, TorsionParam
-from q2mm.models.observations import ObservationSet
-from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.models.problem import StationaryPointKind
+from q2mm.models.parameters import ActiveParameterSpace
 from q2mm.models.results import OptimizationResult
-from q2mm.objectives._base import BaseObjectiveExecutor
-from q2mm.objectives.plan import ObjectivePlan
-from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.multistart import MultiStartOptimizer
-from test._shared import make_diatomic
-
-
-def _synthetic_forcefield(values: np.ndarray) -> ForceField:
-    return ForceField(
-        name="synthetic",
-        torsions=tuple(
-            TorsionParam(
-                elements=("C", "C", "C", "C"),
-                periodicity=i + 1,
-                force_constant=float(value),
-                env_id=f"p{i}",
-            )
-            for i, value in enumerate(values)
-        ),
-        functional_form=FunctionalForm.HARMONIC,
-    )
-
-
-def _synthetic_layout(forcefield: ForceField, bounds: list[tuple[float, float]] | None) -> ParameterLayout:
-    layout = ParameterLayout.from_force_field(forcefield)
-    if bounds is None:
-        return layout
-    return ParameterLayout(
-        slots=tuple(
-            replace(slot, bounds=(float(lo), float(hi))) for slot, (lo, hi) in zip(layout.slots, bounds, strict=True)
-        )
-    )
-
-
-def _synthetic_plan(
-    initial: np.ndarray,
-    bounds: list[tuple[float, float]] | None = None,
-    active_indices: np.ndarray | None = None,
-) -> tuple[ForceField, ActiveParameterSpace, ObjectivePlan]:
-    baseline = np.asarray(initial, dtype=np.float64)
-    ff = _synthetic_forcefield(baseline)
-    layout = _synthetic_layout(ff, bounds)
-    space = ActiveParameterSpace(
-        layout=layout,
-        baseline=baseline,
-        active_indices=np.arange(baseline.size, dtype=int) if active_indices is None else active_indices,
-    )
-    plan = ObjectivePlan(
-        case_ids=("0",),
-        molecules=(make_diatomic(),),
-        stationary_points=(StationaryPointKind.GROUND_STATE,),
-        observations=ObservationSet(),
-        layout=layout,
-        active_space=space,
-    )
-    return ff, space, plan
-
-
-class QuadraticEvaluator(BaseObjectiveExecutor):
-    """Synthetic quadratic evaluator with the new ObjectiveEvaluator protocol."""
-
-    def __init__(
-        self,
-        target: np.ndarray,
-        bounds: list[tuple[float, float]] | None = None,
-        initial: np.ndarray | None = None,
-    ) -> None:
-        baseline = np.zeros_like(target, dtype=np.float64) if initial is None else np.asarray(initial, dtype=np.float64)
-        self.target = np.asarray(target, dtype=np.float64)
-        self.forcefield, self.space, plan = _synthetic_plan(baseline, bounds)
-        super().__init__(plan)
-        self._gradient_mode = GradientMode.ANALYTICAL
-
-    @property
-    def gradient_mode(self) -> GradientMode:
-        return self._gradient_mode
-
-    def _total(self, full_vector: np.ndarray) -> float:
-        return float(np.sum((np.asarray(full_vector, dtype=np.float64) - self.target) ** 2))
-
-    def _calculated(self, full_vector: np.ndarray) -> np.ndarray:
-        return np.zeros(0, dtype=np.float64)
-
-    def _data_gradient(self, full_vector: np.ndarray) -> np.ndarray:
-        return 2.0 * (np.asarray(full_vector, dtype=np.float64) - self.target)
+from test._shared import QuadraticEvaluator
 
 
 class StubOptimizer:

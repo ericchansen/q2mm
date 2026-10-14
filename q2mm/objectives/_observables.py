@@ -37,7 +37,6 @@ def geometry_computed(mol: object, coords: np.ndarray, needed: set[str]) -> dict
             length = float(np.linalg.norm(coords[bond.atom_j] - coords[bond.atom_i]))
             by_atoms[tuple(sorted((bond.atom_i, bond.atom_j)))] = length
             ordered.append(length)
-        computed["bond_lengths"] = ordered
         computed["bond_lengths_by_atoms"] = by_atoms
         computed["_bond_lengths_ordered"] = ordered
     if "bond_angle" in needed:

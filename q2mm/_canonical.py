@@ -16,10 +16,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-try:
-    import numpy as np
-except ImportError:  # pragma: no cover - NumPy is a core dependency
-    np = None  # type: ignore[assignment]
+import numpy as np
 
 _SECRET_FRAGMENTS = (
     "access_key",
@@ -124,20 +121,19 @@ def json_value(
         if math.isinf(value):
             return "Infinity" if value > 0 else "-Infinity"
         return value
-    if np is not None:
-        if isinstance(value, np.floating):
-            return json_value(float(value), _path=_path)
-        if isinstance(value, np.integer):
-            return int(value)
-        if isinstance(value, np.ndarray):
-            return json_value(
-                value.tolist(),
-                strict=strict,
-                stringify_unknown=stringify_unknown,
-                coerce_keys=coerce_keys,
-                screen_secrets=screen_secrets,
-                _path=_path,
-            )
+    if isinstance(value, np.floating):
+        return json_value(float(value), _path=_path)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.ndarray):
+        return json_value(
+            value.tolist(),
+            strict=strict,
+            stringify_unknown=stringify_unknown,
+            coerce_keys=coerce_keys,
+            screen_secrets=screen_secrets,
+            _path=_path,
+        )
     if isinstance(value, Path):
         if strict:
             raise CanonicalizationError(f"Filesystem path is not permitted in canonical JSON at {_path}.")

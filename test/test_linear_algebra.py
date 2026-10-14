@@ -9,24 +9,10 @@ from q2mm import constants
 from q2mm.models import hessian
 
 
-class MakeHessian:
-    def __init__(self) -> None:
-        self.out: list[str] = []
-
-    def write(self, str: str) -> None:
-        self.out.append(str)
-
-    def __str__(self) -> str:
-        return "".join(self.out)
-
-
 example_sq3 = np.asarray([[-2, -4, 2], [-4, 1, 2], [2, 2, 5]])
 # Eigenvalues are sorted in ascending order to match the output from np.linalg.eigh
 # which is used by linear_algebra methods (decompose in particular)
 evals_sq3 = np.asarray([-5.51082, 3.659278, 5.851542])
-# Matrix rows must be ordered such that eigenvectors correspond to correct eigenvalues
-evec_sq3 = np.asarray([[-3.06513, -2.19028, 1], [2.82137, -3.49173, 1], [0.0770902, 0.348681, 1]])
-evec_normd_sq3 = np.array([evec / np.linalg.norm(evec) for evec in evec_sq3])
 
 
 class TestLinearAlgebra(unittest.TestCase):

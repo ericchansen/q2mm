@@ -200,9 +200,7 @@ def mass_weight_hessian(
         reverse: If ``True``, un-mass-weight instead.
 
     """
-    symbols = _resolve_symbols(atoms)
-    inv_sqrt = np.array([1.0 / np.sqrt(co.MASSES[s]) for s in symbols for _ in range(3)])
-    scale = np.outer(inv_sqrt, inv_sqrt)
+    scale = mass_weight_scale_3n(atoms)
     if reverse:
         hess /= scale
     else:

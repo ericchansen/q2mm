@@ -9,6 +9,8 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
+pytest.importorskip("scipy")
+
 import q2mm.optimizers.jax_multistart as jax_multistart
 from q2mm.models.parameters import ActiveParameterSpace
 from q2mm.models.results import OptimizationResult, StageRecord
@@ -16,7 +18,7 @@ from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator
 from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
 from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 from q2mm.optimizers.multistart import MultiStartOptimizer
-from test.test_multistart import QuadraticEvaluator
+from test._shared import QuadraticEvaluator
 
 
 class ScriptedOptimizer:

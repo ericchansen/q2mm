@@ -51,19 +51,7 @@ def _load_published(system_key: str) -> tuple[ForceField, frozenset[int], frozen
     case = load_system(system_key, starting_point="published")
     problem = case.problem
     ff = problem.starting_force_field
-    layout = problem.layout
-    active_full_indices = set(problem.active_space.active_indices.tolist())
-
-    active_bonds: set[int] = set()
-    active_angles: set[int] = set()
-    for slot in layout.slots:
-        if slot.index not in active_full_indices:
-            continue
-        if slot.owner == "bonds":
-            active_bonds.add(slot.owner_index)
-        elif slot.owner == "angles":
-            active_angles.add(slot.owner_index)
-    return ff, frozenset(active_bonds), frozenset(active_angles)
+    return ff, problem.active_space.active_owner_indices("bonds"), problem.active_space.active_owner_indices("angles")
 
 
 def _bond_motif(elements: tuple[str, ...]) -> str:

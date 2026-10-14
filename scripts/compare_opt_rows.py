@@ -148,12 +148,8 @@ def _diff_rows(pub: list[Row], opt: list[Row]) -> tuple[list[dict], list[str]]:
 def _fmt_value(v: float, kind: str, param: str) -> str:
     if kind == "bond" and param == "eq":
         return f"{v:.4f} Å"
-    if kind == "bond" and param == "fc":
-        return f"{v:.4f}"
     if kind == "angle" and param == "eq":
         return f"{v:.2f}°"
-    if kind == "angle" and param == "fc":
-        return f"{v:.4f}"
     return f"{v:.4f}"
 
 

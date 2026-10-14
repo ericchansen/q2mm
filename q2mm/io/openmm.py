@@ -315,9 +315,7 @@ def save_openmm_xml(
             k_openmm = canonical_to_openmm_bond_k(bond.force_constant)
             r0_nm = ang_to_nm(bond.equilibrium)
 
-            env_parts = bond.env_id.split("-") if bond.env_id else list(bond.elements)
-            class1 = env_parts[0] if len(env_parts) >= 2 else bond.elements[0]
-            class2 = env_parts[1] if len(env_parts) >= 2 else bond.elements[1]
+            class1, class2 = bond.env_id.split("-") if bond.env_id else bond.elements
             bond_el = ET.SubElement(bond_force_el, "Bond")
             bond_el.set("class1", class1)
             bond_el.set("class2", class2)
@@ -346,10 +344,7 @@ def save_openmm_xml(
             k_openmm = canonical_to_openmm_angle_k(angle.force_constant)
             theta0_rad = deg_to_rad(angle.equilibrium)
 
-            env_parts = angle.env_id.split("-") if angle.env_id else list(angle.elements)
-            class1 = env_parts[0] if len(env_parts) >= 3 else angle.elements[0]
-            class2 = env_parts[1] if len(env_parts) >= 3 else angle.elements[1]
-            class3 = env_parts[2] if len(env_parts) >= 3 else angle.elements[2]
+            class1, class2, class3 = angle.env_id.split("-") if angle.env_id else angle.elements
             angle_el = ET.SubElement(angle_force_el, "Angle")
             angle_el.set("class1", class1)
             angle_el.set("class2", class2)
@@ -371,11 +366,7 @@ def save_openmm_xml(
 
         for torsion in ff.torsions:
             k_kj = canonical_to_openmm_torsion_k(torsion.force_constant)
-            env_parts = torsion.env_id.split("-") if torsion.env_id else list(torsion.elements)
-            class1 = env_parts[0] if len(env_parts) >= 4 else torsion.elements[0]
-            class2 = env_parts[1] if len(env_parts) >= 4 else torsion.elements[1]
-            class3 = env_parts[2] if len(env_parts) >= 4 else torsion.elements[2]
-            class4 = env_parts[3] if len(env_parts) >= 4 else torsion.elements[3]
+            class1, class2, class3, class4 = torsion.env_id.split("-") if torsion.env_id else torsion.elements
             tor_el = ET.SubElement(torsion_force_el, "Proper")
             tor_el.set("class1", class1)
             tor_el.set("class2", class2)

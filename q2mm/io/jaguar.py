@@ -133,7 +133,6 @@ class JaguarIn:
         self.directory = os.path.dirname(self.path)
         self.filename = os.path.basename(self.path)
         self._hessian = None
-        self._empty_atoms = None
         self._molecules = None
 
     @property
@@ -161,8 +160,7 @@ class JaguarIn:
         if lines is None:
             lines = self.lines
         with open(path, "w") as f:
-            for line in lines:
-                f.write(line)
+            f.writelines(lines)
 
     def get_hessian(self, num_atoms: int, *, tag_units: bool = False) -> np.ndarray:
         """Read the Hessian matrix from a Jaguar ``.in`` file.
@@ -366,8 +364,7 @@ class JaguarOut:
         if lines is None:
             lines = self.lines
         with open(path, "w") as f:
-            for line in lines:
-                f.write(line)
+            f.writelines(lines)
 
     @property
     def _records_parsed(self) -> list[_JaguarRecord]:
