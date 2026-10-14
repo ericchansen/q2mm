@@ -19,6 +19,7 @@ import ast
 import io
 import re
 import runpy
+import shlex
 import sys
 from collections import Counter
 from collections.abc import Iterator
@@ -33,7 +34,71 @@ import pytest
 from test._shared import REPO_ROOT
 
 ARCH_DOC = REPO_ROOT / "docs" / "how-it-works" / "architecture.md"
+CONTRIBUTING_DOC = REPO_ROOT / "CONTRIBUTING.md"
 PACKAGE_ROOT = REPO_ROOT / "q2mm"
+
+
+def test_contributor_task_map_links_and_checks_exist() -> None:
+    """Keep source owners, documentation anchors, and small test commands usable."""
+    text = CONTRIBUTING_DOC.read_text(encoding="utf-8")
+    for link in re.findall(r"\]\(([^)]+)\)", text):
+        if "://" in link:
+            continue
+        path_text, _, anchor = link.partition("#")
+        path = REPO_ROOT / path_text
+        assert path.exists(), f"Missing contributor link: {link}"
+        if anchor:
+            source = path.read_text(encoding="utf-8")
+            headings = re.findall(r"^#+ (.+)$", source, flags=re.MULTILINE)
+            slugs = {re.sub(r"[^\w\s-]", "", heading.lower()).replace(" ", "-") for heading in headings}
+            assert anchor in slugs or f'<a id="{anchor}"></a>' in source, f"Missing contributor anchor: {link}"
+
+    task_map = text.split("## Choose your task\n", 1)[1].split("### Backend authors", 1)[0]
+    rows = [line for line in task_map.splitlines() if line.startswith("| ") and "python -m pytest" in line]
+    assert rows, "Contributor task map must include runnable focused checks."
+    for row in rows:
+        cells = row.split("|")[1:-1]
+        assert len(cells) == 4, row
+        assert re.search(r"\]\(q2mm/[^)]+\)", cells[1]), f"Missing source owner: {row}"
+        assert re.search(r"\]\((?:docs|validation)/[^)]+\.md(?:#[^)]*)?\)", cells[2]), (
+            f"Missing invariant documentation: {row}"
+        )
+        command = re.fullmatch(r"\s*`([^`]+)`\s*", cells[3])
+        assert command is not None, f"Expected one focused command: {row}"
+        arguments = shlex.split(command[1])
+        assert arguments[:3] == ["python", "-m", "pytest"], row
+        selectors = [argument for argument in arguments[3:] if argument.startswith("test/")]
+        assert selectors, f"Missing test selector: {row}"
+        assert not any(argument.startswith("--run-") for argument in arguments), row
+        for selector in selectors:
+            path = REPO_ROOT / selector
+            assert path.is_file() and path.suffix == ".py", f"Missing task-map test: {selector}"
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            assert any(
+                isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test_")
+                for node in ast.walk(tree)
+            ), f"Task-map selector contains no tests: {selector}"
+
+
+@pytest.mark.parametrize(
+    ("original", "replacement"),
+    [
+        ("](q2mm/io)", "](q2mm/missing-format-owner)"),
+        ("#input-to-save-walkthrough", "#missing-lifecycle-anchor"),
+        ("test/test_io_fchk.py -q", "test/missing_format_test.py -q"),
+        ("test/test_io_fchk.py -q", "test/test_io_fchk.py --run-nightly -q"),
+    ],
+)
+def test_contributor_task_map_rejects_stale_or_expensive_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, original: str, replacement: str
+) -> None:
+    text = CONTRIBUTING_DOC.read_text(encoding="utf-8")
+    assert original in text
+    document = tmp_path / "CONTRIBUTING.md"
+    document.write_text(text.replace(original, replacement, 1), encoding="utf-8")
+    monkeypatch.setitem(globals(), "CONTRIBUTING_DOC", document)
+    with pytest.raises(AssertionError):
+        test_contributor_task_map_links_and_checks_exist()
 
 
 def test_reference_discovery_links_lazy_exports_to_canonical_owners(monkeypatch: pytest.MonkeyPatch) -> None:

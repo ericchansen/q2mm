@@ -1,11 +1,205 @@
 # Architecture
 
 Q2MM fits force-field parameters to quantum-mechanical reference data.
-This page explains which components own the scientific data, unit
-conversions, and execution contracts, so they can be composed without
-confusing a shared representation with identical physical behavior.
+This page traces a fitting calculation from input to a safely saved result
+and identifies the component responsible for each step. A force field is
+the parameterized molecular energy model; a reference observation is a
+quantity that model should reproduce. Separating scientific data from
+execution choices lets you change a parser, engine, or solver without
+silently changing the scientific question.
+
+For first-run instructions use [Getting Started](../getting-started.md).
+For a change-specific owner, invariant, and small test command, use the
+[contributor task map](https://github.com/ericchansen/q2mm/blob/master/CONTRIBUTING.md#choose-your-task).
+The module map and unit conventions below remain the canonical architectural
+reference, not a second onboarding path.
 
 ---
+
+## Input-to-save walkthrough
+
+The SDK data flow is **input -> immutable problem -> validated settings ->
+explicit components -> one `optimize` -> numerical result ->
+`OptimizationRun` -> `save`**. The benchmark runner shares the numerical
+service, not the SDK record/save tail: it retains a
+[`CandidateResult`](../reference/q2mm/benchmarks/records.md#q2mm.benchmarks.records.CandidateResult),
+persists it with `benchmarks.artifacts.persist_candidate`, and promotes
+accepted candidates with
+[`promote_candidate`](../reference/q2mm/benchmarks/artifacts.md#q2mm.benchmarks.artifacts.promote_candidate).
+Follow [benchmark ownership](#benchmark-ownership) for its candidate records
+and artifacts, rather than expecting SDK manifest sidecars.
+See the [executable lifecycle example](optimization-guide.md#canonical-application-lifecycle)
+for Python construction syntax.
+
+1. **Read inputs at the I/O boundary.**
+   [Format readers and molecule bridges](../reference/q2mm/io/index.md)
+   produce canonical `Molecule`, `ForceField`, and observation values.
+   A molecule contains symbols, coordinates, topology, and, when available,
+   its Hessian: the matrix of second energy derivatives with respect to
+   coordinates. Parsers and backend adapters, not fitting models, own
+   native-unit conversions. Keep the source Hessian and its provenance
+   (the record of where it came from) intact.
+
+2. **Prepare the scientific problem without loading an engine.**
+   [`prepare`](../reference/q2mm/preparation.md#q2mm.preparation.prepare)
+   receives molecules and required `PreparationSettings`, with explicit
+   optional `force_field`, `active_parameters`, `observations`, and
+   `case_ids`. It returns one immutable
+   [`OptimizationProblem`](../reference/q2mm/models/problem.md):
+   training cases, starting force field, parameter layout, active space,
+   observations, and preparation provenance. `ParameterLayout` defines the
+   full vector's slots; `ActiveParameterSpace` says which slots may change
+   and retains the frozen baseline. Each `TrainingCase.stationary_point`
+   declares ground state (GS) or transition state (TS); filenames and
+   eigenvalue signs never select that declaration.
+
+   QFUERZA derives starting bond/angle parameters from the QM Hessian.
+   For a TS, curvature inversion before projection makes the target TS
+   geometry an **MM minimum**, so unconstrained MM relaxation is intended.
+   This does not guarantee a good starting field or a converged inner solve.
+   See [theory and methods](theory.md) for methodology and governing sources.
+   Generic preparation defaults to `StationaryPointObservations`; publication
+   loaders explicitly preserve `MoleculeObservations`, the frozen repository
+   geometry/eigenmatrix profile. An eigenmatrix expresses the Hessian in the
+   QM normal-mode basis; these profiles are not interchangeable publication
+   claims.
+
+   Native frequency matching is a separate, explicit
+   [`match_frequencies`](../reference/q2mm/preparation.md#q2mm.preparation.match_frequencies)
+   call with a loaded MM backend and `FrequencyMatchingSettings`.
+   It requires a single case prepared with an explicitly empty observation
+   set and returns a new problem with matched observations/provenance.
+   Initialization is reused: there is no second QFUERZA call.
+
+3. **Choose final validated execution settings.**
+   [`OptimizationSettings`](../reference/q2mm/settings.md)
+   contains declarative choices, not backend instances, arrays, or numerical
+   sessions. Choose `GroundStateOptimizationSettings` or
+   `TransitionStateOptimizationSettings` when those named defaults suit the
+   declared problem, or supply fully explicit component settings. Settings
+   construction validates values; it neither loads an engine nor guarantees
+   convergence. [Settings ownership](#settings-and-command-line-ownership)
+   explains partial updates and CLI reuse.
+
+4. **Construct exactly the chosen components and capture them before running.**
+   [`load_backend`](../reference/q2mm/backends/registry.md),
+   [`build_optimizer`](../reference/q2mm/optimizers/catalog.md), and
+   [`build_workflow`](../reference/q2mm/workflows/base.md) have explicit inputs.
+   `make_evaluator_factory` closes over the loaded backend, starting field,
+   and objective settings; each workflow stage supplies its `ObjectivePlan`
+   (the immutable specification of what to score). The sole construction
+   owner is
+   [`q2mm.objectives.create_evaluator`](../reference/q2mm/objectives/index.md#q2mm.objectives.create_evaluator).
+   An evaluator executes that plan and returns losses/gradients.
+   [`evaluate(evaluator, parameters)`](../reference/q2mm/application/evaluation.md)
+   returns an `Evaluation` for a full vector; it does not choose a backend.
+   `evaluate_reference(molecule, backend=..., property=...)` is a separately
+   typed reference-calculation service, not an overloaded fitting evaluator.
+
+   [`capture_execution_configuration`](../reference/q2mm/application/configuration.md)
+   records the actual selected objects and runtime backend facts **before**
+   execution. Custom component instances retain their identity; subclasses
+   must implement their own complete
+   [`ConfigurationProvider`](../reference/q2mm/configuration.md).
+   Its dependency-neutral snapshot primitive tracks the active ancestor
+   path with a `ContextVar` and restores it in `finally`, including after
+   failures/interrupts. Captured data is finite and deeply immutable.
+   Objective, optimizer, and workflow code must not import application
+   capture, even inside a function.
+
+5. **Enter the one numerical optimization service.**
+   [`optimize(problem, *, optimizer, workflow, make_evaluator, regularization, n_evals)`](../reference/q2mm/application/optimization.md)
+   uses the supplied components and returns an `OptimizationResult`.
+   It does not choose recipes, merge overrides, build solvers, assemble run
+   records, or save files. A workflow compiles stage plans and invokes the
+   algorithm's `optimize(evaluator, space)` contract. `CyclingOptimizer`
+   obeys that same contract; configured factories keep numerical phase
+   state fresh per cycle and per call. There is no bound-input
+   `OptimizationLoop` or adapter API.
+
+6. **Materialize the result without executing again.**
+   [`OptimizationResult`](../reference/q2mm/models/results.md) holds numerical
+   vectors, accounting, convergence information, and stage diagnostics.
+   [`OptimizationRun.from_result(problem, result, configuration=...)`](../reference/q2mm/application/models.md)
+   materializes the final force field and adds configuration, scientific
+   fingerprints, and provenance. A fingerprint identifies the scientific
+   inputs; it is not evidence of physical correctness.
+   The full layout, initial baseline, gradient contract, and frozen slots
+   must still agree. Never reconstruct a result by running the solver again.
+
+7. **Save through the persistence owner.**
+   [`save(run, path)`](../reference/q2mm/application/persistence.md)
+   checks semantic format support and writes the force field with its run
+   manifest (the machine-readable configuration/result record). It refuses
+   overwrite by default. Output-role checks, exclusive reservations, and
+   staged files guard against filename aliases and cooperating concurrent
+   writers. Catchable installation failures and interruptions trigger
+   rollback; failed recovery is logged and retains recovery backups.
+   Sequential replacements are **not crash-atomic**: a process or machine
+   crash between them can leave an incomplete or mismatched force-field/
+   manifest pair. Cleanup failures after installation are logged without
+   rolling back the committed output. A successful serialization call alone
+   is not a safe save. A bare force-field save cannot replace an existing
+   run's pair.
+
+### Settings and command-line ownership
+
+[`q2mm.settings`](../reference/q2mm/settings.md) supplies domain values and
+rules through strict, finite, deeply immutable Pydantic models.
+Pydantic owns structural validation, defaults, and discriminated unions
+(the `kind`/`name` field selects the concrete optimizer/workflow model).
+Final optimization models use native, **init-only** Pydantic-settings sources
+and nested default partial updates. A partial constructor dictionary updates
+the declared typed default; a complete typed component replaces it. Ambient
+environment, dotenv, and secret files do not supply execution settings.
+There is no requested-to-generic-to-execution resolver hierarchy or opaque
+override dictionary.
+
+Execution settings reject incompatible backend/executor/optimizer combinations
+before constructing components. The JAX executor requires the `jax` backend;
+select a Python objective explicitly for other engines. Backend settings keep
+factory options deeply immutable, while `BackendSettings.factory_options()`
+returns recursive JSON dictionaries/lists for explicit native construction.
+
+Preserve `None`, zero, and false where the actual control permits them.
+Scalar-only and analytical objectives require `fd_step=None`; an explicit
+numeric FD step there is an error. Finite-difference (FD) execution, which
+estimates a derivative by perturbing parameters, defaults to a positive step.
+Genuinely positive controls remain positive; native zero tolerances are not
+rejected indiscriminately. Provided/QFUERZA preparation round-trips by
+effective values, not by whether Pydantic happened to mark a field as set.
+Nested merged `model_fields_set` is not source provenance.
+
+The [benchmark CLI](../benchmarks/cli.md) uses native `CliApp`,
+`CliSubCommand`, and `get_subcommand` over typed command/component models.
+`single` and `batch` share dotted controls such as `--backend.key`,
+`--optimizer.maxiter`, `--objective.executor`, and `--workflow.name`;
+Optax selects `--optimizer.kind optax` and `--optimizer.max-steps`.
+Batch accepts repeated `--system` and defaults to Method E2. Matrix's
+repeated `--backends`, `--forms`, and `--presets` execute exact catalog
+policies, not translated flat knobs. `--data-roots KEY=PATH` and
+`--show-config` are native model operations. Inspection reports requested
+policy and labels unresolved runtime facts; actual provenance comes from
+loaded components. `main(argv)` returns typed integer statuses.
+
+[`RunProfile`](../reference/q2mm/benchmarks/profiles.md) directly contains the
+typed components and explicitly projects `benchmark-profile-v2` requested
+identity. Historical persisted records remain readable; neither a generic
+model dump nor nested input-origin details redefine scientific/golden
+fingerprints. Do not restore argparse aliases, `Namespace` projections,
+custom token parsing/merging, or method-name factory magic.
+
+### API boundaries
+
+Generated reference pages describe source objects; appearing in that
+reference does not make every helper a stable extension API.
+
+| Surface | Supported use and canonical reference |
+| --- | --- |
+| Ordinary user API | [Root lazy exports](../reference/q2mm/index.md), [settings](../reference/q2mm/settings.md), and [I/O](../reference/q2mm/io/index.md): prepare, explicitly build/capture/evaluate/optimize, assemble a run, save. Exports point to the **same canonical objects**, not copied wrappers; the application package exports its services, not evaluator/optimizer/workflow construction aliases. |
+| Advanced supported API | Direct [problem/TrainingCase construction](../reference/q2mm/models/problem.md), [layout/active space](../reference/q2mm/models/parameters.md), [objective plans](../reference/q2mm/objectives/plan.md), exported [evaluator protocols](../reference/q2mm/objectives/protocols.md), [workflow protocol](../reference/q2mm/workflows/base.md), [configuration providers](../reference/q2mm/configuration.md), and the stable [backend API v1/conformance contract](../backends/authoring.md). Custom algorithms implement `optimize(evaluator, space)` and the capture provider contract; they need not inherit the internal `_Optimizer` typing helper. |
+| Benchmark application API | [Typed profiles](../reference/q2mm/benchmarks/profiles.md), [system loading](../reference/q2mm/benchmarks/systems/index.md), and [runner](../reference/q2mm/benchmarks/runner.md). These compose the ordinary numerical service while owning benchmark policy, candidate retention, and promotion. |
+| Implementation details | Underscore-prefixed modules/helpers, private numerical sessions, `_Optimizer`, transaction helpers, and CLI parsing internals are not additional user entry points. They may be tested directly when proving an ownership or failure invariant; do not duplicate them in a new facade. |
 
 ## Design principles
 
@@ -183,12 +377,12 @@ decision to publish accepted candidates.
 
 | Owner | Responsibility and reused boundary |
 |-------|------------------------------------|
-| `benchmarks.profiles` | Requested/resolved identities and configuration adapters; optimizer construction uses `optimizers.catalog`, and external roots use `benchmarks.systems._paths` |
+| `benchmarks.profiles` | Typed component policies and requested/resolved identities; construction delegates to explicit optimizer/workflow builders, and external roots use `benchmarks.systems._paths` |
 | `benchmarks.acceptance` | Existing acceptance policy and executor-ratio classification |
 | `benchmarks.analysis` | Frequency, PES-distortion, and configured-executor sample diagnostics; objective metric formulas remain in `objectives.metrics` |
 | `benchmarks.records` | Candidate/outcome envelopes and provenance; full results and stage-only summaries use `_result_serialization`, and scientific digests use the application model's single-payload fingerprint helper |
 | `benchmarks.artifacts` | JSON files and accepted-artifact mechanics; validated staging, public output-role checks, reservations, and temporary/cleanup helpers come from `application.persistence` |
-| `benchmarks.runner` | Resolution/execution order, score-of-record evaluation, acceptance and publication gates, incremental persistence and promotion decisions |
+| `benchmarks.runner` | Explicit component construction/capture, shared numerical optimize, score-of-record evaluation, acceptance and publication gates, incremental persistence and promotion decisions |
 
 Historical public imports from `benchmarks.runner` are direct re-exports of
 their owners. There is no second runner or result-projection field list.
@@ -224,7 +418,7 @@ q2mm/
 ├── _result_serialization.py # Canonical full-result and stage-only projections
 ├── _jax_support.py       # Foundational lazy JAX import guard (has_jax/load_jax); shared by models.hessian and backends.mm._jax_common
 ├── data/sn2/             # Approved CH3F/SN2 package resource + provenance manifest
-├── application/          # Data-independent evaluate, optimize, and atomic save services
+├── application/          # Data-independent evaluate, optimize, and staged save services
 │   ├── models.py        # Immutable resolved configuration + OptimizationRun/SavedOutput
 │   ├── configuration.py # Execution envelope + neutral-capture to application-error translation
 │   ├── evaluation.py    # Full-vector evaluation + reference service + application-error adaptation
@@ -234,13 +428,13 @@ q2mm/
 ├── benchmarks/           # Benchmark systems, explicit profiles, acceptance, and publication persistence
 │   ├── cases.py         # BenchmarkCase wrapper around OptimizationProblem
 │   ├── publications.py  # Canonical source-completeness records and blocked rows
-│   ├── profiles.py      # Profile identities + configuration/data-root adapters over existing resolvers
+│   ├── profiles.py      # Typed component profiles, identities, catalog policies + data-root adapters
 │   ├── acceptance.py    # Candidate status, no-progress/worsening policy, and executor-ratio classification
 │   ├── analysis.py      # Frequency, PES-distortion, and optimizer-sample diagnostics
 │   ├── records.py       # Immutable candidate/outcome envelopes + canonical projection/provenance adapters
 │   ├── artifacts.py     # Strict JSON storage + accepted-artifact staging, snapshots, rollback, cleanup
 │   ├── runner.py        # The one execution/promotion coordinator (run_profile/run_profiles)
-│   ├── cli.py           # q2mm-benchmark console entry point (list/preflight/single/batch/matrix/load)
+│   ├── cli.py           # Native CliApp command models + integer-status entry point
 │   └── systems/         # load_system(), SYSTEM_KEYS, per-system modules
 │       ├── ch3f.py      # CH3F matched-frequency benchmark
 │       ├── ch3f_sn2.py  # CH3F SN2 transition-state benchmark
@@ -347,41 +541,6 @@ optimizer/workflow builders, pre-run configuration capture,
 types and `ExternalDataRoots` are also direct lazy exports.
 Importing `q2mm` does not load an optional backend, SciPy, JAX, ASE, QCEngine,
 OpenMM, or backend discovery. Settings live in `q2mm.settings`.
-
-### Execution boundaries
-
-`OptimizationSettings` holds final declarative choices, not runtime objects
-or a separate request/effective-settings pipeline. The named
-`GroundStateOptimizationSettings` and `TransitionStateOptimizationSettings`
-models declare stationary-point-specific defaults; callers choose one based
-on their known problem. Native Pydantic nested default updates validate
-partial constructor dictionaries without a Q2MM merge engine or resolver.
-Only constructor input is read: ambient environment, dotenv and secret-file
-sources are disabled. Constructing settings imports no optional algorithm
-and performs no backend loading. The caller explicitly loads `settings.backend`, builds
-`settings.optimizer` and `settings.workflow`, then captures the actual
-objects before execution. Each built-in constructor consumes positional
-immutable settings; a custom component describes its consequential controls
-through `q2mm.configuration.ConfigurationProvider.configuration_settings()`.
-The dependency-neutral `capture_component_settings` primitive validates
-component descriptions, including nested optimizer components. Optimizers
-depend on that neutral primitive, not application services.
-`application.configuration` assembles the execution envelope and translates
-neutral capture failures to `ApplicationConfigurationError`.
-
-`q2mm.objectives.create_evaluator` is the shared construction owner; the root
-and application exports are that same object.
-`make_evaluator_factory` closes over the objective-layer service for workflow
-stages, without importing the application layer.
-`evaluate(evaluator, parameters)` evaluates a full vector.
-`evaluate_reference(molecule, backend=..., property=...)` is a separate typed
-reference service. Both keep application-level error adaptation in
-`application.evaluation`. Numerical `optimize` consumes supplied components and
-returns an `OptimizationResult` without selecting recipes, reconstructing
-components, persisting, or assembling provenance.
-`OptimizationRun.from_result(problem, result, configuration=...)` materializes
-the final field and run record; `save` persists it. See the
-[complete lifecycle](optimization-guide.md#canonical-application-lifecycle).
 
 ### Release and scientific-data boundary
 
