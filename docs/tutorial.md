@@ -1,154 +1,196 @@
-# Tutorial: from a published case to your own system
+# Tutorial: from a first run to your own chemistry
 
-Q2MM is useful when you have several QM training structures, a complete
-molecular mechanics force field, and a smaller custom region that may change.
-This tutorial first runs that full pattern on Rh-enamide, then shows exactly
-which paths and objects to replace for a new project.
+Q2MM fits an inexpensive molecular mechanics (MM) energy model against
+quantum-mechanical (QM) reference observations. Start here after the
+[CPU first-run installation](getting-started.md#install-this-revision): first
+use the packaged CH3F inputs, then replace them with your own molecule or a
+multi-structure fitting set. A completed run is not evidence of force-field
+accuracy; the observations and independent checks define what you can claim.
 
-The examples use the canonical application lifecycle: immutable preparation,
-explicit immutable settings, component construction, pre-run capture,
-numerical evaluation/optimization, run assembly, and persistence.
-Publication case loaders provide named, source-backed workflows; internally
-they delegate problem construction to `q2mm.prepare` with an explicit frozen
-observation recipe. Generic preparation uses a different default, explained
-in [Fitting objectives and reference data](how-it-works/fitting-objectives.md).
+## The same example from Python
 
-## Prerequisites
-
-```bash
-pip install "q2mm[jax]"
-git clone https://github.com/ericchansen/q2mm.git
-```
-
-SciPy arrives through the JAX/optimizer extra, not through q2mm core. Use Linux
-or WSL2 for JAX CUDA; follow [Platform Support](platform-support.md) before any
-long optimization.
-
-## First full case: Rh-enamide
-
-The governing source is Donoghue, Helquist, Norrby, and Wiest,
-[*J. Chem. Theory Comput.* **2008**, 4, 1313–1323](https://doi.org/10.1021/ct800132a).
-It uses nine transition-state structures. The source objective also used ESP
-charges and relative enthalpies.
-
-The executable repository compatibility profile is
-`repository-geometry-eigenmatrix-v1`: nine-case geometry and full-eigenmatrix
-targets with the frozen repository weights. It is a
-**partial repository reproduction**, not an exact reproduction of the paper.
-Relative enthalpy is represented by a canonical type but remains blocked until
-an MM backend supplies thermochemical enthalpy rather than potential energy.
-
-The Rh scientific files are tracked under
-`examples/publication/rh-enamide`, excluded from wheel and sdist artifacts, and
-have no established redistribution/licensing statement. Supply that source
-root explicitly:
+The source-only runner is the canonical small example implementation, not a
+second tutorial algorithm. Set `JAX_PLATFORMS=cpu` before launching Python.
+From the checkout, the following executes it with native Pydantic settings:
 
 ```python
 from pathlib import Path
+import runpy
 
+from q2mm.settings import GroundStateOptimizationSettings
+
+example = runpy.run_path(str(Path("examples") / "ch3f" / "run.py"))
+settings = GroundStateOptimizationSettings(
+    optimizer={"maxiter": 2, "maxls": 5},
+    n_evals=0,
+)
+restored = GroundStateOptimizationSettings.model_validate_json(settings.model_dump_json())
+assert restored.model_dump() == settings.model_dump()
+result = example["run"](settings=restored, output_root=Path("results") / "ch3f")
+assert result["execution_mode"] == "budget_limited_native"
+assert result["optimization"]["convergence_claim"] is False
+print(result["saved"])
+```
+
+For an arbitrary working directory or installed wheel, replace the relative
+`Path("examples") / "ch3f" / "run.py"` with the absolute source-script path.
+The [local-wheel instructions](getting-started.md#use-a-local-wheel) keep the
+source script separate from the installed package.
+
+`GroundStateOptimizationSettings` defaults to a JAX analytical objective and
+SciPy L-BFGS-B. The partial dictionary updates the existing typed optimizer
+default; it does not discard its other controls. JSON reconstruction validates
+the same values. `n_evals=0` disables optional endpoint sampling, not the
+optimizer's evaluations. The source command exposes the same controls as
+`--optimizer.maxiter 2 --optimizer.maxls 5 --n-evals 0`.
+
+The example defaults to a two-iteration, five-line-search-step, single-stage
+budget even when no settings are supplied. An iteration cap is not an energy
+evaluation count or wall-time guarantee. All these onboarding runs report
+**no convergence claim**, regardless of the solver flag.
+
+### What happens inside?
+
+Read [`examples/_small_runner.py`](https://github.com/ericchansen/q2mm/blob/master/examples/_small_runner.py)
+alongside the [canonical lifecycle](how-it-works/optimization-guide.md#canonical-application-lifecycle):
+
+1. Load the packaged geometry and explicitly attach the packaged Hessian with
+   units and source provenance.
+2. `q2mm.prepare` creates an immutable problem: declared ground-state/TS
+   cases, starting force field, parameter layout, active/frozen partition and
+   reference observations. It launches no QM calculation.
+3. Build the backend, optimizer and workflow from actual settings; capture
+   their configuration **before** execution.
+4. Create an objective evaluator and evaluate the baseline. `q2mm.optimize`
+   uses the supplied optimizer, workflow and evaluator factory, returning
+   an `OptimizationResult`, not a force field.
+5. `OptimizationRun.from_result` assembles the final field and provenance;
+   explicit `q2mm.save` writes the field and manifest.
+
+The default observations compare geometry and the Hessian in a reference
+eigenvector basis ("eigenmatrix"). This is not frequency matching and not the
+same as every publication objective. See
+[fitting objectives](how-it-works/fitting-objectives.md).
+When deliberately fitting matched frequencies, prepare with an empty
+`ObservationSet()`, then call the explicit runtime `q2mm.match_frequencies`
+step with a loaded MM backend and `FrequencyMatchingSettings`.
+
+## Bring your own FCHK
+
+A Gaussian formatted checkpoint (`.fchk`) must contain element identities,
+coordinates, and **Cartesian force constants** (the Hessian). An XYZ file is
+not a substitute. Decide whether the calculation describes a minimum
+(`ground_state`) or a transition state (`transition_state`); Q2MM does not
+infer this from the filename or Hessian eigenvalues.
+
+For a declared minimum, use the existing source runner, still with CPU selected:
+
+```powershell
+python examples\ch3f\run.py --fchk inputs\minimum.fchk --stationary-point ground_state --optimizer.maxiter 2 --output-root results\my-molecule
+```
+
+The example's filenames remain `ch3f.frcmod` and
+`ch3f.frcmod.manifest.json` in your chosen directory even when the molecule is
+caller-supplied. The JSON identifies `input.kind="caller_fchk"` and the input
+name; the manifest fingerprints the actual input. Do not interpret these
+filenames as a scientific identity.
+
+For a declared TS, use `examples\ch3f-sn2\run.py` and
+`--stationary-point transition_state`; its filenames are `ch3f-sn2.frcmod`
+and `ch3f-sn2.frcmod.manifest.json`. This selects the TS settings and
+curvature inversion, not the GS settings. The approved packaged SN2 Hessian
+can emit a multiple-negative-mode diagnostic; that warning is not suppressed
+or repaired for a demo, and this is not a TS scientific validation.
+
+Missing files, missing force constants, or conflicting stationary-point
+options fail explicitly. Do not supply both `--fchk` and `--input-root`.
+The small scripts intentionally support only a fresh harmonic field.
+
+For direct **preparation only** (no backend, optimizer or output):
+
+```python
 import q2mm
-from q2mm.benchmarks.systems import load_system
-from q2mm import ExternalDataRoots
-from q2mm.backends.registry import load_backend
-from q2mm.objectives.plan import ObjectivePlan
-from q2mm.settings import BackendSettings, TransitionStateOptimizationSettings
+from q2mm.io import load_fchk_molecule
+from q2mm.settings import PreparationSettings
 
-source_root = Path("/path/to/q2mm/examples/publication/rh-enamide")
-output_root = Path("/path/to/output/rh-enamide")
-output_root.mkdir(parents=True, exist_ok=True)
-
-case = load_system(
-    "rh-enamide",
-    data_roots=ExternalDataRoots(rh_enamide=source_root),
-    starting_point="qfuerza",
-    objective_profile="repository-geometry-eigenmatrix-v1",
-    functional_form="mm3",
+molecule = load_fchk_molecule("inputs/minimum.fchk", bond_tolerance=1.5)
+problem = q2mm.prepare(
+    molecule,
+    settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic"),
 )
-problem = case.problem
-
-print(problem.case_ids)
-print(problem.active_space.n_active, problem.active_space.n_full)
-print(problem.preparation_provenance.qfuerza_settings)
-
-settings = TransitionStateOptimizationSettings(backend=BackendSettings(key="jax"))
-backend = load_backend(settings.backend.key, **settings.backend.factory_options())
-optimizer = q2mm.build_optimizer(settings.optimizer)
-workflow = q2mm.build_workflow(settings.workflow)
-configuration = q2mm.capture_execution_configuration(
-    settings, backend=backend, optimizer=optimizer, workflow=workflow
-)
-make_evaluator = q2mm.make_evaluator_factory(
-    backend, problem.starting_force_field, settings=settings.objective
-)
-plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
-initial = q2mm.evaluate(make_evaluator(plan), problem.active_space.baseline)
-result = q2mm.optimize(
-    problem, optimizer=optimizer, workflow=workflow, make_evaluator=make_evaluator,
-    regularization=settings.objective.regularization, n_evals=settings.n_evals,
-)
-run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
-saved = q2mm.save(run, output_root / "rh-enamide-qfuerza.fld")
-
-print(initial.total, dict(initial.category_scores))
-print(run.configuration.optimizer.key, dict(run.configuration.optimizer.settings))
-print(saved.force_field_path, saved.manifest_path)
 ```
 
-For a fast software-path check rather than a scientific convergence run:
+The [`prepare` API](reference/q2mm/preparation.md) describes input
+validation. To execute your own prepared problem without the source runner,
+use the [canonical lifecycle](how-it-works/optimization-guide.md#canonical-application-lifecycle)
+with an explicitly budgeted GS or TS settings model and a chosen output path.
+Do not reintroduce an execution wrapper or settings resolver.
 
-```bash
-python examples/publication/rh-enamide/run.py \
-  --rh-enamide /path/to/q2mm/examples/publication/rh-enamide \
-  --output-root /path/to/output \
-  --bounded-ci
-```
+## XYZ plus an explicit Hessian
 
-`--bounded-ci` still parses all nine structures, composes the real field,
-preserves the OPT active/frozen partition, evaluates the actual observations,
-enters the optimizer, and writes a field plus manifest. It deliberately makes
-no convergence or native-backend correctness claim: its deterministic echo
-backend is a software smoke, not a physical MM engine.
-
-Canonical publication convergence is currently blocked by local-basin
-methodology. The lifecycle above explains API composition; use the bounded
-software proof rather than launching a publication convergence run. See the
-[source/status record](benchmarks/published-ff-validation.md).
-
-### Published versus QFUERZA start
-
-`starting_point="published"` keeps the source OPT values. The QFUERZA row
-retains literature/base values and projects supported active bond/angle
-scalars from the QM Hessians, with TS inversion derived from the stationary
-point. Both starts use the same named observations; changing the start does not
-change the objective.
-
-QFUERZA is governed by
-[Farrugia et al.](https://doi.org/10.1021/acs.jctc.5c01751). Transition-state
-curvature inversion follows
-[Limé and Norrby](https://doi.org/10.1002/jcc.23797).
-
-## Replace Rh-enamide with your files
-
-For Gaussian training logs and a complete/custom MM3 pair:
+XYZ provides element labels and coordinates, **not** charge, stationary-point
+kind or a Hessian. The following preparation-only snippet expects your
+optimized geometry and a separately obtained Hessian in canonical
+**Hartree/Bohr²** units:
 
 ```python
-from pathlib import Path
+import numpy as np
+import q2mm
+from q2mm.io.xyz import load_xyz
+from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.settings import PreparationSettings
 
+molecule = load_xyz("inputs/minimum.xyz", charge=0, bond_tolerance=1.5)
+molecule = molecule.with_hessian(
+    np.load("inputs/minimum-hessian.npy", allow_pickle=False),
+    HessianProvenance(
+        units=HessianUnits.ATOMIC,
+        source="caller-quantum-calculation",
+        path="inputs/minimum-hessian.npy",
+    ),
+)
+problem = q2mm.prepare(
+    molecule,
+    settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic"),
+)
+```
+
+For N atoms the matrix must be 3N by 3N. Labeling a matrix with these units
+does not convert values from other units. Supply a real Hessian, not a
+frequency list or a guessed identity matrix. Preparation without a Hessian
+fails; it does not silently generate one.
+
+Reference-property generation is a separate explicit
+`q2mm.evaluate_reference(molecule, backend=..., property="hessian")` action.
+Optional [QCEngine](https://qcengine.readthedocs.io/en/latest/) and
+[ASE](https://ase-lib.org/) integrations require their extras and an actual
+supported program/calculator. See [reference services](backends/index.md);
+they are not prerequisites for onboarding.
+
+## Many structures: complete field plus OPT/custom subset
+
+Several molecules must share an explicit template topology. Supply a
+**complete** MM3 field for evaluation, and a smaller **OPT/custom** field
+that identifies which scalar parameters are allowed to change. It is a
+selection mask, not a second independent force field for evaluation.
+
+This preparation-only example expects your own ordered QM logs and field
+files. It does not launch a full publication optimization:
+
+```python
 import q2mm
 from q2mm.io import load_gaussian_molecules, load_mm3_fld
 from q2mm.settings import PreparationSettings
 
-paths = tuple(sorted(Path("/data/my-project/qm").glob("*.log")))
-case_ids = tuple(path.stem for path in paths)
+case_ids = ("TS1", "TS2")
 molecules = load_gaussian_molecules(
-    paths,
+    ["inputs/TS1.log", "inputs/TS2.log"],
     structure_index=-1,
     require_hessian=True,
     bond_tolerance=1.4,
 )
-full_ff = load_mm3_fld("/data/my-project/complete.fld")
-opt_ff = load_mm3_fld("/data/my-project/custom-opt.fld", include_standard=False)
-
+full_ff = load_mm3_fld("inputs/complete.fld")
+opt_ff = load_mm3_fld("inputs/custom-opt.fld", include_standard=False)
 problem = q2mm.prepare(
     molecules,
     settings=PreparationSettings(stationary_point="transition_state", initialize="qfuerza"),
@@ -158,217 +200,95 @@ problem = q2mm.prepare(
 )
 ```
 
-Use the settings/construction/capture/execution block above with this problem,
-then save the assembled run to your `.fld` output.
+`case_ids` define identity and order explicitly. `structure_index=-1` selects
+the last structure; Gaussian/Jaguar/MacroModel bridges require you to choose
+an index instead of silently taking one. Batch loading is all-or-nothing.
 
-Decide case order yourself; filenames do not become scientific identities
-automatically. Use `initialize="provided"` when supplied values must remain
-unchanged. Jaguar and MacroModel inputs have explicit
-`load_jaguar_molecules(..., structure_index=...)` and
-`load_macromodel_molecules(..., structure_index=...)` bridges.
+With `initialize="qfuerza"`, Hessian-informed initialization re-estimates
+supported active bond/angle scalars; frozen values stay equal to the baseline.
+With `initialize="provided"`, supplied values are retained and the native
+`qfuerza` default becomes `None`. Both settings JSON-round-trip without a
+resolver. See [the initialization methodology](how-it-works/theory.md).
+Declared TS preparation inverts negative QM curvature so the target TS
+geometry can be an MM **minimum**, not an MM saddle.
 
-## Fresh force field for one molecule
+Pass explicit `observations=` when your scientific target set differs from
+the generic recipe. Neither this preparation nor a successful optimizer
+flag establishes completeness of charges, energy differences, torsions or
+other scientific targets. See
+[observation categories](how-it-works/fitting-objectives.md).
+Assemble and save an MM3 run to `.fld`, not harmonic `.frcmod`.
 
-When no shared template exists, one FCHK molecule can start a fresh field:
+## Publication workflows are a separate branch
 
-```python
-import q2mm
-from q2mm.io import load_fchk_molecule
-from q2mm.settings import PreparationSettings
+Current system/profile/start availability and blockers are generated on the
+[publication coverage page](benchmarks/published-ff-validation.md), not
+maintained as another tutorial table. Follow its per-system source links
+before provisioning files or making a reproduction claim.
 
-molecule = load_fchk_molecule("/data/my-minimum.fchk")
-problem = q2mm.prepare(
-    molecule,
-    settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic"),
-)
-```
+Rh-enamide source inputs at `examples/publication/rh-enamide` are
+source-tracked but excluded from wheel/sdist;
+recovered dissertation archives and the MM3 base must be supplied by the
+caller. Publication examples never download them. Canonical relaxed-geometry
+publication optimization remains **methodology-blocked**: limit work to
+preparation/evaluation and bounded optimizer-entry/save proofs, not full
+convergence runs.
 
-Execute the same lifecycle with this new problem, choosing
-`GroundStateOptimizationSettings` instead of the TS model, and save to `.frcmod`.
+### First full case: Rh-enamide
 
-Fresh preparation accepts one molecule because QFUERZA creates one topology.
-For multiple molecules, provide an explicit shared template. XYZ is not a
-Hessian format.
+Here "full case" means a multi-structure template problem, **not** exact
+publication reproduction or a full convergence run. The named Rh-enamide
+loader prepares the ordered nine-case, frozen
+`repository-geometry-eigenmatrix-v1` compatibility objective. That objective
+does not supply all targets in the
+[governing source](https://doi.org/10.1021/ct800132a); consult the
+[source/status details](systems/rh-enamide.md) before using it.
 
-The installed-data smoke scripts are
-[`examples/ch3f/`](https://github.com/ericchansen/q2mm/tree/master/examples/ch3f)
-and
-[`examples/ch3f-sn2/`](https://github.com/ericchansen/q2mm/tree/master/examples/ch3f-sn2).
-
-## Other publication studies
-
-Every comparison row links to its detailed source/status page.
-
-| Study | What it adds beyond Rh-enamide | Executable claim |
-|---|---|---|
-| [Heck relay](systems/heck-relay.md) | 23 deposited cases, a separately blocked 24-case row, and the explicit `fc_fraction=0.05` scientific bound | 23-case executable archive with a partial objective |
-| [Pd-allyl](systems/pd-allyl.md) | OPT-only composition over an external MM3 base; 21 primary plus four auxiliary cases | 21-case partial repository reproduction |
-| [Pd 1,4-conjugate](systems/pd-conjugate.md) | Independent ten-case Pd composition and six physical OPT blocks | Partial repository reproduction |
-| [Rh 1,4-conjugate](systems/rh-conjugate.md) | Staged eight-bisphosphine/two-diene source workflow | 2021 developmental SDK demonstration |
-| [Ferrocene](systems/ferrocene.md) | Seven ground-state structures and published-only initialization | Seven-case partial profile; four scans and QFUERZA remain blocked |
-
-Run the matching script under `examples/publication/<system>/run.py`. Wahlers
-systems require both `--supporting-info` and `--mm3-base`; Heck requires
-`--supporting-info`.
-
-## Generate a reference Hessian with QCEngine
-
-Reference generation is an explicit action. `q2mm.prepare` never starts a QM
-calculation.
+Preparation only, with the source checkout explicitly selected:
 
 ```python
-import q2mm
-from q2mm.backends.registry import load_backend
-from q2mm.io.xyz import load_xyz
+from pathlib import Path
+from q2mm import ExternalDataRoots
+from q2mm.benchmarks.systems import load_system
 
-molecule = load_xyz("/data/optimized.xyz", charge=-1, bond_tolerance=1.4)
-reference = load_backend(
-    "qcengine",
-    program="psi4",
-    method="b3lyp",
-    basis="6-31g*",
+case = load_system(
+    "rh-enamide",
+    data_roots=ExternalDataRoots(rh_enamide=Path("examples") / "publication" / "rh-enamide"),
+    starting_point="qfuerza",
+    objective_profile="repository-geometry-eigenmatrix-v1",
+    functional_form="mm3",
 )
-hessian_result = q2mm.evaluate_reference(
-    molecule,
-    backend=reference,
-    property="hessian",
-)
-molecule = molecule.with_hessian(
-    hessian_result.hessian,
-    provenance=hessian_result.hessian_provenance,
-)
-problem = q2mm.prepare(
-    molecule,
-    settings=PreparationSettings(stationary_point="transition_state", functional_form="harmonic"),
-)
+problem = case.problem
+print(problem.case_ids)
+print(problem.active_space.n_active, problem.active_space.n_full)
 ```
 
-QCEngine also exposes atomic energy and Cartesian coordinate gradient when the
-selected program supports them. See the
-[QCEngine documentation](https://qcengine.readthedocs.io/en/latest/).
+`starting_point="published"` retains the supplied OPT values instead of
+re-estimating them; it does not change the named objective. No engine is
+loaded here. Use the publication script's explicitly labeled `--bounded-ci`
+only for a software-entry/save proof, never to claim a native fit.
 
-## Evaluate an ASE calculator
+The source-only
+[`publication examples`](https://github.com/ericchansen/q2mm/tree/master/examples/publication)
+document required roots and their software-only `--bounded-ci` mode. That
+mode echoes references and updates no parameters, exactly as in the small
+software proof; it is not a physical MM engine.
 
-ASE is also a lazy reference backend. It does not assign q2mm force-field
-parameters:
+The benchmark CLI records candidates under your selected
+`<output>/candidates/`. Only accepted candidates are promoted to
+`<output>/accepted/` and `<output>/forcefields/`; a rejected/skipped candidate
+does **not** promise a saved force field. The small example instead calls
+`q2mm.save` explicitly, including when its numerical budget expires, without
+changing benchmark acceptance policy. See [CLI persistence](benchmarks/cli.md).
 
-```python
-import q2mm
-from ase.calculators.emt import EMT
-from q2mm.backends.registry import load_backend
+Historical numerical claims require tracked evidence in
+[`ericchansen/q2mm-data`](https://github.com/ericchansen/q2mm-data).
+Keep generated example outputs in your chosen results directory, not in a
+code commit.
 
-reference = load_backend("ase", calculator=EMT())
-energy = q2mm.evaluate_reference(molecule, backend=reference, property="energy")
-gradient = q2mm.evaluate_reference(
-    molecule,
-    backend=reference,
-    property="coordinate_gradient",
-)
-```
-
-The v1 ASE adapter is non-periodic and reference-only. Periodic cells are
-rejected instead of silently losing state. Calculator details are documented by
-[ASE](https://ase-lib.org/ase/calculators/calculators.html).
-
-## Construct an `OptimizationProblem` manually
-
-Mixed stationary points or custom observation blocks use the immutable core:
-
-The explicit `from_molecule` set below retains the compatibility builder's
-mode exclusions. It does not select the corrected generic default; use
-`q2mm.prepare` without `observations` for that recipe.
-
-```python
-from q2mm.models.observations import ObservationSet
-from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
-from q2mm.models.problem import OptimizationProblem, StationaryPointKind, TrainingCase
-
-layout = ParameterLayout.from_force_field(force_field)
-space = ActiveParameterSpace.all_active(layout, force_field)
-observations = ObservationSet.from_molecule(molecule, case_id="case-1")
-problem = OptimizationProblem(
-    cases=(
-        TrainingCase(
-            case_id="case-1",
-            molecule=molecule,
-            stationary_point=StationaryPointKind.GROUND_STATE,
-        ),
-    ),
-    starting_force_field=force_field,
-    layout=layout,
-    active_space=space,
-    observations=observations,
-)
-
-from q2mm.settings import BackendSettings, OptimizationSettings, ObjectiveSettings, SingleStageSettings
-
-# backend and optimizer are caller-supplied, already constructed objects.
-settings = OptimizationSettings(
-    backend=BackendSettings(key=backend.info.provenance.backend),
-    workflow=SingleStageSettings(),
-    objective=ObjectiveSettings(executor="python", gradient_mode="none"),
-)
-workflow = q2mm.build_workflow(settings.workflow)
-configuration = q2mm.capture_execution_configuration(
-    settings, backend=backend, optimizer=optimizer, workflow=workflow
-)
-make_evaluator = q2mm.make_evaluator_factory(
-    backend, problem.starting_force_field, settings=settings.objective
-)
-baseline = q2mm.evaluate(make_evaluator(ObjectivePlan.from_problem(problem)), space.baseline)
-result = q2mm.optimize(
-    problem,
-    optimizer=optimizer,
-    workflow=workflow,
-    make_evaluator=make_evaluator,
-    regularization=settings.objective.regularization,
-    n_evals=settings.n_evals,
-)
-run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
-```
-
-Manual construction changes no evaluator or persistence contract.
-
-## Provenance and blocked records
-
-For a publication problem:
-
-```python
-metadata = problem.publication_metadata
-print(metadata.status.value)
-print(metadata.objective_profile.identifier)
-for target in metadata.targets:
-    print(target.category.value, target.disposition.value, target.details)
-```
-
-Atomic charge, direct ESP, relative enthalpy, constrained scan, and parameter
-tether categories are never silently replaced. Unsupported selected targets
-raise typed errors. The canonical blocker inventory—including missing Heck
-`prrts1`, Pd-allyl auxiliary Hessians, Ferrocene scans/D1 topology, and the
-unverified Os/Ru/sulfone mappings—is
-[Publication Force-Field Coverage](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md).
-
-Numerical publication claims belong in
-[`ericchansen/q2mm-data`](https://github.com/ericchansen/q2mm-data), not in
-example output committed to this repository.
-
-## Author an external backend
-
-The canonical independent plugin is
-[`examples/backend-plugin/`](https://github.com/ericchansen/q2mm/tree/master/examples/backend-plugin).
-Install it beside q2mm, list descriptors without importing implementation
-modules, then explicitly load it:
-
-```bash
-pip install --no-deps ./examples/backend-plugin
-q2mm-benchmark list
-```
-
-```python
-from q2mm.backends.registry import load_backend
-
-backend = load_backend("harmonic-reference")
-```
-
-Continue with [Authoring a Plugin](backends/authoring.md) for the stable backend
-API v1 manifest and conformance contract.
+For custom observation blocks and mixed stationary points, construct explicit
+`TrainingCase` and `OptimizationProblem` values using the
+[data model guide](how-it-works/data-types.md).
+For an independent backend, reuse the source-only
+[`backend plugin example`](https://github.com/ericchansen/q2mm/tree/master/examples/backend-plugin)
+and [backend API v1 authoring guide](backends/authoring.md).

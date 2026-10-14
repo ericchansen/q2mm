@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 from typing import Any
@@ -74,6 +75,103 @@ def _assert_output(result: dict[str, Any], output_root: Path, *, expected_cases:
         path = Path(value).resolve()
         if root not in path.parents or not path.is_file():
             raise InstalledExampleError(f"Installed example wrote {key} outside its output root: {path}")
+
+
+def _assert_native_output(result: dict[str, Any], output_root: Path, *, key: str) -> None:
+    if result.get("execution_mode") != "budget_limited_native" or result.get("bounded_ci") is not False:
+        raise InstalledExampleError("Native onboarding proof ran the software-only path.")
+    if result["choices"]["backend"] != "jax" or result["choices"]["executor"] != "jax":
+        raise InstalledExampleError("Native onboarding proof did not use real JAX execution.")
+    if result["choices"]["platform"] != "cpu":
+        raise InstalledExampleError("Native onboarding proof did not verify JAX CPU selection.")
+    optimization = result["optimization"]
+    if optimization["iterations"] > 2 or optimization["convergence_claim"] is not False:
+        raise InstalledExampleError("Native onboarding proof exceeded its budget or claimed convergence.")
+    expected = {f"{key}.frcmod", f"{key}.frcmod.manifest.json"}
+    if {path.name for path in output_root.iterdir()} != expected:
+        raise InstalledExampleError("Native onboarding proof did not save exactly its field and manifest.")
+    manifest = json.loads((output_root / f"{key}.frcmod.manifest.json").read_text(encoding="utf-8"))
+    if manifest["provenance"]["example"]["convergence_claim"] is not False:
+        raise InstalledExampleError("Native onboarding manifest claimed convergence.")
+    if manifest["provenance"]["example"]["platform"] != "cpu":
+        raise InstalledExampleError("Native onboarding manifest did not record the verified CPU platform.")
+    parameters = manifest["configuration"]["optimizer"]["settings"]["parameters"]
+    if parameters["maxiter"] != 2 or parameters["maxls"] != 5:
+        raise InstalledExampleError("Native onboarding manifest does not record the configured small budget.")
+    for value in result["saved"].values():
+        if Path(value).resolve().parent != output_root.resolve():
+            raise InstalledExampleError("Native onboarding saved outside its output root.")
+    if key == "ch3f" and optimization["parameter_update_norm"] <= 0:
+        raise InstalledExampleError("Native CH3F proof did not return a real parameter update.")
+
+
+def _run_native_onboarding(python: Path, *, examples_root: Path, output: Path, environment: dict[str, str]) -> str:
+    """Prove actual native commands and the tutorial against the installed wheel."""
+    environment = {**environment, "JAX_PLATFORMS": "cpu"}
+    guard_environment = environment.copy()
+    guard_environment.pop("OPENMM_DEFAULT_PLATFORM", None)
+    guard_output = output / "unsafe-openmm"
+    guard = subprocess.run(
+        [
+            str(python),
+            "-I",
+            str(examples_root / "ch3f" / "run.py"),
+            "--backend.key",
+            "openmm",
+            "--objective.executor",
+            "python",
+            "--objective.gradient-mode",
+            "none",
+            "--output-root",
+            str(guard_output),
+        ],
+        cwd=output / "work",
+        env=guard_environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=30,
+    )
+    if guard.returncode != 2 or "JAX_PLATFORMS does not control OpenMM" not in guard.stderr or guard_output.exists():
+        raise InstalledExampleError("JAX CPU policy incorrectly permitted OpenMM without explicit CPU selection.")
+    for key, _ in SMALL_EXAMPLES:
+        root = output / "native" / key
+        result = _run_json(
+            [
+                str(python),
+                "-I",
+                str(examples_root / key / "run.py"),
+                "--optimizer.maxiter",
+                "2",
+                "--output-root",
+                str(root),
+            ],
+            cwd=output / "work",
+            environment=environment,
+        )
+        _assert_native_output(result, root, key=key)
+
+    work = output / "tutorial"
+    for relative in ("_small_runner.py", "_support.py", "ch3f/run.py"):
+        destination = work / "examples" / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(examples_root / relative, destination)
+    tutorial = (examples_root.parent / "docs" / "tutorial.md").read_text(encoding="utf-8")
+    code = tutorial.split("## The same example from Python\n", 1)[1].split("```python\n", 1)[1].split("```", 1)[0]
+    subprocess.run(
+        [str(python), "-I", "-c", code],
+        check=True,
+        cwd=work,
+        env=environment,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=180,
+    )
+    manifest = work / "results" / "ch3f" / "ch3f.frcmod.manifest.json"
+    if not manifest.is_file():
+        raise InstalledExampleError("Installed-wheel tutorial snippet did not save its documented manifest.")
+    return "installed-onboarding-native=ok installed-onboarding-tutorial=ok installed-onboarding-cpu-guard=ok"
 
 
 def _write_minimal_fchk(path: Path) -> None:
@@ -173,6 +271,10 @@ def run_examples(args: argparse.Namespace) -> tuple[str, str]:
     )
     _assert_output(byo, byo_output, expected_cases=1)
     small_marker = "installed-examples-small=ok"
+    if args.native_cpu:
+        small_marker += " " + _run_native_onboarding(
+            python, examples_root=examples_root, output=output, environment=environment
+        )
 
     roots = (args.supporting_info, args.mm3_base, args.rh_enamide)
     if not any(roots):
@@ -215,6 +317,7 @@ def main() -> int:
     parser.add_argument("--supporting-info", type=Path)
     parser.add_argument("--mm3-base", type=Path)
     parser.add_argument("--rh-enamide", type=Path)
+    parser.add_argument("--native-cpu", action="store_true", help="Also prove real budget-limited JAX CPU onboarding.")
     args = parser.parse_args()
     small, publication = run_examples(args)
     print(small)
