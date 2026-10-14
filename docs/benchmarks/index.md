@@ -6,10 +6,12 @@
     **per-system results** and literature context, see the
     [Systems](../systems/rh-enamide.md) section.
 
-q2mm's benchmark program answers three questions:
+Benchmarks help distinguish software-path coverage from scientific fit quality
+and historical timing measurements. q2mm's benchmark program answers three
+questions:
 
-1. **Does the engine work?** Can q2mm load published force fields and
-   reproduce their fit quality? → [Published FF Validation](published-ff-validation.md)
+1. **Which publication problems can be built?** What does each objective
+   include or omit? → [Publication Reproduction Coverage](published-ff-validation.md)
 2. **Does the optimizer work?** Given QM reference data and a starting
    FF, can q2mm reduce the penalty function? →
    [Optimizer Comparison](optimizer-comparison.md),
@@ -20,24 +22,35 @@ q2mm's benchmark program answers three questions:
 
 ## Benchmark sections
 
-| Section | What it covers | Key result |
-|---------|---------------|------------|
-| [Publication Reproduction Coverage](published-ff-validation.md) | Distinguish executable, partial, demonstration, and blocked publication rows | Path-free compatibility and SDK-path proofs; numerical claims require linked q2mm-data artifacts |
-| [QFUERZA Validation](qfuerza-validation.md) | Verify our QFUERZA implementation against the paper and Zenodo data; evaluate starting-point quality across 5 systems | Cisplatin matches Zenodo exactly for QFUERZA angles; all five TS systems have positive mass-weighted starting-point R² |
-| [Optimizer Comparison](optimizer-comparison.md) | Compare the production SciPy L-BFGS-B + JAX executor path on literature-scale TS systems | Historical mixed-source reductions for four systems; sample/endpoint provenance and local-basin limits are explicit |
-| [GPU Acceleration](gpu.md) | CPU-vs-GPU wall-clock comparisons | JAX GPU ~5.6× faster on Rh-enamide |
-| [When Analytical Wins](crossover.md) | System-size crossover for analytical vs finite-difference gradients | Analytical gradients dominate above ~50 parameters |
+| Section | What it covers |
+|---------|---------------|
+| [Publication Reproduction Coverage](published-ff-validation.md) | Current profile/start records, target completeness, and source-linked limitations; not numerical validation |
+| [QFUERZA Validation](qfuerza-validation.md) | Implementation comparisons against the paper and Zenodo data, and starting-point diagnostics |
+| [Optimizer Comparison](optimizer-comparison.md) | Historical mixed-source optimization measurements with endpoint provenance and local-basin limits |
+| [GPU Acceleration](gpu.md) | Historical CPU-vs-GPU wall-clock measurements and their artifacts |
+| [When Analytical Wins](crossover.md) | Historical analytical-vs-finite-difference timing measurements and their artifacts |
 
-## Systems
+## Registered systems
 
-| System | Molecules | Parameters | Status |
-|--------|:---------:|:----------:|--------|
-| [Small Molecules](../systems/small-molecules.md) | 1 (CH₃F) | 6–12 | 82-combination matrix complete |
-| [Rh-enamide](../systems/rh-enamide.md) | 9 | 182 | Validated against Donoghue *JCTC* 2008 |
-| [Heck relay](../systems/heck-relay.md) | 23 | ~180 | QFUERZA evaluated; cross-engine gap |
-| [Pd-allyl](../systems/pd-allyl.md) | 21 | ~200 | QFUERZA evaluated; cross-engine gap |
-| [Pd 1,4-conjugate](../systems/pd-conjugate.md) | 10 | ~200 | QFUERZA evaluated; cross-engine gap |
-| [Rh 1,4-conjugate](../systems/rh-conjugate.md) | 10 | ~200 | QFUERZA evaluated; cross-engine gap |
+This inventory is generated from registered-system metadata. Registration does
+not imply that external inputs are installed or that a publication objective is
+complete. Follow the profile/start records rather than treating a system as one
+validated/not-validated label.
+
+<!-- BEGIN GENERATED publication-inventory -->
+
+| Registered system | Default functional forms | Publication coverage |
+|---|---|---|
+| [CH3F](../systems/small-molecules.md) (`ch3f`) | `harmonic`, `mm3` | No canonical publication record |
+| [F⁻ + CH3F SN2 TS](../systems/small-molecules.md) (`ch3f-sn2`) | `harmonic`, `mm3` | No canonical publication record |
+| [Rh-enamide](../systems/rh-enamide.md) (`rh-enamide`) | `mm3` | [Profile/start records](published-ff-validation.md#rh-enamide) |
+| [Heck relay](../systems/heck-relay.md) (`heck-relay`) | `mm3` | [Profile/start records](published-ff-validation.md#heck-relay) |
+| [Pd-allyl amination](../systems/pd-allyl.md) (`pd-allyl`) | `mm3` | [Profile/start records](published-ff-validation.md#pd-allyl) |
+| [Pd 1,4-conjugate addition](../systems/pd-conjugate.md) (`pd-conjugate`) | `mm3` | [Profile/start records](published-ff-validation.md#pd-conjugate) |
+| [Rh 1,4-conjugate addition](../systems/rh-conjugate.md) (`rh-conjugate`) | `mm3` | [Profile/start records](published-ff-validation.md#rh-conjugate) |
+| [Ferrocene ground-state force field](../systems/ferrocene.md) (`ferrocene`) | `mm3` | [Profile/start records](published-ff-validation.md#ferrocene) |
+
+<!-- END GENERATED publication-inventory -->
 
 ## What is not covered yet
 
@@ -59,7 +72,8 @@ q2mm's benchmark program answers three questions:
 
 ## Artifacts
 
-Published-force-field re-evaluations are archived in
-`test/fixtures/published_ff/`. Historical benchmark data (from earlier
-frequency-only runs) is in the
-[q2mm-data](https://github.com/ericchansen/q2mm-data) repo.
+Published-force-field re-evaluation fixtures are archived in
+[`test/fixtures/published_ff/`](https://github.com/ericchansen/q2mm/tree/master/test/fixtures/published_ff).
+Historical measurements are separate from the current inventory: the linked
+analysis pages identify their tracked artifacts in
+[q2mm-data](https://github.com/ericchansen/q2mm-data).

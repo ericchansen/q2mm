@@ -1,13 +1,15 @@
 # Publication Force-Field Coverage
 
-This is the canonical inventory of publication-scale force-field problems in
-q2mm. It tells a new user **which scientific problem can actually be built**
-and **how strong a reproduction claim the current objective supports**.
+This page records the source-linked evidence for publication-scale force-field
+problems in q2mm. It helps a new user understand **what the source study fitted**
+and **why the repository's reproduction claim is limited**.
 Loading a published force field is not, by itself, an exact reproduction of
 the optimization that produced it.
 
-The machine-readable source of the same claim boundaries is
+The machine-readable authority for current claim boundaries is
 [`q2mm.benchmarks.publications`](../../q2mm/benchmarks/publications.py).
+The [current profile/start inventory](../../docs/benchmarks/published-ff-validation.md#current-matrix)
+is generated from those records and checked during documentation builds.
 No recovered dissertation archive or licensed MM3 file is distributed by this
 repository.
 
@@ -23,9 +25,6 @@ Every publication profile and saved run uses one of these exact values:
 | `sdk_software_path_demonstration` | Loading, preparation, active/frozen partitioning, evaluation, optimizer entry, and persistence are exercised without a mature publication-validation claim. |
 | `blocked_historical_record` | A known row cannot be constructed from authoritative available inputs. |
 
-No currently provisionable row is labeled
-`exact_publication_reproduction`.
-
 Full canonical smooth-gradient optimization is currently a separate
 `blocked_methodology` proof for every relaxed-geometry publication row. The
 loader, preparation, evaluation, bounded optimizer-entry, and save paths remain
@@ -35,18 +34,11 @@ restraint or continuation policy.
 
 ## Coverage at a glance
 
-Each comparison row links to the system-specific evidence and blocker details
-below.
-
-| System | Authoritative membership | Provisionable claim | Exact row |
-|---|---:|---|---|
-| [Rh-enamide](#rh-enamide) | 9 TS structures | `partial_repository_reproduction` | Blocked by omitted ESP-charge and relative-enthalpy objective terms; installed-data distribution policy also remains unresolved. |
-| [Heck relay](#heck-relay) | 23 deposited / 24 described | 23-case `executable_archive_reproduction` with a partial objective | 24-case row is blocked by the sole absent member, `prrts1`. |
-| [Pd-allyl](#pd-allyl) | 21 primary + 4 auxiliary | 21-case `partial_repository_reproduction` | Exact eight-block rederivation is blocked by missing auxiliary `TS22`–`TS25` Hessian data. |
-| [Pd 1,4-conjugate addition](#pd-14-conjugate-addition) | `TS1`–`TS10` | `partial_repository_reproduction` | Source electrostatic, torsion, and equilibrium-tether terms are not reconstructed. |
-| [Rh 1,4-conjugate addition](#rh-14-conjugate-addition) | 8 bisphosphine + 2 diene cases | `sdk_software_path_demonstration` | The Chapter 6 force field is developmental, not a mature validation target. |
-| [Ferrocene](#ferrocene) | 7 ground-state structures + 4 scans | Seven-structure `partial_repository_reproduction` | Exact reoptimization is blocked by four absent numerical scan data sets. |
-| [Historical force-field-only rows](#blocked-historical-records) | No authoritative training problem | `blocked_historical_record` | OsO4, Ru ketone, and sulfone remain blocked. |
+See the generated [current matrix](../../docs/benchmarks/published-ff-validation.md#current-matrix)
+for each profile, starting point, authoritative case list, target disposition,
+and blocker. The [registered-system inventory](../../docs/benchmarks/index.md#registered-systems)
+also includes non-publication benchmarks. The evidence below explains the
+scientific boundaries; neither generated inventory establishes validation.
 
 ## Compatibility objective
 
