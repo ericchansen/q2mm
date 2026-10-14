@@ -20,14 +20,16 @@ the result message labels these distinct scopes and the selected index.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from q2mm.models.results import CandidateRecord, OptimizationResult
 from q2mm.objectives.protocols import ObjectiveEvaluator
 from q2mm.optimizers.protocols import _Optimizer
+from q2mm.settings import JaxMultiStartSettings, MultiStartSettings
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
@@ -44,21 +46,23 @@ class MultiStartOptimizer:
 
     def __init__(
         self,
-        optimizer: _Optimizer,
-        n_starts: int = 5,
-        perturbation_pct: float = 0.1,
-        seed: int | None = None,
-        verbose: bool = True,
+        settings: MultiStartSettings = MultiStartSettings(),
+        *,
+        optimizer: _Optimizer | None = None,
     ) -> None:
-        if n_starts < 1:
-            raise ValueError("n_starts must be >= 1")
-        if perturbation_pct < 0:
-            raise ValueError("perturbation_pct must be >= 0")
-        self.optimizer = optimizer
-        self.n_starts = n_starts
-        self.perturbation_pct = perturbation_pct
-        self.seed = seed
-        self.verbose = verbose
+        from q2mm.optimizers.catalog import build_optimizer
+
+        self.settings: MultiStartSettings | JaxMultiStartSettings = settings
+        self.optimizer = build_optimizer(settings.optimizer) if optimizer is None else optimizer
+
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Capture the actual child, including an explicitly supplied optimizer."""
+        from q2mm.configuration import capture_component_settings
+
+        return {
+            **self.settings.model_dump(mode="json"),
+            "optimizer": capture_component_settings(self.optimizer),
+        }
 
     def _result_method(self, selected: OptimizationResult | None) -> str:
         return self._name if selected is None else f"{self._name}({selected.method})"
@@ -69,11 +73,15 @@ class MultiStartOptimizer:
         fingerprint = space.layout.fingerprint
         baseline = np.array(space.baseline, dtype=float)
         x0_active = space.pack(baseline)
-        rng = np.random.default_rng(self.seed)
+        rng = np.random.default_rng(self.settings.seed)
         starts = self._generate_starts(x0_active, space.bounds, rng)
 
-        if self.verbose:
-            logger.info("Multi-start: %d starts, perturbation ±%.0f%%", self.n_starts, self.perturbation_pct * 100)
+        if self.settings.verbose:
+            logger.info(
+                "Multi-start: %d starts, perturbation ±%.0f%%",
+                self.settings.n_starts,
+                self.settings.perturbation_pct * 100,
+            )
 
         n_eval_before = evaluator.n_evaluations
         true_initial_score = float(evaluator.value(baseline))
@@ -93,7 +101,7 @@ class MultiStartOptimizer:
                 result = self.optimizer.optimize(evaluator, start_space)
             except Exception as exc:  # noqa: BLE001
                 n_failed += 1
-                logger.warning("  Start %d/%d failed: %s", i + 1, self.n_starts, exc)
+                logger.warning("  Start %d/%d failed: %s", i + 1, self.settings.n_starts, exc)
                 candidates.append(
                     CandidateRecord(
                         index=i,
@@ -104,7 +112,7 @@ class MultiStartOptimizer:
                         final_params=full_start,
                         final_score=float("inf"),
                         message=f"{type(exc).__name__}: {exc}",
-                        seed=self.seed,
+                        seed=self.settings.seed,
                     )
                 )
                 continue
@@ -128,14 +136,14 @@ class MultiStartOptimizer:
                     initial_score=result.initial_score,
                     final_score=result.final_score,
                     message=result.message,
-                    seed=self.seed,
+                    seed=self.settings.seed,
                 )
             )
-            if self.verbose:
+            if self.settings.verbose:
                 logger.info(
                     "  Start %d/%d: %.6f → %.6f (%s)",
                     i + 1,
-                    self.n_starts,
+                    self.settings.n_starts,
                     result.initial_score,
                     result.final_score,
                     "converged" if converged else "nonconverged",
@@ -158,7 +166,7 @@ class MultiStartOptimizer:
             return OptimizationResult(
                 success=False,
                 message=(
-                    f"{self._name}: all {self.n_starts} {self._candidate_name}s failed; "
+                    f"{self._name}: all {self.settings.n_starts} {self._candidate_name}s failed; "
                     "accounting[n_evaluations=aggregate; history=initial-baseline; n_iterations=none]"
                 ),
                 initial_score=true_initial_score,
@@ -177,17 +185,17 @@ class MultiStartOptimizer:
 
         overall_success = best_converged is not None
         if overall_success:
-            message = f"{self._name} best of {n_converged}/{self.n_starts} converged: {selected.message}"
+            message = f"{self._name} best of {n_converged}/{self.settings.n_starts} converged: {selected.message}"
         else:
             message = (
-                f"{self._name}: no converged {self._candidate_name} ({n_failed}/{self.n_starts} failed); "
+                f"{self._name}: no converged {self._candidate_name} ({n_failed}/{self.settings.n_starts} failed); "
                 f"best nonconverged score {selected.final_score:.6g}"
             )
         message += (
             "; accounting[n_evaluations=aggregate; history=selected-run; "
             f"n_iterations=selected-run; selected_candidate={selected_index}]"
         )
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Multi-start best: %.6f (%d converged, %d failed)",
                 selected.final_score,
@@ -216,8 +224,8 @@ class MultiStartOptimizer:
     ) -> list[np.ndarray]:
         starts = [x0.copy()]
         bounds_arr = None if bounds is None else np.asarray(bounds, dtype=float)
-        for _ in range(self.n_starts - 1):
-            scale = np.maximum(np.abs(x0) * self.perturbation_pct, 1e-6)
+        for _ in range(self.settings.n_starts - 1):
+            scale = np.maximum(np.abs(x0) * self.settings.perturbation_pct, 1e-6)
             perturbation = rng.uniform(-scale, scale)
             x_new = x0 + perturbation
             if bounds_arr is not None and bounds_arr.size > 0:

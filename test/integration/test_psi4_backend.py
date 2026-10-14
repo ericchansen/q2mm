@@ -7,6 +7,7 @@ Tests that call Psi4 directly are marked with ``@pytest.mark.psi4``.
 
 from q2mm.backends.contracts import (
     ReferenceEnergyRequest,
+    ReferenceHessianRequest,
 )
 from q2mm.backends.registry import load_backend
 from test.backend_fixtures import qm_prepare_case
@@ -45,6 +46,37 @@ class TestPsi4BackendAvailability:
         from q2mm.backends.registry import available_backends
 
         assert "psi4" in available_backends()
+
+
+@pytest.mark.psi4
+class TestPsi4TinyReference:
+    """Bounded HF/STO-3G H2 checks without publication or external inputs."""
+
+    @pytest.fixture
+    def prepared_h2(self) -> object:
+        from q2mm.models.molecule import Molecule
+
+        molecule = Molecule(
+            symbols=("H", "H"),
+            geometry=np.array([[0.0, 0.0, -0.35], [0.0, 0.0, 0.35]]),
+            bonds=(),
+        )
+        return qm_prepare_case(load_backend("psi4", method="hf", basis="sto-3g", n_threads=1), molecule)
+
+    def test_energy(self, prepared_h2: object) -> None:
+        import psi4
+
+        result = prepared_h2.energy(ReferenceEnergyRequest())
+        assert np.isfinite(result.energy)
+        native = psi4.geometry("0 1\nH 0 0 -0.35\nH 0 0 0.35\nunits angstrom\nno_reorient\nno_com")
+        expected = psi4.energy("hf/sto-3g", molecule=native)
+        assert -1.2 < expected < -1.0
+        assert result.energy == pytest.approx(expected, abs=1e-10)
+
+    def test_hessian(self, prepared_h2: object) -> None:
+        hessian = np.asarray(prepared_h2.hessian(ReferenceHessianRequest()).hessian)
+        assert hessian.shape == (6, 6) and np.all(np.isfinite(hessian))
+        np.testing.assert_allclose(hessian, hessian.T, rtol=0, atol=1e-10)
 
 
 @pytest.mark.psi4

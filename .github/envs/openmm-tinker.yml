@@ -1,0 +1,19 @@
+name: q2mm-openmm-tinker
+# Tinker's closure stays conda-owned; the disjoint OpenMM wheel is PyPI-owned.
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  - python=3.14
+  - tinker=8.11.3
+  - numpy
+  - scipy
+  - pyyaml
+  - pydantic>=2.14.1,<3
+  - pydantic-settings>=2.16.0,<3
+  - pytest
+  - setuptools>=80
+  - setuptools-scm>=10.3.4
+  - pip
+  - pip:
+    - openmm==8.6.1

@@ -47,6 +47,7 @@ nav:
     - Psi4 (Reference): backends/psi4.md
   - Benchmarks:
     - Overview: benchmarks/index.md
+    - Command Line: benchmarks/cli.md
     - Optimizer Comparison: benchmarks/optimizer-comparison.md
     - GPU Acceleration: benchmarks/gpu.md
     - When Analytical Wins: benchmarks/crossover.md

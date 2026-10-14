@@ -16,9 +16,9 @@ from q2mm._canonical import canonical_fingerprint, json_value
 from q2mm.models.forcefield import ForceField
 from q2mm.models.observations import observation_payload
 from q2mm.models.problem import OptimizationProblem
-from q2mm.models.results import OptimizationResult, deep_freeze
+from q2mm.models.results import OptimizationResult, _validate_executor_gradient, deep_freeze
 
-APPLICATION_SCHEMA_VERSION = 1
+APPLICATION_SCHEMA_VERSION = 2
 PROBLEM_FINGERPRINT_VERSION = 1
 
 
@@ -105,8 +105,8 @@ class ResolvedWorkflowConfiguration:
     schema_version: int = APPLICATION_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if not self.key:
-            raise ApplicationConfigurationError("Resolved workflow key must be non-empty.")
+        if not isinstance(self.key, str) or not self.key:
+            raise ApplicationConfigurationError("Resolved workflow key must be a non-empty string.")
         object.__setattr__(self, "settings", _safe_mapping(self.settings, path="workflow.settings"))
 
 
@@ -122,10 +122,10 @@ class ResolvedExecutorConfiguration:
     def __post_init__(self) -> None:
         if self.kind not in {"python", "jax"}:
             raise ApplicationConfigurationError(f"Unknown executor kind {self.kind!r}.")
-        if self.gradient_mode not in {"analytical", "finite_difference", "none"}:
-            raise ApplicationConfigurationError(f"Unknown gradient mode {self.gradient_mode!r}.")
-        if self.fd_step is not None and (not np.isfinite(self.fd_step) or self.fd_step <= 0):
-            raise ApplicationConfigurationError("Executor fd_step must be positive and finite.")
+        try:
+            _validate_executor_gradient(self.gradient_mode, self.fd_step)
+        except ValueError as exc:
+            raise ApplicationConfigurationError(str(exc)) from exc
 
 
 @dataclass(frozen=True, eq=False)
@@ -137,7 +137,6 @@ class ResolvedExecutionConfiguration:
     optimizer: ResolvedOptimizerConfiguration
     workflow: ResolvedWorkflowConfiguration
     executor: ResolvedExecutorConfiguration
-    overrides: tuple[str, ...] = ()
     regularization: float = 0.0
     n_evals: int = 1
     ratio_tol: float | None = None
@@ -146,13 +145,12 @@ class ResolvedExecutionConfiguration:
     def __post_init__(self) -> None:
         if not self.recipe_id:
             raise ApplicationConfigurationError("Resolved recipe_id must be non-empty.")
-        if not np.isfinite(self.regularization) or self.regularization < 0:
+        if isinstance(self.regularization, bool) or not np.isfinite(self.regularization) or self.regularization < 0:
             raise ApplicationConfigurationError("regularization must be non-negative and finite.")
-        if not isinstance(self.n_evals, int) or self.n_evals < 0:
+        if isinstance(self.n_evals, bool) or not isinstance(self.n_evals, int) or self.n_evals < 0:
             raise ApplicationConfigurationError("n_evals must be a non-negative integer.")
         if self.ratio_tol is not None and (not np.isfinite(self.ratio_tol) or self.ratio_tol < 0):
             raise ApplicationConfigurationError("ratio_tol must be non-negative and finite or None.")
-        object.__setattr__(self, "overrides", tuple(sorted(set(self.overrides))))
 
 
 def _path_identity(value: str | Path | None) -> str | None:
@@ -320,8 +318,73 @@ class OptimizationRun:
     provenance: Mapping[str, Any] = field(default_factory=dict)
     schema_version: int = APPLICATION_SCHEMA_VERSION
 
+    @classmethod
+    def from_result(
+        cls,
+        problem: OptimizationProblem,
+        result: OptimizationResult,
+        *,
+        configuration: ResolvedExecutionConfiguration,
+    ) -> OptimizationRun:
+        """Materialize a numerical result and its scientific provenance, without executing."""
+        if result.gradient_mode != configuration.optimizer.expected_result_gradient_mode:
+            raise ApplicationOptimizationError(
+                f"Optimization result gradient_mode={result.gradient_mode!r}; "
+                f"expected {configuration.optimizer.expected_result_gradient_mode!r}."
+            )
+        provenance: dict[str, object] = {
+            "case_ids": list(problem.case_ids),
+            "stationary_points": [case.stationary_point.value for case in problem.cases],
+            "n_cases": len(problem.cases),
+            "n_observations": len(problem.observations.values),
+            "n_active": problem.active_space.n_active,
+            "n_parameters": len(problem.layout),
+        }
+        if problem.preparation_provenance is not None:
+            preparation = problem.preparation_provenance
+            payload = {
+                "schema_version": preparation.schema_version,
+                "profile": preparation.profile,
+                "initialize_source": preparation.initialize_source,
+                "functional_form": preparation.functional_form,
+                "qfuerza_settings": dict(preparation.qfuerza_settings),
+                "pre_qfuerza_vector_fingerprint": preparation.pre_qfuerza_vector_fingerprint,
+                "parameter_counts": dict(preparation.parameter_counts),
+                "stationary_points": list(preparation.stationary_points),
+                "case_ids": list(preparation.case_ids),
+                "input_fingerprints": dict(preparation.input_fingerprints),
+                "observation_recipe": dict(preparation.observation_recipe),
+            }
+            provenance["preparation"] = payload
+            provenance["preparation_fingerprint"] = canonical_fingerprint(payload, screen_secrets=True)
+        if problem.publication_metadata is not None:
+            metadata = problem.publication_metadata
+            provenance["publication_metadata"] = metadata.to_dict()
+            provenance["publication_metadata_fingerprint"] = metadata.fingerprint
+            provenance["objective_profile"] = metadata.objective_profile.identifier
+            provenance["reproduction_status"] = metadata.status.value
+        fingerprint, inputs = _problem_fingerprints(problem)
+        return cls(
+            result=result,
+            final_force_field=problem.layout.replace(problem.starting_force_field, result.final_params),
+            configuration=configuration,
+            problem_fingerprint=fingerprint,
+            layout_fingerprint=problem.layout.fingerprint,
+            input_fingerprints=inputs,
+            active_indices=tuple(int(index) for index in problem.active_space.active_indices),
+            baseline=problem.active_space.baseline,
+            provenance=provenance,
+        )
+
     def __post_init__(self) -> None:
         result = self.result
+        if result.regularization != self.configuration.regularization or result.n_evals != self.configuration.n_evals:
+            raise ApplicationOptimizationError("Captured regularization or n_evals does not match numerical execution.")
+        if (
+            len(result.initial_samples) != self.configuration.n_evals
+            or len(result.final_samples) != self.configuration.n_evals
+        ):
+            raise ApplicationOptimizationError("Endpoint sample counts do not match captured n_evals.")
         if result.layout_fingerprint != self.layout_fingerprint:
             raise ApplicationOptimizationError("Result layout fingerprint does not match the run layout.")
         if not self.problem_fingerprint.startswith("sha256:"):
@@ -354,6 +417,11 @@ class OptimizationRun:
             raise ApplicationOptimizationError("input_fingerprints must contain canonical SHA-256 values.")
         object.__setattr__(self, "input_fingerprints", MappingProxyType(dict(sorted(fingerprints.items()))))
         object.__setattr__(self, "provenance", _safe_mapping(self.provenance, path="run.provenance"))
+        executor = self.configuration.executor
+        if result.executor_gradient_mode != executor.gradient_mode or result.executor_fd_step != executor.fd_step:
+            raise ApplicationOptimizationError(
+                "Captured executor gradient_mode or fd_step does not match numerical execution."
+            )
 
     @property
     def optimization_result(self) -> OptimizationResult:

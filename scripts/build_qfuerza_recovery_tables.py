@@ -53,7 +53,7 @@ def _fmt(v: Any, prec: int = 4) -> str:
         return "—"
     try:
         return f"{float(v):.{prec}g}"
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return str(v)
 
 

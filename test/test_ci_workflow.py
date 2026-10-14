@@ -1,49 +1,64 @@
-"""Contracts for backend CI test selection and runtime budgets."""
+"""Required responsibilities and native job outcomes, not command snapshots."""
 
-from __future__ import annotations
-
+import os
 from pathlib import Path
+import shutil
+import subprocess
 from typing import Any
 
 import pytest
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+from scripts.ci_paths import JOB_COMPONENTS
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
-def _jobs() -> dict[str, Any]:
-    with CI_WORKFLOW.open(encoding="utf-8") as handle:
-        workflow = yaml.safe_load(handle)
-    return workflow["jobs"]
+def _jobs(workflow: str = "ci") -> dict[str, Any]:
+    return yaml.safe_load((ROOT / ".github" / "workflows" / f"{workflow}.yml").read_text())["jobs"]
 
 
-def _pytest_command(job: dict[str, Any]) -> str:
-    commands = [step["run"] for step in job["steps"] if "run" in step and "pytest" in step["run"]]
-    assert len(commands) == 1
-    return commands[0]
-
-
-def test_cross_backend_marker_is_registered(pytestconfig: pytest.Config) -> None:
-    markers = pytestconfig.getini("markers")
-    assert any(marker.startswith("cross_backend:") for marker in markers)
-
-
-def test_backend_ci_selectors_partition_cross_backend_tests() -> None:
+def test_required_responsibilities_cannot_hide_failures() -> None:
     jobs = _jobs()
-    selectors = {
-        "test-openmm": "openmm",
-        "test-tinker": "tinker",
-        "test-jax": "jax",
-        "test-jax-md": "jax_md",
-    }
-    for job_name, marker in selectors.items():
-        assert f'-m "{marker} and not cross_backend"' in _pytest_command(jobs[job_name])
+    required = {
+        "lint",
+        "core-py314",
+        "core-py315",
+        "docs",
+        "release",
+        "jax-cpu",
+        "qcelemental-io",
+        "qcengine-adapter",
+        "ase-adapter",
+        "parmed-amber",
+    } | set(JOB_COMPONENTS)
+    assert required <= jobs.keys() and "full" not in jobs
+    for job in jobs.values():
+        assert not job.get("continue-on-error")
+        for step in job["steps"]:
+            assert not step.get("continue-on-error") and "|| true" not in step.get("run", "")
 
-    cross_command = _pytest_command(jobs["test-cross-backend"])
-    assert "--run-integration -m cross_backend -q" in cross_command
-    assert jobs["test-cross-backend"]["timeout-minutes"] == 10
+
+@pytest.mark.parametrize("name", JOB_COMPONENTS)
+@pytest.mark.parametrize(("affected", "status", "expected"), [("false", 9, 0), ("true", 0, 0), ("true", 9, 9)])
+def test_native_path_gate_runs_only_affected_helpers_and_propagates_failure(
+    name: str, affected: str, status: int, expected: int
+) -> None:
+    job = _jobs()[name]
+    command = next(step["run"] for step in job["steps"] if "run" in step)
+    shell = shutil.which("bash")
+    if shell is None:
+        pytest.skip("bash is required to execute the native job gate")
+    result = subprocess.run(
+        [shell, "-c", 'bash() { echo "helper: $*"; return "$STATUS"; }\n' + command],
+        env={**os.environ, "AFFECTED": affected, "STATUS": str(status)},
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == expected, result.stderr
+    assert (f"helper: scripts/ci_local.sh --job {name}" in result.stdout) == (affected == "true")
 
 
-def test_jax_ci_timeout_matches_measured_cpu_budget() -> None:
-    assert _jobs()["test-jax"]["timeout-minutes"] == 15
+def test_only_image_builds_can_publish_packages() -> None:
+    assert _jobs("build-images")["build"]["permissions"]["packages"] == "write"
+    assert all(job.get("permissions", {}).get("packages") != "write" for job in _jobs().values())

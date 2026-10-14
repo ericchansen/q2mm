@@ -9,10 +9,13 @@ drives force-field optimization.
 
 ## Installation
 
-Psi4 is available via conda-forge:
+The required bounded reference lane uses **Psi4 1.11 on Python 3.15** from
+conda-forge. The [canonical environment](https://github.com/ericchansen/q2mm/blob/master/.github/envs/psi4.yml)
+also contains QCEngine for the separately selected direct-versus-adapter
+parity checks; there is no broad combined-backend job.
 
 ```bash
-conda install psi4 -c conda-forge
+conda create -n q2mm-psi4 -c conda-forge python=3.15 psi4=1.11
 ```
 
 !!! tip "Verify installation"

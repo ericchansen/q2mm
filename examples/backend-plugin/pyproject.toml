@@ -1,12 +1,12 @@
 [build-system]
-requires = ["setuptools>=68.0"]
+requires = ["setuptools>=80"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "q2mm-backend-reference"
 version = "1.0.0"
 description = "Installable reference implementation of a Q2MM backend API v1 plugin"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 dependencies = ["q2mm"]
 
 [project.entry-points."q2mm.backends"]

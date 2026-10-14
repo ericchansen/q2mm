@@ -20,7 +20,7 @@ import numpy as np
 import pytest
 
 from q2mm.benchmarks.acceptance import AcceptancePolicy, CandidateStatus, NoProgressPolicy
-from q2mm.benchmarks.profiles import RunProfile, resolve
+from q2mm.benchmarks.profiles import RunProfile, catalog_settings, resolve
 from q2mm.benchmarks.runner import (
     CandidateResult,
     RunOutcome,
@@ -33,6 +33,8 @@ from q2mm.benchmarks.runner import (
     run_profiles,
     sanitize_for_json,
 )
+from q2mm.optimizers.catalog import optimizer_spec
+from q2mm.settings import BackendSettings, ScipySettings
 
 if TYPE_CHECKING:
     from q2mm.benchmarks.cases import BenchmarkCase
@@ -119,7 +121,14 @@ def _candidate(
     OptimizationResult + final force field; skipped/error candidates carry
     neither.
     """
-    profile = RunProfile(system="ch3f", functional_form="harmonic", seed=vary)
+    profile = RunProfile(
+        **{
+            **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+            "system": "ch3f",
+            "functional_form": "harmonic",
+            "recipe_id": f"synthetic-{vary}",
+        }
+    )
     resolved = _resolved(profile)
     has_run = status in (CandidateStatus.ACCEPTED, CandidateStatus.REJECTED)
     result = _opt_result() if has_run else None
@@ -175,7 +184,11 @@ def _resolve_scientific_case(case: BenchmarkCase) -> ResolvedProfile:
 
     problem = case.problem
     return dataclasses.replace(
-        _resolved(RunProfile(system="ch3f", functional_form="harmonic")),
+        _resolved(
+            RunProfile(
+                **{**catalog_settings("scipy-lbfgsb-jax").model_dump(), "system": "ch3f", "functional_form": "harmonic"}
+            )
+        ),
         layout_fingerprint=problem.layout.fingerprint,
         n_active_params=problem.active_space.n_active,
         n_full_params=problem.active_space.n_full,
@@ -190,10 +203,9 @@ class TestScientificProblemIdentity:
         self, scientific_case: BenchmarkCase, monkeypatch: pytest.MonkeyPatch, operation: str
     ) -> None:
         from q2mm._canonical import canonical_fingerprint
-        from q2mm.application import models, optimize
+        from q2mm.application import models
         from q2mm.benchmarks.records import _data_provenance
-        from q2mm.optimizers.scipy_opt import ScipyOptimizer
-        from test.test_application import _EnergyBackend, _problem, _result
+        from test.test_application import _problem, _result
 
         problem = _problem() if operation == "sdk" else scientific_case.problem
         expected_fingerprint = models.problem_fingerprint(problem)
@@ -229,22 +241,13 @@ class TestScientificProblemIdentity:
             assert identity["input_fingerprints"] == expected_inputs
         else:
             result = _result(problem, gradient_mode="none")
-            monkeypatch.setattr(
-                "q2mm.application.optimization.execute_optimization",
-                lambda *args, **kwargs: (
-                    result,
-                    problem.layout.replace(problem.starting_force_field, result.final_params),
-                ),
-            )
-            run = optimize(
+            from q2mm.application import OptimizationRun
+            from test.test_application import _configuration
+
+            run = OptimizationRun.from_result(
                 problem,
-                _EnergyBackend(),
-                recipe="explicit",
-                optimizer=ScipyOptimizer(method="Nelder-Mead", maxiter=0),
-                workflow="single-stage",
-                executor="python",
-                gradient_mode="none",
-                n_evals=0,
+                dataclasses.replace(result, regularization=0.0, n_evals=0, executor_gradient_mode="none"),
+                configuration=_configuration(),
             )
             assert run.problem_fingerprint == expected_fingerprint
             assert run.input_fingerprints == expected_inputs
@@ -436,7 +439,14 @@ class TestScientificProblemIdentity:
         monkeypatch.setattr("q2mm.application.models.problem_fingerprint_payload", reject_identity)
         monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: scientific_case)
         candidate = run_profile(
-            RunProfile(system="ch3f", backend="synthetic-mm", functional_form="harmonic", optimizer="scipy-nm"),
+            RunProfile(
+                **{
+                    **catalog_settings("scipy-nm").model_dump(),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="synthetic-mm"),
+                    "functional_form": "harmonic",
+                }
+            ),
             backend=_EnergyBackend(),
             analyze=False,
             include_device=False,
@@ -464,7 +474,7 @@ class TestScientificProblemIdentity:
         )
         executed = []
 
-        def mock_optimize(problem: OptimizationProblem, *_args: Any, **_kwargs: Any) -> tuple[Any, ForceField]:
+        def mock_optimize(problem: OptimizationProblem, *_args: Any, **_kwargs: Any) -> Any:
             executed.append(problem)
             final = problem.active_space.baseline.copy()
             final[problem.active_space.active_indices] -= 0.25
@@ -477,11 +487,17 @@ class TestScientificProblemIdentity:
                 n_iterations=3,
                 n_evaluations=4,
             )
-            return result, problem.layout.replace(problem.starting_force_field, final)
+            return result
 
-        monkeypatch.setattr("q2mm.application.optimization.execute_optimization", mock_optimize)
+        monkeypatch.setattr("q2mm.application.optimization.optimize", mock_optimize)
         profile = RunProfile(
-            system="ch3f", backend="synthetic-mm", functional_form="harmonic", optimizer="scipy-nm", n_evals=0
+            **{
+                **catalog_settings("scipy-nm").model_dump(),
+                "system": "ch3f",
+                "backend": BackendSettings(key="synthetic-mm"),
+                "functional_form": "harmonic",
+                "n_evals": 0,
+            }
         )
         candidates = []
         first_files: dict[Path, bytes] = {}
@@ -571,7 +587,9 @@ class TestCandidateResultInvariants:
         assert len({first, second, first_outcome, second_outcome}) == 4
 
     def _base(self, status: CandidateStatus, **overrides: Any) -> dict[str, Any]:
-        profile = RunProfile(system="ch3f", functional_form="harmonic")
+        profile = RunProfile(
+            **{**catalog_settings("scipy-lbfgsb-jax").model_dump(), "system": "ch3f", "functional_form": "harmonic"}
+        )
         resolved = _resolved(profile)
         has_run = status in (CandidateStatus.ACCEPTED, CandidateStatus.REJECTED)
         kwargs: dict[str, Any] = {
@@ -615,7 +633,9 @@ class TestCandidateResultInvariants:
             CandidateResult(**self._base(CandidateStatus.SKIPPED, candidate_id="mismatched"))
 
     def test_pre_resolution_id_must_equal_requested_profile(self) -> None:
-        profile = RunProfile(system="ch3f", functional_form="harmonic")
+        profile = RunProfile(
+            **{**catalog_settings("scipy-lbfgsb-jax").model_dump(), "system": "ch3f", "functional_form": "harmonic"}
+        )
         # resolved=None -> id must equal the requested profile candidate_id().
         with pytest.raises(ValueError, match="requested profile"):
             CandidateResult(
@@ -739,14 +759,15 @@ class TestResultProjection:
             stages=stages,
             initial_samples=(119, 121),
             final_samples=(39, 41),
+            n_evals=2,
             category_metrics={"bond_length": {"rmsd": np.float64(0.25), "r_squared": float("nan")}},
         )
-        run = dataclasses.replace(run, result=result)
+        run = dataclasses.replace(run, result=result, configuration=dataclasses.replace(run.configuration, n_evals=2))
         case = BenchmarkCase(key="ch3f", name="synthetic", problem=problem, default_forms=("harmonic",))
         monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: case)
         monkeypatch.setattr(
-            "q2mm.application.optimization.execute_optimization",
-            lambda *_args, **_kwargs: (result, run.final_force_field),
+            "q2mm.application.optimization.optimize",
+            lambda *_args, **_kwargs: result,
         )
 
         def unexpected_full_projection(_result: object) -> dict[str, Any]:
@@ -756,11 +777,13 @@ class TestResultProjection:
             projection_guard.setattr("q2mm.benchmarks.records.result_payload", unexpected_full_projection)
             candidate = run_profile(
                 RunProfile(
-                    system="ch3f",
-                    backend="synthetic-mm",
-                    functional_form="harmonic",
-                    optimizer="scipy-lbfgsb",
-                    n_evals=0,
+                    **{
+                        **catalog_settings("scipy-lbfgsb").model_dump(),
+                        "system": "ch3f",
+                        "backend": BackendSettings(key="synthetic-mm"),
+                        "functional_form": "harmonic",
+                        "n_evals": 0,
+                    }
                 ),
                 backend=_EnergyBackend(),
                 policy=AcceptancePolicy(require_convergence=True),
@@ -791,7 +814,8 @@ class TestResultProjection:
         assert manifest["result"] == record["optimization_result"] == expected
         assert record["summary"]["stages"] == expected["stages"]
         assert manifest["schema"] == "q2mm.optimization-run-manifest"
-        assert manifest["schema_version"] == 1
+        assert manifest["schema_version"] == 2
+        assert "overrides" not in manifest["configuration"]
         assert record["status"] == status.value
         assert record["candidate_id"] == candidate.candidate_id
         assert isinstance(manifest["result"]["initial_score"], int)
@@ -857,8 +881,8 @@ class TestResultProjection:
         assert not result.candidates[0].final_params.flags.writeable
 
     def test_failed_result_preserves_nonfinite_sentinel_policy(self) -> None:
-        from q2mm.application.persistence import _manifest_payload
         from q2mm._canonical import canonical_json
+        from q2mm.application.persistence import _manifest_payload
         from test.test_application import _problem, _run
 
         run = _run(_problem())
@@ -972,7 +996,14 @@ class TestPersistence:
         assert loaded.summary["error"] == "boom"
 
     def test_candidate_record_surfaces_publication_status_and_profile(self) -> None:
-        profile = RunProfile(system="rh-enamide", functional_form="harmonic", starting_point="published")
+        profile = RunProfile(
+            **{
+                **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                "system": "rh-enamide",
+                "functional_form": "harmonic",
+                "starting_point": "published",
+            }
+        )
         objective_profile = profile.effective_objective_profile
         assert objective_profile is not None
         publication = {
@@ -1577,33 +1608,46 @@ class TestPromotion:
 
 class TestRunProfileClassification:
     def test_unknown_backend_is_error(self) -> None:
-        cand = run_profile(RunProfile(system="ch3f", backend="does-not-exist", optimizer="scipy-lbfgsb"))
+        cand = run_profile(
+            RunProfile(
+                **{
+                    **catalog_settings("scipy-lbfgsb").model_dump(),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="does-not-exist"),
+                }
+            )
+        )
         assert cand.status is CandidateStatus.ERROR
         assert (
             cand.candidate_id
-            == RunProfile(system="ch3f", backend="does-not-exist", optimizer="scipy-lbfgsb").candidate_id()
+            == RunProfile(
+                **{
+                    **catalog_settings("scipy-lbfgsb").model_dump(),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="does-not-exist"),
+                }
+            ).candidate_id()
         )
 
     def test_unavailable_dependency_is_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Force a registered backend's cheap probe to report unavailable.
+        # Actual construction, not the generic catalog probe, reports missing dependencies.
+        from unittest.mock import Mock
+
         import q2mm.backends.registry as registry
+        from q2mm.backends.contracts import BackendUnavailableError
 
-        real = registry.get_descriptor("jax")
-
-        class _Desc:
-            name = real.name
-            backend_api_version = real.backend_api_version
-            factory = real.factory
-            role = real.role
-            capability_ceiling = real.capability_ceiling
-            functional_form_ceiling = real.functional_form_ceiling
-            probe = real.probe
-
-            def is_available(self) -> tuple[bool, str]:
-                return False, "synthetic missing dependency"
-
-        monkeypatch.setattr(registry, "get_descriptor", lambda key: _Desc() if key == "jax" else real)
-        cand = run_profile(RunProfile(system="ch3f", backend="jax", optimizer="scipy-lbfgsb-jax"))
+        monkeypatch.setattr(
+            registry, "load_backend", Mock(side_effect=BackendUnavailableError("synthetic missing dependency"))
+        )
+        cand = run_profile(
+            RunProfile(
+                **{
+                    **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="jax"),
+                }
+            )
+        )
         assert cand.status is CandidateStatus.SKIPPED
         assert "missing dependency" in cand.reason
 
@@ -1624,7 +1668,14 @@ class TestRunProfileClassification:
 
         monkeypatch.setattr("q2mm.benchmarks.systems.load_system", _boom)
         cand = run_profile(
-            RunProfile(system="ch3f", backend="fake", functional_form="harmonic", optimizer="scipy-lbfgsb"),
+            RunProfile(
+                **{
+                    **catalog_settings("scipy-lbfgsb").model_dump(),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="fake"),
+                    "functional_form": "harmonic",
+                }
+            ),
             backend=_FakeBackend(),  # type: ignore[arg-type]
         )
         assert cand.status is CandidateStatus.ERROR
@@ -1646,7 +1697,14 @@ class TestRunProfileClassification:
 
         monkeypatch.setattr("q2mm.benchmarks.systems.load_system", _missing)
         cand = run_profile(
-            RunProfile(system="ch3f", backend="fake", functional_form="harmonic", optimizer="scipy-lbfgsb"),
+            RunProfile(
+                **{
+                    **catalog_settings("scipy-lbfgsb").model_dump(),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="fake"),
+                    "functional_form": "harmonic",
+                }
+            ),
             backend=_FakeBackend(),  # type: ignore[arg-type]
         )
         assert cand.status is CandidateStatus.SKIPPED
@@ -1664,7 +1722,14 @@ class TestRunProfileClassification:
             )
 
         cand = run_profile(
-            RunProfile(system="ch3f", backend="fake", functional_form="harmonic", optimizer="scipy-lbfgsb"),
+            RunProfile(
+                **{
+                    **catalog_settings("scipy-lbfgsb").model_dump(),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="fake"),
+                    "functional_form": "harmonic",
+                }
+            ),
             backend=_FakeBackend(),  # type: ignore[arg-type]
         )
         assert cand.status is CandidateStatus.SKIPPED
@@ -1683,12 +1748,14 @@ class TestRunProfileClassification:
             )
 
         profile = RunProfile(
-            system="ferrocene",
-            backend="fake",
-            functional_form="mm3",
-            starting_point="published",
-            objective_profile=FERROCENE_EXACT_SCAN_PROFILE,
-            optimizer="scipy-lbfgsb",
+            **{
+                **catalog_settings("scipy-lbfgsb").model_dump(),
+                "system": "ferrocene",
+                "backend": BackendSettings(key="fake"),
+                "functional_form": "mm3",
+                "starting_point": "published",
+                "objective_profile": FERROCENE_EXACT_SCAN_PROFILE,
+            }
         )
         candidate = run_profile(profile, backend=_FakeBackend(), analyze=False)  # type: ignore[arg-type]
 
@@ -1723,7 +1790,16 @@ class TestRunOutcomeOk:
 class TestRunProfilePipeline:
     def test_accepted_run_persists_full_result_and_promotes(self, tmp_path: Path) -> None:
         profile = RunProfile(
-            system="ch3f", backend="jax", functional_form="harmonic", optimizer="scipy-lbfgsb-jax", maxiter=5, n_evals=0
+            **{
+                **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                "optimizer": ScipySettings.model_validate(
+                    {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 5}
+                ),
+                "system": "ch3f",
+                "backend": BackendSettings(key="jax"),
+                "functional_form": "harmonic",
+                "n_evals": 0,
+            }
         )
         outcome = run_profiles([profile], output_dir=tmp_path, analyze=False)
         cand = outcome.candidates[0]
@@ -1744,7 +1820,16 @@ class TestRunProfilePipeline:
         # A policy that demands 100% improvement deterministically rejects.
         policy = AcceptancePolicy(no_progress=NoProgressPolicy(max_iterations=10**9, min_improvement_pct=100.0))
         profile = RunProfile(
-            system="ch3f", backend="jax", functional_form="harmonic", optimizer="scipy-lbfgsb-jax", maxiter=5, n_evals=0
+            **{
+                **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                "optimizer": ScipySettings.model_validate(
+                    {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 5}
+                ),
+                "system": "ch3f",
+                "backend": BackendSettings(key="jax"),
+                "functional_form": "harmonic",
+                "n_evals": 0,
+            }
         )
         cand = run_profile(profile, policy=policy, analyze=False)
         assert cand.status is CandidateStatus.REJECTED
@@ -1762,13 +1847,17 @@ class TestRunProfilePipeline:
         from q2mm.resources import sn2_reference_dir
 
         profile = RunProfile(
-            system="ch3f",
-            backend="jax",
-            functional_form="harmonic",
-            optimizer="scipy-lbfgsb-jax",
-            maxiter=2,
-            n_evals=0,
-            data_roots={"ch3f": str(sn2_reference_dir())},
+            **{
+                **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                "optimizer": ScipySettings.model_validate(
+                    {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 2}
+                ),
+                "system": "ch3f",
+                "backend": BackendSettings(key="jax"),
+                "functional_form": "harmonic",
+                "n_evals": 0,
+                "data_roots": {"ch3f": str(sn2_reference_dir())},
+            }
         )
         cand = run_profile(profile, analyze=False, include_device=False)
         assert cand.resolved is not None
@@ -1783,12 +1872,16 @@ class TestRunProfilePipeline:
 
         cand = run_profile(
             RunProfile(
-                system="ch3f",
-                backend="jax",
-                functional_form="harmonic",
-                optimizer="scipy-lbfgsb-jax",
-                maxiter=2,
-                n_evals=0,
+                **{
+                    **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                    "optimizer": ScipySettings.model_validate(
+                        {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 2}
+                    ),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="jax"),
+                    "functional_form": "harmonic",
+                    "n_evals": 0,
+                }
             ),
             analyze=False,
             include_device=False,
@@ -1801,11 +1894,36 @@ class TestRunProfilePipeline:
 
     def test_single_batch_matrix_share_result_model(self) -> None:
         single = run_profiles(
-            [RunProfile(system="ch3f", backend="jax", functional_form="harmonic", maxiter=2, n_evals=0)], analyze=False
+            [
+                RunProfile(
+                    **{
+                        **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                        "optimizer": ScipySettings.model_validate(
+                            {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 2}
+                        ),
+                        "system": "ch3f",
+                        "backend": BackendSettings(key="jax"),
+                        "functional_form": "harmonic",
+                        "n_evals": 0,
+                    }
+                )
+            ],
+            analyze=False,
         )
         matrix = run_profiles(
             [
-                RunProfile(system="ch3f", backend="jax", functional_form="harmonic", optimizer=o, maxiter=2, n_evals=0)
+                RunProfile(
+                    **{
+                        **catalog_settings(o).model_dump(),
+                        "optimizer": ScipySettings.model_validate(
+                            {**optimizer_spec(o).settings.model_dump(), "maxiter": 2}
+                        ),
+                        "system": "ch3f",
+                        "backend": BackendSettings(key="jax"),
+                        "functional_form": "harmonic",
+                        "n_evals": 0,
+                    }
+                )
                 for o in ("scipy-lbfgsb", "scipy-lbfgsb-jax")
             ],
             analyze=False,
@@ -1817,12 +1935,16 @@ class TestRunProfilePipeline:
         # JAX optimizer -> analytical gradient in the actual result.
         cand = run_profile(
             RunProfile(
-                system="ch3f",
-                backend="jax",
-                functional_form="harmonic",
-                optimizer="scipy-lbfgsb-jax",
-                maxiter=3,
-                n_evals=0,
+                **{
+                    **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                    "optimizer": ScipySettings.model_validate(
+                        {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 3}
+                    ),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="jax"),
+                    "functional_form": "harmonic",
+                    "n_evals": 0,
+                }
             ),
             analyze=False,
             include_device=False,
@@ -1835,12 +1957,16 @@ class TestRunProfilePipeline:
         # the profile's derived expectation.
         cand = run_profile(
             RunProfile(
-                system="ch3f",
-                backend="jax",
-                functional_form="harmonic",
-                optimizer="scipy-lbfgsb",
-                maxiter=2,
-                n_evals=0,
+                **{
+                    **catalog_settings("scipy-lbfgsb").model_dump(),
+                    "optimizer": ScipySettings.model_validate(
+                        {**optimizer_spec("scipy-lbfgsb").settings.model_dump(), "maxiter": 2}
+                    ),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="jax"),
+                    "functional_form": "harmonic",
+                    "n_evals": 0,
+                }
             ),
             analyze=False,
             include_device=False,
@@ -1853,14 +1979,13 @@ class TestRunProfilePipeline:
         assert cand.status is CandidateStatus.ACCEPTED
 
     def test_optimizer_and_workflow_built_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Provenance + execution must share one build: resolve_optimizer and
-        # _resolve_workflow are each called exactly once per profile run.
-        import q2mm.benchmarks.profiles as profiles_mod
+        from q2mm.optimizers import catalog
+        from q2mm.workflows import base
 
         opt_calls = {"n": 0}
         wf_calls = {"n": 0}
-        real_opt = profiles_mod.resolve_optimizer
-        real_wf = profiles_mod._resolve_workflow
+        real_opt = catalog.build_optimizer
+        real_wf = base.build_workflow
 
         def _spy_opt(profile: RunProfile) -> Any:
             opt_calls["n"] += 1
@@ -1870,16 +1995,20 @@ class TestRunProfilePipeline:
             wf_calls["n"] += 1
             return real_wf(profile)
 
-        monkeypatch.setattr(profiles_mod, "resolve_optimizer", _spy_opt)
-        monkeypatch.setattr(profiles_mod, "_resolve_workflow", _spy_wf)
+        monkeypatch.setattr(catalog, "build_optimizer", _spy_opt)
+        monkeypatch.setattr(base, "build_workflow", _spy_wf)
         run_profile(
             RunProfile(
-                system="ch3f",
-                backend="jax",
-                functional_form="harmonic",
-                optimizer="scipy-lbfgsb-jax",
-                maxiter=2,
-                n_evals=0,
+                **{
+                    **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                    "optimizer": ScipySettings.model_validate(
+                        {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 2}
+                    ),
+                    "system": "ch3f",
+                    "backend": BackendSettings(key="jax"),
+                    "functional_form": "harmonic",
+                    "n_evals": 0,
+                }
             ),
             analyze=False,
             include_device=False,
@@ -1898,7 +2027,16 @@ class TestRunProfilePipeline:
         import q2mm.benchmarks.runner as runner_mod
 
         profile = RunProfile(
-            system="ch3f", backend="jax", functional_form="harmonic", optimizer="scipy-lbfgsb-jax", maxiter=2, n_evals=0
+            **{
+                **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                "optimizer": ScipySettings.model_validate(
+                    {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 2}
+                ),
+                "system": "ch3f",
+                "backend": BackendSettings(key="jax"),
+                "functional_form": "harmonic",
+                "n_evals": 0,
+            }
         )
         with _pytest.MonkeyPatch.context() as mp:
 
@@ -1930,26 +2068,53 @@ class TestRunProfilePipeline:
         assert not outcome.promoted
         assert not (tmp_path / "accepted").exists()
 
-    def test_gradient_provenance_mismatch_fails_closed(self, tmp_path: Path) -> None:
-        # Force the expected result gradient to disagree with what the JAX
-        # optimizer actually produces ("analytical"): the candidate must fail
-        # closed as a resolved ERROR, not be accepted.
-        import pytest as _pytest
-
-        import q2mm.benchmarks.runner as runner_mod
+    @pytest.mark.parametrize("boundary", ["workflow-result", "canonical-result"])
+    def test_gradient_provenance_mismatch_fails_closed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, boundary: str
+    ) -> None:
+        from q2mm.application import optimization
+        from q2mm.workflows.single_stage import SingleStageWorkflow
 
         profile = RunProfile(
-            system="ch3f", backend="jax", functional_form="harmonic", optimizer="scipy-lbfgsb-jax", maxiter=2, n_evals=0
+            **{
+                **catalog_settings("scipy-lbfgsb-jax").model_dump(),
+                "optimizer": ScipySettings.model_validate(
+                    {**optimizer_spec("scipy-lbfgsb-jax").settings.model_dump(), "maxiter": 2}
+                ),
+                "system": "ch3f",
+                "backend": BackendSettings(key="jax"),
+                "functional_form": "harmonic",
+                "n_evals": 0,
+            }
         )
-        with _pytest.MonkeyPatch.context() as mp:
-            mp.setattr(runner_mod, "_expected_result_gradient", lambda spec: "none")
-            outcome = run_profiles([profile], output_dir=tmp_path, analyze=False)
+        target = optimization if boundary == "canonical-result" else SingleStageWorkflow
+        name = "optimize" if boundary == "canonical-result" else "run"
+        original = getattr(target, name)
+        executed = []
+
+        def mismatched_result(*args: Any, **kwargs: Any) -> Any:
+            result = original(*args, **kwargs)
+            assert result.gradient_mode == "analytical"
+            executed.append(result)
+            return dataclasses.replace(result, gradient_mode="none")
+
+        monkeypatch.setattr(target, name, mismatched_result)
+        outcome = run_profiles([profile], output_dir=tmp_path, analyze=False)
 
         cand = outcome.candidates[0]
+        assert len(executed) == 1
+        assert outcome.ok is False
         assert cand.status is CandidateStatus.ERROR
         assert cand.resolved is not None
         assert cand.candidate_id == cand.resolved.candidate_id()
-        assert "gradient mode" in cand.reason
+        assert "gradient" in cand.reason
+        assert cand.resolved.expected_result_gradient_mode == "analytical"
         assert cand.optimization_result is None and cand.final_force_field is None
+        record = json.loads((tmp_path / "candidates" / f"{cand.candidate_id}.json").read_text(encoding="utf-8"))
+        assert record["status"] == "error"
+        assert record["resolved_fingerprint"] == cand.resolved.fingerprint()
+        assert record["resolved"]["expected_result_gradient_mode"] == "analytical"
+        assert record["optimization_result"] is None
         assert not outcome.promoted
         assert not (tmp_path / "accepted").exists()
+        assert not (tmp_path / "forcefields").exists()

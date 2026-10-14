@@ -223,7 +223,7 @@ q2mm's supported path is therefore:
 ## Recommendations
 
 - Use `scipy-lbfgsb-jax` on the CLI or build a `JaxObjectiveExecutor` and pass
-  it to `ScipyOptimizer(method="L-BFGS-B")` in Python for multi-molecule TS
+  it to `ScipyOptimizer(ScipySettings(method="L-BFGS-B"))` in Python for multi-molecule TS
   systems.
 - Keep the default executor-ratio gate enabled.  It now admits all five benchmark
   systems after the loader and angle-gradient fixes, and it remains useful as

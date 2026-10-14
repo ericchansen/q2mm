@@ -11,6 +11,13 @@ MM3 backend and remains useful when an external Tinker installation is available
 Tinker must be installed separately. Pre-built binaries are available from
 the [Tinker website](https://dasher.wustl.edu/tinker/).
 
+The required CPU lane uses **Tinker 8.11.3 on Python 3.15**, with its native
+closure owned by conda. Its [image inputs](https://github.com/ericchansen/q2mm/blob/master/.github/docker/Dockerfile)
+verify the matching official archive before installing `mm3.prm`. A local
+installation must likewise supply that runtime parameter file through
+`params_file` or the backend's documented search locations. These runtime
+resources are not committed to the code repository.
+
 The backend searches for Tinker executables in this order:
 
 1. The `tinker_dir` constructor parameter (if provided)

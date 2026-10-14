@@ -14,6 +14,9 @@ import math
 
 import pytest
 
+from q2mm.benchmarks.profiles import catalog_settings
+from q2mm.settings import BackendSettings, MethodE2Settings, SingleStageSettings
+
 pytestmark = [pytest.mark.benchmark, pytest.mark.nightly]
 
 
@@ -25,12 +28,14 @@ def _run_and_validate(backend: object, backend_key: str) -> None:
     from test._shared import backend_functional_form
 
     profile = RunProfile(
-        system="ch3f",
-        backend=backend_key,
-        functional_form=backend_functional_form(backend).value,
-        optimizer="scipy-lbfgsb",
-        workflow="single-stage",
-        n_evals=0,
+        **{
+            **catalog_settings("scipy-lbfgsb").model_dump(),
+            "system": "ch3f",
+            "backend": BackendSettings(key=backend_key),
+            "functional_form": backend_functional_form(backend).value,
+            "workflow": MethodE2Settings() if "single-stage" == "method-e2" else SingleStageSettings(),
+            "n_evals": 0,
+        }
     )
     candidate = run_profile(profile, backend=backend, analyze=True, include_device=False)
 

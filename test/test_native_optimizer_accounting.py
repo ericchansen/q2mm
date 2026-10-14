@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from q2mm.settings import JaxOptSettings, MultiStartSettings, OptaxSettings
+
 import importlib.util
 from collections.abc import Callable
 from types import SimpleNamespace
@@ -71,7 +73,9 @@ def test_real_native_callbacks_match_reported_evaluations(
     evaluator, native_values, host_values = _executor()
     space = evaluator.plan.active_space.with_active_indices([1])
     baseline = space.baseline.copy()
-    result = JaxOptOptimizer(method=method, maxiter=maxiter, tol=1e-12, verbose=False).optimize(evaluator, space)
+    result = JaxOptOptimizer(JaxOptSettings(method=method, maxiter=maxiter, tol=1e-12, verbose=False)).optimize(
+        evaluator, space
+    )
     jax.effects_barrier()
     assert native_values
     assert len(host_values) == 2
@@ -96,7 +100,7 @@ def test_tracing_is_not_an_evaluation_and_native_api_stays_uncounted(monkeypatch
 
     evaluator, native_values, host_values = _executor()
     space = evaluator.plan.active_space.with_active_indices([1])
-    optimizer = JaxOptOptimizer(maxiter=0, verbose=False)
+    optimizer = JaxOptOptimizer(JaxOptSettings(maxiter=0, verbose=False))
 
     def build(_module: object, callback: Any) -> Any:
         before = evaluator.n_evaluations
@@ -123,10 +127,39 @@ def test_tracing_is_not_an_evaluation_and_native_api_stays_uncounted(monkeypatch
 
 
 @pytest.mark.parametrize("method", ["lbfgs", "lbfgsb", "gradient_descent"])
+def test_zero_jaxopt_tolerance_keeps_bounded_native_execution(method: str) -> None:
+    import jax
+
+    evaluator, native_values, host_values = _executor()
+    space = evaluator.plan.active_space.with_active_indices([1])
+    settings = JaxOptSettings(method=method, maxiter=2, tol=0.0, verbose=False)
+    result = JaxOptOptimizer(settings).optimize(evaluator, space)
+    jax.effects_barrier()
+    assert settings.tol == 0.0
+    assert np.isfinite(result.final_score) and result.n_iterations <= 2
+    assert result.n_evaluations == len(native_values) + len(host_values)
+
+
+def test_zero_optax_tolerances_preserve_budget_and_native_accounting() -> None:
+    pytest.importorskip("optax")
+    import jax
+    from q2mm.optimizers.optax import OptaxOptimizer
+
+    evaluator, native_values, host_values = _executor()
+    space = evaluator.plan.active_space.with_active_indices([1])
+    settings = OptaxSettings(ftol=0.0, grad_norm_tol=0.0, max_steps=2, verbose=False)
+    result = OptaxOptimizer(settings).optimize(evaluator, space)
+    jax.effects_barrier()
+    assert settings.ftol == settings.grad_norm_tol == 0.0
+    assert np.isfinite(result.final_score) and result.n_iterations == 2
+    assert result.n_evaluations == len(native_values) + len(host_values)
+
+
+@pytest.mark.parametrize("method", ["lbfgs", "lbfgsb", "gradient_descent"])
 def test_no_active_parameters_count_only_the_existing_host_call(method: str) -> None:
     evaluator, native_values, host_values = _executor()
     space = evaluator.plan.active_space.with_active_indices([])
-    result = JaxOptOptimizer(method=method, maxiter=2, verbose=False).optimize(evaluator, space)
+    result = JaxOptOptimizer(JaxOptSettings(method=method, maxiter=2, verbose=False)).optimize(evaluator, space)
     assert result.n_evaluations == 1
     assert native_values == []
     assert len(host_values) == 1
@@ -139,7 +172,8 @@ def test_native_multistart_aggregate_and_selected_history_are_explicit(n_starts:
     evaluator, native_values, host_values = _executor()
     space = evaluator.plan.active_space.with_active_indices([1])
     result = MultiStartOptimizer(
-        JaxOptOptimizer(maxiter=1, tol=1e-12, verbose=False), n_starts=n_starts, seed=3, verbose=False
+        MultiStartSettings(n_starts=n_starts, seed=3, verbose=False),
+        optimizer=JaxOptOptimizer(JaxOptSettings(maxiter=1, tol=1e-12, verbose=False)),
     ).optimize(evaluator, space)
     jax.effects_barrier()
     assert result.n_evaluations == evaluator.n_evaluations == len(native_values) + len(host_values)
@@ -165,7 +199,7 @@ def test_nonfinite_native_results_remain_invalid_but_completed_calls_are_counted
 
     # This is the invalid native outcome used by the independent GEO-03 fix.
     monkeypatch.setattr(evaluator, "value_and_grad_jax", jax.jit(invalid))
-    optimizer = JaxOptOptimizer(maxiter=1, verbose=False)
+    optimizer = JaxOptOptimizer(JaxOptSettings(maxiter=1, verbose=False))
     space = evaluator.plan.active_space.with_active_indices([1])
     with pytest.raises(ValueError, match="full_vector must be finite"):
         optimizer.optimize(evaluator, space)
@@ -182,10 +216,10 @@ def test_bookkeeping_does_not_change_native_numerical_path(method: str, monkeypa
     counted, counted_native, counted_host = _executor()
     uncounted, uncounted_native, uncounted_host = _executor()
     monkeypatch.setattr(uncounted, "record_evaluation", lambda _score: None)
-    counted_result = JaxOptOptimizer(method=method, maxiter=2, verbose=False).optimize(
+    counted_result = JaxOptOptimizer(JaxOptSettings(method=method, maxiter=2, verbose=False)).optimize(
         counted, counted.plan.active_space.with_active_indices([1])
     )
-    uncounted_result = JaxOptOptimizer(method=method, maxiter=2, verbose=False).optimize(
+    uncounted_result = JaxOptOptimizer(JaxOptSettings(method=method, maxiter=2, verbose=False)).optimize(
         uncounted, uncounted.plan.active_space.with_active_indices([1])
     )
     jax.effects_barrier()
@@ -212,9 +246,10 @@ def test_failed_native_starts_keep_completed_work_and_invalidity(monkeypatch: py
 
     monkeypatch.setattr(evaluator, "value_and_grad_jax", jax.jit(invalid))
     space = evaluator.plan.active_space.with_active_indices([1])
-    result = MultiStartOptimizer(JaxOptOptimizer(maxiter=1, verbose=False), n_starts=2, seed=3, verbose=False).optimize(
-        evaluator, space
-    )
+    result = MultiStartOptimizer(
+        MultiStartSettings(n_starts=2, seed=3, verbose=False),
+        optimizer=JaxOptOptimizer(JaxOptSettings(maxiter=1, verbose=False)),
+    ).optimize(evaluator, space)
     jax.effects_barrier()
     assert not result.success
     assert all(candidate.status == "failure" for candidate in result.candidates)
@@ -230,7 +265,7 @@ def test_one_full_objective_call_is_not_counted_per_compiled_contribution() -> N
     evaluator, native_values, host_values = _executor()
     evaluator._compiled_value_fns *= 2
     evaluator._compiled_vag_fns *= 2
-    result = JaxOptOptimizer(method="gradient_descent", maxiter=1, verbose=False).optimize(
+    result = JaxOptOptimizer(JaxOptSettings(method="gradient_descent", maxiter=1, verbose=False)).optimize(
         evaluator, evaluator.plan.active_space.with_active_indices([1])
     )
     jax.effects_barrier()
@@ -248,7 +283,7 @@ def test_exception_before_native_scalar_return_does_not_fabricate_a_record(
 
     monkeypatch.setattr(evaluator, "value_and_grad_jax", unavailable)
     with pytest.raises(RuntimeError, match="no scalar returned"):
-        JaxOptOptimizer(maxiter=1, verbose=False).optimize(evaluator, evaluator.plan.active_space)
+        JaxOptOptimizer(JaxOptSettings(maxiter=1, verbose=False)).optimize(evaluator, evaluator.plan.active_space)
     assert evaluator.n_evaluations == len(host_values) == 1
     assert native_values == []
     assert evaluator.history == tuple(host_values)

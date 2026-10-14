@@ -1,178 +1,86 @@
-"""Explicit configuration capture for supplied optimizer and workflow objects."""
+"""Capture actual component settings before execution, without reconstruction."""
 
-from __future__ import annotations
-
-import inspect
-import json
 from collections.abc import Mapping
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
-import numpy as np
+from q2mm.backends.contracts import Backend
+from q2mm.configuration import ConfigurationCaptureError, capture_component_settings
+from q2mm.optimizers.protocols import _Optimizer
+from q2mm.settings import OptimizationSettings
+from q2mm.workflows.base import Workflow
 
-from .models import ApplicationConfigurationError, _safe_mapping
-
-__all__ = ["ConfigurationProvider"]
-
-
-@runtime_checkable
-class ConfigurationProvider(Protocol):
-    """Optional configuration contract for custom application components.
-
-    This is separate from optimizer, workflow, and backend execution
-    protocols. A provider must describe all consequential configuration of
-    its concrete object, including subclass and nested settings. Return
-    JSON-native values with string keys and finite numbers; include any
-    relevant custom implementation version explicitly. Capture must not
-    execute an optimization or mutate the component.
-    """
-
-    def configuration_settings(self) -> Mapping[str, Any]:
-        """Return the component's complete JSON-safe configuration."""
-        ...
-
-
-def _mapping_for_json(value: object) -> dict[str, Any]:
-    if isinstance(value, Mapping):
-        return dict(value)
-    raise TypeError(f"Unsupported configuration JSON value: {type(value).__name__}.")
-
-
-def _builtin_for_json(value: object) -> object:
-    if isinstance(value, np.integer):
-        return int(value)
-    if isinstance(value, np.floating):
-        return float(value)
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    return _mapping_for_json(value)
-
-
-_PROVIDER_GUIDANCE = (
-    "implement ConfigurationProvider.configuration_settings(). Automatic built-in capture does not apply to subclasses."
+from .models import (
+    ApplicationConfigurationError,
+    ResolvedBackendConfiguration,
+    ResolvedExecutionConfiguration,
+    ResolvedExecutorConfiguration,
+    ResolvedOptimizerConfiguration,
+    ResolvedWorkflowConfiguration,
 )
 
 
-def _provider_settings(value: object) -> Mapping[str, Any]:
-    # Attribute lookup can execute a user-defined descriptor, just like the hook.
-    lookup = True
+def _component_settings(value: object) -> Mapping[str, Any]:
+    """Translate neutral snapshot failures into the application error contract."""
     try:
-        provider = getattr(value, "configuration_settings")
-        if not callable(provider):
-            raise ApplicationConfigurationError(
-                f"Cannot capture configuration for {type(value).__qualname__}; {_PROVIDER_GUIDANCE}"
-            )
-        lookup = False
-        settings = provider()
-    except ApplicationConfigurationError:
-        raise
-    except Exception as exc:
-        cls = type(value)
-        message = (
-            f"Cannot capture configuration for {cls.__module__}.{cls.__qualname__} via configuration_settings(): {exc}"
-        )
-        if lookup and isinstance(exc, AttributeError):
-            message += f"; {_PROVIDER_GUIDANCE}"
-        raise ApplicationConfigurationError(message) from exc
-    if not isinstance(settings, Mapping):
-        raise ApplicationConfigurationError("ConfigurationProvider.configuration_settings() must return a mapping.")
-    # Validate the provider's original values, before canonical normalization
-    # could turn nonfinite numbers into string sentinels.
-    json.dumps(settings, allow_nan=False, default=_mapping_for_json)
-    return _safe_mapping(settings, path="configuration_settings")
+        return capture_component_settings(value)
+    except ConfigurationCaptureError as exc:
+        if isinstance(exc.__cause__, ApplicationConfigurationError):
+            raise exc.__cause__
+        raise ApplicationConfigurationError(str(exc)) from (exc.__cause__ or exc)
 
 
-def _workflow_settings(value: object) -> dict[str, Any]:
-    """Read supported workflow controls without rebuilding the supplied object."""
-    from q2mm.workflows import MethodE2Workflow, SingleStageWorkflow
+def capture_execution_configuration(
+    settings: OptimizationSettings,
+    *,
+    backend: Backend,
+    optimizer: _Optimizer,
+    workflow: Workflow,
+) -> ResolvedExecutionConfiguration:
+    """Record verified runtime facts and actual providers before numerical execution."""
+    from .optimization import _result_gradient_mode
+    from q2mm.optimizers.catalog import optimizer_method
 
-    if type(value) is SingleStageWorkflow:
-        return {"name": value.name}
-    if type(value) is MethodE2Workflow:
-        return {
-            "name": value.name,
-            **{name: getattr(value, name) for name in inspect.signature(MethodE2Workflow).parameters},
-        }
-    raise ApplicationConfigurationError(f"No built-in workflow configuration capture for {type(value).__qualname__}.")
-
-
-def _builtin_settings(value: object, gradient_mode: str, ancestors: frozenset[int]) -> dict[str, Any] | None:
-    from q2mm.optimizers.basinhopping import BasinHoppingOptimizer
-    from q2mm.optimizers.catalog import (
-        _CyclingOptimizer,
-        _constructor_arguments,
-        _constructor_settings,
-        _cycling_nested_settings,
+    info = backend.info
+    provenance = info.provenance
+    details: dict[str, object] = {} if provenance is None else dict(provenance.details)
+    if settings.backend.options:
+        details["factory_options"] = settings.backend.factory_options()
+    optimizer_configuration = _component_settings(optimizer)
+    workflow_configuration = _component_settings(workflow)
+    known_settings = getattr(optimizer, "settings", None)
+    method = (
+        optimizer_method(known_settings)
+        if (known_settings is not None and "version" in optimizer_configuration)
+        else type(optimizer).__qualname__
     )
-    from q2mm.optimizers.cycling import OptimizationLoop
-    from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
-    from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-    from q2mm.optimizers.multistart import MultiStartOptimizer
-    from q2mm.optimizers.optax import OptaxOptimizer
-    from q2mm.optimizers.scipy_opt import ScipyOptimizer
-    from q2mm.workflows import MethodE2Workflow, SingleStageWorkflow
-
-    cls = type(value)
-    if cls is SingleStageWorkflow or cls is MethodE2Workflow:
-        return _workflow_settings(value)
-    if cls is _CyclingOptimizer:
-        parameters = _constructor_arguments(OptimizationLoop, getattr(value, "_kwargs"))
-        return {**parameters, **_cycling_nested_settings(parameters, gradient_mode)}
-    if not any(
-        cls is known
-        for known in (
-            ScipyOptimizer,
-            OptaxOptimizer,
-            JaxOptOptimizer,
-            BasinHoppingOptimizer,
-            MultiStartOptimizer,
-            JaxMultiStartOptimizer,
-        )
-    ):
-        return None
-    parameters = {
-        name: getattr(value, "optimizer_name" if cls is OptaxOptimizer and name == "optimizer" else name)
-        for name in inspect.signature(cls).parameters
-    }
-    if cls is MultiStartOptimizer:
-        parameters["optimizer"] = _component_settings(
-            parameters["optimizer"], gradient_mode=gradient_mode, ancestors=ancestors
-        )
-    elif cls is JaxMultiStartOptimizer:
-        # This adapter refreshes its inner solver on execution; the stored
-        # inner instance may predate changes to the public constructor knobs.
-        parameters["optimizer"] = _constructor_settings(
-            JaxOptOptimizer,
-            "jaxopt",
-            method=parameters["method"],
-            maxiter=parameters["maxiter"],
-            tol=parameters["tol"],
-            verbose=False,
-        )
-    return parameters
+    return ResolvedExecutionConfiguration(
+        recipe_id=settings.recipe_id,
+        backend=ResolvedBackendConfiguration(
+            key=info.name if provenance is None else provenance.backend,
+            name=info.name,
+            role=info.role.value,
+            version="" if provenance is None else provenance.version,
+            capabilities=tuple(capability.value for capability in info.capabilities),
+            functional_forms=tuple(info.functional_forms),
+            details=details,
+        ),
+        optimizer=ResolvedOptimizerConfiguration(
+            key=f"{type(optimizer).__module__}.{type(optimizer).__qualname__}",
+            label=type(optimizer).__qualname__,
+            method=method,
+            settings=optimizer_configuration,
+            expected_result_gradient_mode=_result_gradient_mode(optimizer, settings.objective.gradient_mode),
+        ),
+        workflow=ResolvedWorkflowConfiguration(key=workflow.name, settings=workflow_configuration),
+        executor=ResolvedExecutorConfiguration(
+            kind=settings.objective.executor,
+            gradient_mode=settings.objective.gradient_mode,
+            fd_step=settings.objective.fd_step if settings.objective.gradient_mode == "finite_difference" else None,
+        ),
+        regularization=settings.objective.regularization,
+        n_evals=settings.n_evals,
+        ratio_tol=settings.ratio_tol,
+    )
 
 
-def _component_settings(
-    value: object, *, gradient_mode: str = "none", ancestors: frozenset[int] = frozenset()
-) -> Mapping[str, Any]:
-    """Snapshot an exact built-in or an explicit configuration provider."""
-    cls = type(value)
-    if id(value) in ancestors:
-        raise ApplicationConfigurationError(f"Recursive component configuration for {cls.__qualname__}.")
-    identity = {"class": cls.__qualname__, "module": cls.__module__}
-    try:
-        parameters = _builtin_settings(value, gradient_mode, ancestors | {id(value)})
-        if parameters is None:
-            captured = _provider_settings(value)
-        else:
-            from q2mm import __version__
-
-            json.dumps(parameters, allow_nan=False, default=_builtin_for_json)
-            identity["version"] = __version__
-            captured = parameters
-        return _safe_mapping({**identity, "parameters": captured}, path="component.configuration")
-    except ApplicationConfigurationError:
-        raise
-    except (AttributeError, LookupError, TypeError, ValueError, RuntimeError) as exc:
-        raise ApplicationConfigurationError(
-            f"Cannot capture configuration for {cls.__module__}.{cls.__qualname__}: {exc}"
-        ) from exc
+__all__ = ["capture_execution_configuration"]

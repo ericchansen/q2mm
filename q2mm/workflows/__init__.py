@@ -17,9 +17,13 @@ Implementations:
 - :class:`q2mm.workflows.MethodE2Workflow` — Limé & Norrby 2015's
   two-stage TSFF protocol: Method D Round 1 against the unmodified
   Hessian eigenmatrix, identify bond/angle force constants that
-  drifted to zero or negative, lock those at their Round 1 values,
-  then Method C Round 2 against the modified Hessian eigenmatrix on
-  the remaining active parameters.
+  drifted to zero or negative, apply configured physical replacements,
+  lock their parameter rows, then Method C Round 2 against the modified
+  Hessian eigenmatrix on the remaining active parameters.
+
+Construct workflows with immutable :mod:`q2mm.settings` models. The
+configured workflow is reusable; evaluators and optimizer sessions are
+created or supplied for each ``run()``.
 
 References
 ----------

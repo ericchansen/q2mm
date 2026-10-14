@@ -700,7 +700,7 @@ class OpenMMBackend:
         layout = ParameterLayout.from_force_field(request.force_field)
         try:
             state = self._build_state(request.molecule, request.force_field)
-        except (BackendConfigurationError, PreparationError):
+        except BackendConfigurationError, PreparationError:
             raise
         except Exception as exc:  # noqa: BLE001
             raise PreparationError(f"OpenMM failed to prepare case {request.case_id!r}: {exc}") from exc

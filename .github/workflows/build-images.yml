@@ -1,76 +1,98 @@
-name: Build CI Images
-
-# Manual-only by default — also triggers on env/Docker changes pushed to master.
-# Select a specific backend or rebuild all via manual dispatch.
+name: Build native CPU images
 
 on:
   workflow_dispatch:
     inputs:
-      backend:
-        description: "Backend to rebuild (or 'all')"
-        required: false
-        default: "all"
-        type: choice
-        options:
-          - all
-          - openmm
-          - tinker
-          - jax
-          - jax-md
-          - psi4
-          - full
+      image:
+        description: Image to rebuild
+        required: true
+        default: all
+        type: string
   push:
     branches: [master]
     paths:
-      - ".github/envs/**"
-      - ".github/docker/**"
+      - ".github/envs/*.yml"
+      - ".github/docker/Dockerfile"
 
 permissions:
-  packages: write
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_PREFIX: ${{ github.repository }}
+  contents: read
 
 jobs:
-  build:
+  select:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        backend:
-          - { name: openmm, env: openmm.yml }
-          - { name: tinker, env: tinker.yml }
-          - { name: jax,    env: jax.yml    }
-          - { name: jax-md, env: jax-md.yml }
-          - { name: psi4,   env: psi4.yml   }
-          - { name: full,   env: full.yml   }
+    outputs:
+      images: ${{ steps.selection.outputs.images }}
     steps:
-      - name: Check if selected
-        id: check
-        run: |
-          SELECTED="${{ inputs.backend }}"
-          # Push-triggered builds rebuild all; dispatch respects selection
-          if [[ -n "$SELECTED" && "$SELECTED" != "all" && "$SELECTED" != "${{ matrix.backend.name }}" ]]; then
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - if: steps.check.outputs.skip != 'true'
-        uses: actions/checkout@v4
-
-      - if: steps.check.outputs.skip != 'true'
-        uses: docker/login-action@v3
+      - uses: actions/checkout@v4
         with:
-          registry: ${{ env.REGISTRY }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - run: python scripts/ci_image.py --check
+      - id: selection
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SELECTED_IMAGE: ${{ inputs.image }}
+          BASE: ${{ github.event.before }}
+          HEAD: ${{ github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from scripts.ci_paths import changed_paths
+
+          known = json.loads(subprocess.check_output(
+              [sys.executable, "scripts/ci_image.py", "--list"], text=True
+          ))
+          if os.environ["EVENT_NAME"] == "workflow_dispatch":
+              selected = os.environ["SELECTED_IMAGE"]
+              if selected != "all" and selected not in known:
+                  raise SystemExit("Unknown image")
+              images = known if selected == "all" else [selected]
+          else:
+              paths = changed_paths(os.environ["BASE"], os.environ["HEAD"])
+              images = json.loads(subprocess.check_output(
+                  [sys.executable, "scripts/ci_image.py", "--selected", *paths], text=True
+              ))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write("images=" + json.dumps(images) + "\n")
+          PY
+
+  build:
+    needs: select
+    if: needs.select.outputs.images != '[]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(needs.select.outputs.images) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - id: image
+        env:
+          IMAGE: ${{ matrix.image }}
+        run: |
+          python scripts/ci_image.py --check
+          echo "environment=$(python scripts/ci_image.py "$IMAGE" --field environment)" >> "$GITHUB_OUTPUT"
+          echo "reference=$(python scripts/ci_image.py "$IMAGE" --field reference)" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - if: steps.check.outputs.skip != 'true'
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
-          context: .
+          context: .github
           file: .github/docker/Dockerfile
-          build-args: ENV_FILE=${{ matrix.backend.env }}
+          build-args: ENV_FILE=${{ steps.image.outputs.environment }}
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/ci-${{ matrix.backend.name }}:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/ci-${{ matrix.backend.name }}:${{ github.sha }}
+          tags: ${{ steps.image.outputs.reference }}

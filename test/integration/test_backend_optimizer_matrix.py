@@ -16,7 +16,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
+from q2mm.benchmarks.profiles import catalog_settings
 from q2mm.benchmarks.runner import frequency_mae, frequency_rmsd, real_frequencies
+from q2mm.optimizers.catalog import optimizer_spec
+from q2mm.settings import BackendSettings, MethodE2Settings, SingleStageSettings, ScipySettings
 
 if TYPE_CHECKING:
     from q2mm.benchmarks.runner import CandidateResult
@@ -83,13 +86,17 @@ class TestRunnerPipeline:
 
         backend = load_backend("openmm")
         profile = RunProfile(
-            system="ch3f",
-            backend="openmm",
-            functional_form="mm3",
-            optimizer="scipy-lbfgsb",
-            workflow="single-stage",
-            maxiter=200,
-            n_evals=0,
+            **{
+                **catalog_settings("scipy-lbfgsb").model_dump(),
+                "optimizer": ScipySettings.model_validate(
+                    {**optimizer_spec("scipy-lbfgsb").settings.model_dump(), "maxiter": 200}
+                ),
+                "system": "ch3f",
+                "backend": BackendSettings(key="openmm"),
+                "functional_form": "mm3",
+                "workflow": MethodE2Settings() if "single-stage" == "method-e2" else SingleStageSettings(),
+                "n_evals": 0,
+            }
         )
         return run_profile(profile, backend=backend, analyze=True, include_device=False)
 

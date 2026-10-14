@@ -9,6 +9,13 @@ functions.
 
 ## Installation
 
+The supported CPU lane uses Python **3.14** on Linux/WSL; the current Python
+3.15 dependency chain is not available. Install JAX, jaxlib and JAX-MD with
+one package manager in the same environment, as in the
+[canonical environment](https://github.com/ericchansen/q2mm/blob/master/.github/envs/jax-md.yml).
+Do not replace a conda-owned jaxlib with pip. This is distinct from the
+primary Python 3.15 JAX-only lane.
+
 ```bash
 pip install jax jaxlib jax-md
 ```

@@ -17,11 +17,13 @@ not inferred from solver iterations or state totals.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 import math
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from q2mm.settings import JaxOptSettings
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import ObjectiveEvaluator
 
@@ -29,8 +31,6 @@ if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
 
 logger = logging.getLogger(__name__)
-
-_METHOD_REGISTRY = frozenset({"lbfgs", "lbfgsb", "gradient_descent"})
 
 
 def _require_jax_executor(evaluator: ObjectiveEvaluator) -> None:
@@ -46,13 +46,12 @@ def _require_jax_executor(evaluator: ObjectiveEvaluator) -> None:
 class JaxOptOptimizer:
     """JIT-dispatched force field optimizer using jaxopt."""
 
-    def __init__(self, method: str = "lbfgs", maxiter: int = 200, tol: float = 1e-6, verbose: bool = True) -> None:
-        if method not in _METHOD_REGISTRY:
-            raise ValueError(f"Unknown method '{method}'. Choose from: {', '.join(sorted(_METHOD_REGISTRY))}")
-        self.method = method
-        self.maxiter = maxiter
-        self.tol = tol
-        self.verbose = verbose
+    def __init__(self, settings: JaxOptSettings = JaxOptSettings()) -> None:
+        self.settings = settings
+
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Return the immutable configured controls as JSON data."""
+        return self.settings.model_dump(mode="json")
 
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the jaxopt optimization and return the canonical result."""
@@ -86,18 +85,18 @@ class JaxOptOptimizer:
                 evaluator.record_evaluation(float(loss))
             return loss, full_grad[active_indices_jax]
 
-        method_str = f"jaxopt:{self.method}"
+        method_str = f"jaxopt:{self.settings.method}"
         initial_score = float(evaluator.value(initial_full))
         params = jnp.array(x0, dtype=jnp.float64)
 
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Starting %s optimization: %d active params (%d total), initial score %.6f, maxiter=%d",
                 method_str,
                 space.n_active,
                 space.n_full,
                 initial_score,
-                self.maxiter,
+                self.settings.maxiter,
             )
 
         if x0.size == 0:
@@ -119,7 +118,7 @@ class JaxOptOptimizer:
             )
 
         solver = self._build_solver(jaxopt, vag_fn)
-        if self.method == "lbfgsb":
+        if self.settings.method == "lbfgsb":
             backend = jax.default_backend()
             if backend != "cpu":
                 raise RuntimeError(
@@ -137,18 +136,18 @@ class JaxOptOptimizer:
         final_score_surrogate = float(vag_fn(final_params_jax)[0])
 
         error_val = float(getattr(state, "error", float("inf")))
-        n_iter = int(getattr(state, "iter_num", self.maxiter))
+        n_iter = int(getattr(state, "iter_num", self.settings.maxiter))
         diverged = not math.isfinite(error_val) or not math.isfinite(final_score_surrogate)
 
         if diverged:
             converged = False
             message = f"Optimizer diverged after {n_iter} iterations (gradient or loss became NaN)."
-        elif error_val < self.tol:
+        elif error_val < self.settings.tol:
             converged = True
-            message = f"Converged: error {error_val:.2e} < tol {self.tol:.2e}"
+            message = f"Converged: error {error_val:.2e} < tol {self.settings.tol:.2e}"
         else:
             converged = False
-            message = f"Max iterations ({self.maxiter}) reached (error={error_val:.2e})"
+            message = f"Max iterations ({self.settings.maxiter}) reached (error={error_val:.2e})"
 
         report_final = float(evaluator.value(final_params))
         if diverged or report_final > initial_score:
@@ -162,7 +161,7 @@ class JaxOptOptimizer:
             converged = False
             message = f"Reverted to initial params — final score was worse than initial ({initial_score:.4f})"
 
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Optimization %s: score %.6f → %.6f (%d iterations)",
                 "converged" if converged else "stopped",
@@ -189,12 +188,16 @@ class JaxOptOptimizer:
         )
 
     def _build_solver(self, jaxopt_mod: object, loss_fn: object) -> object:
-        if self.method == "lbfgs":
-            return jaxopt_mod.LBFGS(fun=loss_fn, value_and_grad=True, jit=False, maxiter=self.maxiter, tol=self.tol)
-        if self.method == "lbfgsb":
-            return jaxopt_mod.LBFGSB(fun=loss_fn, value_and_grad=True, jit=False, maxiter=self.maxiter, tol=self.tol)
-        if self.method == "gradient_descent":
-            return jaxopt_mod.GradientDescent(
-                fun=loss_fn, value_and_grad=True, jit=False, maxiter=self.maxiter, tol=self.tol
+        if self.settings.method == "lbfgs":
+            return jaxopt_mod.LBFGS(
+                fun=loss_fn, value_and_grad=True, jit=False, maxiter=self.settings.maxiter, tol=self.settings.tol
             )
-        raise ValueError(f"Unhandled method: {self.method}")  # pragma: no cover
+        if self.settings.method == "lbfgsb":
+            return jaxopt_mod.LBFGSB(
+                fun=loss_fn, value_and_grad=True, jit=False, maxiter=self.settings.maxiter, tol=self.settings.tol
+            )
+        if self.settings.method == "gradient_descent":
+            return jaxopt_mod.GradientDescent(
+                fun=loss_fn, value_and_grad=True, jit=False, maxiter=self.settings.maxiter, tol=self.settings.tol
+            )
+        raise ValueError(f"Unhandled method: {self.settings.method}")  # pragma: no cover

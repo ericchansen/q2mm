@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from math import isclose
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, TypeVar
+from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
@@ -179,16 +179,13 @@ class VdwParam:
             object.__setattr__(self, "element", _extract_element(self.atom_type))
 
 
-_EnvironmentParam = TypeVar("_EnvironmentParam", BondParam, AngleParam, StretchBendParam, TorsionParam)
-
-
-def _environment_candidates(
-    candidates: list[_EnvironmentParam],
+def _environment_candidates[EnvironmentParam: (BondParam, AngleParam, StretchBendParam, TorsionParam)](
+    candidates: list[EnvironmentParam],
     env_id: str,
     canonicalize: Callable[[Sequence[str]], str],
     *,
     element_fallback: bool = False,
-) -> list[_EnvironmentParam]:
+) -> list[EnvironmentParam]:
     """Keep only the most specific available environment tier."""
     if env_id:
         target = canonicalize(env_id.split("-"))
@@ -201,7 +198,9 @@ def _environment_candidates(
     return candidates if not env_id or element_fallback else []
 
 
-def _unique_parameter(candidates: list[_EnvironmentParam], description: str) -> _EnvironmentParam | None:
+def _unique_parameter[EnvironmentParam: (BondParam, AngleParam, StretchBendParam, TorsionParam)](
+    candidates: list[EnvironmentParam], description: str
+) -> EnvironmentParam | None:
     """Return a singular match, rejecting unresolved ties with row diagnostics."""
     if len(candidates) > 1:
         raise ValueError(f"Ambiguous {description}: {len(candidates)} candidates: {candidates!r}")

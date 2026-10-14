@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from q2mm.settings import CyclingSettings, MultiStartSettings
+
 import numpy as np
 import pytest
 
@@ -76,9 +78,9 @@ def test_measured_aggregate_scope_and_selected_history(
     evaluator.value(evaluator.space.baseline)
     before = evaluator.n_evaluations
     inner = Scripted(outcomes)
-    result = MultiStartOptimizer(inner, n_starts=len(outcomes), seed=3, verbose=False).optimize(
-        evaluator, evaluator.space
-    )
+    result = MultiStartOptimizer(
+        MultiStartSettings(n_starts=len(outcomes), seed=3, verbose=False), optimizer=inner
+    ).optimize(evaluator, evaluator.space)
     assert result.n_evaluations == evaluator.n_evaluations - before == 1 + sum(counts)
     assert "n_evaluations=aggregate" in result.message
     if selected is None:
@@ -106,21 +108,30 @@ def test_repeated_equal_result_objects_keep_first_selected_index() -> None:
             objective.value(space.baseline)
             return fixed
 
-    result = MultiStartOptimizer(Reused(), n_starts=2, seed=0, verbose=False).optimize(evaluator, evaluator.space)
+    result = MultiStartOptimizer(MultiStartSettings(n_starts=2, seed=0, verbose=False), optimizer=Reused()).optimize(
+        evaluator, evaluator.space
+    )
     assert "selected_candidate=0" in result.message
 
 
 def test_scope_labels_survive_single_stage_workflow() -> None:
-    from q2mm.objectives.python import PythonObjectiveExecutor
+    from q2mm.models.problem import OptimizationProblem, TrainingCase
     from q2mm.workflows import SingleStageWorkflow
-    from test.test_application import _EnergyBackend, _problem
 
-    problem = _problem()
+    evaluator = QuadraticEvaluator(np.ones(2), initial=np.array([2.0, 3.0]))
+    plan = evaluator.plan
+    problem = OptimizationProblem(
+        cases=(TrainingCase(case_id="0", molecule=plan.molecules[0], stationary_point=plan.stationary_points[0]),),
+        starting_force_field=evaluator.forcefield,
+        layout=plan.layout,
+        active_space=evaluator.space,
+        observations=plan.observations,
+    )
     inner = Scripted([(False, 1.0), (True, 3.0)])
     result = SingleStageWorkflow().run(
         problem,
-        lambda plan: PythonObjectiveExecutor(plan, _EnergyBackend(), problem.starting_force_field),
-        MultiStartOptimizer(inner, n_starts=2, seed=1, verbose=False),
+        lambda _plan: evaluator,
+        MultiStartOptimizer(MultiStartSettings(n_starts=2, seed=1, verbose=False), optimizer=inner),
         n_evals=0,
     )
     assert "n_evaluations=aggregate" in result.message
@@ -131,23 +142,27 @@ def test_scope_labels_survive_single_stage_workflow() -> None:
 
 
 def test_recorded_work_and_labels_remain_compatible_with_cycling(monkeypatch: pytest.MonkeyPatch) -> None:
-    from q2mm.optimizers.catalog import _Construction
-    from q2mm.optimizers.cycling import OptimizationLoop, SensitivityResult
+    from q2mm.optimizers import catalog
+    from q2mm.optimizers.cycling import CyclingOptimizer, SensitivityResult
 
     evaluator = QuadraticEvaluator(np.ones(2), initial=np.array([2.0, 3.0]))
     space = evaluator.space.with_active_indices([0])
-    full = MultiStartOptimizer(Scripted([(True, 3.0), (False, 1.0)]), n_starts=2, seed=1, verbose=False)
-    simplex = Scripted([(True, 2.0)])
-    monkeypatch.setattr(
-        _Construction, "build", lambda plan: full if plan.arguments["method"] == "L-BFGS-B" else simplex
+    full = MultiStartOptimizer(
+        MultiStartSettings(n_starts=2, seed=1, verbose=False), optimizer=Scripted([(True, 3.0), (False, 1.0)])
     )
+    simplex = Scripted([(True, 2.0)])
     monkeypatch.setattr(
         "q2mm.optimizers.cycling.compute_sensitivity",
         lambda *args, **kwargs: SensitivityResult(
             d1=np.ones(2), d2=np.ones(2), simp_var=np.ones(2), ranking=np.array([0, 1]), metric="simp_var", n_evals=0
         ),
     )
-    result = OptimizationLoop(evaluator, space, max_cycles=1, max_params=1, verbose=False).run()
+    monkeypatch.setattr(
+        catalog, "build_optimizer", lambda settings: full if isinstance(settings, MultiStartSettings) else simplex
+    )
+    result = CyclingOptimizer(
+        CyclingSettings(max_cycles=1, max_params=1, verbose=False, full_optimizer=full.settings),
+    ).optimize(evaluator, space)
     assert result.n_evaluations == result.stages[0].n_evaluations == 7
     assert evaluator.n_evaluations == 8  # Cycling's pre-existing outer-baseline scope.
     assert "n_evaluations=aggregate" in result.stages[0].message

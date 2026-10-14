@@ -21,11 +21,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from collections.abc import Callable
-from typing import TypeAlias
 
 from q2mm.objectives.plan import ObjectivePlan
-from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator
+from q2mm.objectives.protocols import ObjectiveEvaluator
 from q2mm.optimizers.protocols import _Optimizer
+from q2mm.settings import ObjectiveSettings, WorkflowSettings, SingleStageSettings, MethodE2Settings
 
 if TYPE_CHECKING:
     from q2mm.backends.contracts import Backend
@@ -34,66 +34,45 @@ if TYPE_CHECKING:
     from q2mm.models.results import OptimizationResult
 
 #: A callable that builds a concrete objective executor for a compiled plan.
-EvaluatorFactory: TypeAlias = Callable[[ObjectivePlan], ObjectiveEvaluator]
-
-#: The executor selection strings accepted by :func:`make_evaluator_factory`.
-_EXECUTORS = frozenset({"python", "jax"})
+type EvaluatorFactory = Callable[[ObjectivePlan], ObjectiveEvaluator]
 
 
 def make_evaluator_factory(
     backend: Backend,
     base_force_field: ForceField,
     *,
-    executor: str = "python",
-    gradient_mode: GradientMode | None = None,
-    fd_step: float = 1e-4,
+    settings: ObjectiveSettings,
 ) -> EvaluatorFactory:
-    """Return an evaluator factory closing over the backend and base FF.
-
-    Args:
-        backend: The MM backend the executors evaluate against.
-        base_force_field: Structure/topology source for prepared sessions.
-        executor: ``"python"`` (default) selects
-            :class:`~q2mm.objectives.python.PythonObjectiveExecutor`;
-            ``"jax"`` selects
-            :class:`~q2mm.objectives.jax.JaxObjectiveExecutor`.
-        gradient_mode: Gradient mode for the Python executor.  Defaults to
-            :attr:`~q2mm.objectives.protocols.GradientMode.NONE`.  The JAX
-            executor is always analytical, so passing a ``gradient_mode``
-            with ``executor="jax"`` is an error rather than being silently
-            ignored.
-        fd_step: Central finite-difference step for the Python executor's
-            :attr:`~q2mm.objectives.protocols.GradientMode.FINITE_DIFFERENCE`
-            gradients (must be positive).  Ignored by the JAX executor.
-
-    Raises:
-        ValueError: If *executor* is not ``"python"``/``"jax"``, or a
-            ``gradient_mode`` is passed with ``executor="jax"``.
-
-    """
-    if executor not in _EXECUTORS:
-        raise ValueError(f"executor must be one of {sorted(_EXECUTORS)}, got {executor!r}.")
-    if executor == "jax" and gradient_mode is not None:
-        raise ValueError("The JAX executor is always analytical; do not pass gradient_mode with executor='jax'.")
-    py_gradient_mode = GradientMode.NONE if gradient_mode is None else gradient_mode
+    """Close over explicit construction choices; each stage gets its own executor."""
+    from q2mm.objectives import create_evaluator
 
     def factory(plan: ObjectivePlan) -> ObjectiveEvaluator:
-        if executor == "jax":
-            from q2mm.objectives.jax import JaxObjectiveExecutor
-
-            return JaxObjectiveExecutor(plan, backend, base_force_field)
-        from q2mm.objectives.python import PythonObjectiveExecutor
-
-        return PythonObjectiveExecutor(plan, backend, base_force_field, gradient_mode=py_gradient_mode, fd_step=fd_step)
+        return create_evaluator(plan, backend=backend, force_field=base_force_field, settings=settings)
 
     return factory
+
+
+def build_workflow(settings: WorkflowSettings) -> Workflow:
+    """Construct exactly the declared workflow, without policy resolution."""
+    if isinstance(settings, SingleStageSettings):
+        from q2mm.workflows.single_stage import SingleStageWorkflow
+
+        return SingleStageWorkflow(settings)
+    if isinstance(settings, MethodE2Settings):
+        from q2mm.workflows.method_e2 import MethodE2Workflow
+
+        return MethodE2Workflow(settings)
+    raise TypeError(f"Unsupported workflow settings {type(settings).__name__}.")
 
 
 @runtime_checkable
 class Workflow(Protocol):
     """Multi-stage force field parameterization workflow."""
 
-    name: str
+    @property
+    def name(self) -> str:
+        """The configured workflow's public identifier."""
+        ...
 
     def run(
         self,

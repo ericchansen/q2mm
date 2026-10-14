@@ -428,6 +428,7 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
         from q2mm.objectives.plan import ObjectivePlan
         from q2mm.objectives.python import PythonObjectiveExecutor
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
+        from q2mm.settings import ScipySettings
     except ImportError as exc:
         return _blocked_result(case, mode, f"Import error: {exc}")
 
@@ -486,7 +487,7 @@ def _run_optimization_endpoint_case(fixture_dir: Path, mode: Mode) -> CaseResult
         active_space=space,
     )
     evaluator = PythonObjectiveExecutor(plan, backend, guess_ff)
-    opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+    opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
     result = opt.optimize(evaluator, space)
 
     details: list[str] = []

@@ -96,13 +96,16 @@ reliability), see [Optimizer Comparison](optimizer-comparison.md).
 
 ## Reproducing
 
+These [current CLI commands](cli.md) request new runs; the measured artifacts
+above retain their original provenance.
+
 ```bash
-q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb --output results/rh-enamide
-JAX_PLATFORMS=cpu q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb --output results/rh-enamide
+q2mm-benchmark matrix --system rh-enamide --backends jax --presets scipy-lbfgsb --output results/rh-enamide
+JAX_PLATFORMS=cpu q2mm-benchmark matrix --system rh-enamide --backends jax --presets scipy-lbfgsb --output results/rh-enamide
 
-q2mm-benchmark matrix --system rh-enamide --backend jax-md --optimizer scipy-lbfgsb --output results/rh-enamide
-JAX_PLATFORMS=cpu q2mm-benchmark matrix --system rh-enamide --backend jax-md --optimizer scipy-lbfgsb --output results/rh-enamide
+q2mm-benchmark matrix --system rh-enamide --backends jax-md --presets scipy-lbfgsb --output results/rh-enamide
+JAX_PLATFORMS=cpu q2mm-benchmark matrix --system rh-enamide --backends jax-md --presets scipy-lbfgsb --output results/rh-enamide
 
-q2mm-benchmark matrix --system ch3f --backend jax --optimizer scipy-lbfgsb --output results/ch3f
-JAX_PLATFORMS=cpu q2mm-benchmark matrix --system ch3f --backend jax --optimizer scipy-lbfgsb --output results/ch3f
+q2mm-benchmark matrix --system ch3f --backends jax --presets scipy-lbfgsb --output results/ch3f
+JAX_PLATFORMS=cpu q2mm-benchmark matrix --system ch3f --backends jax --presets scipy-lbfgsb --output results/ch3f
 ```

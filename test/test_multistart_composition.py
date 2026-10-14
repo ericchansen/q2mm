@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from q2mm.settings import JaxMultiStartSettings, JaxOptSettings, MultiStartSettings
+
 import subprocess
 import sys
 from dataclasses import replace
@@ -88,19 +90,21 @@ def _wrapper(
 ) -> MultiStartOptimizer | JaxMultiStartOptimizer:
     if flavor == "generic":
         return MultiStartOptimizer(
-            inner, n_starts=len(inner.outcomes), perturbation_pct=perturbation_pct, seed=17, verbose=False
+            MultiStartSettings(n_starts=len(inner.outcomes), perturbation_pct=perturbation_pct, seed=17, verbose=False),
+            optimizer=inner,
         )
 
     def scripted_jax(
         optimizer: JaxOptOptimizer, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace
     ) -> OptimizationResult:
-        inner.settings.append((optimizer.method, optimizer.maxiter, optimizer.tol, optimizer.verbose))
+        settings = optimizer.settings
+        inner.settings.append((settings.method, settings.maxiter, settings.tol, settings.verbose))
         return inner.optimize(evaluator, space)
 
     monkeypatch.setattr(JaxOptOptimizer, "optimize", scripted_jax)
     monkeypatch.setattr(jax_multistart, "_require_jax_executor", lambda evaluator: None)
     return JaxMultiStartOptimizer(
-        n_starts=len(inner.outcomes), perturbation_pct=perturbation_pct, seed=17, verbose=False
+        JaxMultiStartSettings(n_starts=len(inner.outcomes), perturbation_pct=perturbation_pct, seed=17, verbose=False)
     )
 
 
@@ -210,15 +214,20 @@ def test_selected_rich_metadata_is_preserved(flavor: str, monkeypatch: pytest.Mo
 def test_jax_constructor_settings_remain_effective(monkeypatch: pytest.MonkeyPatch) -> None:
     obj = QuadraticEvaluator(np.ones(2), initial=np.array([2.0, 3.0]))
     inner = ScriptedOptimizer([(True, 2.0)] * 2)
-    wrapper = _wrapper("jax", inner, monkeypatch)
-    assert isinstance(wrapper, JaxMultiStartOptimizer)
-    wrapper.method = "gradient_descent"
-    wrapper.maxiter = 7
-    wrapper.tol = 1e-4
+    _wrapper("jax", inner, monkeypatch)
+    settings = JaxMultiStartSettings(
+        n_starts=2, optimizer=JaxOptSettings(method="gradient_descent", maxiter=7, tol=1e-4, verbose=False)
+    )
+    wrapper = JaxMultiStartOptimizer(settings)
+    child = wrapper.optimizer
+    with pytest.raises(ValueError, match="frozen"):
+        settings.optimizer.maxiter = 8
     wrapper.optimize(obj, obj.space)
+    assert wrapper.settings is settings
+    assert wrapper.optimizer is child
     assert inner.settings == [("gradient_descent", 7, 1e-4, False)] * 2
-    assert MultiStartOptimizer(inner).n_starts == 5
-    assert JaxMultiStartOptimizer().n_starts == 10
+    assert MultiStartOptimizer(MultiStartSettings(), optimizer=inner).settings.n_starts == 5
+    assert JaxMultiStartOptimizer().settings.n_starts == 10
 
 
 @pytest.mark.parametrize("mode", list(GradientMode))
@@ -226,7 +235,9 @@ def test_generic_preserves_explicit_gradient_provenance(mode: GradientMode) -> N
     obj = QuadraticEvaluator(np.ones(2), initial=np.array([2.0, 3.0]))
     obj._gradient_mode = mode
     inner = ScriptedOptimizer([(True, 2.0)])
-    result = MultiStartOptimizer(inner, n_starts=1, verbose=False).optimize(obj, obj.space)
+    result = MultiStartOptimizer(MultiStartSettings(n_starts=1, verbose=False), optimizer=inner).optimize(
+        obj, obj.space
+    )
     assert result.gradient_mode == mode.value
     assert result.fd_step == obj.finite_difference_step
 
@@ -244,12 +255,23 @@ def test_jax_adapter_delegates_execution_and_start_generation(monkeypatch: pytes
 
     monkeypatch.setattr(MultiStartOptimizer, "optimize", shared_optimize)
     monkeypatch.setattr(jax_multistart, "_require_jax_executor", lambda evaluator: None)
-    wrapper = JaxMultiStartOptimizer(method="gradient_descent", n_starts=2, maxiter=7, tol=1e-4)
+    wrapper = JaxMultiStartOptimizer(
+        JaxMultiStartSettings(
+            n_starts=2, optimizer=JaxOptSettings(method="gradient_descent", maxiter=7, tol=0.0001, verbose=False)
+        )
+    )
+    configured_inner = wrapper.optimizer
     assert wrapper.optimize(obj, obj.space) is expected
     assert len(calls) == 1
     inner, evaluator, space = calls[0]
     assert isinstance(inner, JaxOptOptimizer)
-    assert (inner.method, inner.maxiter, inner.tol, inner.verbose) == ("gradient_descent", 7, 1e-4, False)
+    assert inner is configured_inner
+    assert (inner.settings.method, inner.settings.maxiter, inner.settings.tol, inner.settings.verbose) == (
+        "gradient_descent",
+        7,
+        1e-4,
+        False,
+    )
     assert evaluator is obj
     assert space is obj.space
     assert JaxMultiStartOptimizer._generate_starts is MultiStartOptimizer._generate_starts
@@ -267,12 +289,42 @@ def guarded_import(name, globals=None, locals=None, fromlist=(), level=0):
         raise AssertionError(f"Unexpected optional runtime import: {name}")
     return original_import(name, globals, locals, fromlist, level)
 builtins.__import__ = guarded_import
-from q2mm.optimizers import MultiStartOptimizer, JaxMultiStartOptimizer, get_optimizer
-from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
-assert get_optimizer("JaxMultiStartOptimizer") is JaxMultiStartOptimizer
-MultiStartOptimizer(JaxOptOptimizer(), n_starts=2)
-JaxMultiStartOptimizer(n_starts=2)
+from q2mm.optimizers import MultiStartOptimizer, JaxMultiStartOptimizer, build_optimizer
+from q2mm.settings import JaxMultiStartSettings, JaxOptSettings, MultiStartSettings
+assert type(build_optimizer(JaxMultiStartSettings())) is JaxMultiStartOptimizer
+MultiStartOptimizer(MultiStartSettings(optimizer=JaxOptSettings(), n_starts=2))
+JaxMultiStartOptimizer(JaxMultiStartSettings(n_starts=2))
 assert not blocked.intersection(sys.modules)
 """
     completed = subprocess.run([sys.executable, "-c", script], check=False, capture_output=True, text=True)
     assert completed.returncode == 0, completed.stderr
+
+
+def test_supplied_child_identity_and_actual_configuration_are_preserved(monkeypatch: pytest.MonkeyPatch) -> None:
+    from q2mm.optimizers import catalog
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+    from q2mm.settings import ScipySettings
+
+    child = ScipyOptimizer(ScipySettings(method="Powell", maxiter=7))
+    settings = MultiStartSettings(optimizer=ScipySettings(method="Nelder-Mead"), n_starts=2)
+
+    def forbidden_build(_settings: ScipySettings) -> ScipyOptimizer:
+        raise AssertionError("A supplied optimizer must not be replaced")
+
+    monkeypatch.setattr(catalog, "build_optimizer", forbidden_build)
+    wrapper = MultiStartOptimizer(settings, optimizer=child)
+    assert wrapper.optimizer is child
+    assert wrapper.settings is settings
+    captured = wrapper.configuration_settings()
+    assert captured["optimizer"]["class"] == "ScipyOptimizer"
+    assert captured["optimizer"]["parameters"] == child.settings.model_dump(mode="json")
+    assert captured["optimizer"]["parameters"]["method"] == "Powell"
+
+
+def test_multistart_rejects_recursive_child_capture() -> None:
+    from q2mm.configuration import ConfigurationCaptureError
+
+    wrapper = MultiStartOptimizer()
+    wrapper.optimizer = wrapper
+    with pytest.raises(ConfigurationCaptureError, match="Recursive component"):
+        wrapper.configuration_settings()
