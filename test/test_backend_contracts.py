@@ -482,16 +482,16 @@ def test_openmm_jax_energy_hessian_parity() -> None:
 
 
 def test_unavailable_backend_load_raises_typed() -> None:
-    """A descriptor whose probe fails raises BackendUnavailableError on load."""
+    """An actually missing implementation raises the typed dependency error."""
+    from dataclasses import replace
+
     from q2mm.backends.contracts import BackendUnavailableError
 
-    for status in catalog():
-        if not status.healthy:
-            desc = get_descriptor(status.name)
-            with pytest.raises(BackendUnavailableError):
-                desc.load()
-            return
-    pytest.skip("all backends available; no unavailable path to test")
+    descriptor = replace(get_descriptor("openmm"), factory="q2mm_missing_backend_dependency:Backend")
+    with pytest.raises(BackendUnavailableError) as caught:
+        descriptor.load()
+    assert isinstance(caught.value.__cause__, ModuleNotFoundError)
+    assert caught.value.__cause__.name == "q2mm_missing_backend_dependency"
 
 
 def test_explicit_config_bypasses_unhealthy_probe(monkeypatch: pytest.MonkeyPatch) -> None:

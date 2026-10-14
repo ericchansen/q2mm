@@ -140,14 +140,19 @@ class TestLoadBackend:
             load_backend("nonexistent")
         assert "Registered backends:" in str(exc_info.value)
 
-    def test_load_unavailable_raises_typed(self) -> None:
-        # Find an unavailable descriptor and confirm load() raises typed error.
-        for status in catalog():
-            if not status.healthy:
-                with pytest.raises(BackendUnavailableError):
-                    load_backend(status.name)
-                return
-        pytest.skip("all backends available")
+    def test_load_unavailable_raises_typed(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from dataclasses import replace
+        from q2mm.backends import registry
+
+        descriptor = replace(get_descriptor("openmm"), factory="q2mm_missing_backend_dependency:Backend")
+        monkeypatch.setattr(registry, "get_descriptor", lambda _name: descriptor)
+        try:
+            with pytest.raises(BackendUnavailableError) as caught:
+                load_backend("openmm")
+            assert isinstance(caught.value.__cause__, ModuleNotFoundError)
+            assert caught.value.__cause__.name == "q2mm_missing_backend_dependency"
+        finally:
+            registry.refresh()
 
 
 class TestDescriptorValidation:
