@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from q2mm.settings import CyclingSettings, OptimizerSettings
+from q2mm.optimizers.protocols import _Optimizer
+
 import numpy as np
 import pytest
 
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, TorsionParam, VdwParam, FunctionalForm
 from q2mm.models.parameters import ActiveParameterSpace, ParameterKind, ParameterLayout
 from q2mm.models.results import OptimizationResult
-from q2mm.optimizers.cycling import OptimizationLoop
+from q2mm.optimizers.cycling import CyclingOptimizer
 from test._shared import QuadraticEvaluator
 
 
@@ -158,7 +163,7 @@ class TestSensitivityResult:
         assert len(sr.ranking) == 2
 
 
-class TestOptimizationLoopResult:
+class TestCyclingOptimizerResult:
     def test_improvement(self) -> None:
         from q2mm.models.results import OptimizationResult
 
@@ -217,7 +222,7 @@ def _scripted_loop(
     monkeypatch: pytest.MonkeyPatch,
     outcomes: list[tuple[bool, float]],
     max_cycles: int = 3,
-) -> OptimizationLoop:
+) -> tuple[CyclingOptimizer, QuadraticEvaluator]:
     from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
     evaluator = QuadraticEvaluator(
@@ -247,10 +252,10 @@ def _scripted_loop(
         )
 
     monkeypatch.setattr(ScipyOptimizer, "optimize", run_pass)
-    return OptimizationLoop(evaluator, evaluator.space, max_cycles=max_cycles, verbose=False)
+    return CyclingOptimizer(CyclingSettings(max_cycles=max_cycles, verbose=False)), evaluator
 
 
-class TestOptimizationLoopStops:
+class TestCyclingOptimizerStops:
     @pytest.mark.parametrize("full_success, subspace_success", [(False, False), (False, True), (True, False)])
     @pytest.mark.parametrize("full_value, subspace_value", [(0.0, 0.0), (0.002, 0.001), (0.002, 0.004)])
     def test_stall_requires_both_passes_to_converge(
@@ -261,8 +266,8 @@ class TestOptimizationLoopStops:
         full_value: float,
         subspace_value: float,
     ) -> None:
-        loop = _scripted_loop(monkeypatch, [(full_success, full_value), (subspace_success, subspace_value)])
-        result = loop.run()
+        loop, evaluator = _scripted_loop(monkeypatch, [(full_success, full_value), (subspace_success, subspace_value)])
+        result = loop.optimize(evaluator, evaluator.space)
 
         assert not result.success
         assert result.n_iterations == 1
@@ -273,11 +278,11 @@ class TestOptimizationLoopStops:
         assert result.stages[0].notes["subspace_converged"] is subspace_success
         assert "inner budget exhausted" in result.stages[0].message
         np.testing.assert_array_equal(result.final_params, [max(full_value, subspace_value), 5.0])
-        assert result.final_score == pytest.approx(loop.evaluator.sample(result.final_params))
+        assert result.final_score == pytest.approx(evaluator.sample(result.final_params))
 
     def test_successful_small_change_converges(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        loop = _scripted_loop(monkeypatch, [(True, 0.002), (True, 0.004)])
-        result = loop.run()
+        loop, evaluator = _scripted_loop(monkeypatch, [(True, 0.002), (True, 0.004)])
+        result = loop.optimize(evaluator, evaluator.space)
 
         assert result.success
         assert result.message == "converged"
@@ -286,8 +291,10 @@ class TestOptimizationLoopStops:
         np.testing.assert_array_equal(result.final_params, [0.004, 5.0])
 
     def test_progress_exhausts_cycle_budget_without_convergence(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        loop = _scripted_loop(monkeypatch, [(True, 0.2), (True, 0.3), (True, 0.4), (True, 0.5)], max_cycles=2)
-        result = loop.run()
+        loop, evaluator = _scripted_loop(
+            monkeypatch, [(True, 0.2), (True, 0.3), (True, 0.4), (True, 0.5)], max_cycles=2
+        )
+        result = loop.optimize(evaluator, evaluator.space)
 
         assert not result.success
         assert result.message == "max cycles (2) reached"
@@ -296,10 +303,83 @@ class TestOptimizationLoopStops:
         np.testing.assert_array_equal(result.final_params, [0.5, 5.0])
 
     def test_failed_progress_can_be_followed_by_successful_cycle(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        loop = _scripted_loop(monkeypatch, [(False, 0.2), (False, 0.3), (True, 0.3), (True, 0.3)])
-        result = loop.run()
+        loop, evaluator = _scripted_loop(monkeypatch, [(False, 0.2), (False, 0.3), (True, 0.3), (True, 0.3)])
+        result = loop.optimize(evaluator, evaluator.space)
 
         assert result.success
         assert result.n_iterations == 2
         assert [stage.converged for stage in result.stages] == [False, True]
         np.testing.assert_array_equal(result.final_params, [0.3, 5.0])
+
+
+def test_phase_factories_are_bound_before_execution_and_fresh_each_cycle(monkeypatch: pytest.MonkeyPatch) -> None:
+    from q2mm.optimizers import catalog
+
+    build = catalog.build_optimizer
+    constructed = []
+    configured = []
+
+    def factory(settings: OptimizerSettings) -> _Optimizer:
+        configured.append(settings)
+        optimizer = build(settings)
+        constructed.append(optimizer)
+        return optimizer
+
+    monkeypatch.setattr(catalog, "build_optimizer", factory)
+    optimizer, evaluator = _scripted_loop(
+        monkeypatch, [(True, 0.2), (True, 0.3), (True, 0.4), (True, 0.5)], max_cycles=2
+    )
+    assert constructed == []
+    assert evaluator.n_evaluations == 0
+
+    def forbidden_resolution(_settings: OptimizerSettings) -> _Optimizer:
+        raise AssertionError("Catalog resolution must not be repeated during numerical execution")
+
+    monkeypatch.setattr(catalog, "build_optimizer", forbidden_resolution)
+    result = optimizer.optimize(evaluator, evaluator.space)
+    assert result.n_iterations == 2
+    assert len({id(item) for item in constructed}) == 4
+    assert configured == [optimizer.settings.full_optimizer, optimizer.settings.simplex_optimizer] * 2
+    assert all(item.settings is settings for item, settings in zip(constructed, configured, strict=True))
+
+
+@pytest.mark.parametrize("failure_phase", ["initial", "full"])
+def test_error_policy_is_restored_on_failure(monkeypatch: pytest.MonkeyPatch, failure_phase: str) -> None:
+    from q2mm.optimizers.scipy_opt import ScipyOptimizer
+
+    evaluator = QuadraticEvaluator(np.ones(2), initial=np.array([2.0, 3.0]))
+    baseline = evaluator.space.baseline.copy()
+    evaluator.on_error = "raise"
+
+    def fail(*_args: object) -> Any:
+        assert evaluator.on_error == "penalty"
+        raise RuntimeError("scripted failure")
+
+    if failure_phase == "initial":
+        monkeypatch.setattr(evaluator, "value", fail)
+    else:
+        monkeypatch.setattr(ScipyOptimizer, "optimize", fail)
+    optimizer = CyclingOptimizer()
+    with pytest.raises(RuntimeError, match="scripted failure"):
+        optimizer.optimize(evaluator, evaluator.space)
+    assert evaluator.on_error == "raise"
+    np.testing.assert_array_equal(evaluator.space.baseline, baseline)
+
+
+def test_sensitivity_formula_steps_frozen_slots_and_counts() -> None:
+    from q2mm.optimizers.cycling import compute_sensitivity
+
+    evaluator = QuadraticEvaluator(np.array([0.0, 1.0]), initial=np.array([2.0, 3.0]))
+    sensitivity = compute_sensitivity(evaluator, evaluator.space.baseline, step_sizes=np.array([0.25, 0.5]))
+    np.testing.assert_allclose(sensitivity.d1, [1.0, 2.0])
+    np.testing.assert_allclose(sensitivity.d2, [0.125, 0.5])
+    np.testing.assert_allclose(sensitivity.simp_var, [0.125, 0.125])
+    assert sensitivity.n_evals == evaluator.n_evaluations == 5
+    assert len(evaluator.history) == 5
+
+    count_before = evaluator.n_evaluations
+    frozen = compute_sensitivity(evaluator, evaluator.space.baseline, step_sizes=np.array([0.0, 0.5]), metric="abs_d1")
+    np.testing.assert_allclose(frozen.d1, [0.0, 2.0])
+    np.testing.assert_allclose(frozen.d2, [0.0, 0.5])
+    np.testing.assert_array_equal(frozen.ranking, [1, 0])
+    assert frozen.n_evals == evaluator.n_evaluations - count_before == 3

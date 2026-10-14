@@ -14,14 +14,15 @@ from q2mm.benchmarks.systems._paths import StartingPoint
 from q2mm.models.forcefield import ForceField, FunctionalForm
 from q2mm.models.hessian import hessian_to_frequencies
 from q2mm.models.molecule import Molecule
+from q2mm.models.observations import ObservationSet
 from q2mm.models.problem import OptimizationProblem, StationaryPointKind
 from q2mm.models.publication import PublicationMetadata
 from q2mm.preparation import (
-    MatchedFrequencyObservations,
     MoleculeObservations,
-    QFuerzaConfig,
+    match_frequencies,
     prepare,
 )
+from q2mm.settings import PreparationSettings, QFuerzaSettings, FrequencyMatchingSettings
 
 
 def _validate_starting_point(starting_point: StartingPoint) -> None:
@@ -99,14 +100,16 @@ def assemble_published_case(
         raise ValueError("Explicit publication case IDs must have one entry per molecule.")
     problem = prepare(
         molecules,
-        stationary_point=stationary_point,
+        settings=PreparationSettings(
+            stationary_point=stationary_point.value,
+            functional_form=composed_ff.functional_form.value,
+            initialize="provided" if starting_point == "published" else "qfuerza",
+            qfuerza=None if starting_point == "published" else QFuerzaSettings(replace_with=qfuerza_replace_with),
+        ),
         force_field=composed_ff,
         active_parameters=opt_only_ff,
         observations=MoleculeObservations(),
         case_ids=resolved_case_ids,
-        functional_form=composed_ff.functional_form,
-        initialize="provided" if starting_point == "published" else "qfuerza",
-        qfuerza=None if starting_point == "published" else QFuerzaConfig(replace_with=qfuerza_replace_with),
     )
     provenance = problem.preparation_provenance
     if provenance is None:
@@ -182,14 +185,19 @@ def assemble_qfuerza_fresh_case(
     qm_frequencies = _qm_frequencies(molecule)
     problem = prepare(
         molecule,
-        stationary_point=stationary_point,
-        observations=MatchedFrequencyObservations(
-            qm_frequencies=tuple(float(value) for value in qm_frequencies),
-            backend=backend,
+        settings=PreparationSettings(
+            stationary_point=stationary_point.value,
+            functional_form=FunctionalForm(functional_form).value,
+            qfuerza=QFuerzaSettings(replace_with=qfuerza_replace_with),
         ),
+        observations=ObservationSet(),
         case_ids=(key,),
-        functional_form=functional_form,
-        qfuerza=QFuerzaConfig(replace_with=qfuerza_replace_with),
+    )
+    problem = match_frequencies(
+        problem,
+        tuple(float(value) for value in qm_frequencies),
+        backend=backend,
+        settings=FrequencyMatchingSettings(),
     )
     qm_real = np.asarray([observation.value for observation in problem.observations.values])
     normal_modes: dict[str, np.ndarray] | None = None

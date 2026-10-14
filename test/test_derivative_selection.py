@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from q2mm.settings import BasinHoppingSettings, CyclingSettings, MultiStartSettings, OptaxSettings, ScipySettings
+
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
@@ -212,7 +214,7 @@ def test_scipy_gradient_callback_requests_current_coordinates(
     space = evaluator.plan.active_space.with_active_indices([1, 3]).with_baseline(np.array([2.0, 5.0, 7.0, 8.0]))
     groups = []
     monkeypatch.setattr("scipy.optimize.minimize", _stub_minimize(probes, groups))
-    result = ScipyOptimizer(maxiter=1, use_bounds=use_bounds, verbose=False).optimize(evaluator, space)
+    result = ScipyOptimizer(ScipySettings(maxiter=1, use_bounds=use_bounds, verbose=False)).optimize(evaluator, space)
     assert len(groups) == 1
     baseline, perturbations, gradient = groups[0]
     assert len(perturbations) == 2 * space.n_active
@@ -233,7 +235,8 @@ def test_rebased_multistart_uses_each_actual_space(monkeypatch: pytest.MonkeyPat
     groups = []
     monkeypatch.setattr("scipy.optimize.minimize", _stub_minimize(probes, groups))
     result = MultiStartOptimizer(
-        ScipyOptimizer(maxiter=1, use_bounds=False, verbose=False), n_starts=2, seed=3, verbose=False
+        MultiStartSettings(n_starts=2, seed=3, verbose=False),
+        optimizer=ScipyOptimizer(ScipySettings(maxiter=1, use_bounds=False, verbose=False)),
     ).optimize(evaluator, space)
     assert len(groups) == 2
     for (baseline, perturbations, _), candidate in zip(groups, result.candidates, strict=True):
@@ -245,7 +248,7 @@ def test_rebased_multistart_uses_each_actual_space(monkeypatch: pytest.MonkeyPat
 
 
 def test_cycling_gradient_subspace_is_not_the_stale_plan_space(monkeypatch: pytest.MonkeyPatch) -> None:
-    from q2mm.optimizers.cycling import OptimizationLoop, SensitivityResult
+    from q2mm.optimizers.cycling import CyclingOptimizer, SensitivityResult
 
     evaluator, probes = _executor()
     space = evaluator.plan.active_space.with_active_indices([0, 1, 3])
@@ -262,9 +265,15 @@ def test_cycling_gradient_subspace_is_not_the_stale_plan_space(monkeypatch: pyte
             n_evals=0,
         ),
     )
-    OptimizationLoop(
-        evaluator, space, max_params=1, max_cycles=1, full_method="L-BFGS-B", simp_method="L-BFGS-B", verbose=False
-    ).run()
+    CyclingOptimizer(
+        CyclingSettings(
+            max_params=1,
+            max_cycles=1,
+            verbose=False,
+            full_optimizer=ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False),
+            simplex_optimizer=ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False),
+        )
+    ).optimize(evaluator, space)
     assert [len(group[1]) for group in groups] == [6, 2]
     assert evaluator.n_gradient_evaluations == 8
     assert all(point[2] == space.baseline[2] for point in probes)
@@ -287,7 +296,7 @@ def test_basinhopping_jacobian_uses_requested_gradient_coordinates(monkeypatch: 
         )
 
     monkeypatch.setattr("scipy.optimize.basinhopping", basin)
-    BasinHoppingOptimizer(niter=0, verbose=False).optimize(evaluator, space)
+    BasinHoppingOptimizer(BasinHoppingSettings(niter=0, verbose=False)).optimize(evaluator, space)
     assert evaluator.n_gradient_evaluations == 2 * space.n_active
 
 
@@ -298,7 +307,7 @@ def test_optax_one_step_uses_selected_executor_fd() -> None:
 
     evaluator, probes = _executor()
     space = evaluator.plan.active_space.with_active_indices([1, 3])
-    result = OptaxOptimizer(max_steps=1, verbose=False).optimize(evaluator, space)
+    result = OptaxOptimizer(OptaxSettings(max_steps=1, verbose=False)).optimize(evaluator, space)
     assert evaluator.n_gradient_evaluations == 2 * space.n_active
     assert len(probes) == 4 + 2 * space.n_active
     assert result.n_evaluations == 4
@@ -314,7 +323,9 @@ def test_legacy_executor_without_optional_interface_keeps_full_fallback(monkeypa
 
     groups = []
     monkeypatch.setattr("scipy.optimize.minimize", _stub_minimize(probes, groups))
-    ScipyOptimizer(maxiter=1, use_bounds=False, verbose=False).optimize(_LegacyEvaluator(evaluator), space)
+    ScipyOptimizer(ScipySettings(maxiter=1, use_bounds=False, verbose=False)).optimize(
+        _LegacyEvaluator(evaluator), space
+    )
     assert evaluator.n_gradient_evaluations == 2 * space.n_full
     assert groups[0][2].shape == (space.n_active,)
 
@@ -327,11 +338,11 @@ def test_bounded_consumers_match_full_fallback_with_less_fd_work(
         pytest.importorskip("optax")
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        optimizer = OptaxOptimizer(max_steps=1, verbose=False)
+        optimizer = OptaxOptimizer(OptaxSettings(max_steps=1, verbose=False))
     elif consumer == "basinhopping":
-        optimizer = BasinHoppingOptimizer(niter=0, local_maxiter=1, seed=3, verbose=False)
+        optimizer = BasinHoppingOptimizer(BasinHoppingSettings(niter=0, local_maxiter=1, seed=3, verbose=False))
     else:
-        optimizer = ScipyOptimizer(maxiter=1, verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(maxiter=1, verbose=False))
     selected, selected_probes = _executor()
     full, full_probes = _executor()
     baseline = np.array([2.0, 5.0, 7.0, 8.0])
@@ -411,7 +422,7 @@ def test_analytical_full_gradient_validation_is_not_bypassed(monkeypatch: pytest
     monkeypatch.setattr(evaluator, "value_and_gradient_selected", forbidden_selection, raising=False)
     monkeypatch.setattr("scipy.optimize.minimize", _stub_minimize(probes, []))
     with pytest.raises(ObjectiveGradientError, match="including frozen"):
-        ScipyOptimizer(maxiter=1, verbose=False).optimize(evaluator, space)
+        ScipyOptimizer(ScipySettings(maxiter=1, verbose=False)).optimize(evaluator, space)
 
 
 def test_selected_provider_cannot_return_a_zero_padded_full_gradient(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -425,7 +436,7 @@ def test_selected_provider_cannot_return_a_zero_padded_full_gradient(monkeypatch
     )
     monkeypatch.setattr("scipy.optimize.minimize", _stub_minimize(probes, []))
     with pytest.raises(ObjectiveGradientError, match="shape"):
-        ScipyOptimizer(maxiter=1, verbose=False).optimize(evaluator, space)
+        ScipyOptimizer(ScipySettings(maxiter=1, verbose=False)).optimize(evaluator, space)
 
 
 def test_optional_protocol_does_not_change_the_full_evaluator_protocol() -> None:
@@ -454,7 +465,9 @@ def test_scipy_owned_residual_jacobian_keeps_active_probes_and_relative_step(
         return result
 
     monkeypatch.setattr(scipy_optimize, "least_squares", inspect_ls)
-    result = ScipyOptimizer(method="least_squares", maxiter=1, eps=0.02, verbose=False).optimize(evaluator, space)
+    result = ScipyOptimizer(ScipySettings(method="least_squares", maxiter=1, eps=0.02, verbose=False)).optimize(
+        evaluator, space
+    )
     expected = np.vstack([-2 * np.ones(4), -0.5 * np.ones(4), 0.5 * np.eye(4)])
     np.testing.assert_allclose(jacobians[0], expected[:, indices], atol=1e-12)
     assert jacobians[0].shape == (6, len(indices))
@@ -474,7 +487,7 @@ def test_least_squares_jacobians_use_rebased_and_derived_spaces(
     execution: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from scipy import optimize as scipy_optimize
-    from q2mm.optimizers.cycling import OptimizationLoop, SensitivityResult
+    from q2mm.optimizers.cycling import CyclingOptimizer, SensitivityResult
 
     evaluator, probes = _executor(step=0.001)
     baseline = np.array([2.0, 5.0, 7.0, 8.0])
@@ -492,10 +505,8 @@ def test_least_squares_jacobians_use_rebased_and_derived_spaces(
     monkeypatch.setattr(scipy_optimize, "least_squares", observe)
     if execution == "multi-start":
         MultiStartOptimizer(
-            ScipyOptimizer(method="least_squares", maxiter=1, eps=0.02, verbose=False),
-            n_starts=2,
-            seed=3,
-            verbose=False,
+            MultiStartSettings(n_starts=2, seed=3, verbose=False),
+            optimizer=ScipyOptimizer(ScipySettings(method="least_squares", maxiter=1, eps=0.02, verbose=False)),
         ).optimize(evaluator, space)
         requested = [[1, 3], [1, 3]]
     else:
@@ -510,18 +521,15 @@ def test_least_squares_jacobians_use_rebased_and_derived_spaces(
                 n_evals=0,
             ),
         )
-        OptimizationLoop(
-            evaluator,
-            space,
-            max_params=1,
-            max_cycles=1,
-            full_method="least_squares",
-            simp_method="least_squares",
-            full_maxiter=1,
-            simp_maxiter=1,
-            eps=0.02,
-            verbose=False,
-        ).run()
+        CyclingOptimizer(
+            CyclingSettings(
+                max_params=1,
+                max_cycles=1,
+                verbose=False,
+                full_optimizer=ScipySettings(method="least_squares", maxiter=1, eps=0.02, verbose=False),
+                simplex_optimizer=ScipySettings(method="least_squares", maxiter=1, eps=0.02, verbose=False),
+            )
+        ).optimize(evaluator, space)
         requested = [[0, 1, 3], [3]]
     expected = np.vstack([-2 * np.ones(4), -0.5 * np.ones(4), 0.5 * np.eye(4)])
     for (points, jacobian), coordinates in zip(groups, requested, strict=True):

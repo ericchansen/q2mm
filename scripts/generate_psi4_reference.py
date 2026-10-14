@@ -8,8 +8,9 @@ used by LACVP**.
 
 Usage (inside Psi4 Docker container)::
 
-    docker run --rm -v C:\\Users\\ericc\\repos\\q2mm:/q2mm -w /q2mm \\
-        ghcr.io/ericchansen/q2mm/ci-psi4:latest \\
+    IMAGE="$(python scripts/ci_image.py psi4 --field reference)"
+    docker run --rm -v "$PWD:/q2mm" -w /q2mm \\
+        "$IMAGE" \\
         python scripts/generate_psi4_reference.py
 
 Outputs saved to ``examples/publication/rh-enamide/psi4_reference/``.

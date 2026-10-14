@@ -96,13 +96,26 @@ reliability), see [Optimizer Comparison](optimizer-comparison.md).
 
 ## Reproducing
 
+These [current CLI commands](cli.md) request new harmonic CH₃F runs, not a
+reproduction of the historical measurements above. The current
+[JAX-MD backend](../backends/jax-md.md) supports harmonic force fields only;
+Rh-enamide's default MM3 form would be skipped as unsupported. The measured
+artifacts above retain their original systems, forms, and provenance.
+
+Run in a supported Linux/WSL2 environment and
+[verify the GPU device](../platform-support.md#jax-devices) before the
+commands without `JAX_PLATFORMS=cpu`; those commands otherwise use JAX's
+configured default device rather than guaranteeing GPU execution.
+
 ```bash
-q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb --output results/rh-enamide
-JAX_PLATFORMS=cpu q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb --output results/rh-enamide
+q2mm-benchmark matrix --system ch3f --backends jax --forms harmonic --presets scipy-lbfgsb --output results/ch3f
+JAX_PLATFORMS=cpu q2mm-benchmark matrix --system ch3f --backends jax --forms harmonic --presets scipy-lbfgsb --output results/ch3f
 
-q2mm-benchmark matrix --system rh-enamide --backend jax-md --optimizer scipy-lbfgsb --output results/rh-enamide
-JAX_PLATFORMS=cpu q2mm-benchmark matrix --system rh-enamide --backend jax-md --optimizer scipy-lbfgsb --output results/rh-enamide
-
-q2mm-benchmark matrix --system ch3f --backend jax --optimizer scipy-lbfgsb --output results/ch3f
-JAX_PLATFORMS=cpu q2mm-benchmark matrix --system ch3f --backend jax --optimizer scipy-lbfgsb --output results/ch3f
+q2mm-benchmark matrix --system ch3f --backends jax-md --forms harmonic --presets scipy-lbfgsb --output results/ch3f
+JAX_PLATFORMS=cpu q2mm-benchmark matrix --system ch3f --backends jax-md --forms harmonic --presets scipy-lbfgsb --output results/ch3f
 ```
+
+Each command selects one candidate. Records are written under
+`results/ch3f/candidates/`; only accepted candidates are promoted to
+`accepted/` and `forcefields/`. A saved record is not a convergence or
+GPU-speedup claim; inspect its status and resolved device provenance.

@@ -134,11 +134,22 @@ mypy is enforced repo-wide in the CI Lint job via a grandfathered ratchet
 (see the `[[tool.mypy.overrides]]` block in `pyproject.toml`): the modules
 listed there with pre-existing type errors are exempt, so any **new** module —
 or any module removed from that grandfather list — must be mypy-clean.
-`[tool.mypy]` pins `python_version = "3.12"` (the CI Lint job's Python) as a
-single source of truth, so the command above matches CI with no extra flags.
-3.12 is required because numpy ≥2.5 ships PEP 695 `type` aliases in its stubs
-that mypy cannot parse under a 3.10 target; the ≥3.10 runtime floor is still
-enforced by ruff (`target-version=py310`) and the 3.10 test-core matrix.
+Python **3.15** is the primary development, core-test, docs, and release
+interpreter. Ruff (`target-version=py314`, `ruff>=0.17`) and mypy
+(`python_version="3.14"`, `mypy>=2.4`) enforce the declared Python **>=3.14**
+language/type floor while running on 3.15. Required core checks run on both
+3.14 and 3.15; optional backends have the explicit CPU lanes below.
+
+Install core development tools with `python -m pip install -e ".[dev]"`.
+The `dev` extra does **not** install OpenMM, ParmEd, ASE, QCEngine, or
+QCElemental. Select their actual extras explicitly when needed.
+Base dependencies include Pydantic v2 and pydantic-settings v2; adding a
+backend must not be necessary to load settings or import the core package.
+
+PyYAML 6.0.3 has no cp315 wheel. To use its supported pure-Python source build
+without requiring a C compiler, set `PYYAML_FORCE_LIBYAML=0` before installing
+(PowerShell: `$env:PYYAML_FORCE_LIBYAML = "0"`). This is an installation choice,
+not a removed or silently skipped dependency.
 
 ### Core Tests (no backends required)
 
@@ -178,7 +189,8 @@ uv run properdocs build -f properdocs.yml              # static build to site/
 scripts/ci_local.sh --all
 ```
 
-This runs the full CI matrix locally inside Docker containers.
+This runs the bounded backend and pairwise CI responsibilities locally in
+their pinned images, not the broad research integration/validation suites.
 
 ---
 
@@ -188,11 +200,39 @@ This runs the full CI matrix locally inside Docker containers.
 
 ### Windows (native) — good for development
 
-- Editing, linting, formatting, and non-GPU tests all work.
-- OpenMM **CPU** works.
-- JAX **CPU** works.
+- Use Python **3.15** for editing, linting, formatting, and core tests.
+- OpenMM 8.6.1 has **no cp315 wheels**. Its required native/CPU lane uses
+  Python **3.14**; do not force it into the primary `dev` environment.
+- Other native backends also depend on upstream interpreter/platform support;
+  selecting an extra requests real dependencies, never a version-marker no-op.
 - **JAX CUDA and JAX-MD are NOT available on Windows** — they are excluded in
   `pyproject.toml`. Do not attempt to install or use them.
+
+### Required bounded CI and runtime lanes
+
+Core tests run on Python 3.14 and 3.15. Lint/types, docs, release, JAX CPU and
+the independent QCElemental-v2/QCEngine/ASE/ParmEd adapters use Python 3.15.
+OpenMM CPU and JAX-MD CPU use Python 3.14. Tinker 8.11.3 and Psi4 1.11 use
+Python 3.15 native environments.
+
+Each native backend and pairwise comparison has a named, path-gated required
+job. Unaffected jobs report `not affected` without pulling an image. Affected
+jobs require their pinned prebuilt image, correct interpreter, consistent
+packages, actual native imports and nonzero executed cases. Image pulls,
+installation, dependency checks and numerical failures fail closed; there is
+no `continue-on-error` availability policy or kitchen-sink `full` environment.
+The image workflow rebuilds only changed image inputs or an explicit dispatch.
+Native image jobs install an isolated, non-release `0.0.0+ci` editable package
+using the distribution-scoped setuptools-scm override. This avoids parsing a
+mounted host worktree's gitdir; real Git/tag version derivation is verified
+separately by release checks. Container processes use the invoking UID/GID,
+and temporary environments are removed with the container.
+
+JAX, jaxlib and JAX-MD share one package owner; do not overwrite conda-owned
+jaxlib with pip. Tinker's version-matched, checksum-verified runtime parameters
+are installed into its image, not downloaded in each PR or committed as data.
+Broad integration, validation, nightly, external-data, publication, optimizer
+convergence and GPU workloads remain explicit local checks, not hosted proxies.
 
 ### WSL2 Ubuntu — recommended for benchmarks and GPU work
 
@@ -326,7 +366,7 @@ finite-difference fallback.
 
 | Pipeline | Executor and optimizer use | Geometry gradients | When to use |
 |----------|----------------------------|:------------------:|-------------|
-| **SciPy + JAX objective executor** (recommended) | `JaxObjectiveExecutor(plan, JaxBackend(), ff)` with `ScipyOptimizer(method="L-BFGS-B").optimize(evaluator, space)` | Analytical (per-case JIT) | **All TS systems** — fastest, most robust |
+| **SciPy + JAX objective executor** (recommended) | `create_evaluator(plan, backend=backend, force_field=ff, settings=ObjectiveSettings(executor="jax"))` with `ScipyOptimizer(ScipySettings(method="L-BFGS-B")).optimize(evaluator, space)` | Analytical (per-case JIT) | **All TS systems** — fastest, most robust |
 | **Python executor, scalar-only** | `PythonObjectiveExecutor(plan, backend, ff, gradient_mode=GradientMode.NONE)` with SciPy's internal finite differences | SciPy FD (slow) | Frequency-only objectives, small systems, non-JAX backends |
 | **Python executor, explicit FD** | `PythonObjectiveExecutor(..., gradient_mode=GradientMode.FINITE_DIFFERENCE)` | Executor FD (slow) | When FD evaluations must be counted by the executor |
 | **JAX-native optimizer path** | `JaxObjectiveExecutor` with JaxOpt or Optax | Analytical (implicit diff / autodiff) | ⚠️ See jaxopt warning below |
@@ -337,8 +377,9 @@ XLA program contains all molecules. This prevents compilation OOM on
 multi-molecule systems.
 
 - **SciPy + JAX objective executor** (recommended): build
-  `JaxObjectiveExecutor(plan, backend, starting_ff)` yourself and pass it to
-  `ScipyOptimizer(method="L-BFGS-B").optimize(evaluator, space)`. The
+  `create_evaluator(plan, backend=backend, force_field=starting_ff,
+  settings=ObjectiveSettings(executor="jax"))` yourself and pass it to
+  `ScipyOptimizer(ScipySettings(method="L-BFGS-B")).optimize(evaluator, space)`. The
   optimizer sees `GradientMode.ANALYTICAL` and feeds analytical gradients to
   `scipy.optimize.minimize(..., jac=True)`.
 - **Python executor**: build `PythonObjectiveExecutor(plan, backend,
@@ -442,10 +483,10 @@ metadata in this project.
 | **JIT-wrapping `JaxObjectiveExecutor` internals** | Wrapping the full multi-case objective in another `jax.jit()` or `jax.vmap()` re-inlines all molecules into one XLA program → compilation OOM | Use `JaxObjectiveExecutor.value_and_grad_jax()` (Python dispatch) or `JaxObjectiveExecutor.value_and_gradient()` instead. See §6 Objective Executors and Gradient Selection. |
 | **Frequency-only refs for TS** | Misses geometry + eigenmatrix targets that the papers actually used → wrong optimization | Use `ObservationSet.from_molecules()` + `invert_ts_curvature=True` for TS systems. See §6 Reference Data. |
 | **jaxopt zoom linesearch** | `jaxopt ≥ 0.8.5` LBFGS default `linesearch="zoom"` triggers 30–60 min extra XLA compilation post-JIT | Use `scipy-lbfgsb-jax` instead — same L-BFGS-B algorithm, completes in seconds post-JIT |
-| **TS executor-ratio gate** | Literature-scale TS systems can have JAX/Python executor ratios of 0.1–0.4 from poor starts; the optimizer no longer falls back silently | Pass `--executor-ratio-tol none` for documented TS runs when intentionally bypassing the gate. CLI key: `scipy-lbfgsb-jax` |
+| **TS executor-ratio gate** | Literature-scale TS systems can have JAX/Python executor ratios of 0.1–0.4 from poor starts; the optimizer no longer falls back silently | Pass `--ratio-tol null` for documented TS runs when intentionally bypassing the gate. Single/batch default to SciPy L-BFGS-B with a JAX analytical objective. |
 | **Heck relay bounds** | ±20% bounds cause 35–92% NaN rate due to fragile TS landscape with large negative FCs (−3753) | Use ±5% bounds for heck-relay specifically |
-| **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible objective-executor score change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--ftol` (e.g. `1e-12`); apply `--fc-fraction`/`--eq-fraction` to keep optimizer in starting basin; check the `executor_ratio`. The diagnostic warning in `scipy_opt._run_minimize` flags this. |
-| **Default sanity bounds for from-poor-start runs** | `DEFAULT_BOUNDS` (bond_k ±3600, bond_eq 0.5–3.0 Å) let L-BFGS-B escape the QFUERZA / random-default starting basin → final FF unrelated to start | Use `ScipyOptimizer(fc_fraction=0.20, eq_fraction=0.05)` (or CLI flags `--fc-fraction --eq-fraction`) to bound each param to a ± fraction of its current value. |
+| **`n_iterations<=2` silent exit** | L-BFGS-B "converges" after 0–2 iterations with negligible objective-executor score change — the optimizer didn't optimize. Common with from-poor-start runs and loose `ftol`. | Tighten `--optimizer.ftol` (e.g. `1e-12`); apply `--optimizer.fc-fraction`/`--optimizer.eq-fraction` to keep optimizer in starting basin; check the `executor_ratio`. The diagnostic warning in `scipy_opt._run_minimize` flags this. |
+| **Default sanity bounds for from-poor-start runs** | `DEFAULT_BOUNDS` (bond_k ±3600, bond_eq 0.5–3.0 Å) let L-BFGS-B escape the QFUERZA / random-default starting basin → final FF unrelated to start | Use `ScipyOptimizer(ScipySettings(fc_fraction=0.20, eq_fraction=0.05))` (or CLI flags `--optimizer.fc-fraction --optimizer.eq-fraction`) to bound each param to a ± fraction of its current value. |
 | **Benchmark batch never optimized** | All systems exit at `nfev≤2` with no OF change but the batch reports "success" | The runner rejects no-progress candidates and `run_profiles` returns `outcome.ok is False` when optimizations ran but none was accepted (`q2mm/benchmarks/runner.py`). Re-tune `ftol` or bounds and re-run. See §11. |
 
 ---
@@ -530,9 +571,9 @@ Many hours of GPU time have been wasted on batches where the optimizer never act
    - If the user asked a specific scientific question (e.g. "do params end up near published?"), restate it verbatim and map each metric back to the question.
 
 2. **Sanity-check optimizer config** for the starting point:
-   - Canonical default (QFUERZA-start, `starting_point="qfuerza"`): use `--ftol 1e-12` and `--fc-fraction 0.20 --eq-fraction 0.05` (or `--fc-fraction 0.05` for heck-relay).
+   - Canonical default (QFUERZA-start, `starting_point="qfuerza"`): use `--optimizer.ftol 1e-12` and `--optimizer.fc-fraction 0.20 --optimizer.eq-fraction 0.05` (or `--optimizer.fc-fraction 0.05` for heck-relay).
    - Publication-baseline (`--starting-point published`): `ftol=1e-8`, sanity bounds → fine (starting FF is already in the published basin).
-   - Always pass `--executor-ratio-tol none` for TS systems when intentionally bypassing the executor-ratio gate (ratios can be 0.1–0.4).
+   - Always pass `--ratio-tol null` for TS systems when intentionally bypassing the executor-ratio gate (ratios can be 0.1–0.4).
 
 3. **Verify GPU + device** (§4 + §7): `python -c "import jax; print(jax.devices())"` → must show `CudaDevice`.
 

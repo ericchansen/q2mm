@@ -8,7 +8,6 @@ import math
 import re
 from collections.abc import Callable, Hashable, Sequence
 from pathlib import Path
-from typing import TypeVar
 
 from q2mm.io._helpers import (
     _clean_atom_types,
@@ -502,20 +501,17 @@ def load_tinker_prm(path: str | Path) -> ForceField:
     )
 
 
-_TemplateParam = TypeVar("_TemplateParam", BondParam, AngleParam, TorsionParam, VdwParam)
-
-
-def _tinker_template_pairs(
-    originals: Sequence[_TemplateParam],
-    updates: Sequence[_TemplateParam],
-    identity: Callable[[_TemplateParam], Hashable],
+def _tinker_template_pairs[TemplateParam: (BondParam, AngleParam, TorsionParam, VdwParam)](
+    originals: Sequence[TemplateParam],
+    updates: Sequence[TemplateParam],
+    identity: Callable[[TemplateParam], Hashable],
     editable: tuple[str, ...],
-) -> list[tuple[_TemplateParam, _TemplateParam]]:
+) -> list[tuple[TemplateParam, TemplateParam]]:
     """Bind every update once, rejecting lossy edits and ambiguous fallback."""
     if len(originals) != len(updates):
         raise ValueError("Tinker template cannot represent parameter additions or removals")
-    by_identity: dict[Hashable, list[tuple[int, _TemplateParam]]] = {}
-    by_source: dict[tuple[int | None, Hashable], list[tuple[int, _TemplateParam]]] = {}
+    by_identity: dict[Hashable, list[tuple[int, TemplateParam]]] = {}
+    by_source: dict[tuple[int | None, Hashable], list[tuple[int, TemplateParam]]] = {}
     for index, original in enumerate(originals):
         key = identity(original)
         entry = (index, original)

@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -17,6 +17,17 @@ import q2mm
 from q2mm.io import load_fchk_molecule
 from q2mm.io.xyz import load_xyz
 from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.backends.registry import load_backend
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import (
+    BackendSettings,
+    GroundStateOptimizationSettings,
+    ObjectiveSettings,
+    OptimizationSettings,
+    PreparationSettings,
+    SingleStageSettings,
+    TransitionStateOptimizationSettings,
+)
 
 
 def _load_support() -> ModuleType:
@@ -88,6 +99,7 @@ def run_small(
     stationary_point: str | None = None,
     functional_form: str = "harmonic",
     backend: str = "jax",
+    executor: Literal["python", "jax"] = "jax",
     bounded_ci: bool = False,
 ) -> dict[str, Any]:
     """Prepare, evaluate, optimize, and save one fresh-force-field problem."""
@@ -115,32 +127,54 @@ def run_small(
 
     problem = q2mm.prepare(
         molecule,
-        stationary_point=selected_stationary_point,
-        functional_form=functional_form,
+        settings=PreparationSettings(
+            stationary_point=selected_stationary_point,
+            functional_form=functional_form,
+        ),
     )
     if bounded_ci:
         selected_backend: Any = _SUPPORT.BoundedEchoBackend()
-        executor = "python"
         optimizer = _SUPPORT.BoundedExampleOptimizer()
-        optimize_options = {
-            "recipe": "explicit",
-            "optimizer": optimizer,
-            "workflow": "single-stage",
-            "executor": "python",
-            "n_evals": 0,
-        }
+        settings = OptimizationSettings(
+            backend=BackendSettings(key=selected_backend.info.provenance.backend),
+            workflow=SingleStageSettings(),
+            objective=ObjectiveSettings(),
+            n_evals=0,
+        )
     else:
-        selected_backend = backend
-        executor = "auto"
-        optimizer = None
-        optimize_options = {"recipe": "recommended"}
-
-    initial = q2mm.evaluate(problem, backend=selected_backend, executor=executor)
-    run = q2mm.optimize(problem, backend=selected_backend, **optimize_options)
-    if bounded_ci and (optimizer is None or not optimizer.entered):
+        settings_type = (
+            GroundStateOptimizationSettings
+            if config.stationary_point == "ground_state"
+            else TransitionStateOptimizationSettings
+        )
+        settings = settings_type(
+            backend=BackendSettings(key=backend),
+            objective=ObjectiveSettings(executor=executor),
+        )
+        selected_backend = load_backend(settings.backend.key, **settings.backend.factory_options())
+        optimizer = q2mm.build_optimizer(settings.optimizer)
+    workflow = q2mm.build_workflow(settings.workflow)
+    configuration = q2mm.capture_execution_configuration(
+        settings, backend=selected_backend, optimizer=optimizer, workflow=workflow
+    )
+    make_evaluator = q2mm.make_evaluator_factory(
+        selected_backend, problem.starting_force_field, settings=settings.objective
+    )
+    plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
+    evaluator = make_evaluator(plan)
+    initial = q2mm.evaluate(evaluator, problem.active_space.baseline)
+    result = q2mm.optimize(
+        problem,
+        optimizer=optimizer,
+        workflow=workflow,
+        make_evaluator=make_evaluator,
+        regularization=settings.objective.regularization,
+        n_evals=settings.n_evals,
+    )
+    run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
+    if bounded_ci and not optimizer.entered:
         raise RuntimeError("Bounded optimizer was not entered.")
-    final_problem = _SUPPORT.with_final_force_field(problem, run.result.final_params)
-    final = q2mm.evaluate(final_problem, backend=selected_backend, executor=executor)
+    final = q2mm.evaluate(evaluator, result.final_params)
     saved = q2mm.save(run, output_root / f"{config.key}.frcmod")
 
     preparation = problem.preparation_provenance
@@ -192,6 +226,12 @@ def main_for(config: SmallExample) -> int:
     parser.add_argument("--stationary-point", choices=("ground_state", "transition_state"))
     parser.add_argument("--functional-form", choices=("harmonic",), default="harmonic")
     parser.add_argument("--backend", default="jax")
+    parser.add_argument(
+        "--executor",
+        choices=("jax", "python"),
+        default="jax",
+        help="Objective executor; explicitly choose python with non-JAX backends.",
+    )
     parser.add_argument("--bounded-ci", action="store_true")
     args = parser.parse_args()
     try:
@@ -203,6 +243,7 @@ def main_for(config: SmallExample) -> int:
             stationary_point=args.stationary_point,
             functional_form=args.functional_form,
             backend=args.backend,
+            executor=args.executor,
             bounded_ci=args.bounded_ci,
         )
     except Exception as exc:

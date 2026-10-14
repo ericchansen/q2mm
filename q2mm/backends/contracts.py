@@ -1493,7 +1493,7 @@ class DependencyProbe:
         """
         try:
             return importlib.util.find_spec(name) is None
-        except (ImportError, ValueError):
+        except ImportError, ValueError:
             return True
 
     def check(self) -> tuple[bool, str]:
@@ -1607,7 +1607,7 @@ class BackendDescriptor:
             ) from exc
         try:
             backend: Backend = factory(**kwargs)
-        except (BackendUnavailableError, BackendConfigurationError):
+        except BackendUnavailableError, BackendConfigurationError:
             raise
         except Exception as exc:  # noqa: BLE001 - normalize to typed config error
             raise BackendConfigurationError(f"Backend {self.name!r} failed to construct: {exc}") from exc

@@ -50,7 +50,7 @@ area are linked in the table below.
 | Global optimizers | None | [Basin-hopping](#optimizers) + [multi-start](#optimizers) global search |
 | Regularization | None | [L2 penalty](#optimizers) to prevent parameter drift |
 | Simplex | Custom Nelder-Mead (3 params) | [SciPy Nelder-Mead via subspace projection](#optimizers) |
-| Cycling loop | Text command file | Dataclass-configured [`OptimizationLoop`](optimization-guide.md) |
+| Cycling loop | Text command file | Immutable-settings [`CyclingOptimizer`](optimization-guide.md#workflow-c-medium-and-large-systems) |
 | Sensitivity | Exception-based, one-sided FD fallback | [Symmetric step shrinking, bound-aware](#sensitivity-bounds) |
 | Eigendecomposition | `np.linalg.eigh` | [Symmetrize + NaN/Inf check + penalty fallback](#eigendecomposition) |
 | Backends | Subprocess (MacroModel, Tinker, Amber, Gaussian, Jaguar) | [API + differentiable](#backend-implementations) (OpenMM, Tinker, JAX, JAX-MD, Psi4) |
@@ -73,7 +73,7 @@ cycling loop.
 
 q2mm (this repo) delegates all optimization to SciPy (`scipy.optimize.minimize`
 and `scipy.optimize.least_squares`), wrapping them in a `ScipyOptimizer` class.
-The cycling loop is a dataclass-configured `OptimizationLoop` that:
+The cycling loop is a `CyclingOptimizer(CyclingSettings(...))` that:
 
 1. Runs a full-space SciPy pass on all parameters
 2. Ranks parameters by simplex suitability (lowest `simp_var`)
@@ -188,7 +188,7 @@ q2mm/q2mm includes a [`tools/`](https://github.com/Q2MM/q2mm/tree/b26404b/tools)
 directory with utility scripts (score graphing, FF formatting, structure
 setup) and a test suite.
 
-q2mm (this repo) provides the `q2mm-benchmark` CLI: explicit `list`,
+q2mm (this repo) provides the [model-driven `q2mm-benchmark` CLI](../benchmarks/cli.md): explicit `list`,
 `preflight`, `single`, `batch`, `matrix`, and `load` operations over a
 lazy system registry (CH₃F, Rh-enamide, Heck relay, …). Every requested
 candidate is resolved to a provenance-complete run profile, evaluated

@@ -10,12 +10,14 @@ with a single :class:`~q2mm.models.results.StageRecord`.
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping
 from dataclasses import replace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from q2mm.models.results import StageRecord
 from q2mm.objectives.metrics import category_metrics, evaluate_samples
 from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import SingleStageSettings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -29,7 +31,17 @@ if TYPE_CHECKING:
 class SingleStageWorkflow:
     """One optimization pass against the problem's objective."""
 
-    name: str = "single-stage"
+    def __init__(self, settings: SingleStageSettings = SingleStageSettings()) -> None:
+        self.settings = settings
+
+    @property
+    def name(self) -> str:
+        """Workflow protocol name from the configured settings."""
+        return self.settings.name
+
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Return the workflow's immutable configured policy."""
+        return self.settings.model_dump(mode="json")
 
     def run(
         self,

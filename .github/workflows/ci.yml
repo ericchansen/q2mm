@@ -6,160 +6,348 @@ on:
   pull_request:
     branches: [master]
 
+permissions:
+  contents: read
+
+env:
+  PYYAML_FORCE_LIBYAML: "0"
+  JAX_PLATFORMS: cpu
+  OPENMM_DEFAULT_PLATFORM: CPU
+
 jobs:
-  # ================================================================
-  # Tier 1 — Fast feedback on every push and PR (~30s)
-  # ================================================================
   lint:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - run: python -m pip install -e ".[dev]"
       - run: python -m ruff check q2mm/ test/ scripts/
       - run: python -m ruff format --check q2mm test scripts examples
-      # mypy target (python_version=3.12) is set in [tool.mypy]; see the note
-      # there on why 3.12 rather than the 3.10 runtime floor.
       - run: python -m mypy q2mm/
       - run: python scripts/check_env_dep_parity.py
 
-  test-core:
+  core-py314:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q --cov=q2mm --cov-report=term-missing --cov-report=xml:coverage.xml
-      - name: Upload coverage
-        if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+          python-version: "3.14"
+      - run: python -m pip install -e ".[dev]" && python -m pip check
+      - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q
+
+  core-py315:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          name: coverage-report
-          path: coverage.xml
+          python-version: "3.15"
+      - run: python -m pip install -e ".[dev]" && python -m pip check
+      - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q
 
-  # ================================================================
-  # Tier 2 — Backend unit tests on every push (~1-5 min)
-  # Gated behind Tier 1 so lint/core failures are caught first.
-  # Each job runs backend-specific unit tests only (no --run-integration).
-  # Integration/validation/nightly tests are run locally — see bottom.
-  # Images: ghcr.io/ericchansen/q2mm/ci-<backend>:latest
-  # ================================================================
-  test-openmm:
-    needs: [lint, test-core]
+  docs:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-openmm:latest
-      options: --user root
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m "openmm and not cross_backend" -q
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --python 3.15 --extra docs
+      - run: uv run properdocs build -f properdocs.yml --strict
 
-  test-tinker:
-    needs: [lint, test-core]
+  release:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-tinker:latest
-      options: --user root
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m "tinker and not cross_backend" -q
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - run: python -m pip install build packaging
+      - run: python -m build
+      - run: python scripts/check_release_artifacts.py --dist-dir dist
 
-  test-jax:
-    needs: [lint, test-core]
+  jax-cpu:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-jax:latest
-      options: --user root
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      # Scientific validation and full convergence require explicit local
-      # tier flags; backend availability alone must not put them in PR CI.
-      - run: python -m pip install -e . --no-deps && python -m pytest -m "jax and not cross_backend" -q --durations=10
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - run: python -m pip install -e ".[dev,jax]" && python -m pip check
+      - run: python -m pytest -m "jax and not cross_backend" -q --junitxml=jax-results.xml
+      - run: python scripts/check_test_execution.py jax-results.xml
 
-  test-jax-md:
-    needs: [lint, test-core]
+  qcelemental-io:
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - run: python -m pip install -e ".[dev,qcel]" && python -m pip check
+      - run: python -m pytest test/test_io_qcelemental.py -q --junitxml=qcel-results.xml
+      - run: python scripts/check_test_execution.py qcel-results.xml
+
+  qcengine-adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - run: python -m pip install -e ".[dev,qcengine]" && python -m pip check
+      - run: python -m pytest test/test_qcengine_backend.py -q --junitxml=qcengine-results.xml
+      - run: python scripts/check_test_execution.py qcengine-results.xml
+
+  ase-adapter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - run: python -m pip install -e ".[dev,ase]" && python -m pip check
+      - run: python -m pytest test/test_ase_backend.py -q --junitxml=ase-results.xml
+      - run: python scripts/check_test_execution.py ase-results.xml
+
+  parmed-amber:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - run: python -m pip install -e ".[dev,amber]" && python -m pip check
+      - run: python -m pytest test/test_amber_continuations.py -q --junitxml=amber-results.xml
+      - run: python scripts/check_test_execution.py amber-results.xml
+
+  paths:
+    runs-on: ubuntu-latest
+    outputs:
+      openmm-cpu: ${{ steps.changes.outputs['openmm-cpu'] }}
+      tinker: ${{ steps.changes.outputs.tinker }}
+      jax-md-cpu: ${{ steps.changes.outputs['jax-md-cpu'] }}
+      psi4-reference: ${{ steps.changes.outputs['psi4-reference'] }}
+      parity-openmm-jax: ${{ steps.changes.outputs['parity-openmm-jax'] }}
+      parity-openmm-tinker: ${{ steps.changes.outputs['parity-openmm-tinker'] }}
+      parity-jax-jaxmd: ${{ steps.changes.outputs['parity-jax-jaxmd'] }}
+      parity-psi4-qcengine: ${{ steps.changes.outputs['parity-psi4-qcengine'] }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - id: changes
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python scripts/ci_paths.py --base "$BASE" --head "$HEAD"
+
+  openmm-cpu:
+    needs: paths
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-jax-md:latest
-      options: --user root
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m "jax_md and not cross_backend" -q
+      - if: needs.paths.outputs['openmm-cpu'] == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          AFFECTED: ${{ needs.paths.outputs['openmm-cpu'] }}
+        run: |
+          case "$AFFECTED" in
+            true) bash scripts/ci_local.sh --job openmm-cpu ;;
+            false) echo "not affected: openmm-cpu" ;;
+            *) echo "::error::path classification failed"; exit 1 ;;
+          esac
 
-  test-psi4:
-    needs: [lint, test-core]
+  tinker:
+    needs: paths
+    if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-psi4:latest
-      options: --user root
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 -q
+      - if: needs.paths.outputs.tinker == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          AFFECTED: ${{ needs.paths.outputs.tinker }}
+        run: |
+          case "$AFFECTED" in
+            true) bash scripts/ci_local.sh --job tinker ;;
+            false) echo "not affected: tinker" ;;
+            *) echo "::error::path classification failed"; exit 1 ;;
+          esac
 
-  # ================================================================
-  # Tier 2b — Explicit cross-backend parity surface
-  # The cross_backend marker owns tests that execute two or more backends.
-  # --run-integration enables only those explicitly selected parity tests;
-  # the full integration/validation/nightly tiers remain local-only.
-  # ================================================================
-  test-cross-backend:
-    needs: [lint, test-core]
+  jax-md-cpu:
+    needs: paths
+    if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
       packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-full:latest
-      options: --user root
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest --run-integration -m cross_backend -q
+      - if: needs.paths.outputs['jax-md-cpu'] == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          AFFECTED: ${{ needs.paths.outputs['jax-md-cpu'] }}
+        run: |
+          case "$AFFECTED" in
+            true) bash scripts/ci_local.sh --job jax-md-cpu ;;
+            false) echo "not affected: jax-md-cpu" ;;
+            *) echo "::error::path classification failed"; exit 1 ;;
+          esac
 
-  # ================================================================
-  # Validation, nightly, and integration tiers removed from CI.
-  # These are research workloads (multi-molecule JAX JIT, optimizer
-  # loops, full eigenmatrix evals) that exceed hosted-runner budgets.
-  #
-  # Run locally instead:
-  #   pytest --run-integration -q   # Backend integration tests
-  #   pytest --run-validation -q    # Seminario parity, published FFs
-  #   pytest --run-nightly -q       # Full optimizer loops, benchmarks
-  # ================================================================
+  psi4-reference:
+    needs: paths
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - if: needs.paths.outputs['psi4-reference'] == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          AFFECTED: ${{ needs.paths.outputs['psi4-reference'] }}
+        run: |
+          case "$AFFECTED" in
+            true) bash scripts/ci_local.sh --job psi4-reference ;;
+            false) echo "not affected: psi4-reference" ;;
+            *) echo "::error::path classification failed"; exit 1 ;;
+          esac
+
+  parity-openmm-jax:
+    needs: paths
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - if: needs.paths.outputs['parity-openmm-jax'] == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          AFFECTED: ${{ needs.paths.outputs['parity-openmm-jax'] }}
+        run: |
+          case "$AFFECTED" in
+            true) bash scripts/ci_local.sh --job parity-openmm-jax ;;
+            false) echo "not affected: parity-openmm-jax" ;;
+            *) echo "::error::path classification failed"; exit 1 ;;
+          esac
+
+  parity-openmm-tinker:
+    needs: paths
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - if: needs.paths.outputs['parity-openmm-tinker'] == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          AFFECTED: ${{ needs.paths.outputs['parity-openmm-tinker'] }}
+        run: |
+          case "$AFFECTED" in
+            true) bash scripts/ci_local.sh --job parity-openmm-tinker ;;
+            false) echo "not affected: parity-openmm-tinker" ;;
+            *) echo "::error::path classification failed"; exit 1 ;;
+          esac
+
+  parity-jax-jaxmd:
+    needs: paths
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - if: needs.paths.outputs['parity-jax-jaxmd'] == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          AFFECTED: ${{ needs.paths.outputs['parity-jax-jaxmd'] }}
+        run: |
+          case "$AFFECTED" in
+            true) bash scripts/ci_local.sh --job parity-jax-jaxmd ;;
+            false) echo "not affected: parity-jax-jaxmd" ;;
+            *) echo "::error::path classification failed"; exit 1 ;;
+          esac
+
+  parity-psi4-qcengine:
+    needs: paths
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+      - if: needs.paths.outputs['parity-psi4-qcengine'] == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          AFFECTED: ${{ needs.paths.outputs['parity-psi4-qcengine'] }}
+        run: |
+          case "$AFFECTED" in
+            true) bash scripts/ci_local.sh --job parity-psi4-qcengine ;;
+            false) echo "not affected: parity-psi4-qcengine" ;;
+            *) echo "::error::path classification failed"; exit 1 ;;
+          esac

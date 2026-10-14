@@ -11,15 +11,20 @@ cd q2mm
 pip install -e ".[dev]"
 ```
 
-The `[dev]` extras include pytest, ruff, other development tools, and core
-backend/optimizer dependencies such as `openmm` and `scipy`.
+Use Python 3.15 for development; Python 3.14 is also supported and tested.
+The `[dev]` extra includes pytest, Ruff, mypy, build tools and SciPy, not
+optional native backends or interoperability packages. Ruff and mypy enforce
+the Python 3.14 language floor while running on 3.15.
 
-If you need *all* optional backends for local testing, you can install the
-broader `all` extra:
+Select optional backends explicitly in an interpreter they support, for example:
 
 ```bash
-pip install -e ".[dev,all]"               # everything (OpenMM, JAX, scipy, etc.)
+pip install -e ".[dev,jax]"
 ```
+
+Add only the backend/tool extras you need, such as `.[ase]`, `.[qcengine]`,
+or `.[amber]`. OpenMM and JAX-MD currently require separate Python 3.14
+environments; see the [runtime setup](docs/getting-started.md#native-dependency-availability).
 
 ## Running Tests
 
@@ -72,34 +77,25 @@ If you don't have OpenMM, Tinker, or other backends installed locally, you can
 use the pre-built CI images from GitHub Container Registry:
 
 ```bash
-# OpenMM tests
-docker run --rm -v $PWD:/workspace -w /workspace \
-    ghcr.io/ericchansen/q2mm/ci-openmm:latest \
-    pytest -m openmm --run-nightly
-
-# Tinker tests
-docker run --rm -v $PWD:/workspace -w /workspace \
-    ghcr.io/ericchansen/q2mm/ci-tinker:latest \
-    pytest -m tinker --run-nightly
-
-# JAX tests
-docker run --rm -v $PWD:/workspace -w /workspace \
-    ghcr.io/ericchansen/q2mm/ci-jax:latest \
-    pytest -m jax --run-nightly
-
-# All backends (full image)
-docker run --rm -v $PWD:/workspace -w /workspace \
-    ghcr.io/ericchansen/q2mm/ci-full:latest \
-    pytest --run-nightly
+bash scripts/ci_local.sh --job openmm-cpu
+bash scripts/ci_local.sh --job tinker
+bash scripts/ci_local.sh --job parity-openmm-jax
+bash scripts/ci_local.sh --all
 ```
 
-On Windows (PowerShell), replace `$PWD` with `${PWD}`.
+These are the same bounded responsibilities as hosted CI, using input-pinned
+images and rejecting zero executed tests. JAX CPU uses the primary Python
+environment directly. There is no standalone JAX or kitchen-sink image.
+Broad integration, validation, nightly and GPU workloads remain explicit
+local research checks; `--all` is not a full-suite proxy.
 
-Images are built from `.github/docker/Dockerfile` using environment files in
-`.github/envs/`. To rebuild locally from the repository root:
+The environment files in `.github/envs/` are the canonical image inventory.
+To inspect an input reference or build that exact image locally:
 
 ```bash
-docker build -f .github/docker/Dockerfile --build-arg ENV_FILE=openmm.yml -t q2mm-openmm .
+python scripts/ci_image.py openmm --field reference
+IMAGE="$(python scripts/ci_image.py openmm --field reference)"
+docker build -f .github/docker/Dockerfile --build-arg ENV_FILE=openmm.yml -t "$IMAGE" .github
 ```
 
 ## Code Style
@@ -145,18 +141,21 @@ devices.
 
 ```bash
 # Convergence run for one system (writes candidate + promoted artifacts)
-q2mm-benchmark single --system rh-enamide --backend jax --optimizer scipy-lbfgsb-jax \
-  --workflow method-e2 --output results/rh-enamide
+q2mm-benchmark single --system rh-enamide --backend.key jax \
+  --workflow.name method-e2 --output results/rh-enamide
 
 # Convergence batch across all systems
 q2mm-benchmark batch --output results
 
 # Backend x form x optimizer matrix for one system
-q2mm-benchmark matrix --system rh-enamide --backend jax --optimizer scipy-lbfgsb \
+q2mm-benchmark matrix --system rh-enamide --backends jax --presets scipy-lbfgsb \
   --output results/rh-enamide
 ```
 
 **Rules:**
+
+The [current CLI reference](docs/benchmarks/cli.md) documents typed nested
+settings, generated help, side-effect-free inspection, and exit status.
 
 1. **Output is always persisted** — there is no `--no-save`; pass `--output`
    to choose the location (defaults to `./results`).

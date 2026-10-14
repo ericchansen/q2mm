@@ -18,6 +18,8 @@ References
 """
 
 from __future__ import annotations
+
+from q2mm.settings import ScipySettings
 from q2mm.backends.contracts import (
     FrequencyRequest,
 )
@@ -300,7 +302,7 @@ class TestRhEnamideFullLoop:
         # and objective function work end-to-end. Full convergence benchmarks
         # (500 iter, 76.7% improvement) are documented in docs/benchmarks/.
         t0 = time.perf_counter()
-        opt = ScipyOptimizer(method="Nelder-Mead", maxiter=3, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="Nelder-Mead", maxiter=3, verbose=False))
         result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
         t_optimize = time.perf_counter() - t0
 
@@ -437,7 +439,7 @@ class TestEthaneFullLoop:
 
         # Optimize
         t_opt_start = time.perf_counter()
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
         t_opt = time.perf_counter() - t_opt_start
 
@@ -675,7 +677,7 @@ class TestPipelineDeterminism:
             freq_ref, _ = _build_frequency_reference(qm_freqs, mm_all)
 
             obj = _make_freq_evaluator(ff, backend, [mol], freq_ref, layout)
-            opt = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+            opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
             result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
             results.append((result.final_score, result.final_params.copy()))
 
@@ -752,7 +754,7 @@ def _rh_enamide_harmonic_pipeline(
 
     # Optimize (3 iterations, just enough to validate the pipeline)
     t0 = time.perf_counter()
-    opt = ScipyOptimizer(method="Nelder-Mead", maxiter=3, verbose=False)
+    opt = ScipyOptimizer(ScipySettings(method="Nelder-Mead", maxiter=3, verbose=False))
     result = opt.optimize(obj, ActiveParameterSpace.all_active(layout, ff))
     t_optimize = time.perf_counter() - t0
 

@@ -16,10 +16,17 @@ retired APIs are checked as executable imports rather than prose substrings.
 from __future__ import annotations
 
 import ast
+import io
 import re
+import runpy
+import sys
 from collections import Counter
+from collections.abc import Iterator
+from contextlib import contextmanager
 from importlib.util import resolve_name
 from pathlib import Path
+from posixpath import dirname, join, normpath
+from types import ModuleType
 
 import pytest
 
@@ -27,6 +34,44 @@ from test._shared import REPO_ROOT
 
 ARCH_DOC = REPO_ROOT / "docs" / "how-it-works" / "architecture.md"
 PACKAGE_ROOT = REPO_ROOT / "q2mm"
+
+
+def test_reference_discovery_links_lazy_exports_to_canonical_owners(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Generate references without importing execution services or optional docs runtimes."""
+    pages: dict[str, str] = {}
+
+    class Nav(dict):
+        def build_literate_nav(self) -> list[str]:
+            return []
+
+    @contextmanager
+    def open_page(path: Path | str, mode: str) -> Iterator[io.StringIO]:
+        with io.StringIO() as output:
+            yield output
+            pages[Path(path).as_posix()] = output.getvalue()
+
+    generator = ModuleType("mkdocs_gen_files")
+    generator.Nav = Nav
+    generator.open = open_page
+    generator.set_edit_path = lambda *args: None
+    monkeypatch.setitem(sys.modules, "mkdocs_gen_files", generator)
+    runpy.run_path(str(REPO_ROOT / "scripts" / "gen_ref_pages.py"))
+
+    root = pages["reference/q2mm/index.md"]
+    assert "[`prepare`](../q2mm/preparation.md#q2mm.preparation.prepare)" in root
+    assert "[`optimize`](../q2mm/application/optimization.md#q2mm.application.optimization.optimize)" in root
+    assert "[`create_evaluator`](../q2mm/objectives/index.md#q2mm.objectives.create_evaluator)" in root
+    assert "::: q2mm.benchmarks.systems._paths.ExternalDataRoots" in root
+    assert "reference/q2mm/settings.md" in pages
+    assert "reference/q2mm/configuration.md" in pages
+    assert "reference/q2mm/application/policy.md" not in pages
+    for path, content in pages.items():
+        for line in content.splitlines():
+            if line.startswith("- [`"):
+                target = line.split("](", 1)[1].split("#", 1)[0]
+                if target:
+                    assert normpath(join(dirname(path), target)) in pages, line
+
 
 _TREE_ENTRY = re.compile(r"^(?P<indent>(?:│   |    )*)(?:├── |└── )(?P<name>\S+)")
 _RETIRED_MODEL_PATHS = (
@@ -571,6 +616,18 @@ _RETIRED_IMPORT_PREFIXES = (
     "q2mm.benchmarks.runner.TablePrinter",
     "q2mm.benchmarks.runner.BenchmarkResult",
     "q2mm.benchmarks.runner.run_combo",
+    "q2mm.preparation.QFuerzaConfig",
+    "q2mm.preparation.MatchedFrequencyObservations",
+    "q2mm.optimizers.cycling.OptimizationLoop",
+    "q2mm.optimizers.get_optimizer",
+    "q2mm.optimizers.available_optimizers",
+    "q2mm.optimizers.resolve_optimizer",
+    "q2mm.optimizers.catalog.resolve_optimizer",
+    "q2mm.application.execute_optimization",
+    "q2mm.application.optimization.execute_optimization",
+    "q2mm.application.policy",
+    "q2mm.application.resolve_optimization_settings",
+    "q2mm.settings.ExecutionSettings",
 )
 
 
@@ -872,10 +929,23 @@ _ENGINE_PREFIXES = (
 )
 _LAYER_FORBIDDEN: dict[str, tuple[str, ...]] = {
     "io": ("q2mm.objectives", "q2mm.optimizers", "q2mm.workflows", "q2mm.benchmarks"),
-    "objectives": ("q2mm.optimizers", "q2mm.workflows", "q2mm.benchmarks"),
-    "optimizers": (*_ENGINE_PREFIXES, "q2mm.workflows", "q2mm.benchmarks"),
-    "workflows": (*_ENGINE_PREFIXES, "q2mm.benchmarks"),
+    "objectives": ("q2mm.optimizers", "q2mm.workflows", "q2mm.benchmarks", "q2mm.application"),
+    "optimizers": (*_ENGINE_PREFIXES, "q2mm.workflows", "q2mm.benchmarks", "q2mm.application"),
+    "workflows": (*_ENGINE_PREFIXES, "q2mm.benchmarks", "q2mm.application"),
 }
+
+
+@pytest.mark.parametrize("layer", ("objectives", "optimizers", "workflows"))
+def test_objective_and_component_layers_cannot_import_application(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, layer: str
+) -> None:
+    package = tmp_path / "q2mm"
+    (package / layer).mkdir(parents=True)
+    (package / layer / "probe.py").write_text("from q2mm.application import optimize\n", encoding="utf-8")
+    monkeypatch.setitem(globals(), "PACKAGE_ROOT", package)
+    monkeypatch.setitem(globals(), "REPO_ROOT", tmp_path)
+    with pytest.raises(AssertionError, match="import-direction violations"):
+        test_layer_import_direction()
 
 
 def test_layer_import_direction() -> None:

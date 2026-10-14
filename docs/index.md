@@ -10,25 +10,27 @@ and you need explicit control over what is fitted and what stays frozen.
 ```python
 import q2mm
 from q2mm.io import load_fchk_molecule
+from q2mm.settings import PreparationSettings
 
 molecule = load_fchk_molecule("my-transition-state.fchk", bond_tolerance=1.4)
 problem = q2mm.prepare(
     molecule,
-    stationary_point="transition_state",
-    functional_form="harmonic",
+    settings=PreparationSettings(stationary_point="transition_state", functional_form="harmonic"),
 )
-baseline = q2mm.evaluate(problem, backend="jax")
-run = q2mm.optimize(problem, backend="jax")
-q2mm.save(run, "optimized.frcmod")
 ```
 
-The four root functions keep mechanical assembly small while preserving the
-scientific choices:
+Continue with the complete [execution lifecycle](getting-started.md#first-complete-problem):
+choose final immutable settings, load/build components, capture the actual
+configuration, create the evaluator, and optimize. The root exports are the
+same canonical objects as their owning modules, loaded only when accessed.
 
 1. **`prepare`** builds an immutable problem and records stationary point,
    functional form, observations, active/frozen slots, and QFUERZA audit.
-2. **`evaluate`** runs an explicitly selected MM or reference backend.
-3. **`optimize`** resolves and records an explicit or documented recipe.
+2. **`evaluate(evaluator, parameters)`** scores an explicit full parameter vector.
+   Reference-property generation uses the separate `evaluate_reference` service.
+3. **`optimize`** executes the supplied optimizer, workflow and evaluator factory,
+   returning a numerical `OptimizationResult`. Build the final field and
+   provenance with `OptimizationRun.from_result`.
 4. **`save`** writes a semantic force-field format and, for a run, a provenance
    manifest.
 

@@ -18,7 +18,7 @@ import math
 import time
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -42,7 +42,6 @@ from q2mm.benchmarks.profiles import (
     DATA_DIR_FOR_SYSTEM as DATA_DIR_FOR_SYSTEM,
     ConfigurationError as ConfigurationError,
     RunProfile as RunProfile,
-    resolve_optimizer as resolve_optimizer,
 )
 from q2mm.benchmarks.records import (
     REPO_ROOT as REPO_ROOT,
@@ -54,7 +53,7 @@ from q2mm.benchmarks.records import (
     sanitize_for_json as sanitize_for_json,
 )
 from q2mm.objectives.metrics import category_metrics
-from q2mm.optimizers.catalog import expected_result_gradient as _expected_result_gradient
+from q2mm.optimizers.catalog import optimizer_method
 
 if TYPE_CHECKING:
     from q2mm.backends.contracts import Backend, BackendDescriptor
@@ -154,7 +153,6 @@ def _run_profile_inner(
     from q2mm.backends.contracts import BackendUnavailableError
 
     requested_id = profile.candidate_id()
-    spec = profile.optimizer_spec
 
     # ---- backend: unknown/broken -> error; unhealthy dep -> skipped ------
     if backend is None:
@@ -169,7 +167,7 @@ def _run_profile_inner(
         from q2mm.backends.registry import BackendNotRegistered, get_descriptor
 
         try:
-            descriptor = get_descriptor(profile.backend)
+            descriptor = get_descriptor(profile.backend.key)
         except BackendNotRegistered:
             descriptor = None
     backend_info = backend.info
@@ -186,7 +184,7 @@ def _run_profile_inner(
         )
 
     # ---- JAX-only optimizers require a JAX executor ---------------------
-    if spec.evaluator == "jax" and not _is_jax_backend(backend):
+    if profile.objective.executor == "jax" and not _is_jax_backend(backend):
         return _terminal(
             requested_id,
             AcceptancePolicy.skipped(
@@ -246,15 +244,27 @@ def _run_profile_inner(
             profile.effective_objective_profile or "",
             profile.starting_point,
         )
-    evaluator_kind = spec.evaluator
-    gradient_mode = spec.gradient_mode
-    fd_step = spec.fd_step if spec.gradient_mode == "finite_difference" else None
-    expected_grad = _expected_result_gradient(spec)
+    evaluator_kind = profile.objective.executor
+    gradient_mode = profile.objective.gradient_mode
+    fd_step = profile.objective.fd_step
 
     # Build the optimizer + workflow exactly once; the same instances feed both
     # provenance and execution so recorded settings identify what actually ran.
-    optimizer_obj, optimizer_settings = profiles.resolve_optimizer(profile)
-    workflow_obj, workflow_settings = profiles._resolve_workflow(profile)
+    from q2mm.optimizers.catalog import build_optimizer
+    from q2mm.workflows.base import build_workflow
+    from q2mm.application.configuration import capture_execution_configuration
+
+    optimizer_obj = build_optimizer(profile.optimizer)
+    workflow_obj = build_workflow(profile.workflow)
+    configuration = capture_execution_configuration(
+        profile,
+        backend=backend,
+        optimizer=optimizer_obj,
+        workflow=workflow_obj,
+    )
+    optimizer_settings = configuration.optimizer.settings
+    workflow_settings = configuration.workflow.settings
+    expected_grad = configuration.optimizer.expected_result_gradient_mode
 
     data_provenance = records._data_provenance(case, resolved_roots)
     if success_spec is not None:
@@ -286,7 +296,6 @@ def _run_profile_inner(
         backend_info=backend_info,
         case=case,
         form=form,
-        spec=spec,
         evaluator_kind=evaluator_kind,
         gradient_mode=gradient_mode,
         expected_grad=expected_grad,
@@ -305,7 +314,6 @@ def _run_profile_inner(
             case=case,
             resolved=resolved,
             candidate_id=candidate_id,
-            spec=spec,
             optimizer=optimizer_obj,
             workflow=workflow_obj,
             expected_grad=expected_grad,
@@ -333,7 +341,6 @@ def _execute(
     case: BenchmarkCase,
     resolved: ResolvedProfile,
     candidate_id: str,
-    spec: Any,
     optimizer: Any,
     workflow: Any,
     expected_grad: str,
@@ -370,7 +377,7 @@ def _execute(
         jax_score = float(JaxObjectiveExecutor(record_plan, backend, initial_ff).value(baseline))
         summary["initial_jax_score"] = jax_score if math.isfinite(jax_score) else float("inf")
         ratio = jax_score / initial_score if initial_score > 0 else float("nan")
-        ratio_info = acceptance.classify_ratio(ratio, profile.executor_ratio_tol)
+        ratio_info = acceptance.classify_ratio(ratio, profile.ratio_tol)
         summary.update(ratio_info)
 
     if analyze:
@@ -384,37 +391,32 @@ def _execute(
         return _terminal(
             candidate_id, AcceptancePolicy.skipped("skip_optimization requested"), profile, resolved, summary
         )
-    if profile.executor_ratio_tol is not None and ratio_info and not ratio_info["executor_ratio_passes"]:
+    if profile.ratio_tol is not None and ratio_info and not ratio_info["executor_ratio_passes"]:
         status = ratio_info["executor_ratio_status"]
         reason = "executor-ratio gate closed: " + ("out of band" if status == "out_of_band" else status)
         summary["skipped"] = True
         return _terminal(candidate_id, AcceptancePolicy.skipped(reason), profile, resolved, summary)
 
     # ---- run the workflow through the generic application boundary --------
-    from q2mm.application.optimization import execute_optimization
-    from q2mm.objectives.protocols import GradientMode
+    from q2mm.application.optimization import optimize
+    from q2mm.workflows.base import make_evaluator_factory
 
-    executor_kind: Literal["python", "jax"] = "jax" if spec.evaluator == "jax" else "python"
-    executor_gradient = (
-        GradientMode.ANALYTICAL
-        if executor_kind == "jax"
-        else GradientMode.FINITE_DIFFERENCE
-        if spec.gradient_mode == "finite_difference"
-        else GradientMode.NONE
-    )
+    executor_kind = profile.objective.executor
     t0 = time.perf_counter()
-    result, final_ff = execute_optimization(
+    result = optimize(
         problem,
-        backend,
-        optimizer,
-        workflow,
-        executor=executor_kind,
-        gradient_mode=executor_gradient,
-        fd_step=spec.fd_step,
+        optimizer=optimizer,
+        workflow=workflow,
+        make_evaluator=make_evaluator_factory(
+            backend,
+            initial_ff,
+            settings=profile.objective,
+        ),
         n_evals=profile.n_evals,
         regularization=regularization,
     )
     elapsed = time.perf_counter() - t0
+    final_ff = layout.replace(initial_ff, result.final_params)
 
     final_vector = np.asarray(result.final_params, dtype=float)
 
@@ -437,7 +439,7 @@ def _execute(
     if actual_grad != expected_grad:
         raise ExecutionError(
             f"result gradient mode {actual_grad!r} != expected {expected_grad!r} "
-            f"(method={spec.method}, optimizer={profile.optimizer!r})"
+            f"(method={optimizer_method(profile.optimizer)}, optimizer={profile.optimizer!r})"
         )
 
     summary.update(

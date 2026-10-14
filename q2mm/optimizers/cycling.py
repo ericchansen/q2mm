@@ -18,18 +18,20 @@ References:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from functools import partial
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
 
 from q2mm.models.parameters import ActiveParameterSpace
 from q2mm.models.results import OptimizationResult, StageRecord
 from q2mm.objectives.protocols import ObjectiveEvaluator
+from q2mm.settings import CyclingSettings
 
 if TYPE_CHECKING:
-    from q2mm.optimizers.catalog import _Construction
-    from q2mm.optimizers.protocols import _Optimizer
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +114,7 @@ def compute_sensitivity(
     return SensitivityResult(d1=d1, d2=d2, simp_var=simp_var, ranking=ranking, metric=metric, n_evals=n_evals)
 
 
-class OptimizationLoop:
+class CyclingOptimizer:
     """grad-simp cycling loop returning the canonical OptimizationResult.
 
     A small cycle improvement signals convergence only when both the full
@@ -122,38 +124,21 @@ class OptimizationLoop:
 
     def __init__(
         self,
-        evaluator: ObjectiveEvaluator,
-        space: ActiveParameterSpace,
-        *,
-        max_params: int = 3,
-        convergence: float = 0.01,
-        max_cycles: int = 10,
-        full_method: str = "L-BFGS-B",
-        simp_method: str = "Nelder-Mead",
-        full_maxiter: int = 200,
-        simp_maxiter: int = 200,
-        sensitivity_metric: Literal["simp_var", "abs_d1"] = "simp_var",
-        eps: float = 1e-3,
-        verbose: bool = True,
+        settings: CyclingSettings = CyclingSettings(),
     ) -> None:
-        self.evaluator = evaluator
-        self.space = space
-        self.max_params = max_params
-        self.convergence = convergence
-        self.max_cycles = max_cycles
-        self.full_method = full_method
-        self.simp_method = simp_method
-        self.full_maxiter = full_maxiter
-        self.simp_maxiter = simp_maxiter
-        self.sensitivity_metric = sensitivity_metric
-        self.eps = eps
-        self.verbose = verbose
+        from q2mm.optimizers.catalog import build_optimizer
 
-    def run(self) -> OptimizationResult:
+        self.settings = settings
+        self._make_full_optimizer = partial(build_optimizer, settings.full_optimizer)
+        self._make_simplex_optimizer = partial(build_optimizer, settings.simplex_optimizer)
+
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Capture configured phase choices without allocating their solvers."""
+        return self.settings.model_dump(mode="json")
+
+    def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Execute the grad-simp cycling loop."""
-        evaluator = self.evaluator
         layout = evaluator.plan.layout
-        space = self.space
         current_full = np.array(space.baseline, dtype=float)
         initial_params = current_full.copy()
 
@@ -161,34 +146,36 @@ class OptimizationLoop:
         if prev_on_error is not None:
             evaluator.on_error = "penalty"  # type: ignore[attr-defined]
 
-        initial_score = float(evaluator.value(current_full))
-        n_eval_start = evaluator.n_evaluations
-        n_params = space.n_full
-        fingerprint = space.layout.fingerprint
-        last_grad_mode = "none"
-        last_fd_step: float | None = None
-        cycle_scores: list[float] = [initial_score]
-        stages: list[StageRecord] = []
-        converged = False
-        message = f"max cycles ({self.max_cycles}) reached"
-
-        candidate_step_sizes = layout.steps.copy()
-        frozen_mask = np.ones(len(layout), dtype=bool)
-        frozen_mask[space.active_indices] = False
-        candidate_step_sizes[frozen_mask] = 0.0
-        full_bounds = layout.bounds
-        param_labels = [kind.value for kind in layout.kinds]
-
         try:
-            if self.verbose:
-                logger.info("OptimizationLoop: initial score = %.6f, max_params = %d", initial_score, self.max_params)
+            initial_score = float(evaluator.value(current_full))
+            n_eval_start = evaluator.n_evaluations
+            n_params = space.n_full
+            fingerprint = space.layout.fingerprint
+            last_grad_mode = "none"
+            last_fd_step: float | None = None
+            cycle_scores: list[float] = [initial_score]
+            stages: list[StageRecord] = []
+            converged = False
+            message = f"max cycles ({self.settings.max_cycles}) reached"
 
-            for cycle in range(1, self.max_cycles + 1):
+            candidate_step_sizes = layout.steps.copy()
+            frozen_mask = np.ones(len(layout), dtype=bool)
+            frozen_mask[space.active_indices] = False
+            candidate_step_sizes[frozen_mask] = 0.0
+            full_bounds = layout.bounds
+            param_labels = [kind.value for kind in layout.kinds]
+
+            if self.settings.verbose:
+                logger.info(
+                    "CyclingOptimizer: initial score = %.6f, max_params = %d", initial_score, self.settings.max_params
+                )
+
+            for cycle in range(1, self.settings.max_cycles + 1):
                 score_before = cycle_scores[-1]
                 cycle_eval_start = evaluator.n_evaluations
                 cycle_space = space.with_baseline(current_full)
 
-                full_opt = self._build_full_optimizer()
+                full_opt = self._make_full_optimizer()
                 full_result = full_opt.optimize(evaluator, cycle_space)
                 score_after_grad = full_result.final_score
                 current_full = np.asarray(full_result.final_params, dtype=float)
@@ -199,15 +186,15 @@ class OptimizationLoop:
                     evaluator,
                     current_full,
                     step_sizes=candidate_step_sizes,
-                    metric=self.sensitivity_metric,
+                    metric=self.settings.sensitivity_metric,
                     bounds=[tuple(b) for b in full_bounds],
                 )
 
-                n_selected = min(self.max_params, space.n_active)
+                n_selected = min(self.settings.max_params, space.n_active)
                 if n_selected < 1:
                     raise ValueError(
-                        f"OptimizationLoop requires at least one active parameter, "
-                        f"but max_params={self.max_params} and space.n_active={space.n_active}."
+                        f"CyclingOptimizer requires at least one active parameter, "
+                        f"but max_params={self.settings.max_params} and space.n_active={space.n_active}."
                     )
                 allowed = frozenset(int(i) for i in space.active_indices)
                 selected = [int(i) for i in sens.ranking if int(i) in allowed][:n_selected]
@@ -217,7 +204,7 @@ class OptimizationLoop:
                     )
 
                 simp_space = space.with_baseline(current_full).with_active_indices(selected)
-                simp_result = self._build_simplex_optimizer().optimize(
+                simp_result = self._make_simplex_optimizer().optimize(
                     evaluator,
                     simp_space,
                 )
@@ -256,9 +243,9 @@ class OptimizationLoop:
                 )
 
                 change = (score_before - score_after_simp) / score_before if score_before > 0 else 0.0
-                if self.verbose:
+                if self.settings.verbose:
                     logger.info("  Cycle %d: %.2f%% improvement", cycle, change * 100)
-                if 0 <= change < self.convergence:
+                if 0 <= change < self.settings.convergence:
                     converged = stages[-1].converged
                     message = (
                         "converged"
@@ -285,27 +272,8 @@ class OptimizationLoop:
             initial_params=initial_params,
             final_params=current_full,
             history=tuple(cycle_scores),
-            method=f"grad-simp({self.full_method})",
+            method=f"grad-simp({getattr(self.settings.full_optimizer, 'method', self.settings.full_optimizer.kind)})",
             gradient_mode=last_grad_mode,
             fd_step=last_fd_step,
             stages=tuple(stages),
         )
-
-    def _phase_constructions(self) -> dict[str, _Construction]:
-        from q2mm.optimizers.catalog import _cycling_constructions
-
-        return _cycling_constructions(
-            {
-                "full_method": self.full_method,
-                "simp_method": self.simp_method,
-                "full_maxiter": self.full_maxiter,
-                "simp_maxiter": self.simp_maxiter,
-                "eps": self.eps,
-            }
-        )
-
-    def _build_full_optimizer(self) -> _Optimizer:
-        return self._phase_constructions()["full_optimizer"].build()
-
-    def _build_simplex_optimizer(self) -> _Optimizer:
-        return self._phase_constructions()["simplex_optimizer"].build()

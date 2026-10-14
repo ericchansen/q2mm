@@ -4,6 +4,8 @@ Requires OpenMM.
 """
 
 from __future__ import annotations
+
+from q2mm.settings import CyclingSettings, ScipySettings
 from q2mm.backends.contracts import (
     EnergyRequest,
     FrequencyRequest,
@@ -29,7 +31,7 @@ from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.objectives.protocols import GradientMode
 from q2mm.optimizers.cycling import (
-    OptimizationLoop,
+    CyclingOptimizer,
     SensitivityResult,
     compute_sensitivity,
 )
@@ -179,12 +181,14 @@ class TestSensitivity:
             compute_sensitivity(obj, layout.vector(ff), metric="bad")
 
 
-# ---- OptimizationLoop ----
+# ---- CyclingOptimizer ----
 
 
-class TestOptimizationLoop:
+class TestCyclingOptimizer:
     def test_selected_parameter_ids_preserve_other_slots(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """The simplex pass changes only its selected semantic parameter slot."""
+        from q2mm.optimizers import catalog
+
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
         guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
         obj, layout, all_active = _make_water_objective(true_ff, guess_ff)
@@ -212,11 +216,6 @@ class TestOptimizationLoop:
                 )
 
         monkeypatch.setattr(
-            OptimizationLoop,
-            "_build_full_optimizer",
-            lambda *_args, **_kwargs: _NoOpOptimizer(),
-        )
-        monkeypatch.setattr(
             "q2mm.optimizers.cycling.compute_sensitivity",
             lambda *_args, **_kwargs: SensitivityResult(
                 d1=np.ones(len(layout)),
@@ -227,18 +226,23 @@ class TestOptimizationLoop:
                 n_evals=0,
             ),
         )
+        build = catalog.build_optimizer
+        monkeypatch.setattr(
+            catalog,
+            "build_optimizer",
+            lambda settings: _NoOpOptimizer() if settings.method == "L-BFGS-B" else build(settings),
+        )
 
-        result = OptimizationLoop(
-            obj,
-            space,
-            max_params=1,
-            max_cycles=1,
-            convergence=0.0,
-            full_method="L-BFGS-B",
-            simp_method="Nelder-Mead",
-            simp_maxiter=50,
-            verbose=False,
-        ).run()
+        result = CyclingOptimizer(
+            CyclingSettings(
+                max_params=1,
+                max_cycles=1,
+                convergence=0.0,
+                verbose=False,
+                full_optimizer=ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False),
+                simplex_optimizer=ScipySettings(method="Nelder-Mead", maxiter=50, verbose=False),
+            ),
+        ).optimize(obj, space)
 
         changed_indices = np.flatnonzero(~np.isclose(result.final_params, baseline, rtol=0.0, atol=1e-12))
         changed_ids = tuple(layout.ids[i] for i in changed_indices)
@@ -255,24 +259,22 @@ class TestOptimizationLoop:
 
     @pytest.mark.integration
     def test_loop_improves_score(self) -> None:
-        """OptimizationLoop should improve over a single-shot Nelder-Mead."""
+        """CyclingOptimizer should improve over a single-shot Nelder-Mead."""
         true_ff = _water_ff(bond_k=503.6, bond_r0=0.96, angle_k=57.6, angle_eq=104.5)
         guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
         obj, _layout, space = _make_water_objective(true_ff, guess_ff)
 
-        loop = OptimizationLoop(
-            obj,
-            space,
-            max_params=2,
-            max_cycles=5,
-            convergence=0.001,
-            full_method="L-BFGS-B",
-            simp_method="Nelder-Mead",
-            full_maxiter=50,
-            simp_maxiter=50,
-            verbose=False,
+        loop = CyclingOptimizer(
+            CyclingSettings(
+                max_params=2,
+                max_cycles=5,
+                convergence=0.001,
+                verbose=False,
+                full_optimizer=ScipySettings(method="L-BFGS-B", maxiter=50, verbose=False),
+                simplex_optimizer=ScipySettings(method="Nelder-Mead", maxiter=50, verbose=False),
+            )
         )
-        result = loop.run()
+        result = loop.optimize(obj, space)
 
         assert isinstance(result, OptimizationResult)
         assert result.final_score < result.initial_score
@@ -288,17 +290,17 @@ class TestOptimizationLoop:
         guess_ff = _water_ff(bond_k=359.7, bond_r0=1.05, angle_k=36.0, angle_eq=110.0)
         obj, _layout, space = _make_water_objective(true_ff, guess_ff)
 
-        loop = OptimizationLoop(
-            obj,
-            space,
-            max_params=2,
-            max_cycles=2,
-            convergence=0.0001,
-            full_maxiter=20,
-            simp_maxiter=20,
-            verbose=False,
+        loop = CyclingOptimizer(
+            CyclingSettings(
+                max_params=2,
+                max_cycles=2,
+                convergence=0.0001,
+                verbose=False,
+                full_optimizer=ScipySettings(maxiter=20, verbose=False),
+                simplex_optimizer=ScipySettings(maxiter=20, method="Nelder-Mead", verbose=False),
+            )
         )
-        result = loop.run()
+        result = loop.optimize(obj, space)
 
         assert len(result.stages) == result.n_iterations
         for stage in result.stages:
@@ -319,17 +321,17 @@ class TestConvergence:
         )
 
         obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
-        loop = OptimizationLoop(
-            obj,
-            space,
-            max_params=1,
-            max_cycles=10,
-            convergence=0.1,
-            full_maxiter=10,
-            simp_maxiter=10,
-            verbose=False,
+        loop = CyclingOptimizer(
+            CyclingSettings(
+                max_params=1,
+                max_cycles=10,
+                convergence=0.1,
+                verbose=False,
+                full_optimizer=ScipySettings(maxiter=10, verbose=False),
+                simplex_optimizer=ScipySettings(maxiter=10, method="Nelder-Mead", verbose=False),
+            )
         )
-        result = loop.run()
+        result = loop.optimize(obj, space)
 
         assert result.success
         assert result.n_iterations <= 2
@@ -340,17 +342,17 @@ class TestConvergence:
         guess_ff = _water_ff(bond_k=215.8, bond_r0=1.2, angle_k=21.6, angle_eq=120.0)
         obj, _layout, space = _make_water_objective(true_ff, guess_ff)
 
-        loop = OptimizationLoop(
-            obj,
-            space,
-            max_params=1,
-            max_cycles=2,
-            convergence=1e-10,
-            full_maxiter=5,
-            simp_maxiter=5,
-            verbose=False,
+        loop = CyclingOptimizer(
+            CyclingSettings(
+                max_params=1,
+                max_cycles=2,
+                convergence=1e-10,
+                verbose=False,
+                full_optimizer=ScipySettings(maxiter=5, verbose=False),
+                simplex_optimizer=ScipySettings(maxiter=5, method="Nelder-Mead", verbose=False),
+            )
         )
-        result = loop.run()
+        result = loop.optimize(obj, space)
 
         assert not result.success
         assert result.n_iterations == 2
@@ -370,17 +372,17 @@ class TestConvergence:
         )
 
         obj, _layout, space = _build_objective(guess_ff, backend, [mol], ref)
-        loop = OptimizationLoop(
-            obj,
-            space,
-            max_params=1,
-            max_cycles=3,
-            convergence=0.01,
-            full_maxiter=20,
-            simp_maxiter=20,
-            verbose=False,
+        loop = CyclingOptimizer(
+            CyclingSettings(
+                max_params=1,
+                max_cycles=3,
+                convergence=0.01,
+                verbose=False,
+                full_optimizer=ScipySettings(maxiter=20, verbose=False),
+                simplex_optimizer=ScipySettings(maxiter=20, method="Nelder-Mead", verbose=False),
+            )
         )
-        result = loop.run()
+        result = loop.optimize(obj, space)
 
         summary = result.summary()
         assert "Iterations" in summary

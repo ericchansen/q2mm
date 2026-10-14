@@ -93,6 +93,16 @@ def _validate_fd_step(fd_step: float | None, *, where: str) -> None:
         raise ValueError(f"{where}.fd_step must be positive and finite, got {fd_step!r}.")
 
 
+def _validate_executor_gradient(gradient_mode: str | None, fd_step: float | None) -> None:
+    if gradient_mode not in GRADIENT_MODES:
+        raise ValueError(f"executor_gradient_mode must be one of {sorted(GRADIENT_MODES)}.")
+    if gradient_mode == "finite_difference":
+        if fd_step is None or isinstance(fd_step, bool) or not math.isfinite(fd_step) or fd_step <= 0:
+            raise ValueError("executor_fd_step must be positive and finite for executor-owned finite differences.")
+    elif fd_step is not None:
+        raise ValueError("executor_fd_step must be None without executor-owned finite differences.")
+
+
 @dataclass(frozen=True, eq=False)
 class CandidateRecord:
     """One candidate evaluated by a multi-start optimizer.
@@ -233,6 +243,12 @@ class OptimizationResult:
             objective of record. Multi-stage workflows may use different
             objective plans at the initial and final endpoints.
         category_metrics: Deeply-frozen per-category fit metrics.
+        regularization / n_evals: Controls recorded by canonical numerical
+            execution, or ``None`` on a direct algorithm result.
+        executor_gradient_mode / executor_fd_step: Actual executor-owned
+            controls recorded by canonical numerical execution, or ``None``
+            on a direct algorithm result. Distinct from the optimizer's
+            ``gradient_mode`` / ``fd_step``, including internal SciPy FD.
 
     """
 
@@ -255,6 +271,10 @@ class OptimizationResult:
     initial_samples: tuple[float, ...] = ()
     final_samples: tuple[float, ...] = ()
     category_metrics: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
+    regularization: float | None = None
+    n_evals: int | None = None
+    executor_gradient_mode: str | None = None
+    executor_fd_step: float | None = None
 
     def __post_init__(self) -> None:
         _validate_identity(self.n_params, self.layout_fingerprint)
@@ -263,6 +283,16 @@ class OptimizationResult:
         if self.gradient_mode not in GRADIENT_MODES:
             raise ValueError(f"gradient_mode must be one of {sorted(GRADIENT_MODES)}, got {self.gradient_mode!r}.")
         _validate_fd_step(self.fd_step, where="OptimizationResult")
+        if self.executor_gradient_mode is not None or self.executor_fd_step is not None:
+            _validate_executor_gradient(self.executor_gradient_mode, self.executor_fd_step)
+        if self.regularization is not None and (
+            isinstance(self.regularization, bool) or not math.isfinite(self.regularization) or self.regularization < 0
+        ):
+            raise ValueError("OptimizationResult.regularization must be non-negative and finite.")
+        if self.n_evals is not None and (
+            isinstance(self.n_evals, bool) or not isinstance(self.n_evals, int) or self.n_evals < 0
+        ):
+            raise ValueError("OptimizationResult.n_evals must be a non-negative integer.")
         # A converged run must carry finite scores; an explicit failure may
         # report inf/nan (e.g. all multi-start candidates failed).
         if self.success and not (math.isfinite(self.initial_score) and math.isfinite(self.final_score)):

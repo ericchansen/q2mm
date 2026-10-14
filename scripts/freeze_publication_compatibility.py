@@ -13,13 +13,14 @@ from pathlib import Path
 from typing import Any
 
 from q2mm._canonical import canonical_fingerprint
+from q2mm import ExternalDataRoots
 from q2mm.application.models import (
     molecule_fingerprint_payload,
     problem_fingerprint,
     problem_fingerprint_payload,
 )
 from q2mm.benchmarks.systems import load_system
-from q2mm.benchmarks.systems._paths import ExternalDataRoots, natural_sort_key
+from q2mm.benchmarks.systems._paths import natural_sort_key
 from q2mm.models.observations import Observation, ObservationValue
 
 _SYSTEMS = ("rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate")

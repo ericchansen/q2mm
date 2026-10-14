@@ -1,11 +1,13 @@
 """Integration tests for JaxOptOptimizer with cycling loop dispatch.
 
-Verifies that ``OptimizationLoop(full_method="jaxopt:lbfgs")`` and
+Verifies that ``CyclingOptimizer(full_method="jaxopt:lbfgs")`` and
 ``"jaxopt:lbfgsb"`` properly dispatch to JaxOptOptimizer, and that
 JaxOptOptimizer converges on real systems (CH₃F, water, SN₂ TS).
 """
 
 from __future__ import annotations
+
+from q2mm.settings import CyclingSettings, JaxOptSettings, ScipySettings
 from q2mm.backends.contracts import (
     FrequencyRequest,
     HessianRequest,
@@ -141,11 +143,11 @@ def _init_jax() -> None:
 
 
 class TestCyclingJaxoptDispatch:
-    """OptimizationLoop jaxopt: dispatch integration tests."""
+    """CyclingOptimizer jaxopt: dispatch integration tests."""
 
     def test_jaxopt_lbfgs_dispatch(self) -> None:
-        """OptimizationLoop dispatches jaxopt:lbfgs and improves score."""
-        from q2mm.optimizers.cycling import OptimizationLoop
+        """CyclingOptimizer dispatches jaxopt:lbfgs and improves score."""
+        from q2mm.optimizers.cycling import CyclingOptimizer
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=110.0)
@@ -156,23 +158,20 @@ class TestCyclingJaxoptDispatch:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        loop = OptimizationLoop(
-            obj,
-            _all_active_space(obj),
-            full_method="jaxopt:lbfgs",
-            max_cycles=1,
-            full_maxiter=100,
-            verbose=False,
+        loop = CyclingOptimizer(
+            CyclingSettings(
+                max_cycles=1, verbose=False, full_optimizer=JaxOptSettings(method="lbfgs", maxiter=100, verbose=False)
+            )
         )
-        result = loop.run()
+        result = loop.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score, (
             f"Score should improve: {result.initial_score:.6f} → {result.final_score:.6f}"
         )
 
     def test_jaxopt_lbfgsb_dispatch(self) -> None:
-        """OptimizationLoop dispatches jaxopt:lbfgsb and improves score."""
-        from q2mm.optimizers.cycling import OptimizationLoop
+        """CyclingOptimizer dispatches jaxopt:lbfgsb and improves score."""
+        from q2mm.optimizers.cycling import CyclingOptimizer
 
         mol = make_water(bond_length=0.96, angle_deg=104.5)
         ff = _water_ff(bond_k=400.0, bond_r0=1.05, angle_k=35.0, angle_eq=110.0)
@@ -183,15 +182,12 @@ class TestCyclingJaxoptDispatch:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        loop = OptimizationLoop(
-            obj,
-            _all_active_space(obj),
-            full_method="jaxopt:lbfgsb",
-            max_cycles=1,
-            full_maxiter=100,
-            verbose=False,
+        loop = CyclingOptimizer(
+            CyclingSettings(
+                max_cycles=1, verbose=False, full_optimizer=JaxOptSettings(method="lbfgsb", maxiter=100, verbose=False)
+            )
         )
-        result = loop.run()
+        result = loop.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score, (
             f"Score should improve: {result.initial_score:.6f} → {result.final_score:.6f}"
@@ -254,7 +250,7 @@ class TestJaxOptCH3FValidation:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[ch3f_mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgsb", maxiter=500)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgsb", maxiter=500))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score, (
@@ -294,7 +290,7 @@ class TestJaxOptCH3FValidation:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[ch3f_mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=500)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=500))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score, (
@@ -307,8 +303,8 @@ class TestJaxOptCH3FValidation:
         seminario_ff: ForceField,
         qm_freqs: np.ndarray,
     ) -> None:
-        """OptimizationLoop jaxopt:lbfgs on CH₃F for 2 cycles."""
-        from q2mm.optimizers.cycling import OptimizationLoop
+        """CyclingOptimizer jaxopt:lbfgs on CH₃F for 2 cycles."""
+        from q2mm.optimizers.cycling import CyclingOptimizer
 
         backend = load_backend("jax")
 
@@ -331,16 +327,15 @@ class TestJaxOptCH3FValidation:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[ch3f_mol], reference=ref)
 
-        loop = OptimizationLoop(
-            obj,
-            _all_active_space(obj),
-            full_method="jaxopt:lbfgs",
-            simp_method="Nelder-Mead",
-            max_cycles=2,
-            full_maxiter=200,
-            verbose=False,
+        loop = CyclingOptimizer(
+            CyclingSettings(
+                max_cycles=2,
+                verbose=False,
+                full_optimizer=JaxOptSettings(method="lbfgs", maxiter=200, verbose=False),
+                simplex_optimizer=ScipySettings(method="Nelder-Mead", maxiter=200, verbose=False),
+            )
         )
-        result = loop.run()
+        result = loop.optimize(obj, _all_active_space(obj))
 
         assert result.n_iterations >= 1, f"Expected at least 1 cycle, got {result.n_iterations}"
         assert result.final_score < result.initial_score, (
@@ -370,7 +365,7 @@ class TestJaxOptWaterHessianValidation:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgs", maxiter=200)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=200))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score, (
@@ -425,7 +420,7 @@ class TestJaxOptSN2TSValidation:
 
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[ts_mol], reference=ref)
 
-        optimizer = JaxOptOptimizer(method="lbfgsb", maxiter=500)
+        optimizer = JaxOptOptimizer(JaxOptSettings(method="lbfgsb", maxiter=500))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score, (

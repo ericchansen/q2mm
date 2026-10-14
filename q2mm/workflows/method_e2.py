@@ -23,14 +23,15 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from q2mm.models.results import OptimizationResult, StageRecord
-from q2mm.models.units import MDYNA_RAD2_TO_KCALMOLRAD2, MDYNA_TO_KCALMOLA2
 from q2mm.objectives.metrics import category_metrics, evaluate_samples
 from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import MethodE2Settings
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -45,13 +46,7 @@ logger = logging.getLogger(__name__)
 
 _PHYSICAL_FC_KINDS = frozenset({"bond_k", "angle_k", "ub_k"})
 
-APPROXN_BOND_K_MDYNA = 5.0
-APPROXN_ANGLE_K_MDYNA_RAD2 = 0.5
-APPROXN_DEFAULTS: dict[str, float] = {
-    "bond_k": APPROXN_BOND_K_MDYNA * MDYNA_TO_KCALMOLA2,
-    "angle_k": APPROXN_ANGLE_K_MDYNA_RAD2 * MDYNA_RAD2_TO_KCALMOLRAD2,
-    "ub_k": APPROXN_BOND_K_MDYNA * MDYNA_TO_KCALMOLA2,
-}
+APPROXN_DEFAULTS: Mapping[str, float] = MethodE2Settings().near_zero_replace_with
 
 
 def _iter_active_force_constants(
@@ -115,35 +110,17 @@ def _build_round2_observations(problem: OptimizationProblem, *, replace_with: fl
 class MethodE2Workflow:
     """Limé & Norrby 2015 Method E2 two-stage TSFF parameterization."""
 
-    name: str = "method-e2"
+    def __init__(self, settings: MethodE2Settings = MethodE2Settings()) -> None:
+        self.settings = settings
 
-    def __init__(
-        self,
-        *,
-        negative_fc_threshold: float = 1e-3,
-        replace_with_round2: float = 1.0,
-        allow_negative: bool = False,
-        near_zero_replace_with: dict[str, float] | None = None,
-    ) -> None:
-        if not np.isfinite(negative_fc_threshold) or negative_fc_threshold < 0:
-            raise ValueError(f"negative_fc_threshold must be finite and ≥ 0; got {negative_fc_threshold!r}")
-        if not np.isfinite(replace_with_round2) or replace_with_round2 <= 0:
-            raise ValueError(f"replace_with_round2 must be finite and > 0; got {replace_with_round2!r}")
-        self.negative_fc_threshold = float(negative_fc_threshold)
-        self.replace_with_round2 = float(replace_with_round2)
-        self.allow_negative = bool(allow_negative)
-        if near_zero_replace_with is None:
-            self.near_zero_replace_with: dict[str, float] = dict(APPROXN_DEFAULTS)
-        else:
-            for kind_value, val in near_zero_replace_with.items():
-                if kind_value not in _PHYSICAL_FC_KINDS:
-                    raise ValueError(
-                        f"near_zero_replace_with: unsupported kind {kind_value!r}; must be one of "
-                        f"{sorted(_PHYSICAL_FC_KINDS)}"
-                    )
-                if not np.isfinite(val) or val < 0:
-                    raise ValueError(f"near_zero_replace_with[{kind_value!r}]={val!r} must be finite and ≥ 0")
-            self.near_zero_replace_with = dict(near_zero_replace_with)
+    @property
+    def name(self) -> str:
+        """Workflow protocol name from the configured settings."""
+        return self.settings.name
+
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Return the workflow's immutable configured policy."""
+        return self.settings.model_dump(mode="json")
 
     def run(
         self,
@@ -171,8 +148,8 @@ class MethodE2Workflow:
             layout,
             problem.active_space,
             round1_vector,
-            threshold=self.negative_fc_threshold,
-            allow_negative=self.allow_negative,
+            threshold=self.settings.negative_fc_threshold,
+            allow_negative=self.settings.allow_negative,
         )
         # Build the Round 1 notes fully before constructing the frozen stage.
         round1_notes: dict[str, Any] = {
@@ -223,9 +200,9 @@ class MethodE2Workflow:
         round2_baseline = round1_vector.copy()
         replaced: list[dict[str, Any]] = []
         for full_i, kind_value, old_value in candidates:
-            if kind_value not in self.near_zero_replace_with:
+            if kind_value not in self.settings.near_zero_replace_with:
                 continue
-            new_val = self.near_zero_replace_with[kind_value]
+            new_val = self.settings.near_zero_replace_with[kind_value]
             round2_baseline[full_i] = new_val
             replaced.append({"full_idx": full_i, "type": kind_value, "from": old_value, "to": new_val})
         if replaced:
@@ -257,7 +234,7 @@ class MethodE2Workflow:
         round1_stage = _round1_stage()
 
         # --- Round 2: Method C (modified Hessian; locked candidates) ---
-        round2_obs = _build_round2_observations(problem, replace_with=self.replace_with_round2)
+        round2_obs = _build_round2_observations(problem, replace_with=self.settings.replace_with_round2)
         plan_round2 = plan_round1.with_observations(round2_obs).with_active_space(round2_space)
         obj_round2 = make_evaluator(plan_round2)
         t0 = time.perf_counter()
@@ -279,7 +256,7 @@ class MethodE2Workflow:
             fd_step=round2_result.fd_step,
             elapsed_s=round2_elapsed,
             locked_param_indices=tuple(locked_param_indices),
-            notes={"method": "C", "replace_with": self.replace_with_round2},
+            notes={"method": "C", "replace_with": self.settings.replace_with_round2},
         )
 
         initial_samples = evaluate_samples(obj_round1, round1_result.initial_params, n_evals)

@@ -40,16 +40,16 @@ For **canonical-default QFUERZA-start** runs (the default; or any from-poor-star
 
 For **publication-baseline (`--starting-point published`)** runs, sanity bounds are usually fine — the starting FF is already in the published basin.
 
-Pass via `--fc-fraction` / `--eq-fraction` CLI flags on `q2mm-benchmark`.
+Pass via `--optimizer.fc-fraction` / `--optimizer.eq-fraction` CLI flags on `q2mm-benchmark single`/`batch`.
 
 ### Convergence tolerance (`scipy_opt.py` → `_run_minimize`)
 
-The default L-BFGS-B `ftol=1e-8` is loose for from-poor-start runs — `nfev` will often be ≤ 5 with no real optimization. Override with `--ftol 1e-12` (or tighter) for any run where you actually want the optimizer to work.
+The default L-BFGS-B `ftol=1e-8` is loose for from-poor-start runs — `nfev` will often be ≤ 5 with no real optimization. Override with `--optimizer.ftol 1e-12` (or tighter) for any run where you actually want the optimizer to work.
 
 ### Executor-ratio gate (`q2mm/benchmarks/runner.py` → executor-ratio check)
 
 For TS systems with a poor starting FF, the JAX/Python executor ratio can be 0.1–0.4 or even diverge to 1e74 (heck-relay from QFUERZA). The default executor-ratio check rejects these. Two options:
-- `--executor-ratio-tol none` to bypass entirely (use for from-QFUERZA TS runs)
+- `--ratio-tol null` to bypass entirely (use for from-QFUERZA TS runs)
 - Document the explosion honestly in the analysis instead of pretending it didn't happen
 
 ## Step 3 — Pre-flight checklist
@@ -73,12 +73,11 @@ Do NOT launch all systems in a batch. Run **only the first system**:
 # published only when reproducing publication-baseline benchmarks.
 PYTHONPATH=/path/to/worktree q2mm-benchmark single \
     --system <first-system> \
-    --workflow method-e2 \
-    --optimizer scipy-lbfgsb-jax \
-    --ftol 1e-12 \
-    --fc-fraction 0.20 \
-    --eq-fraction 0.05 \
-    --executor-ratio-tol none \
+    --workflow.name method-e2 \
+    --optimizer.ftol 1e-12 \
+    --optimizer.fc-fraction 0.20 \
+    --optimizer.eq-fraction 0.05 \
+    --ratio-tol null \
     --output /path/to/results
 ```
 
@@ -130,14 +129,14 @@ If a benchmark batch ends with multiple systems exiting at `n_evals=2`, that's a
 
 - "How do I know if the optimizer actually optimized?" → check `n_evaluations` and real OF delta
 - "Should I use sanity bounds or fractional bounds?" → fractional for the canonical QFUERZA-start default; sanity is fine for `--starting-point published` runs
-- "Why does `nfev=2` happen on every system?" → default `ftol` is 1e-8, way too loose for from-poor-start; use `--ftol 1e-12`
+- "Why does `nfev=2` happen on every system?" → default `ftol` is 1e-8, way too loose for from-poor-start; use `--optimizer.ftol 1e-12`
 - "Heck-relay's executor ratio is 1e74, is that OK?" → no, the JAX objective executor exploded; document honestly and consider tighter bounds or FF pre-conditioning
-- "Should I just bypass the executor-ratio gate with `--executor-ratio-tol none`?" → only if you understand why it's failing; the gate exists for a reason
+- "Should I just bypass the executor-ratio gate with `--ratio-tol null`?" → only if you understand why it's failing; the gate exists for a reason
 
 ## Anti-patterns to refuse
 
 - Launching all 5 systems in a batch without auditing the first one
 - Shipping results where `n_evaluations <= 2` on every system as if optimization happened
 - Comparing only `final_obj_score` when the user asked about parameter values or R²
-- Bypassing the executor-ratio gate with `--executor-ratio-tol none` without diagnosing why it's failing
+- Bypassing the executor-ratio gate with `--ratio-tol null` without diagnosing why it's failing
 - Writing the analysis doc before re-reading the user's literal question

@@ -27,7 +27,10 @@ from q2mm.benchmarks.systems import load_system
 from q2mm.benchmarks.systems._paths import ExternalDataRoots
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.results import OptimizationResult
+from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.protocols import ObjectiveEvaluator
+from q2mm.settings import BackendSettings, ObjectiveSettings, OptimizationSettings
+from q2mm.workflows import SingleStageWorkflow
 
 pytestmark = [pytest.mark.integration, pytest.mark.external_data]
 
@@ -147,18 +150,27 @@ def test_every_provisionable_publication_row_enters_sdk_optimizer_and_saves(
     problem = case.problem
     backend = _EchoBackend()
 
-    baseline = q2mm.evaluate(problem, backend=backend, executor="python")
+    objective = ObjectiveSettings()
+    make_evaluator = q2mm.make_evaluator_factory(backend, problem.starting_force_field, settings=objective)
+    baseline = q2mm.evaluate(make_evaluator(ObjectivePlan.from_problem(problem)), problem.active_space.baseline)
     assert np.isfinite(baseline.total)
     optimizer = _OneEvaluationOptimizer()
-    run = q2mm.optimize(
-        problem,
+    workflow = SingleStageWorkflow()
+    configuration = q2mm.capture_execution_configuration(
+        OptimizationSettings(backend=BackendSettings(key="publication-echo"), objective=objective, n_evals=0),
         backend=backend,
-        recipe="explicit",
         optimizer=optimizer,
-        workflow="single-stage",
-        executor="python",
+        workflow=workflow,
+    )
+    result = q2mm.optimize(
+        problem,
+        optimizer=optimizer,
+        workflow=workflow,
+        make_evaluator=make_evaluator,
+        regularization=0.0,
         n_evals=0,
     )
+    run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
     assert optimizer.entered is True
 
     initial = problem.layout.vector(problem.starting_force_field)

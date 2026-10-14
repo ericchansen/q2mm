@@ -58,7 +58,7 @@ flowchart TD
 | Explicit `MoleculeObservations()` | [`repository-geometry-eigenmatrix-v1`](#publication-case-loaders-and-compatibility): preserves the existing exclusions, including for ground states. |
 | Publication case loaders, such as `load_system("rh-enamide", ...)` | [Source-backed case membership and frozen observations](../tutorial.md#first-full-case-rh-enamide); not an exact paper reproduction. |
 | Explicit `ObservationSet` | [Caller-specified observations](data-types.md); kept unchanged, with preparation profile `explicit-observation-set-v1`. |
-| `MatchedFrequencyObservations` | [Separate frequency-matching recipe](../reference/q2mm/preparation.md), profile `matched-frequency-v1`; unchanged by this correction. |
+| `match_frequencies(problem, ...)` | [Explicit frequency-matching service](../reference/q2mm/preparation.md), profile `matched-frequency-v1`; takes a loaded MM backend and `FrequencyMatchingSettings`, returning a new problem. Prepare with `observations=ObservationSet()` first. |
 
 QFUERZA initialization and observation selection are separate decisions.
 For a declared transition state, QFUERZA replaces negative curvature during
@@ -133,12 +133,12 @@ your intended convention explicitly if needed:
 ```python
 import q2mm
 from q2mm.preparation import StationaryPointObservations
+from q2mm.settings import PreparationSettings
 
 problem = q2mm.prepare(
     molecule,
-    stationary_point="ground_state",
+    settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
     force_field=force_field,
-    initialize="provided",
     observations=StationaryPointObservations(linearity="linear"),
 )
 case_details = problem.preparation_provenance.observation_recipe["cases"][0]

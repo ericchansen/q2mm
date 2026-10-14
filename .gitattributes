@@ -3,3 +3,8 @@ q2mm/data/sn2/*.txt text eol=lf
 q2mm/data/sn2/*.xyz text eol=lf
 q2mm/data/sn2/*.npy -text
 q2mm/data/sn2/*.npz -text
+.gitattributes text eol=lf
+.github/docker/Dockerfile text eol=lf
+.github/envs/*.yml text eol=lf
+.github/workflows/*.yml text eol=lf
+scripts/*.sh text eol=lf

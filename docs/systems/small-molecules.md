@@ -315,23 +315,26 @@ This page uses the current full-matrix artifact set in
 
 ## Reproducing
 
+These are current [CLI examples](../benchmarks/cli.md); they do not reassign the
+historical measurements above to the current execution implementation.
+
 ```bash
-# Run the full matrix (all backends, all optimizers)
-q2mm-benchmark matrix --system ch3f --output results/ch3f --platform CUDA
+# Run all catalog optimizers on a coherent JAX-backend matrix
+q2mm-benchmark matrix --system ch3f --backends jax --output results/ch3f
 
 # Run optax optimizers only (JAX backend)
-q2mm-benchmark matrix --system ch3f --output results/ch3f --backend jax \
-  --optimizer optax-adam --optimizer optax-adam-cosine \
-  --optimizer optax-adagrad --optimizer optax-sgd
+q2mm-benchmark matrix --system ch3f --output results/ch3f --backends jax \
+  --presets optax-adam --presets optax-adam-cosine \
+  --presets optax-adagrad --presets optax-sgd
 
 # Run global / multi-start optimizers only (JAX backend)
-q2mm-benchmark matrix --system ch3f --output results/ch3f --backend jax \
-  --optimizer basinhopping --optimizer basinhopping-cold \
-  --optimizer multi-lbfgsb-5 --optimizer multi-lbfgsb-10
+q2mm-benchmark matrix --system ch3f --output results/ch3f --backends jax \
+  --presets basinhopping --presets basinhopping-cold \
+  --presets multi-lbfgsb-5 --presets multi-lbfgsb-10
 
 # Run JaxOpt optimizers (JAX backend, end-to-end differentiable)
-q2mm-benchmark matrix --system ch3f --output results/ch3f --backend jax \
-  --optimizer jaxopt-lbfgs --optimizer jaxopt-lbfgsb --maxiter 500
+q2mm-benchmark matrix --system ch3f --output results/ch3f --backends jax \
+  --presets jaxopt-lbfgs --presets jaxopt-lbfgsb
 
 # Load and display persisted candidate records
 q2mm-benchmark load results/ch3f

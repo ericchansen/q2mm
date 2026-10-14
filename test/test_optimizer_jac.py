@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from q2mm.settings import ScipySettings
+
 from dataclasses import dataclass
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -254,7 +256,7 @@ class TestJacAutoDetection:
 
     def test_lbfgsb_auto_enables_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, verbose=True)).optimize(obj, obj.space)
         assert result.gradient_mode == "analytical"
         assert result.fd_step is None
 
@@ -287,7 +289,7 @@ class TestJacAutoDetection:
             )
 
         monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=2, verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=2, verbose=False)).optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.final_params, [0.5, 1.5])
         assert result.final_score == pytest.approx(0.0)
@@ -317,7 +319,7 @@ class TestJacAutoDetection:
             )
 
         monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=2, verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=2, verbose=False)).optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.final_params, [0.5, 1.5])
         assert result.final_score == pytest.approx(0.0)
@@ -326,31 +328,31 @@ class TestJacAutoDetection:
 
     def test_lbfgsb_no_analytical_when_unsupported(self, caplog: pytest.LogCaptureFixture) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.NONE)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, verbose=True)).optimize(obj, obj.space)
         assert result.gradient_mode == "finite_difference"
         assert result.fd_step == 1e-3
 
     def test_lbfgsb_default_jac_none_uses_fd(self, caplog: pytest.LogCaptureFixture) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.NONE)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, verbose=True)).optimize(obj, obj.space)
         assert result.gradient_mode == "finite_difference"
         assert result.fd_step == 1e-3
 
     def test_nelder_mead_never_uses_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
-        result = ScipyOptimizer(method="Nelder-Mead", maxiter=1, verbose=True).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="Nelder-Mead", maxiter=1, verbose=True)).optimize(obj, obj.space)
         assert result.gradient_mode == "none"
         assert result.fd_step is None
 
     def test_powell_never_uses_analytical(self, caplog: pytest.LogCaptureFixture) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
-        result = ScipyOptimizer(method="Powell", maxiter=1, verbose=True).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="Powell", maxiter=1, verbose=True)).optimize(obj, obj.space)
         assert result.gradient_mode == "none"
         assert result.fd_step is None
 
     def test_explicit_analytical_overrides_auto(self, caplog: pytest.LogCaptureFixture) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, verbose=True).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, verbose=True)).optimize(obj, obj.space)
         assert result.gradient_mode == "analytical"
         assert result.fd_step is None
 
@@ -370,14 +372,14 @@ class TestFrozenParameterSupport:
             bounds=[(-10.0, 10.0), (-1.0, 1.0), (-10.0, 10.0)],
             active_indices=np.array([0, 2]),
         )
-        result = ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(verbose=False)).optimize(obj, obj.space)
         assert result.final_params[1] == 5.0
         assert result.final_score < result.initial_score
 
     def test_no_active_parameters_preserves_baseline(self) -> None:
         obj = _MockObjective()
         obj.space = MockSpace(obj.space.baseline, bounds=[(0.0, 0.5)] * 2, active_indices=np.array([], dtype=int))
-        result = ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(verbose=False)).optimize(obj, obj.space)
         assert result.success
         assert result.n_iterations == 0
         assert result.final_score == result.initial_score
@@ -385,7 +387,7 @@ class TestFrozenParameterSupport:
 
     def test_lbfgsb_updates_only_active_params(self) -> None:
         obj = _MockFrozenObjective(gradient_mode=GradientMode.ANALYTICAL)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=50, verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=50, verbose=False)).optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.initial_params, [0.0, 5.0, 0.0])
         np.testing.assert_allclose(result.final_params[[1]], [5.0])
@@ -396,7 +398,9 @@ class TestFrozenParameterSupport:
 
     def test_least_squares_updates_only_active_params(self) -> None:
         obj = _MockFrozenObjective(gradient_mode=GradientMode.NONE)
-        result = ScipyOptimizer(method="least_squares", maxiter=50, verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="least_squares", maxiter=50, verbose=False)).optimize(
+            obj, obj.space
+        )
 
         np.testing.assert_allclose(result.final_params[[1]], [5.0])
         assert result.final_score < result.initial_score
@@ -409,21 +413,23 @@ class TestBoundedExecution:
     def test_infeasible_start_is_rejected_before_evaluation(self, method: str, fraction: float | None) -> None:
         obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([10.0]))
         with pytest.raises(ValueError, match="Initial active parameters"):
-            ScipyOptimizer(method=method, fc_fraction=fraction, verbose=False).optimize(obj, obj.space)
+            ScipyOptimizer(ScipySettings(method=method, fc_fraction=fraction, verbose=False)).optimize(obj, obj.space)
         assert obj.n_evaluations == 0
         np.testing.assert_array_equal(obj.space.baseline, [10.0])
 
     def test_unsupported_bounds_fail_before_evaluation(self) -> None:
         obj = _MockObjective()
         with pytest.raises(ValueError, match="use_bounds=False"):
-            ScipyOptimizer(method="BFGS", verbose=False).optimize(obj, obj.space)
+            ScipyOptimizer(ScipySettings(method="BFGS", verbose=False)).optimize(obj, obj.space)
         assert obj.n_evaluations == 0
 
     @pytest.mark.parametrize("method", ["Nelder-Mead", "Powell", "L-BFGS-B"])
     @pytest.mark.parametrize("fraction", [None, 0.2])
     def test_external_target_stays_within_effective_bounds(self, method: str, fraction: float | None) -> None:
         obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([1.0]))
-        result = ScipyOptimizer(method=method, fc_fraction=fraction, verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method=method, fc_fraction=fraction, verbose=False)).optimize(
+            obj, obj.space
+        )
 
         lower, upper = (0.0, 5.0) if fraction is None else (0.8, 1.2)
         assert lower <= result.final_params[0] <= upper
@@ -433,16 +439,16 @@ class TestBoundedExecution:
     @pytest.mark.parametrize("method", ["Nelder-Mead", "Powell", "L-BFGS-B"])
     def test_disabled_bounds_remain_unbounded(self, method: str) -> None:
         obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([1.0]))
-        result = ScipyOptimizer(method=method, use_bounds=False, fc_fraction=0.2, verbose=False).optimize(
-            obj, obj.space
-        )
+        result = ScipyOptimizer(
+            ScipySettings(method=method, use_bounds=False, fc_fraction=0.2, verbose=False)
+        ).optimize(obj, obj.space)
 
         assert result.final_params[0] == pytest.approx(10.0)
         assert result.final_score == pytest.approx(np.sum((result.final_params - obj.target) ** 2))
 
     def test_unbounded_method_can_start_outside_sanity_bounds(self) -> None:
         obj = QuadraticEvaluator(np.array([10.0]), bounds=[(0.0, 5.0)], initial=np.array([8.0]))
-        result = ScipyOptimizer(method="BFGS", use_bounds=False, verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="BFGS", use_bounds=False, verbose=False)).optimize(obj, obj.space)
         np.testing.assert_array_equal(result.initial_params, [8.0])
         np.testing.assert_allclose(result.final_params, [10.0])
 
@@ -453,7 +459,7 @@ class TestBoundedExecution:
             bounds=[(lower, upper)],
             initial=np.array([(lower + upper) / 2.0]),
         )
-        result = ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(verbose=False)).optimize(obj, obj.space)
         np.testing.assert_array_equal(result.final_params, [upper])
         assert result.final_score == pytest.approx((upper - 10.0) ** 2)
 
@@ -484,7 +490,7 @@ class TestBoundedExecution:
             )
 
         monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
-        result = ScipyOptimizer(method=method, verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method=method, verbose=False)).optimize(obj, obj.space)
 
         np.testing.assert_array_equal(result.final_params, [4.0])
         assert result.final_score == 36.0
@@ -512,7 +518,7 @@ class TestBoundedExecution:
             return OptimizeResult(x=np.array([-0.5, 0.5]), fun=value, nit=1, success=True, message="done")
 
         monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
-        result = ScipyOptimizer(fc_fraction=0.2, eq_fraction=0.05, verbose=False).optimize(obj, space)
+        result = ScipyOptimizer(ScipySettings(fc_fraction=0.2, eq_fraction=0.05, verbose=False)).optimize(obj, space)
         np.testing.assert_allclose(result.final_params, [90.0, 0.76875])
 
 
@@ -529,7 +535,9 @@ class TestDivergenceTermination:
     def test_inactive_x_only_callback_does_not_evaluate(self, factor: float | None, initial_score: float) -> None:
         obj = _MockObjective()
         value_at = MagicMock(wraps=obj.value)
-        callback = ScipyOptimizer(divergence_factor=factor, verbose=False)._make_callback(obj, initial_score, value_at)
+        callback = ScipyOptimizer(ScipySettings(divergence_factor=factor, verbose=False))._make_callback(
+            obj, initial_score, value_at
+        )
 
         for x in ([1.0, 2.0], [0.5, 1.5]):
             callback(np.asarray(x))
@@ -543,7 +551,9 @@ class TestDivergenceTermination:
         for _ in range(9):
             obj.record_evaluation(0.5)
         value_at = MagicMock(wraps=obj.value)
-        callback = ScipyOptimizer(divergence_factor=None, verbose=True)._make_callback(obj, 1.0, value_at)
+        callback = ScipyOptimizer(ScipySettings(divergence_factor=None, verbose=True))._make_callback(
+            obj, 1.0, value_at
+        )
         caplog.set_level("INFO", logger="q2mm.optimizers.scipy_opt")
 
         callback(np.array([0.5, 1.5]))
@@ -557,11 +567,7 @@ class TestDivergenceTermination:
     def test_real_solver_stops_before_iteration_limit(self, method: str) -> None:
         obj = _RosenbrockEvaluator(np.zeros(2), bounds=[(-5.0, 5.0)] * 2, initial=np.array([-1.2, 1.3]))
         result = ScipyOptimizer(
-            method=method,
-            maxiter=10,
-            divergence_factor=1e-6,
-            divergence_patience=1,
-            verbose=False,
+            ScipySettings(method=method, maxiter=10, divergence_factor=1e-06, divergence_patience=1, verbose=False)
         ).optimize(obj, obj.space)
 
         assert result.n_iterations < 10
@@ -573,11 +579,7 @@ class TestDivergenceTermination:
     def test_tnc_unbounded_x_only_callback_stops(self) -> None:
         obj = _RosenbrockEvaluator(np.zeros(2), initial=np.array([-1.2, 1.3]))
         result = ScipyOptimizer(
-            method="TNC",
-            use_bounds=False,
-            divergence_factor=1e-6,
-            divergence_patience=1,
-            verbose=False,
+            ScipySettings(method="TNC", use_bounds=False, divergence_factor=1e-06, divergence_patience=1, verbose=False)
         ).optimize(obj, obj.space)
         assert result.n_iterations == 1
         assert not result.success
@@ -592,7 +594,7 @@ class TestDivergenceTermination:
 
         monkeypatch.setattr("scipy.optimize.minimize", stop_from_objective)
         with pytest.raises(StopIteration, match="objective interruption"):
-            ScipyOptimizer(verbose=False).optimize(obj, obj.space)
+            ScipyOptimizer(ScipySettings(verbose=False)).optimize(obj, obj.space)
 
     @pytest.mark.parametrize("through_workflow", [False, True])
     def test_old_fixed_variable_callback_preserves_objective_interruption(
@@ -642,7 +644,7 @@ class TestDivergenceTermination:
             return original_minimize(fun, x0, callback=x_only, **kwargs)
 
         monkeypatch.setattr(optimize, "minimize", old_fixed_variable_minimize)
-        optimizer = ScipyOptimizer(verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(verbose=False))
         with pytest.raises(StopIteration) as caught:
             if through_workflow:
                 problem = OptimizationProblem(
@@ -670,7 +672,9 @@ class TestDivergenceTermination:
         from scipy.optimize import OptimizeResult
 
         obj = _MockObjective()
-        callback = ScipyOptimizer(divergence_factor=3.0, divergence_patience=2, verbose=False)._make_callback(obj, 1.0)
+        callback = ScipyOptimizer(
+            ScipySettings(divergence_factor=3.0, divergence_patience=2, verbose=False)
+        )._make_callback(obj, 1.0)
         obj.record_evaluation(1000.0)
         callback(OptimizeResult(x=np.array([1.0, 2.0]), fun=1.0))
         callback(OptimizeResult(x=np.array([1.0, 2.0]), fun=4.0))
@@ -693,7 +697,9 @@ class TestDivergenceTermination:
             return OptimizeResult(x=accepted, fun=value, nit=1, success=True, message="incorrect solver success")
 
         monkeypatch.setattr("scipy.optimize.minimize", fake_minimize)
-        result = ScipyOptimizer(divergence_factor=0.01, divergence_patience=1, verbose=False).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(divergence_factor=0.01, divergence_patience=1, verbose=False)).optimize(
+            obj, obj.space
+        )
         assert not result.success
         assert result.message == "Abandoned: sustained divergence from initial score"
         np.testing.assert_array_equal(result.final_params, [0.5, 1.6])
@@ -705,25 +711,25 @@ class TestOptimizationResultFields:
 
     def test_lbfgsb_auto_with_support_sets_eps_none(self) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1)).optimize(obj, obj.space)
         assert result.gradient_mode == "analytical"
         assert result.fd_step is None
 
     def test_lbfgsb_fd_sets_eps(self) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.NONE)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1)).optimize(obj, obj.space)
         assert result.gradient_mode == "finite_difference"
         assert result.fd_step == 1e-3
 
     def test_derivative_free_sets_eps_none(self) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.ANALYTICAL)
-        result = ScipyOptimizer(method="Powell", maxiter=1).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="Powell", maxiter=1)).optimize(obj, obj.space)
         assert result.gradient_mode == "none"
         assert result.fd_step is None
 
     def test_custom_eps_value(self) -> None:
         obj = _MockObjective(gradient_mode=GradientMode.NONE)
-        result = ScipyOptimizer(method="L-BFGS-B", maxiter=1, eps=5e-4).optimize(obj, obj.space)
+        result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, eps=0.0005)).optimize(obj, obj.space)
         assert result.fd_step == 5e-4
 
 
