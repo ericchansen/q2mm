@@ -21,11 +21,12 @@ transition-state semantics.
 
 ## Current claims
 
-| Row | Status | Substantiation |
-|---|---|---|
-| `wahlers-ferrocene-seven-structure-v1`, published start | `partial_repository_reproduction` | [Seven-case ground-state evidence](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene) |
-| Full scan reoptimization | `blocked_historical_record` | [Four absent numerical scans](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene) |
-| QFUERZA start | `blocked_historical_record` | [Unproven D1 dummy topology/frozen partition](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene) |
+The generated [Ferrocene profile/start records](../benchmarks/published-ff-validation.md#ferrocene)
+give the current claim, membership, target dispositions, and blockers for each
+starting point separately. The
+[source evidence](https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene)
+explains the seven-case partial problem, absent numerical scans, and unproven
+D1 dummy topology/frozen partition.
 
 The provisionable row explicitly excludes Fe from nonbonded pairs because the
 source OPT file has no Fe vdW row. It does not invent D1 dummy topology.
