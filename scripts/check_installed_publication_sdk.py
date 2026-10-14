@@ -25,11 +25,13 @@ from q2mm.backends.contracts import (
 )
 from q2mm.benchmarks.publications import publication_records
 from q2mm.benchmarks.systems import load_system
-from q2mm.benchmarks.systems._paths import ExternalDataRoots
+from q2mm import ExternalDataRoots
 from q2mm.io.mm3 import load_mm3_fld
 from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import ObjectiveEvaluator
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import BackendSettings, OptimizationSettings, ObjectiveSettings, SingleStageSettings
 
 _PROVENANCE = BackendProvenance(backend="publication-install-proof", role=BackendRole.MM)
 _INFO = BackendInfo(
@@ -125,18 +127,31 @@ def _run(args: argparse.Namespace) -> None:
         )
         problem = case.problem
         backend = _Backend()
-        baseline = q2mm.evaluate(problem, backend=backend, executor="python")
-        if not np.isfinite(baseline.total):
-            raise RuntimeError(f"{record.system} produced a non-finite installed baseline.")
-        run = q2mm.optimize(
-            problem,
-            backend=backend,
-            recipe="explicit",
-            optimizer=_OneEvaluationOptimizer(),
-            workflow="single-stage",
-            executor="python",
+        settings = OptimizationSettings(
+            backend=BackendSettings(key=_PROVENANCE.backend),
+            workflow=SingleStageSettings(),
+            objective=ObjectiveSettings(),
             n_evals=0,
         )
+        optimizer = _OneEvaluationOptimizer()
+        workflow = q2mm.build_workflow(settings.workflow)
+        configuration = q2mm.capture_execution_configuration(
+            settings, backend=backend, optimizer=optimizer, workflow=workflow
+        )
+        make_evaluator = q2mm.make_evaluator_factory(backend, problem.starting_force_field, settings=settings.objective)
+        evaluator = make_evaluator(ObjectivePlan.from_problem(problem))
+        baseline = q2mm.evaluate(evaluator, problem.active_space.baseline)
+        if not np.isfinite(baseline.total):
+            raise RuntimeError(f"{record.system} produced a non-finite installed baseline.")
+        result = q2mm.optimize(
+            problem,
+            optimizer=optimizer,
+            workflow=workflow,
+            make_evaluator=make_evaluator,
+            regularization=settings.objective.regularization,
+            n_evals=settings.n_evals,
+        )
+        run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
         frozen = np.ones(problem.active_space.n_full, dtype=bool)
         frozen[problem.active_space.active_indices] = False
         np.testing.assert_array_equal(run.result.final_params[frozen], problem.active_space.baseline[frozen])

@@ -6,6 +6,8 @@ jaxopt run on a simple system.
 """
 
 from __future__ import annotations
+
+from q2mm.settings import JaxMultiStartSettings, JaxOptSettings
 from q2mm.backends.registry import load_backend
 
 import importlib.util
@@ -112,27 +114,29 @@ class TestJaxMultiStartValidation:
     def test_invalid_method(self) -> None:
         from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
 
-        with pytest.raises(ValueError, match="Unknown method"):
-            JaxMultiStartOptimizer(method="not_a_method")
+        with pytest.raises(ValueError, match="method"):
+            JaxMultiStartOptimizer(
+                JaxMultiStartSettings(optimizer=JaxOptSettings(method="not_a_method", verbose=False))
+            )
 
     def test_invalid_n_starts(self) -> None:
         from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
 
-        with pytest.raises(ValueError, match="n_starts must be >= 1"):
-            JaxMultiStartOptimizer(n_starts=0)
+        with pytest.raises(ValueError, match="n_starts"):
+            JaxMultiStartOptimizer(JaxMultiStartSettings(n_starts=0))
 
     def test_invalid_perturbation_pct(self) -> None:
         from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
 
-        with pytest.raises(ValueError, match="perturbation_pct must be >= 0"):
-            JaxMultiStartOptimizer(perturbation_pct=-0.1)
+        with pytest.raises(ValueError, match="perturbation_pct"):
+            JaxMultiStartOptimizer(JaxMultiStartSettings(perturbation_pct=-0.1))
 
     def test_valid_methods(self) -> None:
         from q2mm.optimizers.jax_multistart import JaxMultiStartOptimizer
 
         for method in ("lbfgs", "lbfgsb", "gradient_descent"):
-            opt = JaxMultiStartOptimizer(method=method)
-            assert opt.method == method
+            opt = JaxMultiStartOptimizer(JaxMultiStartSettings(optimizer=JaxOptSettings(method=method, verbose=False)))
+            assert opt.settings.optimizer.method == method
 
     def test_backend_type_check(self) -> None:
         from unittest.mock import MagicMock
@@ -150,7 +154,11 @@ class TestJaxMultiStartValidation:
         plan = _make_plan(ff, [mol], ref)
         obj = PythonObjectiveExecutor(plan, fake_backend, ff)
 
-        optimizer = JaxMultiStartOptimizer(method="lbfgs", n_starts=3, maxiter=10, verbose=False)
+        optimizer = JaxMultiStartOptimizer(
+            JaxMultiStartSettings(
+                n_starts=3, verbose=False, optimizer=JaxOptSettings(method="lbfgs", maxiter=10, verbose=False)
+            )
+        )
         with pytest.raises(TypeError, match="JaxObjectiveExecutor"):
             optimizer.optimize(obj, _all_active_space(obj))
 
@@ -194,7 +202,13 @@ def test_bounded_native_adapter(
     monkeypatch.setattr(obj, "value_and_grad_jax", observed_native)
     monkeypatch.setattr(obj, "value", observed_host)
     optimizer = JaxMultiStartOptimizer(
-        n_starts=n_starts, maxiter=1, tol=1e-12, perturbation_pct=0.05, seed=2, verbose=False
+        JaxMultiStartSettings(
+            n_starts=n_starts,
+            perturbation_pct=0.05,
+            seed=2,
+            verbose=False,
+            optimizer=JaxOptSettings(maxiter=1, tol=1e-12, verbose=False),
+        )
     )
     result = optimizer.optimize(obj, space)
     jax.effects_barrier()
@@ -258,7 +272,7 @@ def test_bounded_native_adapter(
 
     plain_count_before = obj.n_evaluations
     plain_calls_before = len(completed_calls)
-    plain = JaxOptOptimizer(maxiter=1, tol=1e-12, verbose=False).optimize(obj, space)
+    plain = JaxOptOptimizer(JaxOptSettings(maxiter=1, tol=1e-12, verbose=False)).optimize(obj, space)
     jax.effects_barrier()
     plain_calls = completed_calls[plain_calls_before:]
     np.testing.assert_allclose(result.candidates[0].final_params, plain.final_params, rtol=0.0, atol=1e-12)
@@ -298,12 +312,13 @@ class TestJaxMultiStartConvergence:
 
         obj = self._make_h2_obj()
         opt = JaxMultiStartOptimizer(
-            method="lbfgs",
-            n_starts=3,
-            maxiter=100,
-            perturbation_pct=0.1,
-            seed=0,
-            verbose=False,
+            JaxMultiStartSettings(
+                n_starts=3,
+                perturbation_pct=0.1,
+                seed=0,
+                verbose=False,
+                optimizer=JaxOptSettings(method="lbfgs", maxiter=100, verbose=False),
+            )
         )
         result = opt.optimize(obj, _all_active_space(obj))
 
@@ -322,17 +337,18 @@ class TestJaxMultiStartConvergence:
 
         obj_multi = self._make_h2_obj()
         opt_multi = JaxMultiStartOptimizer(
-            method="lbfgs",
-            n_starts=1,
-            maxiter=100,
-            perturbation_pct=0.0,
-            seed=0,
-            verbose=False,
+            JaxMultiStartSettings(
+                n_starts=1,
+                perturbation_pct=0.0,
+                seed=0,
+                verbose=False,
+                optimizer=JaxOptSettings(method="lbfgs", maxiter=100, verbose=False),
+            )
         )
         r_multi = opt_multi.optimize(obj_multi, _all_active_space(obj_multi))
 
         obj_plain = self._make_h2_obj()
-        opt_plain = JaxOptOptimizer(method="lbfgs", maxiter=100, verbose=False)
+        opt_plain = JaxOptOptimizer(JaxOptSettings(method="lbfgs", maxiter=100, verbose=False))
         r_plain = opt_plain.optimize(obj_plain, _all_active_space(obj_plain))
 
         np.testing.assert_allclose(r_multi.final_params, r_plain.final_params, rtol=1e-5, atol=1e-8)
@@ -345,23 +361,25 @@ class TestJaxMultiStartConvergence:
 
         obj_a = self._make_h2_obj()
         opt_a = JaxMultiStartOptimizer(
-            method="lbfgs",
-            n_starts=5,
-            maxiter=50,
-            perturbation_pct=0.2,
-            seed=42,
-            verbose=False,
+            JaxMultiStartSettings(
+                n_starts=5,
+                perturbation_pct=0.2,
+                seed=42,
+                verbose=False,
+                optimizer=JaxOptSettings(method="lbfgs", maxiter=50, verbose=False),
+            )
         )
         r_a = opt_a.optimize(obj_a, _all_active_space(obj_a))
 
         obj_b = self._make_h2_obj()
         opt_b = JaxMultiStartOptimizer(
-            method="lbfgs",
-            n_starts=5,
-            maxiter=50,
-            perturbation_pct=0.2,
-            seed=42,
-            verbose=False,
+            JaxMultiStartSettings(
+                n_starts=5,
+                perturbation_pct=0.2,
+                seed=42,
+                verbose=False,
+                optimizer=JaxOptSettings(method="lbfgs", maxiter=50, verbose=False),
+            )
         )
         r_b = opt_b.optimize(obj_b, _all_active_space(obj_b))
 
@@ -375,12 +393,13 @@ class TestJaxMultiStartConvergence:
 
         obj = self._make_h2_obj()
         opt = JaxMultiStartOptimizer(
-            method="lbfgs",
-            n_starts=4,
-            maxiter=80,
-            perturbation_pct=0.15,
-            seed=7,
-            verbose=False,
+            JaxMultiStartSettings(
+                n_starts=4,
+                perturbation_pct=0.15,
+                seed=7,
+                verbose=False,
+                optimizer=JaxOptSettings(method="lbfgs", maxiter=80, verbose=False),
+            )
         )
         result = opt.optimize(obj, _all_active_space(obj))
 
@@ -396,12 +415,13 @@ class TestJaxMultiStartConvergence:
 
         obj = self._make_h2_obj()
         opt = JaxMultiStartOptimizer(
-            method="lbfgs",
-            n_starts=3,
-            maxiter=50,
-            perturbation_pct=0.1,
-            seed=0,
-            verbose=False,
+            JaxMultiStartSettings(
+                n_starts=3,
+                perturbation_pct=0.1,
+                seed=0,
+                verbose=False,
+                optimizer=JaxOptSettings(method="lbfgs", maxiter=50, verbose=False),
+            )
         )
         result = opt.optimize(obj, _all_active_space(obj))
 
@@ -422,12 +442,13 @@ class TestJaxMultiStartConvergence:
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
         opt = JaxMultiStartOptimizer(
-            method="lbfgs",
-            n_starts=5,
-            maxiter=80,
-            perturbation_pct=0.1,
-            seed=1,
-            verbose=False,
+            JaxMultiStartSettings(
+                n_starts=5,
+                perturbation_pct=0.1,
+                seed=1,
+                verbose=False,
+                optimizer=JaxOptSettings(method="lbfgs", maxiter=80, verbose=False),
+            )
         )
         result = opt.optimize(obj, _all_active_space(obj))
 
@@ -455,7 +476,11 @@ class TestJaxMultiStartBackendGuard:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
         obj = _make_objective(forcefield=ff, backend=backend, molecules=[mol], reference=ref)
 
-        optimizer = JaxMultiStartOptimizer(method="lbfgsb", n_starts=2, maxiter=10, verbose=False)
+        optimizer = JaxMultiStartOptimizer(
+            JaxMultiStartSettings(
+                n_starts=2, verbose=False, optimizer=JaxOptSettings(method="lbfgsb", maxiter=10, verbose=False)
+            )
+        )
 
         from q2mm.backends.mm._jax_common import jax as jax_mod
 
@@ -467,7 +492,7 @@ class TestJaxMultiStartBackendGuard:
         assert len(result.candidates) == 2
         assert all(c.status == "failure" for c in result.candidates)
         assert "LBFGSB is not supported" in caplog.text
-        assert result.n_evaluations == obj.n_evaluations == 1 + optimizer.n_starts
+        assert result.n_evaluations == obj.n_evaluations == 1 + optimizer.settings.n_starts
         assert result.history == (result.initial_score,)
         assert "n_evaluations=aggregate" in result.message
         assert "history=initial-baseline" in result.message

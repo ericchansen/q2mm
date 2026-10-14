@@ -42,7 +42,6 @@ from q2mm.benchmarks.profiles import (
     DATA_DIR_FOR_SYSTEM as DATA_DIR_FOR_SYSTEM,
     ConfigurationError as ConfigurationError,
     RunProfile as RunProfile,
-    resolve_optimizer as resolve_optimizer,
 )
 from q2mm.benchmarks.records import (
     REPO_ROOT as REPO_ROOT,
@@ -253,8 +252,22 @@ def _run_profile_inner(
 
     # Build the optimizer + workflow exactly once; the same instances feed both
     # provenance and execution so recorded settings identify what actually ran.
-    optimizer_obj, optimizer_settings = profiles.resolve_optimizer(profile)
-    workflow_obj, workflow_settings = profiles._resolve_workflow(profile)
+    from q2mm.optimizers.catalog import build_optimizer
+    from q2mm.workflows.base import build_workflow
+    from q2mm.application.configuration import capture_execution_configuration
+
+    settings = profiles.execution_settings(profile)
+    assert settings.optimizer is not None and settings.workflow is not None
+    optimizer_obj = build_optimizer(settings.optimizer)
+    workflow_obj = build_workflow(settings.workflow)
+    configuration = capture_execution_configuration(
+        settings,
+        backend=backend,
+        optimizer=optimizer_obj,
+        workflow=workflow_obj,
+    )
+    optimizer_settings = configuration.optimizer.settings
+    workflow_settings = configuration.workflow.settings
 
     data_provenance = records._data_provenance(case, resolved_roots)
     if success_spec is not None:
@@ -391,30 +404,38 @@ def _execute(
         return _terminal(candidate_id, AcceptancePolicy.skipped(reason), profile, resolved, summary)
 
     # ---- run the workflow through the generic application boundary --------
-    from q2mm.application.optimization import execute_optimization
-    from q2mm.objectives.protocols import GradientMode
+    from q2mm.application.optimization import optimize
+    from q2mm.workflows.base import make_evaluator_factory
+    from q2mm.settings import ObjectiveSettings
 
     executor_kind: Literal["python", "jax"] = "jax" if spec.evaluator == "jax" else "python"
-    executor_gradient = (
-        GradientMode.ANALYTICAL
+    executor_gradient: Literal["analytical", "finite_difference", "none"] = (
+        "analytical"
         if executor_kind == "jax"
-        else GradientMode.FINITE_DIFFERENCE
+        else "finite_difference"
         if spec.gradient_mode == "finite_difference"
-        else GradientMode.NONE
+        else "none"
     )
     t0 = time.perf_counter()
-    result, final_ff = execute_optimization(
+    result = optimize(
         problem,
-        backend,
-        optimizer,
-        workflow,
-        executor=executor_kind,
-        gradient_mode=executor_gradient,
-        fd_step=spec.fd_step,
+        optimizer=optimizer,
+        workflow=workflow,
+        make_evaluator=make_evaluator_factory(
+            backend,
+            initial_ff,
+            settings=ObjectiveSettings(
+                executor=executor_kind,
+                gradient_mode=executor_gradient,
+                fd_step=spec.fd_step if executor_gradient == "finite_difference" else None,
+                regularization=regularization,
+            ),
+        ),
         n_evals=profile.n_evals,
         regularization=regularization,
     )
     elapsed = time.perf_counter() - t0
+    final_ff = layout.replace(initial_ff, result.final_params)
 
     final_vector = np.asarray(result.final_params, dtype=float)
 

@@ -89,13 +89,11 @@ def test_workflow_samples_identify_their_executor(
     )
     case = BenchmarkCase(key="ch3f", name="synthetic", problem=problem, default_forms=("harmonic",))
     monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: case)
-    monkeypatch.setattr(
-        "q2mm.application.optimization.execute_optimization", lambda *_args, **_kwargs: (result, final_ff)
-    )
+    monkeypatch.setattr("q2mm.application.optimization.optimize", lambda *_args, **_kwargs: result)
 
     profile = RunProfile(
         system="ch3f",
-        backend=backend.info.name,
+        backend=backend.info.provenance.backend,
         functional_form="harmonic",
         optimizer=optimizer,
         workflow=workflow,

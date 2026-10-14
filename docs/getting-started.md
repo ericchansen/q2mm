@@ -8,12 +8,14 @@ backend explicitly.
 
 ## Install only what you use
 
-Python 3.10 or newer is required.
+Python **3.15** is the primary development and core-test runtime. Package
+metadata permits **>=3.14** for native backends that do not yet provide 3.15
+builds; that fallback is **BEST-EFFORT**, not a guarantee for every backend.
 
 ```bash
 pip install q2mm
 pip install "q2mm[jax]"       # JAX backend and its optimization dependencies
-pip install "q2mm[openmm]"    # OpenMM backend
+pip install "q2mm[openmm]"    # OpenMM backend, Python 3.14 environment
 pip install "q2mm[qcengine]"  # optional reference-property generation
 pip install "q2mm[ase]"       # optional ASE reference calculators
 ```
@@ -23,7 +25,36 @@ an automatic core dependency. Q2MM never chooses a backend or runs a QM job
 inside `prepare`.
 
 For an alpha release that is not yet stable on PyPI, add `--pre`. Developers
-can instead clone the repository and run `pip install -e ".[dev]"`.
+can instead clone the repository and run `pip install -e ".[dev]"`. The
+development extra does not install OpenMM, ParmEd, ASE, QCEngine, or
+QCElemental; request their individual extras only when using those integrations.
+
+### Native dependency availability
+
+OpenMM 8.6.1 has no CPython 3.15 wheels. Use a separate Python **3.14**
+environment for its **BEST-EFFORT native/CPU lane**, rather than adding it to
+the 3.15 development environment. Extras request real packages and are not
+silently disabled on unsupported Python versions. CI may report an unavailable
+native environment; if provisioning succeeds, correctness tests are required.
+See the [runtime and environment contracts](https://github.com/ericchansen/q2mm/blob/master/AGENTS.md#4-platform-guide).
+
+PyYAML 6.0.3 also has no cp315 wheel, but supports a pure-Python source build.
+Set `PYYAML_FORCE_LIBYAML=0` before installing to avoid requiring a native C
+compiler. In PowerShell:
+
+```powershell
+$env:PYYAML_FORCE_LIBYAML = "0"
+python -m pip install -e ".[dev]"
+```
+
+On Linux or macOS:
+
+```bash
+PYYAML_FORCE_LIBYAML=0 python -m pip install -e ".[dev]"
+```
+
+Pydantic v2 and pydantic-settings v2 are base dependencies, independent of
+optional computational backends.
 
 ## First complete problem
 
@@ -34,7 +65,10 @@ force constants needed by QFUERZA:
 from pathlib import Path
 
 import q2mm
+from q2mm.backends.registry import load_backend
 from q2mm.io import load_fchk_molecule
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import BackendSettings, PreparationSettings, TransitionStateOptimizationSettings
 
 input_file = Path("/data/project/ts.fchk")
 output_dir = Path("/data/project/q2mm-output")
@@ -43,17 +77,57 @@ output_dir.mkdir(parents=True, exist_ok=True)
 molecule = load_fchk_molecule(input_file, bond_tolerance=1.4)
 problem = q2mm.prepare(
     molecule,
-    stationary_point="transition_state",
-    functional_form="harmonic",
+    settings=PreparationSettings(stationary_point="transition_state", functional_form="harmonic"),
 )
-initial = q2mm.evaluate(problem, backend="jax", executor="jax")
-run = q2mm.optimize(problem, backend="jax", recipe="recommended")
+settings = TransitionStateOptimizationSettings(backend=BackendSettings(key="jax"))
+backend = load_backend(settings.backend.key, **settings.backend.options)
+optimizer = q2mm.build_optimizer(settings.optimizer)
+workflow = q2mm.build_workflow(settings.workflow)
+configuration = q2mm.capture_execution_configuration(
+    settings, backend=backend, optimizer=optimizer, workflow=workflow
+)
+make_evaluator = q2mm.make_evaluator_factory(
+    backend, problem.starting_force_field, settings=settings.objective
+)
+plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
+initial = q2mm.evaluate(make_evaluator(plan), problem.active_space.baseline)
+result = q2mm.optimize(
+    problem, optimizer=optimizer, workflow=workflow, make_evaluator=make_evaluator,
+    regularization=settings.objective.regularization, n_evals=settings.n_evals,
+)
+run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
 saved = q2mm.save(run, output_dir / "optimized.frcmod")
 ```
+
+Choose `TransitionStateOptimizationSettings` for a declared TS, or
+`GroundStateOptimizationSettings` for a declared minimum. These immutable
+models hold final settings; loading a backend and constructing the
+optimizer/workflow are separate explicit actions. Capture the actual objects
+before execution; `optimize` returns only numerical results.
+`OptimizationRun.from_result` builds the final field and provenance without
+executing again. The package-root functions are lazy exports of those same
+canonical services, not a separate convenience execution API. Partial nested
+constructor input, such as
+`TransitionStateOptimizationSettings(optimizer={"maxiter": 100})`, uses native
+Pydantic validation and retains the other TS defaults. No resolver or
+requested/effective settings pipeline is involved.
+
+Backend selection does not implicitly change the objective executor. For a
+non-JAX backend, supply an explicit typed objective, for example
+`TransitionStateOptimizationSettings(backend=BackendSettings(key="openmm"),
+objective=ObjectiveSettings(executor="python"))`. Import `ObjectiveSettings`
+from `q2mm.settings`. The explicit executor selects its native gradient
+default (Python/scalar or JAX/analytical); solver tolerances and TS bounds
+remain the named preset's values. Incompatible JAX-objective/backend settings
+are rejected rather than silently switched.
 
 The output manifest records the resolved backend, optimizer, workflow, bounds,
 input fingerprints, active slots, preparation audit, and objective result.
 Saving never overwrites an existing file unless `overwrite=True` is explicit.
+The numerical result retains the regularization and endpoint-sampling controls
+actually used. Run assembly rejects a capture that disagrees with those
+controls or either endpoint's sample count; direct algorithm results without
+canonical execution-control capture are not ready-to-save run records.
 
 Omitting `observations` selects the stationary-point-aware generic recipe.
 See [Fitting objectives and reference data](how-it-works/fitting-objectives.md)
@@ -106,6 +180,7 @@ the rows that can change:
 ```python
 import q2mm
 from q2mm.io import load_gaussian_molecules, load_mm3_fld
+from q2mm.settings import PreparationSettings
 
 paths = ["TS1.log", "TS2.log", "TS3.log"]
 molecules = load_gaussian_molecules(paths, structure_index=-1)
@@ -115,11 +190,10 @@ opt_ff = load_mm3_fld("custom-opt.fld", include_standard=False)
 
 problem = q2mm.prepare(
     molecules,
-    stationary_point="transition_state",
+    settings=PreparationSettings(stationary_point="transition_state", initialize="qfuerza"),
     force_field=full_ff,
     active_parameters=opt_ff,
     case_ids=case_ids,
-    initialize="qfuerza",
 )
 ```
 
@@ -128,6 +202,13 @@ the supplied baseline. QFUERZA methodology is governed by
 [Farrugia et al.](https://doi.org/10.1021/acs.jctc.5c01751); transition-state
 curvature handling follows
 [Limé and Norrby](https://doi.org/10.1002/jcc.23797).
+
+To retain supplied values, use
+`PreparationSettings(stationary_point="transition_state", initialize="provided")`.
+Its `qfuerza` controls default to `None`; passing `qfuerza=None` explicitly is
+also valid. Other initialization choices default to `QFuerzaSettings()`.
+Validation checks the actual initialization/control combination, and the same
+settings remain valid after JSON serialization and reconstruction.
 
 ## Publication data roots
 

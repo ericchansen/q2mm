@@ -30,12 +30,8 @@ from __future__ import annotations
 
 import re
 import sys
+import tomllib
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:  # Python 3.10 — use the tomli backport (stdlib tomllib lands in 3.11)
-    import tomli as tomllib
 
 import yaml
 
@@ -93,8 +89,8 @@ def load_env_packages(env_file: Path) -> set[str]:
     pkgs: set[str] = set()
     for entry in data.get("dependencies", []):
         if isinstance(entry, str):
-            # ``python=3.12`` → python
-            pkgs.add(_normalize(entry.split("=", 1)[0].split("<", 1)[0]))
+            # ``python=3.14`` → python
+            pkgs.add(_strip_marker_and_specifier(entry))
         elif isinstance(entry, dict) and "pip" in entry:
             for pip_entry in entry["pip"]:
                 pkgs.add(_strip_marker_and_specifier(pip_entry))

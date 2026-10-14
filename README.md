@@ -26,6 +26,12 @@ Q2MM is an alpha release. Add `--pre` if no stable PyPI release is available.
 SciPy is optional; core installation does not silently choose or install an
 optimizer.
 
+Python **3.15** is the primary runtime; packaging permits **>=3.14** for a
+**BEST-EFFORT native/CPU fallback**. OpenMM 8.6.1 has no cp315 wheels and is
+never installed by the `dev` extra. See
+[runtime installation notes](https://ericchansen.github.io/q2mm/getting-started/#native-dependency-availability)
+for separate native environments and PyYAML's compiler-free source build.
+
 ## Bring your own calculation
 
 This complete path reads a Gaussian formatted checkpoint containing geometry
@@ -37,7 +43,10 @@ saves an AMBER force-field file plus provenance manifest.
 from pathlib import Path
 
 import q2mm
+from q2mm.backends.registry import load_backend
 from q2mm.io import load_fchk_molecule
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import BackendSettings, PreparationSettings, TransitionStateOptimizationSettings
 
 molecule = load_fchk_molecule(
     Path("my-transition-state.fchk"),
@@ -46,17 +55,31 @@ molecule = load_fchk_molecule(
 
 problem = q2mm.prepare(
     molecule,
-    stationary_point="transition_state",
-    functional_form="harmonic",
+    settings=PreparationSettings(stationary_point="transition_state", functional_form="harmonic"),
 )
 output_dir = Path("output")
 output_dir.mkdir(parents=True, exist_ok=True)
-baseline = q2mm.evaluate(problem, backend="jax", executor="jax")
-run = q2mm.optimize(
-    problem,
-    backend="jax",
-    recipe="recommended",
+settings = TransitionStateOptimizationSettings(backend=BackendSettings(key="jax"))
+backend = load_backend(settings.backend.key, **settings.backend.options)
+optimizer = q2mm.build_optimizer(settings.optimizer)
+workflow = q2mm.build_workflow(settings.workflow)
+configuration = q2mm.capture_execution_configuration(
+    settings, backend=backend, optimizer=optimizer, workflow=workflow
 )
+make_evaluator = q2mm.make_evaluator_factory(
+    backend, problem.starting_force_field, settings=settings.objective
+)
+plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
+baseline = q2mm.evaluate(make_evaluator(plan), problem.active_space.baseline)
+result = q2mm.optimize(
+    problem,
+    optimizer=optimizer,
+    workflow=workflow,
+    make_evaluator=make_evaluator,
+    regularization=settings.objective.regularization,
+    n_evals=settings.n_evals,
+)
+run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
 saved = q2mm.save(run, output_dir / "my-transition-state.frcmod")
 
 print(baseline.total)
@@ -67,8 +90,13 @@ The choices above are intentional:
 
 - `stationary_point="transition_state"` drives TS curvature inversion;
 - `functional_form="harmonic"` is compatible with JAX and `.frcmod`;
-- `backend="jax"` selects the MM evaluator;
-- `recipe="recommended"` resolves and records the measured JAX/SciPy policy.
+- `BackendSettings(key="jax")` declares the MM backend to load explicitly;
+- `TransitionStateOptimizationSettings` declares the JAX/SciPy TS defaults;
+- capture records the actual components **before** numerical execution.
+
+`optimize` returns a numerical `OptimizationResult`, not a run or force field.
+`OptimizationRun.from_result` materializes the final field and its provenance.
+See the [canonical lifecycle and breaking API notes](https://ericchansen.github.io/q2mm/how-it-works/optimization-guide/#canonical-application-lifecycle).
 
 An XYZ file carries symbols and coordinates, **not a Hessian**. If XYZ is your
 geometry source, attach a separately generated canonical Hartree/Bohr² Hessian
@@ -82,16 +110,16 @@ OPT/custom field identifying the scalar slots that may change:
 ```python
 problem = q2mm.prepare(
     molecules,
-    stationary_point="transition_state",
+    settings=PreparationSettings(stationary_point="transition_state", initialize="qfuerza"),
     force_field=complete_force_field,
     active_parameters=opt_force_field,
     observations=observations,
     case_ids=case_ids,
-    initialize="qfuerza",
 )
-run = q2mm.optimize(problem, backend="jax")
-q2mm.save(run, "optimized.fld")
 ```
+
+Then choose settings, load/build components, capture, optimize and assemble a
+run exactly as above, using this problem and an `.fld` output filename.
 
 The [Rh-enamide tutorial](https://ericchansen.github.io/q2mm/tutorial/#first-full-case-rh-enamide)
 shows the nine-structure form of this workflow and clearly labels its current

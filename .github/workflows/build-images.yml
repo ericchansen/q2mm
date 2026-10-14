@@ -1,7 +1,7 @@
-name: Build CI Images
+name: Build Python 3.14 Native Images
 
-# Manual-only by default — also triggers on env/Docker changes pushed to master.
-# Select a specific backend or rebuild all via manual dispatch.
+# Optional native images for local CPU testing, not the primary Python 3.15
+# development runtime. Select a specific backend or rebuild all.
 
 on:
   workflow_dispatch:
@@ -72,5 +72,6 @@ jobs:
           build-args: ENV_FILE=${{ matrix.backend.env }}
           push: true
           tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/ci-${{ matrix.backend.name }}:py314
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/ci-${{ matrix.backend.name }}:latest
             ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}/ci-${{ matrix.backend.name }}:${{ github.sha }}

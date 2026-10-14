@@ -11,6 +11,8 @@ file covers only behaviour unique to the JAX backend:
 """
 
 from __future__ import annotations
+
+from q2mm.settings import ScipySettings
 from q2mm.backends.contracts import (
     HessianRequest,
 )
@@ -330,7 +332,7 @@ class TestJaxOptimizerIntegration:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
-        optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=100, verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=100, verbose=False))
         result = optimizer.optimize(objective, _all_active_space(objective))
         assert result.final_score < 1e-10
 
@@ -346,7 +348,7 @@ class TestJaxOptimizerIntegration:
         ref = ref.with_energy(value=target_energy, case_id="0", weight=1.0)
 
         obj_a = _make_objective(forcefield=ff_analytical, backend=self.backend, molecules=[mol], reference=ref)
-        opt_a = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt_a = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         res_a = opt_a.optimize(obj_a, _all_active_space(obj_a))
 
         obj_fd = _make_objective(
@@ -357,7 +359,7 @@ class TestJaxOptimizerIntegration:
             executor="python",
             gradient_mode=GradientMode.NONE,
         )
-        opt_fd = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt_fd = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         res_fd = opt_fd.optimize(obj_fd, _all_active_space(obj_fd))
 
         assert res_a.final_score < 1e-4
@@ -664,7 +666,7 @@ class TestJaxAnalyticalHessianGradients:
                 ref = ref.with_frequency(value=f, data_idx=i, weight=1.0)
 
         obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
-        optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < 1.0, f"Score {result.final_score} too high"
@@ -689,7 +691,7 @@ class TestJaxAnalyticalHessianGradients:
 
         ff_a = _water_ff(bond_k=400.0, bond_r0=1.0, angle_k=40.0, angle_eq=109.5)
         obj_a = _make_objective(forcefield=ff_a, backend=self.backend, molecules=[mol], reference=ref)
-        opt_a = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt_a = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         res_a = opt_a.optimize(obj_a, _all_active_space(obj_a))
 
         ff_fd = _water_ff(bond_k=400.0, bond_r0=1.0, angle_k=40.0, angle_eq=109.5)
@@ -701,7 +703,7 @@ class TestJaxAnalyticalHessianGradients:
             executor="python",
             gradient_mode=GradientMode.NONE,
         )
-        opt_fd = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt_fd = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         res_fd = opt_fd.optimize(obj_fd, _all_active_space(obj_fd))
 
         np.testing.assert_allclose(
@@ -754,7 +756,7 @@ class TestJaxHessianElementGradients:
 
         ff = _h2_ff(bond_k=250.0, bond_r0=0.70)
         obj = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
-        optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score
@@ -822,7 +824,7 @@ class TestJaxEigenmatrixGradients:
             molecules=[mol_with_hess],
             reference=ref,
         )
-        optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         result = optimizer.optimize(obj, _all_active_space(obj))
 
         assert result.final_score < result.initial_score
@@ -923,7 +925,7 @@ class TestCH3FAnalyticalGradients:
             molecules=[self.mol],
             reference=ref,
         )
-        opt_a = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt_a = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         res_a = opt_a.optimize(obj_a, _all_active_space(obj_a))
 
         # FD
@@ -936,7 +938,7 @@ class TestCH3FAnalyticalGradients:
             executor="python",
             gradient_mode=GradientMode.NONE,
         )
-        opt_fd = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt_fd = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         res_fd = opt_fd.optimize(obj_fd, _all_active_space(obj_fd))
 
         # Both should improve from initial

@@ -43,9 +43,26 @@ def test_strip_marker_and_specifier_handles_pep508() -> None:
         "openmm>=8.0": "openmm",
         "jax_md": "jax-md",
         "PyYAML": "pyyaml",
+        "python=3.14": "python",
+        "pydantic>=2,<3": "pydantic",
+        "pydantic-settings>=2,<3": "pydantic-settings",
     }
     for raw, expected in cases.items():
         assert mod._strip_marker_and_specifier(raw) == expected, raw
+
+
+def test_conda_env_version_ranges_are_normalized(monkeypatch: pytest.MonkeyPatch) -> None:
+    mod = _load_module()
+    monkeypatch.setattr(
+        mod.yaml,
+        "safe_load",
+        lambda stream: {"dependencies": ["python=3.14", "pydantic>=2,<3", "pydantic-settings>=2,<3"]},
+    )
+    assert mod.load_env_packages(REPO_ROOT / ".github" / "envs" / "openmm.yml") == {
+        "python",
+        "pydantic",
+        "pydantic-settings",
+    }
 
 
 def test_load_extras_contains_known_extras() -> None:

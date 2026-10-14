@@ -105,8 +105,8 @@ class ResolvedWorkflowConfiguration:
     schema_version: int = APPLICATION_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
-        if not self.key:
-            raise ApplicationConfigurationError("Resolved workflow key must be non-empty.")
+        if not isinstance(self.key, str) or not self.key:
+            raise ApplicationConfigurationError("Resolved workflow key must be a non-empty string.")
         object.__setattr__(self, "settings", _safe_mapping(self.settings, path="workflow.settings"))
 
 
@@ -146,9 +146,9 @@ class ResolvedExecutionConfiguration:
     def __post_init__(self) -> None:
         if not self.recipe_id:
             raise ApplicationConfigurationError("Resolved recipe_id must be non-empty.")
-        if not np.isfinite(self.regularization) or self.regularization < 0:
+        if isinstance(self.regularization, bool) or not np.isfinite(self.regularization) or self.regularization < 0:
             raise ApplicationConfigurationError("regularization must be non-negative and finite.")
-        if not isinstance(self.n_evals, int) or self.n_evals < 0:
+        if isinstance(self.n_evals, bool) or not isinstance(self.n_evals, int) or self.n_evals < 0:
             raise ApplicationConfigurationError("n_evals must be a non-negative integer.")
         if self.ratio_tol is not None and (not np.isfinite(self.ratio_tol) or self.ratio_tol < 0):
             raise ApplicationConfigurationError("ratio_tol must be non-negative and finite or None.")
@@ -320,8 +320,73 @@ class OptimizationRun:
     provenance: Mapping[str, Any] = field(default_factory=dict)
     schema_version: int = APPLICATION_SCHEMA_VERSION
 
+    @classmethod
+    def from_result(
+        cls,
+        problem: OptimizationProblem,
+        result: OptimizationResult,
+        *,
+        configuration: ResolvedExecutionConfiguration,
+    ) -> OptimizationRun:
+        """Materialize a numerical result and its scientific provenance, without executing."""
+        if result.gradient_mode != configuration.optimizer.expected_result_gradient_mode:
+            raise ApplicationOptimizationError(
+                f"Optimization result gradient_mode={result.gradient_mode!r}; "
+                f"expected {configuration.optimizer.expected_result_gradient_mode!r}."
+            )
+        provenance: dict[str, object] = {
+            "case_ids": list(problem.case_ids),
+            "stationary_points": [case.stationary_point.value for case in problem.cases],
+            "n_cases": len(problem.cases),
+            "n_observations": len(problem.observations.values),
+            "n_active": problem.active_space.n_active,
+            "n_parameters": len(problem.layout),
+        }
+        if problem.preparation_provenance is not None:
+            preparation = problem.preparation_provenance
+            payload = {
+                "schema_version": preparation.schema_version,
+                "profile": preparation.profile,
+                "initialize_source": preparation.initialize_source,
+                "functional_form": preparation.functional_form,
+                "qfuerza_settings": dict(preparation.qfuerza_settings),
+                "pre_qfuerza_vector_fingerprint": preparation.pre_qfuerza_vector_fingerprint,
+                "parameter_counts": dict(preparation.parameter_counts),
+                "stationary_points": list(preparation.stationary_points),
+                "case_ids": list(preparation.case_ids),
+                "input_fingerprints": dict(preparation.input_fingerprints),
+                "observation_recipe": dict(preparation.observation_recipe),
+            }
+            provenance["preparation"] = payload
+            provenance["preparation_fingerprint"] = canonical_fingerprint(payload, screen_secrets=True)
+        if problem.publication_metadata is not None:
+            metadata = problem.publication_metadata
+            provenance["publication_metadata"] = metadata.to_dict()
+            provenance["publication_metadata_fingerprint"] = metadata.fingerprint
+            provenance["objective_profile"] = metadata.objective_profile.identifier
+            provenance["reproduction_status"] = metadata.status.value
+        fingerprint, inputs = _problem_fingerprints(problem)
+        return cls(
+            result=result,
+            final_force_field=problem.layout.replace(problem.starting_force_field, result.final_params),
+            configuration=configuration,
+            problem_fingerprint=fingerprint,
+            layout_fingerprint=problem.layout.fingerprint,
+            input_fingerprints=inputs,
+            active_indices=tuple(int(index) for index in problem.active_space.active_indices),
+            baseline=problem.active_space.baseline,
+            provenance=provenance,
+        )
+
     def __post_init__(self) -> None:
         result = self.result
+        if result.regularization != self.configuration.regularization or result.n_evals != self.configuration.n_evals:
+            raise ApplicationOptimizationError("Captured regularization or n_evals does not match numerical execution.")
+        if (
+            len(result.initial_samples) != self.configuration.n_evals
+            or len(result.final_samples) != self.configuration.n_evals
+        ):
+            raise ApplicationOptimizationError("Endpoint sample counts do not match captured n_evals.")
         if result.layout_fingerprint != self.layout_fingerprint:
             raise ApplicationOptimizationError("Result layout fingerprint does not match the run layout.")
         if not self.problem_fingerprint.startswith("sha256:"):

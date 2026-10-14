@@ -39,62 +39,139 @@ an executor explicitly:
 
 ---
 
-## Inspect effective catalog settings
+## Canonical application lifecycle
 
-Catalog provenance records the Q2MM constructor arguments actually selected,
-including defaults, so an omitted override is not confused with a `None`
-value. Inspecting these settings does not run an optimization:
+Preparation, settings selection, component construction, numerical execution,
+and persistence have distinct owners. Settings are strict, immutable data in
+[`q2mm.settings`](../reference/q2mm/settings.md). Constructing settings creates
+no engines or solvers; evaluation never accepts a problem/backend union.
+
+For an already prepared transition-state `problem`, the complete path is:
 
 ```python
-from q2mm.optimizers import resolve_optimizer
+import q2mm
+from q2mm.backends.registry import load_backend
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import BackendSettings, TransitionStateOptimizationSettings
 
-optimizer, settings = resolve_optimizer("basinhopping")
-assert settings["T"] == optimizer.T == 1.0
+settings = TransitionStateOptimizationSettings(
+    backend=BackendSettings(key="jax"),
+    optimizer={"maxiter": 200},
+)
+backend = load_backend(settings.backend.key, **settings.backend.options)
+optimizer = q2mm.build_optimizer(settings.optimizer)
+workflow = q2mm.build_workflow(settings.workflow)
+configuration = q2mm.capture_execution_configuration(
+    settings, backend=backend, optimizer=optimizer, workflow=workflow
+)
+make_evaluator = q2mm.make_evaluator_factory(
+    backend, problem.starting_force_field, settings=settings.objective
+)
+plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
+evaluator = make_evaluator(plan)
+baseline = q2mm.evaluate(evaluator, problem.active_space.baseline)
+result = q2mm.optimize(
+    problem, optimizer=optimizer, workflow=workflow, make_evaluator=make_evaluator,
+    regularization=settings.objective.regularization, n_evals=settings.n_evals,
+)
+run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
+q2mm.save(run, "optimized.frcmod")
 ```
 
-The record includes each built-in constructor's controls, such as stopping
-tolerances, bounds flags, schedules, seeds, and verbosity. Multi-start's
-`optimizer` entry describes its constructed inner solver. Cycling records
-its deferred loop arguments plus `full_optimizer` and `simplex_optimizer`;
-a multi-start full phase includes its own inner solver. Construction and
-these snapshots use the same bound constructor graph, including nested
-solvers. Cycling supplies its existing phase choices rather than applying
-the standalone catalog's potentially different defaults.
-Only execution constructs the phase optimizers. Resolving a cycling profile
-does not instantiate optional solvers or import their numerical runtimes.
+`q2mm.objectives.create_evaluator(plan, backend=backend, force_field=..., settings=...)`
+constructs one executor directly; root/application re-exports are that same
+object. `make_evaluator_factory` closes over the objective-layer service for
+workflow stages without importing application services.
+`evaluate(evaluator, parameters)` returns
+an `Evaluation`; `optimize` returns only an `OptimizationResult`.
+Run assembly does not execute again. Capture the actual components **before**
+optimization so state changes cannot redefine the configuration.
 
-Catalog and SDK/CLI overrides retain their existing precedence, including
-meaningful zero and `False` values. SciPy's `analytical_parameter_scaling`
-entry describes the configured policy, not a claim that scaling was used:
-bound normalization also requires finite, nondegenerate active bounds at
-execution. No algorithm, bound policy, or candidate-hashing rule changes.
-Resolved identity already includes optimizer settings, so corrected or
-expanded records can change resolved IDs without changing the hash rule.
-These records cover Q2MM constructors, not arbitrary custom optimizer
-objects, third-party internal defaults, or adaptive solver state.
+For a ground-state problem choose `GroundStateOptimizationSettings` instead.
+These named models declare JAX analytical objectives and SciPy controls.
+Their nested partial updates are handled by Pydantic, not a custom resolver:
+
+```python
+from q2mm.settings import TransitionStateOptimizationSettings
+
+settings = TransitionStateOptimizationSettings(
+    optimizer={"maxiter": 100, "fc_fraction": None},
+)
+assert settings.optimizer.maxiter == 100
+assert settings.optimizer.fc_fraction is None
+assert settings.optimizer.ftol == 1e-12
+assert settings.optimizer.eq_fraction == 0.05
+```
+
+Explicit `None` removes the fractional force-constant bound; omitting that
+field retains the TS default. A complete typed nested model replaces its
+default rather than partially updating it. Settings read only constructor
+input; ambient environment, dotenv and secret-file sources are disabled.
+For custom components or a different executor, supply final
+`OptimizationSettings(optimizer=..., workflow=..., objective=...)`.
+A supplied custom optimizer may leave `settings.optimizer=None`; capture
+describes the actual object before execution.
+
+Reference calculations instead use
+`evaluate_reference(molecule, backend=loaded_reference, property="hessian")`.
+Frequency matching is a separate explicit action after
+`prepare(..., settings=PreparationSettings(...), observations=ObservationSet())`:
+`match_frequencies(problem, qm_frequencies, backend=loaded_mm,
+settings=FrequencyMatchingSettings())` returns a new problem. Neither
+generic preparation nor settings construction loads a backend.
+
+!!! warning "Breaking alpha API change"
+    Flat preparation/execution kwargs, string backend selection inside
+    `evaluate`/`optimize`, and optimizer/workflow constructor kwargs are removed.
+    Use `PreparationSettings`, `QFuerzaSettings`, final `OptimizationSettings`
+    (or a named GS/TS model), and positional immutable
+    constructor settings. `MatchedFrequencyObservations`, `QFuerzaConfig`,
+    `OptimizationLoop`, `get_optimizer`, `available_optimizers`,
+    `resolve_optimizer`, and `execute_optimization` have no compatibility aliases.
+    Read controls through `.settings`, not `.maxiter` or other mirrored attributes.
+
+Named settings defaults are not a convergence guarantee. Canonical publication
+optimization remains [methodology-blocked](../benchmarks/published-ff-validation.md);
+use bounded software proofs rather than launching that matrix.
+
+## Inspect effective catalog settings
+
+The catalog maps names to settings without importing an optional algorithm:
+
+```python
+from q2mm.optimizers.catalog import optimizer_settings
+
+settings = optimizer_settings("basinhopping")
+assert settings.T == 1.0
+optimizer = q2mm.build_optimizer(settings)
+assert optimizer.settings is settings
+```
+
+Nested multi-start and cycling choices are typed settings, not deferred
+string constructor graphs. Actual-component capture records class/module
+identity and provider controls under `parameters`. A custom inner optimizer
+is preserved by `MultiStartOptimizer(settings, optimizer=custom_inner)`.
 
 ### One construction owner, explicit caller policies
 
-`q2mm.optimizers.catalog` owns method parsing, concrete constructor choice,
-argument binding, nested construction, and settings serialization. Named
-catalog presets and cycling phase adapters supply explicit options to that
-owner; neither maintains a second constructor implementation. Application
-resolution applies recipe/override rules and calls the public
-`resolve_optimizer` API. Supplied objects remain the original objects and
-use the explicit capture contract below; they are not reconstructed.
+`q2mm.optimizers.catalog.optimizer_settings` selects named presets and
+validates typed overrides; `build_optimizer` constructs the declared settings.
+Ordinary SDK callers choose final settings directly; there is no application
+settings resolver or request/effective pipeline. Supplied objects remain the original objects
+and use the explicit capture contract below; they are not reconstructed.
 
 These entry-point differences are intentional and remain visible:
 
 | Entry point or preset | Function tolerance | Fractional bounds | Workflow default | Policy source |
 | --- | --- | --- | --- | --- |
-| SDK recommended ground state | `1e-8` | None | `single-stage` | [SDK resolution][sdk-policy] |
-| SDK recommended transition state | `1e-12` | Force constants `0.20`, equilibria `0.05` | `single-stage` | [SDK resolution][sdk-policy] |
+| `GroundStateOptimizationSettings` | `1e-8` | None | `single-stage` | [Named SDK settings][sdk-policy] |
+| `TransitionStateOptimizationSettings` | `1e-12` | Force constants `0.20`, equilibria `0.05` | `single-stage` | [Named SDK settings][sdk-policy] |
 | Ordinary CLI single/matrix | `1e-8` | None | `single-stage` | [CLI routing][cli-policy] |
 | Ordinary CLI batch | `1e-8` | None | `method-e2` | [CLI routing][cli-policy] |
 | Explicit QFUERZA publication profile | `1e-12` | Force constants `0.20`, equilibria `0.05` | `RunProfile` default: `single-stage` | [Profile defaults][profile-policy] |
 | Explicit Heck QFUERZA publication profile | `1e-12` | Force constants `0.05`, equilibria `0.05` | `RunProfile` default: `single-stage` | [Profile defaults][profile-policy] |
 
-[sdk-policy]: https://github.com/ericchansen/q2mm/blob/master/q2mm/application/optimization.py
+[sdk-policy]: https://github.com/ericchansen/q2mm/blob/master/q2mm/settings.py
 [cli-policy]: https://github.com/ericchansen/q2mm/blob/master/q2mm/benchmarks/cli.py
 [profile-policy]: https://github.com/ericchansen/q2mm/blob/master/q2mm/benchmarks/profiles.py
 
@@ -102,21 +179,10 @@ The explicit publication-profile helper is not automatically substituted
 for ordinary CLI or SDK requests. Caller overrides retain precedence.
 This consolidation does not choose a new scientific or local-basin policy.
 
-Constructor defaults also differ by caller: the catalog supplies 500
-iterations for SciPy and 2000 steps for Optax; cycling uses its 200-step
-full-phase cap by default. Catalog basin-hopping uses 25 hops and seed 0;
-cycling retains the 50-hop constructor default and no seed. Catalog
-multi-start supplies seed 0 and a 500-iteration inner cap; cycling keeps
-an unseeded five-start wrapper and its own full-phase cap and `eps`.
-Cycling's simplex phase remains a SciPy constructor.
-
-Spelling rules are preserved rather than silently broadened: cycling
-accepts `optax:adam+cosine` and `basinhopping:Powell`; catalog presets
-take schedules from their declared settings and retain their existing
-local-method defaults rather than interpreting cycling suffixes. Unknown
-catalog options are still rejected, including false-valued unknown options.
-Identical bound constructor requests build equivalent solvers, while
-different named/caller policies remain different and recorded.
+Named catalog presets and direct settings defaults can differ; inspect the
+final model rather than inferring effective controls from a name.
+Cycling's full and simplex phases are declared through `CyclingSettings`.
+Unknown settings fields are rejected, including false-valued unknown fields.
 
 ### Evaluation counts and history scopes
 
@@ -195,7 +261,7 @@ fallback. Non-FD modes continue through the full-gradient interface.
 Least-squares is deliberately separate: this codebase's residual Jacobian
 is owned by SciPy and already probes only the active-coordinate residual
 callback. Its existing forward-difference/relative-step behavior and
-`ScipyOptimizer.eps` provenance remain unchanged, even when the Python
+`ScipyOptimizer.settings.eps` provenance remain unchanged, even when the Python
 executor is configured for FD. Those residual probes are recorded by the
 existing residual callback, not as executor-owned `n_gradient_evaluations`.
 No backend full-Jacobian contract or mandatory execution protocol changes.
@@ -208,15 +274,14 @@ Passing an optimizer or workflow object executes that same object, but
 the application must first capture enough configuration to distinguish
 different effective runs. Exact built-in types are supported automatically:
 SciPy, Optax, JaxOpt, basin-hopping, both multi-start constructors, the
-catalog's deferred cycling optimizer, `SingleStageWorkflow`, and
-`MethodE2Workflow`. Capture reads their current settings rather than
-reconstructing them from defaults. Nested optimizer objects are captured
-recursively; deferred inner-solver settings reuse the catalog capture.
-Non-finite numeric controls, including values mutated after construction,
-are rejected before normalization rather than recorded as string sentinels.
+configured cycling optimizer, `SingleStageWorkflow`, and
+`MethodE2Workflow`. Their `configuration_settings()` providers describe their
+immutable settings and actual nested components rather than reconstructing
+defaults. Non-finite controls are rejected, not recorded as string sentinels.
 
 Other types, **including subclasses of built-ins**, must implement the
-separate `q2mm.application.ConfigurationProvider` protocol. Its one method
+dependency-neutral [`q2mm.configuration.ConfigurationProvider`](../reference/q2mm/configuration.md)
+protocol. Its one method
 is:
 
 ```python
@@ -236,6 +301,13 @@ nested controls. It must not run an optimization or mutate the component.
 Return string-keyed mappings, ordered JSON arrays, and finite JSON scalar
 values; convert other representations explicitly. Unknown objects, paths,
 sets, circular data, nonfinite numbers, and secret-like fields are rejected.
+
+`q2mm.configuration.capture_component_settings` owns component capture,
+including nested descriptions. Optimizers depend only on that neutral
+primitive. `q2mm.application.configuration` composes the execution envelope
+and translates neutral capture failures to `ApplicationConfigurationError`;
+the numerical evaluation/reference error adaptation remains in
+`q2mm.application.evaluation`.
 
 This is a deliberate compatibility change: an unsupported supplied object
 no longer proceeds with only class/module provenance. Missing, noncallable,
@@ -271,11 +343,12 @@ available.
 from q2mm.objectives.jax import JaxObjectiveExecutor
 from q2mm.objectives.plan import ObjectivePlan
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.settings import ScipySettings
 
 plan = ObjectivePlan.from_problem(problem)
 evaluator = JaxObjectiveExecutor(plan, backend, problem.starting_force_field)
 
-optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=500)
+optimizer = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=500))
 result = optimizer.optimize(evaluator, plan.active_space)
 print(result.summary())
 ```
@@ -309,17 +382,16 @@ from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.python import PythonObjectiveExecutor
 from q2mm.optimizers.multistart import MultiStartOptimizer
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.settings import MultiStartSettings, ScipySettings
 
 plan = ObjectivePlan.from_problem(problem)
 evaluator = PythonObjectiveExecutor(plan, backend, problem.starting_force_field)
 
 # Multi-start global search
-inner = ScipyOptimizer(method="L-BFGS-B", maxiter=500)
+inner = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=500))
 multi = MultiStartOptimizer(
+    MultiStartSettings(optimizer=inner.settings, n_starts=10, perturbation_pct=0.1, seed=42),
     optimizer=inner,
-    n_starts=10,
-    perturbation_pct=0.1,
-    seed=42,
 )
 result = multi.optimize(evaluator, plan.active_space)
 ```
@@ -397,21 +469,17 @@ production workflow.
 with Nelder-Mead on the most sensitive parameters.
 
 ```python
-from q2mm.optimizers.cycling import OptimizationLoop
+from q2mm.optimizers.cycling import CyclingOptimizer
+from q2mm.settings import CyclingSettings, ScipySettings
 
-loop = OptimizationLoop(
-    evaluator,
-    plan.active_space,    # ActiveParameterSpace over plan.layout
-    max_params=3,         # simplex on top 3 params per cycle
-    max_cycles=10,        # up to 10 grad-simp cycles
-    convergence=0.01,     # stop when <1% improvement per cycle
-    full_method="L-BFGS-B",
-    simp_method="Nelder-Mead",
-    full_maxiter=200,
-    simp_maxiter=200,
-    verbose=True,
-)
-result = loop.run()
+optimizer = CyclingOptimizer(CyclingSettings(
+    max_params=3,
+    max_cycles=10,
+    convergence=0.01,
+    full_optimizer=ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False),
+    simplex_optimizer=ScipySettings(method="Nelder-Mead", maxiter=200, verbose=False),
+))
+result = optimizer.optimize(evaluator, plan.active_space)
 print(result.summary())
 ```
 
@@ -433,20 +501,20 @@ Nelder-Mead (5.11) alone.
 ### Composing with global search
 
 You can use multi-start as the gradient phase inside grad-simp cycling
-via the `full_method="multi:L-BFGS-B"` parameter:
+via typed nested `full_optimizer` settings:
 
 ```python
-from q2mm.optimizers.cycling import OptimizationLoop
+from q2mm.optimizers.cycling import CyclingOptimizer
+from q2mm.settings import CyclingSettings, MultiStartSettings, ScipySettings
 
-loop = OptimizationLoop(
-    evaluator,
-    plan.active_space,
+optimizer = CyclingOptimizer(CyclingSettings(
     max_params=3,
     max_cycles=5,
-    full_method="multi:L-BFGS-B",  # multi-start each gradient phase
-    simp_method="Nelder-Mead",
-)
-result = loop.run()
+    full_optimizer=MultiStartSettings(
+        optimizer=ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False),
+    ),
+))
+result = optimizer.optimize(evaluator, plan.active_space)
 ```
 
 !!! warning "Evidence: this composition doesn't outperform plain cycling"
@@ -473,8 +541,8 @@ plan = ObjectivePlan.from_problem(
 )
 evaluator = PythonObjectiveExecutor(plan, backend, problem.starting_force_field)
 
-loop = OptimizationLoop(evaluator, plan.active_space, max_params=3, max_cycles=10)
-result = loop.run()
+optimizer = CyclingOptimizer(CyclingSettings(max_params=3, max_cycles=10))
+result = optimizer.optimize(evaluator, plan.active_space)
 ```
 
 L2 regularization can stabilize under-determined cycling runs (see [L2 Regularization](#l2-regularization)).
@@ -496,11 +564,12 @@ finite-difference fallback.
 from q2mm.objectives.jax import JaxObjectiveExecutor
 from q2mm.objectives.plan import ObjectivePlan
 from q2mm.optimizers.scipy_opt import ScipyOptimizer
+from q2mm.settings import ScipySettings
 
 plan = ObjectivePlan.from_problem(problem)
 evaluator = JaxObjectiveExecutor(plan, backend, problem.starting_force_field)
 
-optimizer = ScipyOptimizer(method="L-BFGS-B", maxiter=200)
+optimizer = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200))
 result = optimizer.optimize(evaluator, plan.active_space)
 print(result.summary())
 ```
@@ -686,7 +755,7 @@ For multi-molecule TS systems with the multi-target objective
 | OptaxOptimizer Adam | Exploration | First-order; useful for rugged landscapes where L-BFGS-B gets stuck. |
 
 !!! tip "Start with ScipyOptimizer"
-    Use `ScipyOptimizer(method="L-BFGS-B")` with a
+    Use `ScipyOptimizer(ScipySettings(method="L-BFGS-B"))` with a
     `JaxObjectiveExecutor` as the default for JAX-backend workflows. The
     executor builds per-case JIT fragments and provides analytical gradients
     to SciPy's battle-tested L-BFGS-B implementation.

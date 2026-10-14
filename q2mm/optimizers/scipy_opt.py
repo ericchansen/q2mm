@@ -27,11 +27,12 @@ Gradient behaviour is explicit and driven by the executor, never probed:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from q2mm.settings import ScipySettings
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator
 from q2mm.optimizers.protocols import _active_value_and_gradient
@@ -73,61 +74,23 @@ class ScipyOptimizer:
     """Force field optimizer using :mod:`scipy.optimize`.
 
     Args:
-        method: SciPy minimization method (``'L-BFGS-B'`` default,
-            ``'Nelder-Mead'``, ``'Powell'``, ``'trust-constr'``,
-            ``'least_squares'``).
-        maxiter: Maximum iterations.
-        ftol: Function tolerance for convergence.
-        gtol: Projected-gradient tolerance for L-BFGS-B.
-        maxls: Maximum L-BFGS-B line-search steps per iteration.
-        eps: Finite-difference step for SciPy's internal FD.
-        use_bounds: Whether to enforce sanity bounds from ``space.bounds``,
-            intersected with configured fractional bounds. Unsupported
-            bounded methods and infeasible starts are rejected before
-            evaluation; ``False`` is genuinely unbounded.
-        verbose: Log progress.
-        divergence_factor: Early-stop threshold multiple of the initial
-            score; ``None`` disables.
-        divergence_patience: Consecutive divergent callbacks before stopping.
-        fc_fraction: Fractional bounds for force-constant params.
-        eq_fraction: Fractional bounds for equilibrium params.
+        settings: Immutable :class:`~q2mm.settings.ScipySettings` controls.
+            Bounds come from ``space.bounds``, intersected with configured
+            fractional bounds. Unsupported bounded methods and infeasible
+            starts are rejected before evaluation; ``use_bounds=False``
+            is genuinely unbounded.
 
     """
 
     DERIVATIVE_FREE_METHODS = {"Nelder-Mead", "Powell"}
     BOUNDED_METHODS = {"Nelder-Mead", "Powell", "L-BFGS-B", "trust-constr", "least_squares"}
 
-    def __init__(
-        self,
-        method: str = "L-BFGS-B",
-        maxiter: int = 500,
-        ftol: float = 1e-8,
-        gtol: float = 1e-5,
-        maxls: int = 100,
-        eps: float = 1e-3,
-        use_bounds: bool = True,
-        verbose: bool = True,
-        divergence_factor: float | None = 3.0,
-        divergence_patience: int = 5,
-        fc_fraction: float | None = None,
-        eq_fraction: float | None = None,
-    ) -> None:
-        if not np.isfinite(gtol) or gtol <= 0:
-            raise ValueError("gtol must be positive and finite.")
-        if not isinstance(maxls, int) or maxls < 1:
-            raise ValueError("maxls must be a positive int.")
-        self.method = method
-        self.maxiter = maxiter
-        self.ftol = ftol
-        self.gtol = gtol
-        self.maxls = maxls
-        self.eps = eps
-        self.use_bounds = use_bounds
-        self.verbose = verbose
-        self.divergence_factor = divergence_factor
-        self.divergence_patience = divergence_patience
-        self.fc_fraction = fc_fraction
-        self.eq_fraction = eq_fraction
+    def __init__(self, settings: ScipySettings = ScipySettings()) -> None:
+        self.settings = settings
+
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Return the immutable configured controls as JSON data."""
+        return self.settings.model_dump(mode="json")
 
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the optimization and return the canonical result."""
@@ -136,8 +99,8 @@ class ScipyOptimizer:
         baseline = np.array(space.baseline, dtype=float)
         x0 = space.pack(baseline)
 
-        derivative_free = self.method in self.DERIVATIVE_FREE_METHODS
-        is_least_squares = self.method == "least_squares"
+        derivative_free = self.settings.method in self.DERIVATIVE_FREE_METHODS
+        is_least_squares = self.settings.method == "least_squares"
         # "Evaluator gradient" means the executor supplies its own gradient —
         # analytical *or* its own finite differences — via value_and_gradient.
         use_evaluator_gradient = (
@@ -155,21 +118,21 @@ class ScipyOptimizer:
             gradient_mode, fd_step = "none", None
         elif is_least_squares:
             # SciPy differences the residual vector internally (diff_step).
-            gradient_mode, fd_step = "finite_difference", self.eps
+            gradient_mode, fd_step = "finite_difference", self.settings.eps
         elif use_evaluator_gradient:
             # The executor supplies the gradient: analytical (step None) or its
             # own explicit finite differences (its configured FD step).
             gradient_mode = evaluator.gradient_mode.value
             fd_step = evaluator.finite_difference_step
         else:  # scipy internal finite differences (evaluator declares NONE)
-            gradient_mode, fd_step = "finite_difference", self.eps
+            gradient_mode, fd_step = "finite_difference", self.settings.eps
 
         initial_score = evaluator.value(space.expand(x0, base=baseline))
 
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Starting %s optimization: %d active params (%d total), initial score %.6f",
-                self.method,
+                self.settings.method,
                 space.n_active,
                 n_params,
                 initial_score,
@@ -196,7 +159,7 @@ class ScipyOptimizer:
         history = run_history if run_history else (initial_score, final_score)
         n_evaluations = evaluator.n_evaluations - n_eval_before
 
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Optimization %s: score %.6f → %.6f (%d evals)",
                 "succeeded" if success else "failed",
@@ -217,25 +180,29 @@ class ScipyOptimizer:
             initial_params=baseline,
             final_params=final_full,
             history=history,
-            method=self.method if not is_least_squares else "least_squares",
+            method=self.settings.method if not is_least_squares else "least_squares",
             gradient_mode=gradient_mode,
             fd_step=fd_step,
         )
 
     def _resolve_bounds(self, space: ActiveParameterSpace, x0: np.ndarray) -> list[tuple[float, float]] | None:
-        if not self.use_bounds:
+        if not self.settings.use_bounds:
             return None
-        if self.method not in self.BOUNDED_METHODS:
+        if self.settings.method not in self.BOUNDED_METHODS:
             raise ValueError(
-                f"ScipyOptimizer does not support bounds for method {self.method!r}; "
+                f"ScipyOptimizer does not support bounds for method {self.settings.method!r}; "
                 "choose a supported bounded method or explicitly set use_bounds=False."
             )
-        use_fractional = self.fc_fraction is not None or self.eq_fraction is not None
+        use_fractional = self.settings.fc_fraction is not None or self.settings.eq_fraction is not None
         if use_fractional:
             from q2mm.models.parameters import fractional_bounds
 
             return fractional_bounds(
-                space.kinds, space.bounds, x0, fc_fraction=self.fc_fraction, eq_fraction=self.eq_fraction
+                space.kinds,
+                space.bounds,
+                x0,
+                fc_fraction=self.settings.fc_fraction,
+                eq_fraction=self.settings.eq_fraction,
             ).tolist()
         return space.bounds.tolist()
 
@@ -251,25 +218,25 @@ class ScipyOptimizer:
     ) -> tuple[np.ndarray, float, int, bool, str]:
         from scipy import optimize
 
-        options: dict = {"maxiter": self.maxiter}
-        if self.method == "Nelder-Mead":
-            options["fatol"] = self.ftol
-            options["xatol"] = self.ftol
-        elif self.method == "Powell":
-            options["ftol"] = self.ftol
-            options["xtol"] = self.ftol
-        elif self.method == "trust-constr":
-            options["gtol"] = self.ftol
+        options: dict = {"maxiter": self.settings.maxiter}
+        if self.settings.method == "Nelder-Mead":
+            options["fatol"] = self.settings.ftol
+            options["xatol"] = self.settings.ftol
+        elif self.settings.method == "Powell":
+            options["ftol"] = self.settings.ftol
+            options["xtol"] = self.settings.ftol
+        elif self.settings.method == "trust-constr":
+            options["gtol"] = self.settings.ftol
         else:
-            options["ftol"] = self.ftol
-            if self.method == "L-BFGS-B":
-                options["gtol"] = self.gtol
-                options["maxls"] = self.maxls
+            options["ftol"] = self.settings.ftol
+            if self.settings.method == "L-BFGS-B":
+                options["gtol"] = self.settings.gtol
+                options["maxls"] = self.settings.maxls
 
         effective_bounds = bounds if bounds else None
         use_bound_scaling = (
             use_evaluator_gradient
-            and self.method == "L-BFGS-B"
+            and self.settings.method == "L-BFGS-B"
             and effective_bounds is not None
             and all(np.isfinite(bound).all() and bound[1] > bound[0] for bound in effective_bounds)
         )
@@ -319,13 +286,13 @@ class ScipyOptimizer:
             return val, active_grad * half_widths if use_bound_scaling else active_grad
 
         callback = self._make_callback(evaluator, initial_score, value_only)
-        if not use_evaluator_gradient and self.method not in self.DERIVATIVE_FREE_METHODS:
-            options["eps"] = self.eps
+        if not use_evaluator_gradient and self.settings.method not in self.DERIVATIVE_FREE_METHODS:
+            options["eps"] = self.settings.eps
         try:
             scipy_result = optimize.minimize(
                 value_and_grad if use_evaluator_gradient else value_only,
                 solver_x0,
-                method=self.method,
+                method=self.settings.method,
                 jac=True if use_evaluator_gradient else None,
                 bounds=solver_bounds,
                 options=options,
@@ -371,7 +338,7 @@ class ScipyOptimizer:
                 "%s exited after %d iteration(s) with negligible change (initial=%.4g, final=%.4g, "
                 "|Δ|/init=%.2e). The optimizer likely did NOT optimize. Common causes: ftol too loose, "
                 "or bounds clamp the starting point. Last scipy message: %r",
-                self.method,
+                self.settings.method,
                 nit,
                 initial_score,
                 final_score,
@@ -412,9 +379,9 @@ class ScipyOptimizer:
             x0,
             method=ls_method,
             bounds=scipy_bounds,
-            max_nfev=self.maxiter,
-            ftol=self.ftol,
-            diff_step=self.eps,
+            max_nfev=self.settings.maxiter,
+            ftol=self.settings.ftol,
+            diff_step=self.settings.eps,
         )
         final_score = float(scipy_result.cost * 2.0)
         nfev = int(getattr(scipy_result, "nfev", 0))
@@ -428,10 +395,10 @@ class ScipyOptimizer:
     ) -> Callable:
         diverge_count = 0
         iterations = 0
-        factor = self.divergence_factor
+        factor = self.settings.divergence_factor
         check_divergence = factor is not None and initial_score > 0
-        patience = self.divergence_patience
-        verbose = self.verbose
+        patience = self.settings.divergence_patience
+        verbose = self.settings.verbose
         state = {"abandoned": False}
 
         def callback(intermediate_result: Any) -> None:
@@ -476,7 +443,7 @@ class ScipyOptimizer:
                 else:
                     diverge_count = 0
 
-        if self.method == "trust-constr":
+        if self.settings.method == "trust-constr":
             # Its native two-argument signature also works on SciPy versions
             # predating the intermediate_result keyword callback.
             def trust_callback(_xk: np.ndarray, result: Any) -> None:

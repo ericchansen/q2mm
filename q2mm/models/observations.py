@@ -35,7 +35,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Literal, TypeAlias
+from typing import Literal
 
 import numpy as np
 
@@ -397,7 +397,7 @@ class Observation:
         object.__setattr__(self, "atom_indices", atom_indices)
 
 
-ObservationValue: TypeAlias = (
+type ObservationValue = (
     Observation
     | AtomicPartialChargeObservation
     | DirectElectrostaticPotentialObservation

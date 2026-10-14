@@ -1,12 +1,15 @@
 name: q2mm-psi4
+# BEST-EFFORT native lane; core development uses Python 3.15.
 channels:
   - conda-forge
 dependencies:
-  - python=3.12
+  - python=3.14
   - numpy
   - scipy
   - psi4
   - pyyaml
+  - pydantic>=2.14.1,<3
+  - pydantic-settings>=2.16.0,<3
   - pytest
   - ruff
   - pip

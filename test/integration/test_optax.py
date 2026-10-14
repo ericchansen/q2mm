@@ -5,6 +5,8 @@ using the JAX backend's analytical gradients.
 """
 
 from __future__ import annotations
+
+from q2mm.settings import OptaxSettings, ScipySettings
 from q2mm.backends.registry import load_backend
 
 import importlib.util
@@ -112,12 +114,7 @@ class TestOptaxJaxDiatomic:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
-        optimizer = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=200,
-            verbose=False,
-        )
+        optimizer = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=200, verbose=False))
         result = optimizer.optimize(objective, _all_active_space(objective))
 
         assert result.final_score < 1e-4
@@ -134,11 +131,7 @@ class TestOptaxJaxDiatomic:
 
         objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
-            optimizer="sgd",
-            learning_rate=0.05,
-            momentum=0.9,
-            max_steps=300,
-            verbose=False,
+            OptaxSettings(optimizer="sgd", learning_rate=0.05, momentum=0.9, max_steps=300, verbose=False)
         )
         result = optimizer.optimize(objective, _all_active_space(objective))
 
@@ -155,11 +148,7 @@ class TestOptaxJaxDiatomic:
 
         objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
         optimizer = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=200,
-            schedule="cosine",
-            verbose=False,
+            OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=200, schedule="cosine", verbose=False)
         )
         result = optimizer.optimize(objective, _all_active_space(objective))
 
@@ -183,12 +172,7 @@ class TestOptaxJaxWater:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
-        optimizer = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.05,
-            max_steps=300,
-            verbose=False,
-        )
+        optimizer = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.05, max_steps=300, verbose=False))
         result = optimizer.optimize(objective, _all_active_space(objective))
 
         assert result.final_score < result.initial_score
@@ -215,18 +199,13 @@ class TestOptaxVsScipyBaseline:
         ref = ref.with_energy(value=target_energy, case_id="0", weight=1.0)
 
         obj_scipy = _make_objective(forcefield=ff_scipy, backend=self.backend, molecules=[mol], reference=ref)
-        opt_scipy = ScipyOptimizer(method="L-BFGS-B", maxiter=200, verbose=False)
+        opt_scipy = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=200, verbose=False))
         res_scipy = opt_scipy.optimize(obj_scipy, _all_active_space(obj_scipy))
 
         # Run Adam
         ff_optax = _h2_ff(bond_k=215.8, bond_r0=0.74)
         obj_optax = _make_objective(forcefield=ff_optax, backend=self.backend, molecules=[mol], reference=ref)
-        opt_optax = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=500,
-            verbose=False,
-        )
+        opt_optax = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=500, verbose=False))
         res_optax = opt_optax.optimize(obj_optax, _all_active_space(obj_optax))
 
         # Both should converge well on this simple problem
@@ -243,12 +222,7 @@ class TestOptaxVsScipyBaseline:
         ref = ref.with_energy(value=0.0, case_id="0", weight=1.0)
 
         objective = _make_objective(forcefield=ff, backend=self.backend, molecules=[mol], reference=ref)
-        optimizer = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.01,
-            max_steps=10,
-            verbose=False,
-        )
+        optimizer = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.01, max_steps=10, verbose=False))
         result = optimizer.optimize(objective, _all_active_space(objective))
 
         # JAX executor provides analytical gradients via the per-case JIT path.

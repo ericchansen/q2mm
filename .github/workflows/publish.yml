@@ -8,6 +8,9 @@ on:
 permissions:
   contents: write
 
+env:
+  PYYAML_FORCE_LIBYAML: "0"
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -18,7 +21,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
 
       - name: Install build tools
         run: python -m pip install build

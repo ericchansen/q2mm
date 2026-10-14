@@ -27,12 +27,20 @@ from q2mm.models.parameters import ActiveParameterSpace, ParameterKind, Paramete
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import ObjectiveEvaluator
 from q2mm.preparation import (
-    MatchedFrequencyObservations,
     MoleculeObservations,
     PreparationError,
-    QFuerzaConfig,
     StationaryPointObservations,
     prepare,
+    match_frequencies,
+)
+from q2mm.settings import (
+    PreparationSettings,
+    QFuerzaSettings,
+    FrequencyMatchingSettings,
+    OptimizationSettings,
+    ObjectiveSettings,
+    BackendSettings,
+    SingleStageSettings,
 )
 from test._shared import make_harmonic_diatomic, make_harmonic_water, make_water
 
@@ -118,7 +126,9 @@ def test_fresh_preparation_builds_all_active_immutable_problem() -> None:
     geometry = molecule.geometry.copy()
     hessian = molecule.hessian.copy()
 
-    problem = prepare(molecule, stationary_point="ground_state", functional_form="harmonic")
+    problem = prepare(
+        molecule, settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic")
+    )
 
     assert problem.case_ids == ("0",)
     assert problem.active_space.n_active == len(problem.layout)
@@ -145,7 +155,7 @@ def test_declared_stationary_point_routes_qfuerza_inversion(point: str, inverted
     from q2mm import preparation
 
     with patch.object(preparation, "qfuerza_fresh", wraps=preparation.qfuerza_fresh) as spy:
-        prepare(molecule, stationary_point=point, functional_form="harmonic")
+        prepare(molecule, settings=PreparationSettings(stationary_point=point, functional_form="harmonic"))
 
     assert spy.call_args.kwargs["invert_ts_curvature"] is inverted
 
@@ -153,13 +163,11 @@ def test_declared_stationary_point_routes_qfuerza_inversion(point: str, inverted
 def test_qfuerza_config_routes_invalid_policy_and_torsion_choice() -> None:
     from q2mm import preparation
 
-    config = QFuerzaConfig(strategy="fuerza", zero_torsions=False, invalid_policy="skip")
+    config = QFuerzaSettings(strategy="fuerza", zero_torsions=False, invalid_policy="skip")
     with patch.object(preparation, "qfuerza_fresh", wraps=preparation.qfuerza_fresh) as spy:
         problem = prepare(
             _water(),
-            stationary_point="ground_state",
-            functional_form="harmonic",
-            qfuerza=config,
+            settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic", qfuerza=config),
         )
 
     assert spy.call_args.kwargs["strategy"] == "fuerza"
@@ -176,9 +184,8 @@ def test_template_provided_preserves_values_and_explicit_observations() -> None:
 
     problem = prepare(
         make_water(),
-        stationary_point="ground_state",
+        settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
         force_field=force_field,
-        initialize="provided",
         observations=observations,
         case_ids=("custom",),
     )
@@ -206,10 +213,9 @@ def test_template_qfuerza_subset_and_explicit_scalar_space_are_safe() -> None:
 
     scalar_problem = prepare(
         molecule,
-        stationary_point="ground_state",
+        settings=PreparationSettings(stationary_point="ground_state", initialize="qfuerza"),
         force_field=force_field,
         active_parameters=explicit,
-        initialize="qfuerza",
     )
     scalar_vector = layout.vector(scalar_problem.starting_force_field)
     inactive = np.setdiff1d(np.arange(len(layout)), np.array([bond_force_constant]))
@@ -222,10 +228,9 @@ def test_template_qfuerza_subset_and_explicit_scalar_space_are_safe() -> None:
     )
     subset_problem = prepare(
         molecule,
-        stationary_point="ground_state",
+        settings=PreparationSettings(stationary_point="ground_state", initialize="qfuerza"),
         force_field=force_field,
         active_parameters=subset,
-        initialize="qfuerza",
     )
     assert tuple(subset_problem.active_space.kinds) == (
         ParameterKind.BOND_FORCE_CONSTANT,
@@ -237,9 +242,8 @@ def test_multi_molecule_template_and_case_id_rules() -> None:
     molecules = (_water(name="a"), _water(name="b"))
     problem = prepare(
         molecules,
-        stationary_point="transition_state",
+        settings=PreparationSettings(stationary_point="transition_state", initialize="qfuerza"),
         force_field=_template(),
-        initialize="qfuerza",
     )
     assert problem.case_ids == ("0", "1")
     assert problem.preparation_provenance is not None
@@ -249,13 +253,12 @@ def test_multi_molecule_template_and_case_id_rules() -> None:
     )
 
     with pytest.raises(PreparationError, match="shared force_field"):
-        prepare(molecules, stationary_point="ground_state", functional_form="harmonic")
+        prepare(molecules, settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic"))
     with pytest.raises(PreparationError, match="require explicit case_ids"):
         prepare(
             molecules,
-            stationary_point="ground_state",
+            settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
             force_field=_template(),
-            initialize="provided",
             observations=ObservationSet().with_energy(1.0),
         )
 
@@ -264,9 +267,8 @@ def test_explicit_compatibility_observations_match_domain_factory() -> None:
     molecule = _water()
     problem = prepare(
         molecule,
-        stationary_point="ground_state",
+        settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
         force_field=_template(),
-        initialize="provided",
         observations=MoleculeObservations(),
     )
     expected = ObservationSet.from_molecules((molecule,), ("0",), eigenmatrix_diagonal_only=False)
@@ -274,17 +276,25 @@ def test_explicit_compatibility_observations_match_domain_factory() -> None:
 
 
 def test_matched_frequency_recipe_reproduces_sorted_real_mode_matching() -> None:
-    recipe = MatchedFrequencyObservations(
-        qm_frequencies=np.array([300.0, -100.0, 20.0, 100.0]),
-        backend=_FrequencyBackend(),
+    # Exact coordinates keep this historical fingerprint oracle independent of libm.
+    molecule = Molecule(
+        symbols=("O", "H", "H"),
+        geometry=np.array([[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]]),
+        name="water",
+        bond_tolerance=1.5,
     )
-    problem = prepare(
-        make_water(),
-        stationary_point="ground_state",
+    empty = prepare(
+        molecule,
+        settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
         force_field=_template(),
-        initialize="provided",
-        observations=recipe,
+        observations=ObservationSet(),
         case_ids=("frequency-case",),
+    )
+    problem = match_frequencies(
+        empty,
+        np.array([300.0, -100.0, 20.0, 100.0]),
+        backend=_FrequencyBackend(),
+        settings=FrequencyMatchingSettings(),
     )
 
     assert [(value.value, value.data_idx, value.weight, value.case_id) for value in problem.observations.values] == [
@@ -295,29 +305,35 @@ def test_matched_frequency_recipe_reproduces_sorted_real_mode_matching() -> None
     assert provenance is not None
     assert provenance.profile == "matched-frequency-v1"
     assert provenance.observation_recipe["backend"]["key"] == "preparation-test"
+    from q2mm.application.models import problem_fingerprint
+    from q2mm.preparation import _fingerprint
+
+    assert problem_fingerprint(problem) == "sha256:d1eb922c716277bf92c43f652aa0b0e58845046487a8707425fcb3e84e18a6f3"
+    assert _fingerprint(provenance) == "sha256:27f05a65baf51ee767d0a40a991a14338b87434fde0d144e15a2beccecff26e9"
+    assert problem.starting_force_field is empty.starting_force_field
+    assert problem.layout is empty.layout and problem.active_space is empty.active_space
+    assert not empty.observations.values
 
 
 def test_preparation_validation_rejects_ambiguous_or_conflicting_requests() -> None:
     molecule = _water()
-    with pytest.raises(PreparationError, match="mixed"):
-        prepare(molecule, stationary_point=["ground_state"], functional_form="harmonic")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="stationary_point"):
+        prepare(molecule, settings=PreparationSettings(stationary_point=["ground_state"], functional_form="harmonic"))  # type: ignore[arg-type]
     with pytest.raises(PreparationError, match="conflicts"):
         prepare(
             molecule,
-            stationary_point="ground_state",
+            settings=PreparationSettings(stationary_point="ground_state", functional_form="mm3", initialize="provided"),
             force_field=_template(),
-            functional_form="mm3",
-            initialize="provided",
         )
     with pytest.raises(PreparationError, match="requires initialize"):
-        prepare(molecule, stationary_point="ground_state", force_field=_template())
-    with pytest.raises(PreparationError, match="cannot be applied"):
+        prepare(molecule, settings=PreparationSettings(stationary_point="ground_state"), force_field=_template())
+    with pytest.raises(ValueError, match="cannot be applied"):
         prepare(
             molecule,
-            stationary_point="ground_state",
+            settings=PreparationSettings(
+                stationary_point="ground_state", initialize="provided", qfuerza=QFuerzaSettings()
+            ),
             force_field=_template(),
-            initialize="provided",
-            qfuerza=QFuerzaConfig(),
         )
     other_force_field = ForceField(
         bonds=_template().bonds,
@@ -328,19 +344,20 @@ def test_preparation_validation_rejects_ambiguous_or_conflicting_requests() -> N
     with pytest.raises(PreparationError, match="does not match"):
         prepare(
             molecule,
-            stationary_point="ground_state",
+            settings=PreparationSettings(stationary_point="ground_state", initialize="qfuerza"),
             force_field=_template(),
             active_parameters=mismatched_space,
-            initialize="qfuerza",
         )
-    with pytest.raises(PreparationError, match="positive and finite"):
-        QFuerzaConfig(replace_with=0.0)
+    with pytest.raises(ValueError, match="greater than"):
+        QFuerzaSettings(replace_with=0.0)
 
 
 def test_preparation_audit_fingerprints_are_deterministic() -> None:
     molecule = _water()
-    first = prepare(molecule, stationary_point="ground_state", functional_form="harmonic")
-    second = prepare(molecule, stationary_point="ground_state", functional_form="harmonic")
+    first = prepare(molecule, settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic"))
+    second = prepare(
+        molecule, settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic")
+    )
     assert first.preparation_provenance == second.preparation_provenance
     assert first.preparation_provenance is not None
     assert first.preparation_provenance.pre_qfuerza_vector_fingerprint.startswith("sha256:")
@@ -350,24 +367,33 @@ def test_preparation_audit_fingerprints_are_deterministic() -> None:
 def test_optimization_run_records_preparation_audit_fingerprint() -> None:
     problem = prepare(
         make_water(),
-        stationary_point="ground_state",
+        settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
         force_field=_template(),
-        initialize="provided",
-        observations=MatchedFrequencyObservations(
-            qm_frequencies=(100.0,),
-            backend=_FrequencyBackend(),
-        ),
+        observations=ObservationSet(),
     )
-
-    run = q2mm.optimize(
+    problem = match_frequencies(
         problem,
+        (100.0,),
         backend=_FrequencyBackend(),
-        recipe="explicit",
-        optimizer=_NoOpOptimizer(),
-        workflow="single-stage",
-        executor="python",
+        settings=FrequencyMatchingSettings(),
+    )
+    backend, optimizer = _FrequencyBackend(), _NoOpOptimizer()
+    workflow = q2mm.build_workflow(SingleStageSettings())
+    settings = OptimizationSettings(
+        backend=BackendSettings(key="preparation-test"), objective=ObjectiveSettings(), n_evals=0
+    )
+    configuration = q2mm.capture_execution_configuration(
+        settings, backend=backend, optimizer=optimizer, workflow=workflow
+    )
+    result = q2mm.optimize(
+        problem,
+        optimizer=optimizer,
+        workflow=workflow,
+        make_evaluator=q2mm.make_evaluator_factory(backend, problem.starting_force_field, settings=settings.objective),
+        regularization=0.0,
         n_evals=0,
     )
+    run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
 
     assert run.provenance["preparation"]["profile"] == "matched-frequency-v1"
     assert run.provenance["preparation_fingerprint"].startswith("sha256:")
@@ -381,9 +407,8 @@ def _generic_problem(
 ) -> q2mm.OptimizationProblem:
     return prepare(
         molecule,
-        stationary_point=point,
+        settings=PreparationSettings(stationary_point=point, initialize="provided"),
         force_field=_template(),
-        initialize="provided",
         observations=recipe,
         case_ids=("case",),
     )
@@ -560,7 +585,11 @@ def test_invalid_generic_inputs_fail_before_qfuerza(
         patch("q2mm.preparation.qfuerza_fresh") as initialize,
         pytest.raises(PreparationError, match=message),
     ):
-        prepare(molecule, stationary_point="ground_state", functional_form="harmonic", case_ids=("bad",))
+        prepare(
+            molecule,
+            settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic"),
+            case_ids=("bad",),
+        )
     initialize.assert_not_called()
 
 
@@ -627,9 +656,8 @@ def test_diatomic_is_linear_even_with_sub_roundoff_tolerance() -> None:
 def test_each_case_resolves_its_own_linearity() -> None:
     problem = prepare(
         (make_harmonic_diatomic(), make_harmonic_water()),
-        stationary_point="ground_state",
+        settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
         force_field=_template(),
-        initialize="provided",
         case_ids=("linear", "bent"),
     )
     cases = problem.preparation_provenance.observation_recipe["cases"]
@@ -703,9 +731,8 @@ def test_explicit_observations_do_not_trigger_generic_classification(caplog: pyt
     with patch("q2mm.preparation._resolve_linearity", side_effect=AssertionError("generic route")):
         problem = prepare(
             molecule,
-            stationary_point="ground_state",
+            settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
             force_field=_template(),
-            initialize="provided",
             observations=observations,
         )
     assert problem.observations is observations
@@ -726,15 +753,32 @@ def test_saved_run_retains_generic_profile_masks_and_diagnostics(tmp_path: Path,
             n_params=len(problem.layout),
         )
     )
-    run = q2mm.optimize(
-        problem,
-        backend=backend,
-        recipe="explicit",
-        optimizer=_NoOpOptimizer(),
-        workflow="single-stage",
-        executor="python",
+    optimizer = _NoOpOptimizer()
+    workflow = q2mm.build_workflow(SingleStageSettings())
+    settings = OptimizationSettings(
+        backend=BackendSettings(key=backend.info.name),
+        objective=ObjectiveSettings(),
         n_evals=0,
     )
+    configuration = q2mm.capture_execution_configuration(
+        settings,
+        backend=backend,
+        optimizer=optimizer,
+        workflow=workflow,
+    )
+    result = q2mm.optimize(
+        problem,
+        optimizer=optimizer,
+        workflow=workflow,
+        make_evaluator=q2mm.make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=settings.objective,
+        ),
+        regularization=0.0,
+        n_evals=0,
+    )
+    run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
     first = q2mm.save(run, tmp_path / "first.frcmod")
     second = q2mm.save(run, tmp_path / "second.frcmod")
     assert first.manifest_path.read_bytes() == second.manifest_path.read_bytes()
@@ -786,9 +830,8 @@ def test_generic_recipe_source_hessian_is_zero_and_changed_stiffness_is_not(syst
     molecule = molecule.with_hessian(session.hessian(HessianRequest(parameters=parameters)).hessian)
     problem = prepare(
         molecule,
-        stationary_point="ground_state",
+        settings=PreparationSettings(stationary_point="ground_state", initialize="provided"),
         force_field=force_field,
-        initialize="provided",
         case_ids=("case",),
     )
     plan = ObjectivePlan.from_problem(problem)

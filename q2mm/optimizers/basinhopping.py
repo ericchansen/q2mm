@@ -15,10 +15,12 @@ caller's executor selection — never probed here.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from q2mm.settings import BasinHoppingSettings
 from q2mm.models.results import OptimizationResult
 from q2mm.objectives.protocols import GradientMode, ObjectiveEvaluator
 from q2mm.optimizers.protocols import _active_value_and_gradient
@@ -50,23 +52,12 @@ class _BoundedStep:
 class BasinHoppingOptimizer:
     """Global optimizer using basin-hopping with L-BFGS-B local steps."""
 
-    def __init__(
-        self,
-        niter: int = 50,
-        T: float = 1.0,
-        stepsize: float = 0.5,
-        local_method: str = "L-BFGS-B",
-        local_maxiter: int = 200,
-        seed: int | None = None,
-        verbose: bool = True,
-    ) -> None:
-        self.niter = niter
-        self.T = T
-        self.stepsize = stepsize
-        self.local_method = local_method
-        self.local_maxiter = local_maxiter
-        self.seed = seed
-        self.verbose = verbose
+    def __init__(self, settings: BasinHoppingSettings = BasinHoppingSettings()) -> None:
+        self.settings = settings
+
+    def configuration_settings(self) -> Mapping[str, Any]:
+        """Return the immutable configured controls as JSON data."""
+        return self.settings.model_dump(mode="json")
 
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Run basin-hopping and return the canonical result."""
@@ -90,9 +81,9 @@ class BasinHoppingOptimizer:
             fd_step = 1e-3
 
         bounds = space.bounds.tolist()
-        rng = np.random.default_rng(self.seed)
+        rng = np.random.default_rng(self.settings.seed)
 
-        options: dict[str, Any] = {"maxiter": self.local_maxiter}
+        options: dict[str, Any] = {"maxiter": self.settings.local_maxiter}
         jac_fn = None
         if use_evaluator_gradient:
 
@@ -104,19 +95,19 @@ class BasinHoppingOptimizer:
         def value_only(x_active: np.ndarray) -> float:
             return evaluator.value(space.expand(x_active, base=baseline))
 
-        minimizer_kwargs: dict[str, Any] = {"method": self.local_method, "jac": jac_fn, "options": options}
-        if bounds and self.local_method in ("L-BFGS-B", "trust-constr", "SLSQP"):
+        minimizer_kwargs: dict[str, Any] = {"method": self.settings.local_method, "jac": jac_fn, "options": options}
+        if bounds and self.settings.local_method in ("L-BFGS-B", "trust-constr", "SLSQP"):
             minimizer_kwargs["bounds"] = bounds
 
-        take_step = _BoundedStep(self.stepsize, bounds, rng)
+        take_step = _BoundedStep(self.settings.stepsize, bounds, rng)
 
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Basin-hopping: %d hops, T=%.2f, stepsize=%.2f, local=%s",
-                self.niter,
-                self.T,
-                self.stepsize,
-                self.local_method,
+                self.settings.niter,
+                self.settings.T,
+                self.settings.stepsize,
+                self.settings.local_method,
             )
 
         if x0.size == 0:
@@ -132,7 +123,7 @@ class BasinHoppingOptimizer:
                 initial_params=baseline,
                 final_params=baseline.copy(),
                 history=evaluator.history[hist_before:] or (initial_score,),
-                method=f"basinhopping({self.local_method})",
+                method=f"basinhopping({self.settings.local_method})",
                 gradient_mode=gradient_mode,
                 fd_step=fd_step,
             )
@@ -140,8 +131,8 @@ class BasinHoppingOptimizer:
         result = basinhopping(
             value_only,
             x0,
-            niter=self.niter,
-            T=self.T,
+            niter=self.settings.niter,
+            T=self.settings.T,
             take_step=take_step,
             minimizer_kwargs=minimizer_kwargs,
             seed=int(rng.integers(2**31)),
@@ -150,13 +141,13 @@ class BasinHoppingOptimizer:
         final_params = space.expand(result.x.copy(), base=baseline)
         final_score = float(result.fun)
 
-        if self.verbose:
+        if self.settings.verbose:
             logger.info(
                 "Basin-hopping %s: score %.6f → %.6f (%d hops)",
                 "converged" if result.lowest_optimization_result.success else "finished",
                 initial_score,
                 final_score,
-                self.niter,
+                self.settings.niter,
             )
 
         return OptimizationResult(
@@ -164,14 +155,14 @@ class BasinHoppingOptimizer:
             message=str(result.message[0] if isinstance(result.message, list) else result.message),
             initial_score=initial_score,
             final_score=final_score,
-            n_iterations=self.niter,
+            n_iterations=self.settings.niter,
             n_evaluations=evaluator.n_evaluations - n_eval_before,
             n_params=n_params,
             layout_fingerprint=fingerprint,
             initial_params=baseline,
             final_params=final_params,
             history=evaluator.history[hist_before:] or (initial_score, final_score),
-            method=f"basinhopping({self.local_method})",
+            method=f"basinhopping({self.settings.local_method})",
             gradient_mode=gradient_mode,
             fd_step=fd_step,
         )

@@ -15,6 +15,7 @@ import subprocess
 import sys
 
 import pytest
+from pydantic import ValidationError
 
 from q2mm.benchmarks.profiles import (
     OPTIMIZER_CATALOG,
@@ -29,13 +30,13 @@ from q2mm.benchmarks.publications import FERROCENE_SEVEN_STRUCTURE_PROFILE, REPO
 
 
 class TestRunProfileValidation:
-    def test_uses_identity_equality_for_mapping_backed_state(self) -> None:
+    def test_requested_settings_use_value_equality_and_explicit_fingerprint(self) -> None:
         first = RunProfile(system="ch3f", data_roots={"ch3f": "/tmp/data"})
         second = RunProfile(system="ch3f", data_roots={"ch3f": "/tmp/data"})
 
         assert first is not second
-        assert first != second
-        assert len({first, second}) == 2
+        assert first == second
+        assert first.fingerprint() == second.fingerprint()
 
     def test_defaults(self) -> None:
         p = RunProfile(system="ch3f")
@@ -46,7 +47,7 @@ class TestRunProfileValidation:
         assert RunProfile(system="rh-enamide").effective_objective_profile == REPOSITORY_OBJECTIVE_PROFILE
 
     def test_is_frozen(self) -> None:
-        with pytest.raises(dataclasses.FrozenInstanceError):
+        with pytest.raises(ValidationError, match="frozen"):
             RunProfile(system="ch3f").system = "other"  # type: ignore[misc]
 
     @pytest.mark.parametrize(
@@ -113,10 +114,10 @@ class TestRunProfileValidation:
         # l2 variants restored.
         assert "scipy-lbfgsb-l2" in OPTIMIZER_CATALOG and "optax-adam-l2" in OPTIMIZER_CATALOG
 
-    def test_optimizer_spec_extra_is_frozen(self) -> None:
+    def test_optimizer_spec_nested_settings_are_frozen(self) -> None:
         spec = OPTIMIZER_CATALOG["optax-adam-cosine"]
-        with pytest.raises(TypeError):
-            spec.extra["schedule"] = "linear"  # type: ignore[index]
+        with pytest.raises(ValidationError, match="frozen"):
+            spec.settings.schedule = "exponential"
 
 
 class TestFingerprintDeterminism:

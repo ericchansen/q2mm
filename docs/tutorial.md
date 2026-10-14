@@ -5,8 +5,9 @@ molecular mechanics force field, and a smaller custom region that may change.
 This tutorial first runs that full pattern on Rh-enamide, then shows exactly
 which paths and objects to replace for a new project.
 
-The examples use the package-root application API:
-`q2mm.prepare`, `q2mm.evaluate`, `q2mm.optimize`, and `q2mm.save`.
+The examples use the canonical application lifecycle: immutable preparation,
+explicit immutable settings, component construction, pre-run capture,
+numerical evaluation/optimization, run assembly, and persistence.
 Publication case loaders provide named, source-backed workflows; internally
 they delegate problem construction to `q2mm.prepare` with an explicit frozen
 observation recipe. Generic preparation uses a different default, explained
@@ -47,7 +48,10 @@ from pathlib import Path
 
 import q2mm
 from q2mm.benchmarks.systems import load_system
-from q2mm.benchmarks.systems._paths import ExternalDataRoots
+from q2mm import ExternalDataRoots
+from q2mm.backends.registry import load_backend
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import BackendSettings, TransitionStateOptimizationSettings
 
 source_root = Path("/path/to/q2mm/examples/publication/rh-enamide")
 output_root = Path("/path/to/output/rh-enamide")
@@ -66,8 +70,23 @@ print(problem.case_ids)
 print(problem.active_space.n_active, problem.active_space.n_full)
 print(problem.preparation_provenance.qfuerza_settings)
 
-initial = q2mm.evaluate(problem, backend="jax", executor="jax")
-run = q2mm.optimize(problem, backend="jax", recipe="recommended")
+settings = TransitionStateOptimizationSettings(backend=BackendSettings(key="jax"))
+backend = load_backend(settings.backend.key, **settings.backend.options)
+optimizer = q2mm.build_optimizer(settings.optimizer)
+workflow = q2mm.build_workflow(settings.workflow)
+configuration = q2mm.capture_execution_configuration(
+    settings, backend=backend, optimizer=optimizer, workflow=workflow
+)
+make_evaluator = q2mm.make_evaluator_factory(
+    backend, problem.starting_force_field, settings=settings.objective
+)
+plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
+initial = q2mm.evaluate(make_evaluator(plan), problem.active_space.baseline)
+result = q2mm.optimize(
+    problem, optimizer=optimizer, workflow=workflow, make_evaluator=make_evaluator,
+    regularization=settings.objective.regularization, n_evals=settings.n_evals,
+)
+run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
 saved = q2mm.save(run, output_root / "rh-enamide-qfuerza.fld")
 
 print(initial.total, dict(initial.category_scores))
@@ -87,7 +106,13 @@ python examples/publication/rh-enamide/run.py \
 `--bounded-ci` still parses all nine structures, composes the real field,
 preserves the OPT active/frozen partition, evaluates the actual observations,
 enters the optimizer, and writes a field plus manifest. It deliberately makes
-no convergence claim.
+no convergence or native-backend correctness claim: its deterministic echo
+backend is a software smoke, not a physical MM engine.
+
+Canonical publication convergence is currently blocked by local-basin
+methodology. The lifecycle above explains API composition; use the bounded
+software proof rather than launching a publication convergence run. See the
+[source/status record](benchmarks/published-ff-validation.md).
 
 ### Published versus QFUERZA start
 
@@ -111,6 +136,7 @@ from pathlib import Path
 
 import q2mm
 from q2mm.io import load_gaussian_molecules, load_mm3_fld
+from q2mm.settings import PreparationSettings
 
 paths = tuple(sorted(Path("/data/my-project/qm").glob("*.log")))
 case_ids = tuple(path.stem for path in paths)
@@ -125,16 +151,15 @@ opt_ff = load_mm3_fld("/data/my-project/custom-opt.fld", include_standard=False)
 
 problem = q2mm.prepare(
     molecules,
-    stationary_point="transition_state",
+    settings=PreparationSettings(stationary_point="transition_state", initialize="qfuerza"),
     force_field=full_ff,
     active_parameters=opt_ff,
     case_ids=case_ids,
-    initialize="qfuerza",
 )
-initial = q2mm.evaluate(problem, backend="jax")
-run = q2mm.optimize(problem, backend="jax")
-q2mm.save(run, "/data/my-project/output/optimized.fld")
 ```
+
+Use the settings/construction/capture/execution block above with this problem,
+then save the assembled run to your `.fld` output.
 
 Decide case order yourself; filenames do not become scientific identities
 automatically. Use `initialize="provided"` when supplied values must remain
@@ -149,17 +174,17 @@ When no shared template exists, one FCHK molecule can start a fresh field:
 ```python
 import q2mm
 from q2mm.io import load_fchk_molecule
+from q2mm.settings import PreparationSettings
 
 molecule = load_fchk_molecule("/data/my-minimum.fchk")
 problem = q2mm.prepare(
     molecule,
-    stationary_point="ground_state",
-    functional_form="harmonic",
+    settings=PreparationSettings(stationary_point="ground_state", functional_form="harmonic"),
 )
-baseline = q2mm.evaluate(problem, backend="jax")
-run = q2mm.optimize(problem, backend="jax")
-q2mm.save(run, "/data/output/my-minimum.frcmod")
 ```
+
+Execute the same lifecycle with this new problem, choosing
+`GroundStateOptimizationSettings` instead of the TS model, and save to `.frcmod`.
 
 Fresh preparation accepts one molecule because QFUERZA creates one topology.
 For multiple molecules, provide an explicit shared template. XYZ is not a
@@ -193,7 +218,7 @@ calculation.
 
 ```python
 import q2mm
-from q2mm.backends import load_backend
+from q2mm.backends.registry import load_backend
 from q2mm.io.xyz import load_xyz
 
 molecule = load_xyz("/data/optimized.xyz", charge=-1, bond_tolerance=1.4)
@@ -203,7 +228,7 @@ reference = load_backend(
     method="b3lyp",
     basis="6-31g*",
 )
-hessian_result = q2mm.evaluate(
+hessian_result = q2mm.evaluate_reference(
     molecule,
     backend=reference,
     property="hessian",
@@ -214,8 +239,7 @@ molecule = molecule.with_hessian(
 )
 problem = q2mm.prepare(
     molecule,
-    stationary_point="transition_state",
-    functional_form="harmonic",
+    settings=PreparationSettings(stationary_point="transition_state", functional_form="harmonic"),
 )
 ```
 
@@ -231,11 +255,11 @@ parameters:
 ```python
 import q2mm
 from ase.calculators.emt import EMT
-from q2mm.backends import load_backend
+from q2mm.backends.registry import load_backend
 
 reference = load_backend("ase", calculator=EMT())
-energy = q2mm.evaluate(molecule, backend=reference, property="energy")
-gradient = q2mm.evaluate(
+energy = q2mm.evaluate_reference(molecule, backend=reference, property="energy")
+gradient = q2mm.evaluate_reference(
     molecule,
     backend=reference,
     property="coordinate_gradient",
@@ -276,15 +300,31 @@ problem = OptimizationProblem(
     observations=observations,
 )
 
-baseline = q2mm.evaluate(problem, backend=backend)
-run = q2mm.optimize(
-    problem,
-    backend=backend,
-    recipe="explicit",
-    optimizer=optimizer,
-    workflow="single-stage",
-    executor="python",
+from q2mm.settings import BackendSettings, OptimizationSettings, ObjectiveSettings, SingleStageSettings
+
+# backend and optimizer are caller-supplied, already constructed objects.
+settings = OptimizationSettings(
+    backend=BackendSettings(key=backend.info.provenance.backend),
+    workflow=SingleStageSettings(),
+    objective=ObjectiveSettings(executor="python", gradient_mode="none"),
 )
+workflow = q2mm.build_workflow(settings.workflow)
+configuration = q2mm.capture_execution_configuration(
+    settings, backend=backend, optimizer=optimizer, workflow=workflow
+)
+make_evaluator = q2mm.make_evaluator_factory(
+    backend, problem.starting_force_field, settings=settings.objective
+)
+baseline = q2mm.evaluate(make_evaluator(ObjectivePlan.from_problem(problem)), space.baseline)
+result = q2mm.optimize(
+    problem,
+    optimizer=optimizer,
+    workflow=workflow,
+    make_evaluator=make_evaluator,
+    regularization=settings.objective.regularization,
+    n_evals=settings.n_evals,
+)
+run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
 ```
 
 Manual construction changes no evaluator or persistence contract.
@@ -325,7 +365,7 @@ q2mm-benchmark list
 ```
 
 ```python
-from q2mm.backends import load_backend
+from q2mm.backends.registry import load_backend
 
 backend = load_backend("harmonic-reference")
 ```

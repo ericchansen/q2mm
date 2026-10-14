@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [master]
 
+# PyYAML 6.0.3 has no cp315 wheel. Its supported pure-Python build keeps the
+# primary development lane independent of a native libyaml/compiler install.
+env:
+  PYYAML_FORCE_LIBYAML: "0"
+
 jobs:
   # ================================================================
   # Tier 1 — Fast feedback on every push and PR (~30s)
@@ -18,12 +23,11 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
       - run: python -m pip install -e ".[dev]"
       - run: python -m ruff check q2mm/ test/ scripts/
       - run: python -m ruff format --check q2mm test scripts examples
-      # mypy target (python_version=3.12) is set in [tool.mypy]; see the note
-      # there on why 3.12 rather than the 3.10 runtime floor.
+      # Tool targets match the primary interpreter, not the native fallback.
       - run: python -m mypy q2mm/
       - run: python scripts/check_env_dep_parity.py
 
@@ -31,131 +35,138 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.15"
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest -m "not (openmm or tinker or jax or jax_md or psi4)" -q --cov=q2mm --cov-report=term-missing --cov-report=xml:coverage.xml
       - name: Upload coverage
-        if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.xml
 
-  # ================================================================
-  # Tier 2 — Backend unit tests on every push (~1-5 min)
-  # Gated behind Tier 1 so lint/core failures are caught first.
-  # Each job runs backend-specific unit tests only (no --run-integration).
-  # Integration/validation/nightly tests are run locally — see bottom.
-  # Images: ghcr.io/ericchansen/q2mm/ci-<backend>:latest
-  # ================================================================
-  test-openmm:
-    needs: [lint, test-core]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-openmm:latest
-      options: --user root
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m "openmm and not cross_backend" -q
-
-  test-tinker:
-    needs: [lint, test-core]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-tinker:latest
-      options: --user root
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m "tinker and not cross_backend" -q
-
   test-jax:
+    name: Python 3.15 / JAX CPU correctness
     needs: [lint, test-core]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-jax:latest
-      options: --user root
     timeout-minutes: 15
+    env:
+      JAX_PLATFORMS: cpu
     steps:
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      # Scientific validation and full convergence require explicit local
-      # tier flags; backend availability alone must not put them in PR CI.
-      - run: python -m pip install -e . --no-deps && python -m pytest -m "jax and not cross_backend" -q --durations=10
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.15"
+      - run: python -m pip install -e ".[dev,jax]" && python -m pip check
+      - run: python -m pytest -m "jax and not cross_backend" -q --durations=10
 
-  test-jax-md:
+  # ================================================================
+  # Tier 2 — BEST-EFFORT Python 3.14 native dependency availability.
+  # OpenMM 8.6.1 has no cp315 wheels. Extras remain real requirements: an
+  # unavailable native environment is reported, not hidden by Python markers.
+  # Only provisioning may fail softly. Once installed, correctness is required.
+  # ================================================================
+  test-native:
+    name: BEST-EFFORT Python 3.14 / ${{ matrix.backend.name }} availability
     needs: [lint, test-core]
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-jax-md:latest
-      options: --user root
-    timeout-minutes: 10
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash -el {0}
+    strategy:
+      fail-fast: false
+      matrix:
+        backend:
+          - {name: openmm, args: '-m "openmm and not cross_backend"'}
+          - name: tinker
+            args: >-
+              --run-integration -m "tinker and not (cross_backend or nightly or validation or external_data)"
+              test/integration/test_tinker_backend.py
+          - {name: jax-md, args: '-m "jax_md and not cross_backend"'}
+          - name: psi4
+            args: >-
+              --run-integration -m "psi4 and not (cross_backend or nightly or validation or external_data)"
+              test/integration/test_psi4_backend.py::TestPsi4BackendLoadMolecule
+              test/integration/test_psi4_backend.py::TestPsi4EnergyCH3F::test_energy_matches_reference
+          # Enable only explicit cross-backend parity, not publication workloads.
+          - {name: full, args: '--run-integration -m cross_backend'}
     steps:
       - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m "jax_md and not cross_backend" -q
-
-  test-psi4:
-    needs: [lint, test-core]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-psi4:latest
-      options: --user root
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest -m psi4 -q
+      - name: Provision optional native environment
+        id: native-env
+        continue-on-error: true
+        uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: .github/envs/${{ matrix.backend.name }}.yml
+          cache-environment: true
+          init-shell: bash
+      - name: Report unavailable native environment
+        if: steps.native-env.outcome == 'failure'
+        shell: bash {0}
+        run: |
+          echo "::notice::BEST-EFFORT Python 3.14 native environment unavailable: ${{ matrix.backend.name }}. No backend correctness claim."
+          echo "BEST-EFFORT Python 3.14 / ${{ matrix.backend.name }}: dependency provisioning failed; tests were not run." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify native interpreter
+        if: steps.native-env.outcome == 'success'
+        run: python -c "import sys; assert sys.version_info[:2] == (3, 14), sys.version"
+      - name: Install Q2MM without replacing native dependencies
+        if: steps.native-env.outcome == 'success'
+        run: python -m pip install -e . --no-deps && python -m pip check
+      - name: Configure version-matched Tinker runtime parameters
+        if: steps.native-env.outcome == 'success' && (matrix.backend.name == 'tinker' || matrix.backend.name == 'full')
+        run: |
+          # The conda package installs executables, not the MM3 runtime data.
+          test -x "$CONDA_PREFIX/bin/analyze"
+          archive="$RUNNER_TEMP/tinker-8.11.3.tar.gz"
+          curl --fail --location --silent --show-error \
+            https://dasher.wustl.edu/tinker/downloads/tinker-8.11.3.tar.gz --output "$archive"
+          echo "8dfbc9fb8f26742d91139187657e2c905744b0243538f81b75bc04cdc2606ff7  $archive" | sha256sum --check -
+          mkdir -p "$CONDA_PREFIX/params"
+          tar -xOzf "$archive" tinker/params/mm3.prm > "$CONDA_PREFIX/params/mm3.prm"
+          test -s "$CONDA_PREFIX/params/mm3.prm"
+          export TINKER_DIR="$CONDA_PREFIX/bin"
+          export TINKER_PRM="$CONDA_PREFIX/params/mm3.prm"
+          echo "TINKER_DIR=$TINKER_DIR" >> "$GITHUB_ENV"
+          echo "TINKER_PRM=$TINKER_PRM" >> "$GITHUB_ENV"
+          python -c "from test.backend_fixtures import load_test_backend; print(load_test_backend('tinker').info.name)"
+      - name: Required native correctness tests
+        if: steps.native-env.outcome == 'success'
+        run: python -m pytest ${{ matrix.backend.args }} -q -rs --durations=10 --junitxml=native-results.xml
+      - name: Require executed native tests
+        if: steps.native-env.outcome == 'success'
+        run: |
+          python - <<'PY'
+          import xml.etree.ElementTree as ET
+          cases = ET.parse("native-results.xml").getroot().iter("testcase")
+          executed = sum(case.find("skipped") is None for case in cases)
+          if not executed:
+              raise SystemExit("Provisioned native lane executed no tests; check selectors, tier flags and backend configuration.")
+          print(f"Executed {executed} native test cases.")
+          PY
+      - name: Provision optional interoperability extras
+        if: matrix.backend.name == 'full' && steps.native-env.outcome == 'success'
+        id: interoperability
+        continue-on-error: true
+        run: python -m pip install -e ".[amber,qcel,qcengine,ase]"
+      - name: Report unavailable interoperability dependencies
+        if: steps.interoperability.outcome == 'failure'
+        run: echo "::notice::BEST-EFFORT interoperability dependencies unavailable; no bridge correctness claim."
+      - name: Required interoperability correctness tests
+        if: steps.interoperability.outcome == 'success'
+        run: python -m pytest test/test_amber_continuations.py test/test_io_qcelemental.py test/test_qcengine_backend.py test/test_ase_backend.py -q
 
   # ================================================================
-  # Tier 2b — Explicit cross-backend parity surface
-  # The cross_backend marker owns tests that execute two or more backends.
-  # --run-integration enables only those explicitly selected parity tests;
-  # the full integration/validation/nightly tiers remain local-only.
-  # ================================================================
-  test-cross-backend:
-    needs: [lint, test-core]
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ghcr.io/ericchansen/q2mm/ci-full:latest
-      options: --user root
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v4
-      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-      - run: python -m pip install -e . --no-deps && python -m pytest --run-integration -m cross_backend -q
-
-  # ================================================================
-  # Validation, nightly, and integration tiers removed from CI.
-  # These are research workloads (multi-molecule JAX JIT, optimizer
+  # Broad validation, nightly, and integration suites remain local.
+  # Provisioned native lanes opt into only the bounded fixtures above.
+  # Research workloads (multi-molecule JAX JIT, optimizer
   # loops, full eigenmatrix evals) that exceed hosted-runner budgets.
   #
   # Run locally instead:

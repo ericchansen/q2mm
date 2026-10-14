@@ -38,10 +38,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
+from pydantic import Field
 
 from q2mm._canonical import canonical_fingerprint as _canonical_fingerprint
 from q2mm._canonical import canonical_json as _canonical_json
@@ -53,6 +54,15 @@ from q2mm.benchmarks.publications import (
 )
 from q2mm.models.results import deep_freeze
 from q2mm.optimizers.catalog import OPTIMIZER_CATALOG, OptimizerSpec
+from q2mm.settings import (
+    OptimizerOverrides,
+    PathOptions,
+    OptimizationSettings,
+    ObjectiveSettings,
+    BackendSettings,
+    SingleStageSettings,
+    MethodE2Settings,
+)
 
 if TYPE_CHECKING:
     from q2mm.backends.contracts import BackendDescriptor, BackendInfo
@@ -77,7 +87,7 @@ __all__ = [
     "device_info",
     "resolve",
     "recommended_publication_profile",
-    "resolve_optimizer",
+    "execution_settings",
 ]
 
 
@@ -169,15 +179,7 @@ class ConfigurationError(RuntimeError):
 # ---------------------------------------------------------------------------
 
 
-def _validate_fraction(value: float | None, name: str) -> None:
-    if value is None:
-        return
-    if not (math.isfinite(value) and 0.0 < value <= 1.0):
-        raise ValueError(f"RunProfile.{name} must be in (0, 1] or None, got {value!r}.")
-
-
-@dataclass(frozen=True, eq=False)
-class RunProfile:
+class RunProfile(OptimizerOverrides):
     """Immutable specification of one requested benchmark run.
 
     Attributes:
@@ -220,25 +222,17 @@ class RunProfile:
     objective_profile: str | None = None
     workflow: str = "single-stage"
     optimizer: str = "scipy-lbfgsb-jax"
-    maxiter: int | None = None
-    ftol: float = 1e-8
-    fc_fraction: float | None = None
-    eq_fraction: float | None = None
     regularization: float | None = None
-    learning_rate: float = 1e-3
-    max_params: int = 3
-    max_cycles: int = 10
-    convergence: float = 0.01
     n_evals: int = 1
     executor_ratio_tol: float | None = None
     skip_optimization: bool = False
     qfuerza_replace_with: float = 1.0
     platform: str | None = None
-    data_roots: Mapping[str, str] = field(default_factory=dict)
-    seed: int = 0
+    data_roots: PathOptions = Field(default_factory=dict)
     label: str = ""
 
-    def __post_init__(self) -> None:
+    def model_post_init(self, context: Any) -> None:
+        """Validate benchmark vocabularies without constructing runtime components."""
         if not self.system:
             raise ValueError("RunProfile.system must be a non-empty registry key.")
         if not self.backend:
@@ -262,24 +256,10 @@ class RunProfile:
             raise ValueError(
                 f"RunProfile.optimizer must be a catalog key {sorted(OPTIMIZER_CATALOG)}, got {self.optimizer!r}."
             )
-        if self.maxiter is not None and (not isinstance(self.maxiter, int) or self.maxiter < 0):
-            raise ValueError(f"RunProfile.maxiter must be a non-negative int or None, got {self.maxiter!r}.")
-        if not (math.isfinite(self.ftol) and self.ftol > 0.0):
-            raise ValueError(f"RunProfile.ftol must be positive and finite, got {self.ftol!r}.")
-        _validate_fraction(self.fc_fraction, "fc_fraction")
-        _validate_fraction(self.eq_fraction, "eq_fraction")
         if self.regularization is not None and not (math.isfinite(self.regularization) and self.regularization >= 0.0):
             raise ValueError(
                 f"RunProfile.regularization must be non-negative and finite or None, got {self.regularization!r}."
             )
-        if not (math.isfinite(self.learning_rate) and self.learning_rate > 0.0):
-            raise ValueError(f"RunProfile.learning_rate must be positive and finite, got {self.learning_rate!r}.")
-        if not isinstance(self.max_params, int) or self.max_params < 1:
-            raise ValueError(f"RunProfile.max_params must be an int >= 1, got {self.max_params!r}.")
-        if not isinstance(self.max_cycles, int) or self.max_cycles < 1:
-            raise ValueError(f"RunProfile.max_cycles must be an int >= 1, got {self.max_cycles!r}.")
-        if not (math.isfinite(self.convergence) and self.convergence > 0.0):
-            raise ValueError(f"RunProfile.convergence must be positive and finite, got {self.convergence!r}.")
         if not isinstance(self.n_evals, int) or self.n_evals < 0:
             raise ValueError(f"RunProfile.n_evals must be a non-negative int, got {self.n_evals!r}.")
         if self.executor_ratio_tol is not None and not (
@@ -292,8 +272,6 @@ class RunProfile:
             raise ValueError(
                 f"RunProfile.qfuerza_replace_with must be positive and finite, got {self.qfuerza_replace_with!r}."
             )
-        if not isinstance(self.seed, int):
-            raise ValueError(f"RunProfile.seed must be an int, got {self.seed!r}.")
         unknown_roots = set(self.data_roots) - DATA_ROOT_KEYS
         if unknown_roots:
             raise ValueError(
@@ -302,7 +280,6 @@ class RunProfile:
         for k, v in self.data_roots.items():
             if not isinstance(v, str) or not v:
                 raise ValueError(f"RunProfile.data_roots[{k!r}] must be a non-empty path string, got {v!r}.")
-        object.__setattr__(self, "data_roots", deep_freeze(dict(self.data_roots)))
 
     @property
     def optimizer_spec(self) -> OptimizerSpec:
@@ -706,39 +683,34 @@ def resolve(
 # ---------------------------------------------------------------------------
 
 
-def resolve_optimizer(profile: RunProfile) -> tuple[Any, dict[str, Any]]:
-    """Compatibility adapter over :mod:`q2mm.optimizers.catalog`."""
-    from q2mm.optimizers.catalog import optimizer_option_names, resolve_optimizer as _resolve
+def execution_settings(profile: RunProfile) -> OptimizationSettings:
+    """Project benchmark caller policy into the canonical effective settings."""
+    from q2mm.optimizers.catalog import optimizer_override_fields, optimizer_settings
 
-    options = {
-        "maxiter": profile.maxiter,
-        "ftol": profile.ftol,
-        "fc_fraction": profile.fc_fraction,
-        "eq_fraction": profile.eq_fraction,
-        "learning_rate": profile.learning_rate,
-        "max_params": profile.max_params,
-        "max_cycles": profile.max_cycles,
-        "convergence": profile.convergence,
-        "seed": profile.seed,
-    }
-    allowed = optimizer_option_names(profile.optimizer_spec)
-    return _resolve(profile.optimizer_spec, {key: value for key, value in options.items() if key in allowed})
-
-
-def _resolve_workflow(profile: RunProfile) -> tuple[Any, dict[str, Any]]:
-    from q2mm.workflows import MethodE2Workflow, SingleStageWorkflow
-
-    if profile.workflow == "method-e2":
-        wf = MethodE2Workflow()
-        settings = {
-            "name": "method-e2",
-            "negative_fc_threshold": wf.negative_fc_threshold,
-            "replace_with_round2": wf.replace_with_round2,
-            "allow_negative": wf.allow_negative,
-            "near_zero_replace_with": dict(wf.near_zero_replace_with),
-        }
-        return wf, settings
-    return SingleStageWorkflow(), {"name": "single-stage"}
+    spec = profile.optimizer_spec
+    allowed = optimizer_override_fields(spec.settings)
+    options = OptimizerOverrides.model_validate({name: getattr(profile, name) for name in allowed})
+    return OptimizationSettings(
+        recipe_id="benchmark-v1",
+        backend=BackendSettings(
+            key=profile.backend,
+            options=(
+                {"platform_name": profile.platform}
+                if profile.backend == "openmm" and profile.platform is not None
+                else {}
+            ),
+        ),
+        optimizer=optimizer_settings(profile.optimizer, options),
+        workflow=MethodE2Settings() if profile.workflow == "method-e2" else SingleStageSettings(),
+        objective=ObjectiveSettings(
+            executor=spec.evaluator,
+            gradient_mode=spec.gradient_mode,
+            fd_step=spec.fd_step if spec.gradient_mode == "finite_difference" else None,
+            regularization=profile.effective_regularization,
+        ),
+        n_evals=profile.n_evals,
+        ratio_tol=profile.executor_ratio_tol,
+    )
 
 
 def _classify_backend(profile: RunProfile) -> tuple[Any, Any]:
@@ -750,7 +722,7 @@ def _classify_backend(profile: RunProfile) -> tuple[Any, Any]:
     (a graceful skip).
     """
     from q2mm.backends.contracts import BackendUnavailableError
-    from q2mm.backends.registry import BackendNotRegistered, get_descriptor
+    from q2mm.backends.registry import BackendNotRegistered, get_descriptor, load_backend
 
     try:
         descriptor = get_descriptor(profile.backend)
@@ -765,7 +737,7 @@ def _classify_backend(profile: RunProfile) -> tuple[Any, Any]:
     if profile.backend == "openmm" and profile.platform is not None:
         load_kwargs["platform_name"] = profile.platform
     try:
-        backend = descriptor.load(**load_kwargs)
+        backend = load_backend(profile.backend, **load_kwargs)
     except BackendUnavailableError:
         raise
     except Exception as exc:  # broken/misconfigured factory -> configuration error

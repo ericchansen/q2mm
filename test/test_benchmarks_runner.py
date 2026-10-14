@@ -190,10 +190,9 @@ class TestScientificProblemIdentity:
         self, scientific_case: BenchmarkCase, monkeypatch: pytest.MonkeyPatch, operation: str
     ) -> None:
         from q2mm._canonical import canonical_fingerprint
-        from q2mm.application import models, optimize
+        from q2mm.application import models
         from q2mm.benchmarks.records import _data_provenance
-        from q2mm.optimizers.scipy_opt import ScipyOptimizer
-        from test.test_application import _EnergyBackend, _problem, _result
+        from test.test_application import _problem, _result
 
         problem = _problem() if operation == "sdk" else scientific_case.problem
         expected_fingerprint = models.problem_fingerprint(problem)
@@ -229,22 +228,13 @@ class TestScientificProblemIdentity:
             assert identity["input_fingerprints"] == expected_inputs
         else:
             result = _result(problem, gradient_mode="none")
-            monkeypatch.setattr(
-                "q2mm.application.optimization.execute_optimization",
-                lambda *args, **kwargs: (
-                    result,
-                    problem.layout.replace(problem.starting_force_field, result.final_params),
-                ),
-            )
-            run = optimize(
+            from q2mm.application import OptimizationRun
+            from test.test_application import _configuration
+
+            run = OptimizationRun.from_result(
                 problem,
-                _EnergyBackend(),
-                recipe="explicit",
-                optimizer=ScipyOptimizer(method="Nelder-Mead", maxiter=0),
-                workflow="single-stage",
-                executor="python",
-                gradient_mode="none",
-                n_evals=0,
+                dataclasses.replace(result, regularization=0.0, n_evals=0),
+                configuration=_configuration(),
             )
             assert run.problem_fingerprint == expected_fingerprint
             assert run.input_fingerprints == expected_inputs
@@ -464,7 +454,7 @@ class TestScientificProblemIdentity:
         )
         executed = []
 
-        def mock_optimize(problem: OptimizationProblem, *_args: Any, **_kwargs: Any) -> tuple[Any, ForceField]:
+        def mock_optimize(problem: OptimizationProblem, *_args: Any, **_kwargs: Any) -> Any:
             executed.append(problem)
             final = problem.active_space.baseline.copy()
             final[problem.active_space.active_indices] -= 0.25
@@ -477,9 +467,9 @@ class TestScientificProblemIdentity:
                 n_iterations=3,
                 n_evaluations=4,
             )
-            return result, problem.layout.replace(problem.starting_force_field, final)
+            return result
 
-        monkeypatch.setattr("q2mm.application.optimization.execute_optimization", mock_optimize)
+        monkeypatch.setattr("q2mm.application.optimization.optimize", mock_optimize)
         profile = RunProfile(
             system="ch3f", backend="synthetic-mm", functional_form="harmonic", optimizer="scipy-nm", n_evals=0
         )
@@ -739,14 +729,15 @@ class TestResultProjection:
             stages=stages,
             initial_samples=(119, 121),
             final_samples=(39, 41),
+            n_evals=2,
             category_metrics={"bond_length": {"rmsd": np.float64(0.25), "r_squared": float("nan")}},
         )
-        run = dataclasses.replace(run, result=result)
+        run = dataclasses.replace(run, result=result, configuration=dataclasses.replace(run.configuration, n_evals=2))
         case = BenchmarkCase(key="ch3f", name="synthetic", problem=problem, default_forms=("harmonic",))
         monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: case)
         monkeypatch.setattr(
-            "q2mm.application.optimization.execute_optimization",
-            lambda *_args, **_kwargs: (result, run.final_force_field),
+            "q2mm.application.optimization.optimize",
+            lambda *_args, **_kwargs: result,
         )
 
         def unexpected_full_projection(_result: object) -> dict[str, Any]:
@@ -1853,14 +1844,13 @@ class TestRunProfilePipeline:
         assert cand.status is CandidateStatus.ACCEPTED
 
     def test_optimizer_and_workflow_built_once(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Provenance + execution must share one build: resolve_optimizer and
-        # _resolve_workflow are each called exactly once per profile run.
-        import q2mm.benchmarks.profiles as profiles_mod
+        from q2mm.optimizers import catalog
+        from q2mm.workflows import base
 
         opt_calls = {"n": 0}
         wf_calls = {"n": 0}
-        real_opt = profiles_mod.resolve_optimizer
-        real_wf = profiles_mod._resolve_workflow
+        real_opt = catalog.build_optimizer
+        real_wf = base.build_workflow
 
         def _spy_opt(profile: RunProfile) -> Any:
             opt_calls["n"] += 1
@@ -1870,8 +1860,8 @@ class TestRunProfilePipeline:
             wf_calls["n"] += 1
             return real_wf(profile)
 
-        monkeypatch.setattr(profiles_mod, "resolve_optimizer", _spy_opt)
-        monkeypatch.setattr(profiles_mod, "_resolve_workflow", _spy_wf)
+        monkeypatch.setattr(catalog, "build_optimizer", _spy_opt)
+        monkeypatch.setattr(base, "build_workflow", _spy_wf)
         run_profile(
             RunProfile(
                 system="ch3f",

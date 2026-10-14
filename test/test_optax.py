@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from q2mm.settings import OptaxSettings
+
 from importlib.util import find_spec
 from unittest.mock import Mock
 
@@ -54,41 +56,39 @@ class TestOptaxOptimizerCreation:
     def test_create_adam(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        opt = OptaxOptimizer(optimizer="adam")
-        assert opt.optimizer_name == "adam"
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adam"))
+        assert opt.settings.optimizer == "adam"
 
     def test_create_adagrad(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        opt = OptaxOptimizer(optimizer="adagrad")
-        assert opt.optimizer_name == "adagrad"
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adagrad"))
+        assert opt.settings.optimizer == "adagrad"
 
     def test_create_sgd(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        opt = OptaxOptimizer(optimizer="sgd", momentum=0.9)
-        assert opt.optimizer_name == "sgd"
-        assert opt.momentum == 0.9
+        opt = OptaxOptimizer(OptaxSettings(optimizer="sgd", momentum=0.9))
+        assert opt.settings.optimizer == "sgd"
+        assert opt.settings.momentum == 0.9
 
     def test_create_adamw(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        opt = OptaxOptimizer(optimizer="adamw")
-        assert opt.optimizer_name == "adamw"
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adamw"))
+        assert opt.settings.optimizer == "adamw"
 
     def test_invalid_optimizer(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        with pytest.raises(ValueError, match="Unknown optimizer"):
-            OptaxOptimizer(optimizer="rmsprop")
+        with pytest.raises(ValueError, match="optimizer"):
+            OptaxOptimizer(OptaxSettings(optimizer="rmsprop"))
 
     def test_invalid_schedule(self) -> None:
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        opt = OptaxOptimizer(schedule="invalid")
-        obj = QuadraticEvaluator(np.array([1.0, 2.0]))
-        with pytest.raises(ValueError, match="Unknown schedule"):
-            opt.optimize(obj, obj.space)
+        with pytest.raises(ValueError, match="schedule"):
+            OptaxOptimizer(OptaxSettings(schedule="invalid"))
 
 
 class TestOptaxConvergence:
@@ -99,7 +99,7 @@ class TestOptaxConvergence:
 
         target = np.array([1.0, 2.0, 3.0])
         obj = QuadraticEvaluator(target)
-        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=500, verbose=False)
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=500, verbose=False))
         result = opt.optimize(obj, obj.space)
 
         assert result.final_score < result.initial_score
@@ -111,7 +111,9 @@ class TestOptaxConvergence:
 
         target = np.array([1.0, -1.0])
         obj = QuadraticEvaluator(target)
-        opt = OptaxOptimizer(optimizer="sgd", learning_rate=0.1, momentum=0.9, max_steps=500, verbose=False)
+        opt = OptaxOptimizer(
+            OptaxSettings(optimizer="sgd", learning_rate=0.1, momentum=0.9, max_steps=500, verbose=False)
+        )
         result = opt.optimize(obj, obj.space)
 
         assert result.final_score < 0.01
@@ -121,7 +123,7 @@ class TestOptaxConvergence:
 
         target = np.array([5.0])
         obj = QuadraticEvaluator(target)
-        opt = OptaxOptimizer(optimizer="adagrad", learning_rate=1.0, max_steps=500, verbose=False)
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adagrad", learning_rate=1.0, max_steps=500, verbose=False))
         result = opt.optimize(obj, obj.space)
 
         assert result.final_score < 0.1
@@ -132,11 +134,7 @@ class TestOptaxConvergence:
         target = np.array([0.0])
         obj = QuadraticEvaluator(target)
         opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.01,
-            max_steps=1000,
-            grad_norm_tol=1e-4,
-            verbose=False,
+            OptaxSettings(optimizer="adam", learning_rate=0.01, max_steps=1000, grad_norm_tol=0.0001, verbose=False)
         )
         result = opt.optimize(obj, obj.space)
 
@@ -149,13 +147,15 @@ class TestOptaxConvergence:
         target = np.array([1.0, 2.0])
         obj = QuadraticEvaluator(target)
         opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.05,
-            max_steps=2000,
-            ftol=1e-8,
-            patience=20,
-            grad_norm_tol=1e-12,
-            verbose=False,
+            OptaxSettings(
+                optimizer="adam",
+                learning_rate=0.05,
+                max_steps=2000,
+                ftol=1e-08,
+                patience=20,
+                grad_norm_tol=1e-12,
+                verbose=False,
+            )
         )
         result = opt.optimize(obj, obj.space)
 
@@ -170,7 +170,7 @@ class TestOptaxFrozenParams:
         from q2mm.optimizers.optax import OptaxOptimizer
 
         obj = FrozenQuadraticEvaluator()
-        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=300, verbose=False)
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=300, verbose=False))
         result = opt.optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.initial_params, [0.0, 5.0, 0.0])
@@ -189,7 +189,7 @@ class TestOptaxBounds:
         target = np.array([10.0, 10.0])
         bounds = [(0.0, 5.0), (0.0, 5.0)]
         obj = QuadraticEvaluator(target, bounds=bounds)
-        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=200, verbose=False)
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=200, verbose=False))
         result = opt.optimize(obj, obj.space)
 
         assert np.all(result.final_params >= 0.0 - 1e-10)
@@ -201,11 +201,7 @@ class TestOptaxBounds:
         target = np.array([100.0])
         obj = QuadraticEvaluator(target, bounds=None)
         opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=1.0,
-            max_steps=500,
-            use_bounds=False,
-            verbose=False,
+            OptaxSettings(optimizer="adam", learning_rate=1.0, max_steps=500, use_bounds=False, verbose=False)
         )
         result = opt.optimize(obj, obj.space)
 
@@ -220,12 +216,14 @@ class TestOptaxDivergence:
 
         obj = DivergentEvaluator(n_params=3)
         opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.01,
-            max_steps=1000,
-            divergence_factor=3.0,
-            divergence_patience=5,
-            verbose=False,
+            OptaxSettings(
+                optimizer="adam",
+                learning_rate=0.01,
+                max_steps=1000,
+                divergence_factor=3.0,
+                divergence_patience=5,
+                verbose=False,
+            )
         )
         result = opt.optimize(obj, obj.space)
 
@@ -242,7 +240,7 @@ class TestOptaxFinalScoreUnits:
 
         target = np.array([1.0, 2.0, 3.0])
         obj = QuadraticEvaluator(target)
-        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=200, verbose=False)
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=200, verbose=False))
         result = opt.optimize(obj, obj.space)
 
         true_score = float(np.sum((result.final_params - target) ** 2))
@@ -258,11 +256,7 @@ class TestOptaxSchedules:
         target = np.array([1.0, 2.0])
         obj = QuadraticEvaluator(target)
         opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=500,
-            schedule="cosine",
-            verbose=False,
+            OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=500, schedule="cosine", verbose=False)
         )
         result = opt.optimize(obj, obj.space)
 
@@ -275,11 +269,7 @@ class TestOptaxSchedules:
         target = np.array([1.0, 2.0])
         obj = QuadraticEvaluator(target)
         opt = OptaxOptimizer(
-            optimizer="adam",
-            learning_rate=0.1,
-            max_steps=500,
-            schedule="exponential",
-            verbose=False,
+            OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=500, schedule="exponential", verbose=False)
         )
         result = opt.optimize(obj, obj.space)
 
@@ -295,7 +285,7 @@ class TestOptaxResult:
 
         target = np.array([1.0])
         obj = QuadraticEvaluator(target)
-        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=100, verbose=False)
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=100, verbose=False))
         result = opt.optimize(obj, obj.space)
 
         assert result.method.startswith("optax:")
@@ -314,7 +304,7 @@ class TestOptaxResult:
 
         target = np.array([1.0])
         obj = QuadraticEvaluator(target)
-        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=50, verbose=False)
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=50, verbose=False))
         result = opt.optimize(obj, obj.space)
 
         assert len(result.history) >= 2
@@ -326,7 +316,7 @@ class TestOptaxResult:
         target = np.array([1.0, 2.0])
         obj = QuadraticEvaluator(target)
         original_baseline = obj.space.baseline.copy()
-        opt = OptaxOptimizer(optimizer="adam", learning_rate=0.1, max_steps=100, verbose=False)
+        opt = OptaxOptimizer(OptaxSettings(optimizer="adam", learning_rate=0.1, max_steps=100, verbose=False))
         result = opt.optimize(obj, obj.space)
 
         # REMOVED (Phase 4): objective is no longer mutated by optimizers.
@@ -388,15 +378,17 @@ class TestOptaxBestIterateAndProvenance:
 
         obj = _OvershootEvaluator()
         opt = OptaxOptimizer(
-            optimizer="sgd",
-            learning_rate=1.0,
-            momentum=0.0,
-            max_steps=2,
-            use_bounds=False,
-            divergence_factor=None,
-            grad_norm_tol=0.0,
-            patience=1000,
-            verbose=False,
+            OptaxSettings(
+                optimizer="sgd",
+                learning_rate=1.0,
+                momentum=0.0,
+                max_steps=2,
+                use_bounds=False,
+                divergence_factor=None,
+                grad_norm_tol=0.0,
+                patience=1000,
+                verbose=False,
+            )
         )
         result = opt.optimize(obj, obj.space)
 
@@ -419,7 +411,7 @@ class TestOptaxBestIterateAndProvenance:
 
         obj = _FDQuadratic(fd_step=1e-3)
         result = OptaxOptimizer(
-            optimizer="sgd", learning_rate=0.1, max_steps=3, use_bounds=False, verbose=False
+            OptaxSettings(optimizer="sgd", learning_rate=0.1, max_steps=3, use_bounds=False, verbose=False)
         ).optimize(obj, obj.space)
         assert result.gradient_mode == "finite_difference"
         assert result.fd_step == 1e-3
@@ -429,7 +421,7 @@ class TestOptaxBestIterateAndProvenance:
 
         obj = QuadraticEvaluator(target=np.array([0.0]), initial=np.array([1.0]))
         result = OptaxOptimizer(
-            optimizer="sgd", learning_rate=0.1, max_steps=3, use_bounds=False, verbose=False
+            OptaxSettings(optimizer="sgd", learning_rate=0.1, max_steps=3, use_bounds=False, verbose=False)
         ).optimize(obj, obj.space)
         assert result.gradient_mode == "analytical"
         assert result.fd_step is None
@@ -452,7 +444,7 @@ class TestOptaxEndpointAndStops:
         obj = QuadraticEvaluator(target=np.array([1.0]))
         with caplog.at_level("INFO", logger="q2mm.optimizers.optax"):
             result = OptaxOptimizer(
-                optimizer="sgd", learning_rate=0.1, momentum=0.0, max_steps=2, log_interval=1
+                OptaxSettings(optimizer="sgd", learning_rate=0.1, momentum=0.0, max_steps=2, log_interval=1)
             ).optimize(obj, obj.space)
 
         progress = [record.message.split() for record in caplog.records if "grad_norm" in record.message]
@@ -467,7 +459,7 @@ class TestOptaxEndpointAndStops:
             target=np.array([1.0, 5.0]), initial=np.array([0.0, 5.0]), active_indices=np.array([0])
         )
         result = OptaxOptimizer(
-            optimizer="sgd", learning_rate=0.1, momentum=0.0, max_steps=max_steps, verbose=False
+            OptaxSettings(optimizer="sgd", learning_rate=0.1, momentum=0.0, max_steps=max_steps, verbose=False)
         ).optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.final_params, [1.0 - 0.8**max_steps, 5.0], atol=1e-12)
@@ -483,9 +475,9 @@ class TestOptaxEndpointAndStops:
         from q2mm.optimizers.optax import OptaxOptimizer
 
         obj = QuadraticEvaluator(target=np.array([1.0]), bounds=[(0.0, 0.1)])
-        result = OptaxOptimizer(optimizer="sgd", learning_rate=0.5, momentum=0.0, max_steps=1, verbose=False).optimize(
-            obj, obj.space
-        )
+        result = OptaxOptimizer(
+            OptaxSettings(optimizer="sgd", learning_rate=0.5, momentum=0.0, max_steps=1, verbose=False)
+        ).optimize(obj, obj.space)
 
         np.testing.assert_allclose(result.final_params, [0.1])
         assert result.final_score == pytest.approx(0.81)
@@ -499,9 +491,9 @@ class TestOptaxEndpointAndStops:
         from q2mm.optimizers.optax import OptaxOptimizer
 
         obj = QuadraticEvaluator(target=np.array([1.0]), initial=np.array([initial]))
-        result = OptaxOptimizer(optimizer="sgd", learning_rate=0.5, momentum=0.0, max_steps=5, verbose=False).optimize(
-            obj, obj.space
-        )
+        result = OptaxOptimizer(
+            OptaxSettings(optimizer="sgd", learning_rate=0.5, momentum=0.0, max_steps=5, verbose=False)
+        ).optimize(obj, obj.space)
 
         assert result.success
         assert "gradient norm" in result.message
@@ -513,9 +505,9 @@ class TestOptaxEndpointAndStops:
         from q2mm.optimizers.optax import OptaxOptimizer
 
         obj = QuadraticEvaluator(target=np.array([1.0]))
-        result = OptaxOptimizer(optimizer="sgd", learning_rate=0.0, max_steps=5, patience=1, verbose=False).optimize(
-            obj, obj.space
-        )
+        result = OptaxOptimizer(
+            OptaxSettings(optimizer="sgd", learning_rate=0.0, max_steps=5, patience=1, verbose=False)
+        ).optimize(obj, obj.space)
 
         assert result.success
         assert "score plateau for 1 steps" in result.message
@@ -529,13 +521,15 @@ class TestOptaxEndpointAndStops:
 
         obj = QuadraticEvaluator(target=np.array([0.0]), initial=np.array([1.0]))
         result = OptaxOptimizer(
-            optimizer="sgd",
-            learning_rate=2.0,
-            momentum=0.0,
-            max_steps=5,
-            divergence_patience=1,
-            use_bounds=False,
-            verbose=False,
+            OptaxSettings(
+                optimizer="sgd",
+                learning_rate=2.0,
+                momentum=0.0,
+                max_steps=5,
+                divergence_patience=1,
+                use_bounds=False,
+                verbose=False,
+            )
         ).optimize(obj, obj.space)
 
         assert not result.success
@@ -550,13 +544,15 @@ class TestOptaxEndpointAndStops:
         obj = _OvershootEvaluator()
         obj._script = [np.array([0.4]), np.array([-2.0]), np.array([0.0])]
         result = OptaxOptimizer(
-            optimizer="sgd",
-            learning_rate=1.0,
-            momentum=0.0,
-            max_steps=5,
-            use_bounds=False,
-            divergence_factor=None,
-            verbose=False,
+            OptaxSettings(
+                optimizer="sgd",
+                learning_rate=1.0,
+                momentum=0.0,
+                max_steps=5,
+                use_bounds=False,
+                divergence_factor=None,
+                verbose=False,
+            )
         ).optimize(obj, obj.space)
 
         assert not result.success

@@ -17,6 +17,9 @@ import venv
 import zipfile
 from collections import Counter
 from collections.abc import Callable
+from email.parser import Parser
+
+from packaging.requirements import Requirement
 
 
 #: Canonical external reference plugin. It is independently installable from the
@@ -75,15 +78,39 @@ DIST_INFO_FILES = frozenset(
         "WHEEL",
         "entry_points.txt",
         "licenses/LICENSE",
-        "scm_file_list.json",
-        "scm_version.json",
         "top_level.txt",
     }
 )
+# setuptools-scm >=10.3.4 keeps its SCM JSON in sdist egg-info for version
+# reconstruction, but strips it from wheels. METADATA/RECORD own wheel metadata.
 
 
 class ArtifactContractError(RuntimeError):
     """Raised when a built distribution violates the release contract."""
+
+
+def validate_runtime_metadata(content: str, *, artifact: str) -> None:
+    """Check the runtime floor and compiler-independent core/dev dependencies."""
+    metadata = Parser().parsestr(content)
+    if metadata.get("Requires-Python") != ">=3.14":
+        raise ArtifactContractError(f"{artifact} must declare Requires-Python >=3.14")
+    if "Programming Language :: Python :: 3.15" not in metadata.get_all("Classifier", []):
+        raise ArtifactContractError(f"{artifact} must declare the primary Python 3.15 runtime")
+    requirements = [Requirement(value) for value in metadata.get_all("Requires-Dist", [])]
+    base = {requirement.name: requirement for requirement in requirements if requirement.marker is None}
+    for name, floor in (("pydantic", "2.14.1"), ("pydantic-settings", "2.16.0")):
+        if name not in base or str(base[name].specifier) != f"<3,>={floor}":
+            raise ArtifactContractError(f"{artifact} must include {name}>={floor},<3 as a base dependency")
+    dev = {
+        requirement.name
+        for requirement in requirements
+        if requirement.marker is None or requirement.marker.evaluate({"extra": "dev"})
+    }
+    native = {"openmm", "parmed", "qcelemental", "qcengine", "ase", "tomli"} & dev
+    if native:
+        raise ArtifactContractError(
+            f"{artifact} core/dev dependencies must not force optional packages: {sorted(native)}"
+        )
 
 
 def _is_package_file(path: str) -> bool:
@@ -165,6 +192,8 @@ def inspect_wheel(path: Path) -> tuple[int, int, frozenset[str]]:
         raise ArtifactContractError(f"wheel is missing distribution metadata: {sorted(missing_metadata)}")
     with zipfile.ZipFile(path) as archive:
         manifest_content = archive.read("q2mm/data/sn2/manifest.json")
+        metadata_name = next(name for name in names if name.endswith(".dist-info/METADATA"))
+        validate_runtime_metadata(archive.read(metadata_name).decode("utf-8"), artifact="wheel")
     _validate_resource_manifest(manifest_content, artifact="wheel")
     return len(files), sum(info.file_size for info in files), _canonical_wheel_names(names)
 
@@ -202,6 +231,13 @@ def inspect_sdist(path: Path) -> tuple[int, int]:
         if manifest_file is None:
             raise ArtifactContractError("sdist SN2 resource manifest is not a regular file")
         manifest_content = manifest_file.read()
+        metadata_name = next((name for name in names if name.count("/") == 1 and name.endswith("/PKG-INFO")), None)
+        if metadata_name is None:
+            raise ArtifactContractError("sdist is missing root PKG-INFO")
+        metadata_file = archive.extractfile(metadata_name)
+        if metadata_file is None:
+            raise ArtifactContractError("sdist PKG-INFO is not a regular file")
+        validate_runtime_metadata(metadata_file.read().decode("utf-8"), artifact="sdist")
     _validate_resource_manifest(manifest_content, artifact="sdist")
     return len(files), sum(member.size for member in files)
 
@@ -304,6 +340,12 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
         env=environment,
     )
     subprocess.run(
+        [str(python), "-m", "pip", "check"],
+        check=True,
+        cwd=destination,
+        env=environment,
+    )
+    subprocess.run(
         [str(python), "-I", "-c", "import q2mm"],
         check=True,
         cwd=destination,
@@ -351,6 +393,7 @@ def smoke_test_wheel(wheel: Path, destination: Path) -> str:
     if not list((single_out / "candidates").glob("*.json")):
         raise ArtifactContractError("installed `q2mm-benchmark single` wrote no candidate record")
     smoke_code = """
+import json
 import numpy as np
 from pathlib import Path
 import q2mm
@@ -366,7 +409,12 @@ from q2mm.backends.contracts import (
 from q2mm.models.molecule import Molecule
 from q2mm.models.parameters import ParameterLayout
 from q2mm.models.results import OptimizationResult
-from q2mm.preparation import MatchedFrequencyObservations
+from q2mm.models.observations import ObservationSet
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import (
+    BackendSettings, OptimizationSettings, FrequencyMatchingSettings,
+    ObjectiveSettings, PreparationSettings, SingleStageSettings,
+)
 from q2mm.resources import validate_sn2_resources
 from q2mm.benchmarks.systems import load_system
 
@@ -438,27 +486,50 @@ molecule = Molecule(
 )
 problem = q2mm.prepare(
     molecule,
-    stationary_point="ground_state",
-    functional_form="harmonic",
-    observations=MatchedFrequencyObservations(
-        qm_frequencies=(100.0,),
-        backend=SmokeBackend(),
+    settings=PreparationSettings(
+        stationary_point="ground_state",
+        functional_form="harmonic",
     ),
+    observations=ObservationSet(),
 )
-evaluation = q2mm.evaluate(problem, backend=SmokeBackend(), executor="python")
+backend = SmokeBackend()
+problem = q2mm.match_frequencies(
+    problem, (100.0,), backend=backend, settings=FrequencyMatchingSettings()
+)
+settings = OptimizationSettings(
+    backend=BackendSettings(key="smoke"),
+    workflow=SingleStageSettings(),
+    objective=ObjectiveSettings(),
+)
+optimizer = SmokeOptimizer()
+workflow = q2mm.build_workflow(settings.workflow)
+configuration = q2mm.capture_execution_configuration(
+    settings, backend=backend, optimizer=optimizer, workflow=workflow
+)
+make_evaluator = q2mm.make_evaluator_factory(
+    backend, problem.starting_force_field, settings=settings.objective
+)
+evaluator = make_evaluator(ObjectivePlan.from_problem(problem))
+evaluation = q2mm.evaluate(evaluator, problem.active_space.baseline)
 assert evaluation.total >= 0.0
-run = q2mm.optimize(
+result = q2mm.optimize(
     problem,
-    backend=SmokeBackend(),
-    recipe="explicit",
-    optimizer=SmokeOptimizer(),
-    workflow="single-stage",
-    executor="python",
+    optimizer=optimizer,
+    workflow=workflow,
+    make_evaluator=make_evaluator,
+    regularization=settings.objective.regularization,
+    n_evals=settings.n_evals,
 )
+run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
+assert result.regularization == configuration.regularization
+assert result.n_evals == configuration.n_evals == len(result.initial_samples) == len(result.final_samples)
 output = Path("installed-byo.frcmod")
 saved = q2mm.save(run, output)
 assert output.is_file()
 assert saved.manifest_path is not None and saved.manifest_path.is_file()
+manifest = json.loads(saved.manifest_path.read_text())
+assert manifest["result"]["regularization"] == manifest["configuration"]["regularization"]
+assert manifest["result"]["n_evals"] == manifest["configuration"]["n_evals"]
 print("installed-import=ok cli-help=ok cli-list=ok cli-single-skip=ok sn2-resource=ok "
       "ch3f-system=ok generic-prepare=ok generic-evaluate=ok optimizer-entry=ok generic-save=ok")
 """

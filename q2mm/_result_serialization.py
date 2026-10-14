@@ -64,6 +64,8 @@ def result_payload(result: OptimizationResult) -> dict[str, Any]:
         "method": result.method,
         "gradient_mode": result.gradient_mode,
         "fd_step": result.fd_step,
+        "regularization": result.regularization,
+        "n_evals": result.n_evals,
         "initial_samples": list(result.initial_samples),
         "final_samples": list(result.final_samples),
         "category_metrics": {key: dict(value) for key, value in result.category_metrics.items()},

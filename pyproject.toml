@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68.0", "setuptools-scm>=8"]
+requires = ["setuptools>=80", "setuptools-scm>=10.3.4"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,7 @@ name = "q2mm"
 dynamic = ["version"]
 description = "Quantum-guided molecular mechanics force field optimization"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 authors = [
     { name = "Eric Hansen" },
@@ -27,15 +27,15 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Scientific/Engineering :: Chemistry",
 ]
 dependencies = [
     "numpy",
     "pyyaml",
+    "pydantic>=2.14.1,<3",
+    "pydantic-settings>=2.16.0,<3",
 ]
 
 [tool.setuptools_scm]
@@ -91,16 +91,10 @@ dev = [
     "pytest",
     "pytest-benchmark",
     "pytest-cov",
-    "ruff",
-    "mypy",
+    "ruff>=0.17",
+    "mypy>=2.4",
     "scipy",
-    "parmed",
-    "qcelemental",
-    "qcengine",
-    "ase",
-    "openmm",
     "build",
-    "tomli; python_version < '3.11'",
 ]
 docs = [
     "properdocs",
@@ -163,7 +157,7 @@ markers = [
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py315"
 extend-exclude = ["*.ipynb"]
 
 [tool.ruff.format]
@@ -204,15 +198,23 @@ ignore = [
     "D103", # undocumented-public-function (test helpers)
     "D104", # undocumented-public-package
 ]
+# Public str/Enum members render as Type.MEMBER, unlike StrEnum's value.
+# Preserve backend API v1 and scientific-domain rendering; do not auto-convert.
+"q2mm/backends/contracts.py" = ["UP042"]
+"q2mm/backends/discovery.py" = ["UP042"]
+"q2mm/benchmarks/acceptance.py" = ["UP042"]
+"q2mm/models/forcefield.py" = ["UP042"]
+"q2mm/models/hessian.py" = ["UP042"]
+"q2mm/models/observations.py" = ["UP042"]
+"q2mm/models/parameters.py" = ["UP042"]
+"q2mm/models/problem.py" = ["UP042"]
+"q2mm/models/publication.py" = ["UP042"]
+"q2mm/objectives/protocols.py" = ["UP042"]
 
 [tool.mypy]
-# Target 3.12 (the CI Lint job's Python) as a single source of truth so plain
-# `python -m mypy q2mm/` matches CI locally. numpy>=2.5 ships PEP 695 `type`
-# aliases in its stubs that mypy rejects under python_version=3.10 (a fatal
-# stub parse error that halts all checking), so 3.10 is not a usable target
-# here. The >=3.10 runtime floor is still enforced by ruff (target-version=
-# py310) and the 3.10 test-core matrix.
-python_version = "3.12"
+# Match the primary CI interpreter. Native backend availability on 3.14
+# is a separate best-effort contract, not the development tool target.
+python_version = "3.15"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false  # too strict for existing codebase

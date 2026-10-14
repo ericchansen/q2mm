@@ -233,6 +233,8 @@ class OptimizationResult:
             objective of record. Multi-stage workflows may use different
             objective plans at the initial and final endpoints.
         category_metrics: Deeply-frozen per-category fit metrics.
+        regularization / n_evals: Controls recorded by canonical numerical
+            execution, or ``None`` on a direct algorithm result.
 
     """
 
@@ -255,6 +257,8 @@ class OptimizationResult:
     initial_samples: tuple[float, ...] = ()
     final_samples: tuple[float, ...] = ()
     category_metrics: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
+    regularization: float | None = None
+    n_evals: int | None = None
 
     def __post_init__(self) -> None:
         _validate_identity(self.n_params, self.layout_fingerprint)
@@ -263,6 +267,14 @@ class OptimizationResult:
         if self.gradient_mode not in GRADIENT_MODES:
             raise ValueError(f"gradient_mode must be one of {sorted(GRADIENT_MODES)}, got {self.gradient_mode!r}.")
         _validate_fd_step(self.fd_step, where="OptimizationResult")
+        if self.regularization is not None and (
+            isinstance(self.regularization, bool) or not math.isfinite(self.regularization) or self.regularization < 0
+        ):
+            raise ValueError("OptimizationResult.regularization must be non-negative and finite.")
+        if self.n_evals is not None and (
+            isinstance(self.n_evals, bool) or not isinstance(self.n_evals, int) or self.n_evals < 0
+        ):
+            raise ValueError("OptimizationResult.n_evals must be a non-negative integer.")
         # A converged run must carry finite scores; an explicit failure may
         # report inf/nan (e.g. all multi-start candidates failed).
         if self.success and not (math.isfinite(self.initial_score) and math.isfinite(self.final_score)):

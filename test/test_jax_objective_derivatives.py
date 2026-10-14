@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from q2mm.settings import JaxOptSettings, OptaxSettings, ScipySettings
+
 import importlib.util
 from typing import Any
 
@@ -133,12 +135,12 @@ def test_host_optimizer_cannot_report_nonfinite_derivative_as_convergence(optimi
         pytest.importorskip("scipy")
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        optimizer = ScipyOptimizer(maxiter=1, verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(maxiter=1, verbose=False))
     else:
         pytest.importorskip("optax")
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        optimizer = OptaxOptimizer(max_steps=1, verbose=False)
+        optimizer = OptaxOptimizer(OptaxSettings(max_steps=1, verbose=False))
     executor = _executor(frequency=True)
     with pytest.raises(ObjectiveGradientError, match="non-finite"):
         optimizer.optimize(executor, executor.plan.active_space)
@@ -167,7 +169,7 @@ def test_native_optimizer_cannot_hide_invalid_frozen_derivative() -> None:
     assert raw_gradient[0] == 0.0
     assert not np.isfinite(raw_gradient[1])
     with pytest.raises(ValueError, match="full_vector must be finite"):
-        JaxOptOptimizer(maxiter=1, verbose=False).optimize(executor, space)
+        JaxOptOptimizer(JaxOptSettings(maxiter=1, verbose=False)).optimize(executor, space)
     np.testing.assert_array_equal(space.baseline, baseline)
     np.testing.assert_array_equal(executor.plan.layout.vector(executor.base_force_field), baseline)
 
@@ -216,15 +218,15 @@ def test_valid_zero_gradient_still_allows_stationary_success(optimizer_name: str
     if optimizer_name == "scipy":
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
-        optimizer = ScipyOptimizer(maxiter=1, verbose=False)
+        optimizer = ScipyOptimizer(ScipySettings(maxiter=1, verbose=False))
     elif optimizer_name == "optax":
         from q2mm.optimizers.optax import OptaxOptimizer
 
-        optimizer = OptaxOptimizer(max_steps=1, verbose=False)
+        optimizer = OptaxOptimizer(OptaxSettings(max_steps=1, verbose=False))
     else:
         from q2mm.optimizers.jaxopt_opt import JaxOptOptimizer
 
-        optimizer = JaxOptOptimizer(maxiter=1, verbose=False)
+        optimizer = JaxOptOptimizer(JaxOptSettings(maxiter=1, verbose=False))
     executor = _executor()
     space = executor.plan.active_space.with_active_indices([0])
     baseline = space.baseline.copy()

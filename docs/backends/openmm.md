@@ -8,6 +8,12 @@ The `OpenMMBackend` is Q2MM's most versatile backend, supporting both
 
 ## Installation
 
+Q2MM develops and tests its core on Python **3.15**, but OpenMM **8.6.1**
+has no cp315 wheels. Use a separate Python **3.14** environment for the
+**BEST-EFFORT native/CPU lane**. Backend availability depends on upstream
+builds; a successful installation still requires passing correctness tests.
+See [runtime installation notes](../getting-started.md#native-dependency-availability).
+
 OpenMM is available via conda-forge:
 
 ```bash

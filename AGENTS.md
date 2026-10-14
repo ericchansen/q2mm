@@ -134,11 +134,22 @@ mypy is enforced repo-wide in the CI Lint job via a grandfathered ratchet
 (see the `[[tool.mypy.overrides]]` block in `pyproject.toml`): the modules
 listed there with pre-existing type errors are exempt, so any **new** module —
 or any module removed from that grandfather list — must be mypy-clean.
-`[tool.mypy]` pins `python_version = "3.12"` (the CI Lint job's Python) as a
-single source of truth, so the command above matches CI with no extra flags.
-3.12 is required because numpy ≥2.5 ships PEP 695 `type` aliases in its stubs
-that mypy cannot parse under a 3.10 target; the ≥3.10 runtime floor is still
-enforced by ruff (`target-version=py310`) and the 3.10 test-core matrix.
+Python **3.15** is the primary development, core-test, docs, and release
+interpreter. Ruff (`target-version=py315`, `ruff>=0.17`) and mypy
+(`python_version="3.15"`, `mypy>=2.4`) target that interpreter. Packaging
+currently permits Python **>=3.14** for the native-backend fallback; this is
+not a promise that every optional backend supports every interpreter.
+
+Install core development tools with `python -m pip install -e ".[dev]"`.
+The `dev` extra does **not** install OpenMM, ParmEd, ASE, QCEngine, or
+QCElemental. Select their actual extras explicitly when needed.
+Base dependencies include Pydantic v2 and pydantic-settings v2; adding a
+backend must not be necessary to load settings or import the core package.
+
+PyYAML 6.0.3 has no cp315 wheel. To use its supported pure-Python source build
+without requiring a C compiler, set `PYYAML_FORCE_LIBYAML=0` before installing
+(PowerShell: `$env:PYYAML_FORCE_LIBYAML = "0"`). This is an installation choice,
+not a removed or silently skipped dependency.
 
 ### Core Tests (no backends required)
 
@@ -188,11 +199,24 @@ This runs the full CI matrix locally inside Docker containers.
 
 ### Windows (native) — good for development
 
-- Editing, linting, formatting, and non-GPU tests all work.
-- OpenMM **CPU** works.
-- JAX **CPU** works.
+- Use Python **3.15** for editing, linting, formatting, and core tests.
+- OpenMM 8.6.1 has **no cp315 wheels**. Its native/CPU lane uses Python
+  **3.14, BEST-EFFORT**; do not force it into the primary `dev` environment.
+- Other native backends also depend on upstream interpreter/platform support;
+  selecting an extra requests real dependencies, never a version-marker no-op.
 - **JAX CUDA and JAX-MD are NOT available on Windows** — they are excluded in
   `pyproject.toml`. Do not attempt to install or use them.
+
+### Native CI availability versus correctness
+
+`.github/envs/*.yml` declare Python 3.14 native environments. CI reports
+dependency provisioning failures as **BEST-EFFORT unavailable**, not as
+successful backend tests. Once an environment is provisioned, package
+installation, dependency consistency, and native correctness tests are
+required; test failures never use `continue-on-error`. No dataset downloads,
+GPU execution, or publication validation are part of this runtime lane.
+The available JAX CPU stack has a separate **required Python 3.15** test job;
+it is not demoted to the fallback lane.
 
 ### WSL2 Ubuntu — recommended for benchmarks and GPU work
 

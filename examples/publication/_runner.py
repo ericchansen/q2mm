@@ -9,7 +9,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, Literal
 
 import q2mm
 from q2mm.benchmarks.publications import (
@@ -20,7 +20,17 @@ from q2mm.benchmarks.publications import (
     publication_success_spec,
 )
 from q2mm.benchmarks.systems import load_system
-from q2mm.benchmarks.systems._paths import ExternalDataRoots
+from q2mm import ExternalDataRoots
+from q2mm.backends.registry import load_backend
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.settings import (
+    BackendSettings,
+    GroundStateOptimizationSettings,
+    ObjectiveSettings,
+    OptimizationSettings,
+    SingleStageSettings,
+    TransitionStateOptimizationSettings,
+)
 
 
 def _load_support() -> ModuleType:
@@ -97,6 +107,7 @@ def run_publication(
     rh_enamide: Path | None = None,
     starting_point: str | None = None,
     backend: str = "jax",
+    executor: Literal["python", "jax"] = "jax",
     bounded_ci: bool = False,
 ) -> dict[str, Any]:
     """Run one real publication problem through root evaluate/optimize/save."""
@@ -141,31 +152,47 @@ def run_publication(
     }
     if bounded_ci:
         selected_backend: Any = _SUPPORT.BoundedEchoBackend()
-        executor = "python"
         optimizer = _SUPPORT.BoundedExampleOptimizer()
-        optimize_options = {
-            "recipe": "explicit",
-            "optimizer": optimizer,
-            "workflow": "single-stage",
-            "executor": "python",
-            "n_evals": 0,
-        }
+        settings = OptimizationSettings(
+            backend=BackendSettings(key=selected_backend.info.provenance.backend),
+            workflow=SingleStageSettings(),
+            objective=ObjectiveSettings(),
+            n_evals=0,
+        )
     else:
-        selected_backend = backend
-        executor = "auto"
-        optimizer = None
         optimizer_options = {key: value for key, value in scientific_bounds.items() if value is not None}
-        optimize_options = {
-            "recipe": "recommended",
-            "optimizer_options": optimizer_options,
-        }
-
-    initial = q2mm.evaluate(problem, backend=selected_backend, executor=executor)
-    run = q2mm.optimize(problem, backend=selected_backend, **optimize_options)
-    if bounded_ci and (optimizer is None or not optimizer.entered):
+        settings_type = (
+            GroundStateOptimizationSettings if config.key == "ferrocene" else TransitionStateOptimizationSettings
+        )
+        settings = settings_type(
+            backend=BackendSettings(key=backend),
+            optimizer=optimizer_options,
+            objective=ObjectiveSettings(executor=executor),
+        )
+        selected_backend = load_backend(settings.backend.key, **settings.backend.options)
+        optimizer = q2mm.build_optimizer(settings.optimizer)
+    workflow = q2mm.build_workflow(settings.workflow)
+    configuration = q2mm.capture_execution_configuration(
+        settings, backend=selected_backend, optimizer=optimizer, workflow=workflow
+    )
+    make_evaluator = q2mm.make_evaluator_factory(
+        selected_backend, problem.starting_force_field, settings=settings.objective
+    )
+    plan = ObjectivePlan.from_problem(problem, regularization=settings.objective.regularization)
+    evaluator = make_evaluator(plan)
+    initial = q2mm.evaluate(evaluator, problem.active_space.baseline)
+    result = q2mm.optimize(
+        problem,
+        optimizer=optimizer,
+        workflow=workflow,
+        make_evaluator=make_evaluator,
+        regularization=settings.objective.regularization,
+        n_evals=settings.n_evals,
+    )
+    run = q2mm.OptimizationRun.from_result(problem, result, configuration=configuration)
+    if bounded_ci and not optimizer.entered:
         raise RuntimeError("Bounded optimizer was not entered.")
-    final_problem = _SUPPORT.with_final_force_field(problem, run.result.final_params)
-    final = q2mm.evaluate(final_problem, backend=selected_backend, executor=executor)
+    final = q2mm.evaluate(evaluator, result.final_params)
     saved = q2mm.save(run, output_root / f"{config.key}-{selected_start}.fld")
 
     preparation = problem.preparation_provenance
@@ -223,11 +250,13 @@ def run_publication(
                 if bounded_ci
                 else {
                     key: value
-                    for key, value in configuration.optimizer.settings.items()
+                    for key, value in configuration.optimizer.settings["parameters"].items()
                     if key in {"fc_fraction", "eq_fraction", "use_bounds"}
                 }
             ),
-            "bounded_ci_limit": "one objective evaluation" if bounded_ci else None,
+            "bounded_ci_limit": "one optimizer-owned objective call; separate endpoint reporting"
+            if bounded_ci
+            else None,
         },
         "final": _SUPPORT.evaluation_payload(final),
         "optimization": {
@@ -258,6 +287,12 @@ def main_for(config: PublicationExample) -> int:
     parser.add_argument("--rh-enamide", type=Path)
     parser.add_argument("--starting-point", choices=("qfuerza", "published"))
     parser.add_argument("--backend", default="jax")
+    parser.add_argument(
+        "--executor",
+        choices=("jax", "python"),
+        default="jax",
+        help="Objective executor; explicitly choose python with non-JAX backends.",
+    )
     parser.add_argument("--bounded-ci", action="store_true")
     args = parser.parse_args()
     try:
@@ -269,6 +304,7 @@ def main_for(config: PublicationExample) -> int:
             rh_enamide=args.rh_enamide,
             starting_point=args.starting_point,
             backend=args.backend,
+            executor=args.executor,
             bounded_ci=args.bounded_ci,
         )
     except Exception as exc:

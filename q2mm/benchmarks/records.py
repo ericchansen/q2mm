@@ -12,7 +12,7 @@ import subprocess
 import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
@@ -54,7 +54,7 @@ def _git_info(repo: Path) -> dict[str, Any]:
             ["git", "status", "--porcelain"], cwd=repo, stderr=subprocess.DEVNULL, text=True
         ).strip()
         return {"git_sha": sha, "git_dirty": bool(dirty)}
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except subprocess.CalledProcessError, FileNotFoundError:
         return {}
 
 
@@ -62,7 +62,7 @@ def build_run_provenance(*, generator: str, output_dir: Path) -> dict[str, Any]:
     """Build the run-level provenance block (timestamp/command are non-identity)."""
     return {
         "generator": generator,
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+        "timestamp_utc": datetime.now(UTC).isoformat(),
         "command_line": shlex.join(sys.argv),
         "q2mm": _git_info(REPO_ROOT),
         "output_dir": str(output_dir),

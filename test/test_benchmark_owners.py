@@ -27,8 +27,7 @@ from test.test_architecture_doc import _imported_dotted_modules
 _OWNED_DEFINITIONS = {
     profiles: (
         "ConfigurationError",
-        "resolve_optimizer",
-        "_resolve_workflow",
+        "execution_settings",
         "_classify_backend",
         "_norm_path",
         "_load_kwargs",
@@ -89,7 +88,7 @@ def test_moved_definitions_have_one_owner_and_public_exports_are_direct() -> Non
             assert {module for module, found in definitions.items() if name in found} == {short_name}
             value = getattr(owner, name)
             assert value.__module__ == owner.__name__
-            if not name.startswith("_"):
+            if not name.startswith("_") and name != "execution_settings":
                 assert getattr(runner, name) is value
     assert runner.RunProfile is profiles.RunProfile
     assert runner.DATA_DIR_FOR_SYSTEM is profiles.DATA_DIR_FOR_SYSTEM
@@ -131,9 +130,7 @@ def owner_profile(monkeypatch: pytest.MonkeyPatch) -> profiles.RunProfile:
     monkeypatch.setattr(profiles, "_classify_backend", lambda _profile: (None, _EnergyBackend()))
     monkeypatch.setattr(runner, "_is_jax_backend", lambda _backend: False)
     monkeypatch.setattr("q2mm.benchmarks.systems.load_system", lambda *_args, **_kwargs: case)
-    monkeypatch.setattr(
-        "q2mm.application.optimization.execute_optimization", lambda *_args, **_kwargs: (result, final_ff)
-    )
+    monkeypatch.setattr("q2mm.application.optimization.optimize", lambda *_args, **_kwargs: result)
     return profiles.RunProfile(system="ch3f", backend="synthetic-mm", optimizer="scipy-lbfgsb", regularization=0.0)
 
 
@@ -149,8 +146,7 @@ def test_coordinator_and_cli_call_the_live_owners(
         (profiles, "_classify_backend", 1),
         (profiles, "_default_form", 1),
         (profiles, "_load_kwargs", 1),
-        (profiles, "resolve_optimizer", 1),
-        (profiles, "_resolve_workflow", 1),
+        (profiles, "execution_settings", 1),
         (records, "build_run_provenance", 1),
         (records, "_data_provenance", 1),
         (records, "_resolved_summary", 1),
@@ -191,8 +187,7 @@ def test_coordinator_and_cli_call_the_live_owners(
         (profiles, "_classify_backend", False),
         (profiles, "_default_form", False),
         (profiles, "_load_kwargs", False),
-        (profiles, "resolve_optimizer", False),
-        (profiles, "_resolve_workflow", False),
+        (profiles, "execution_settings", False),
         (records, "_data_provenance", False),
         (records, "_initial_summary", True),
         (records, "_optimization_summary", True),
@@ -221,7 +216,7 @@ def test_moved_owner_errors_keep_the_identity_boundary(
         assert candidate.candidate_id == owner_profile.candidate_id()
 
 
-@pytest.mark.parametrize("owner,name", [(profiles, "resolve_optimizer"), (analysis, "_frequency_analysis")])
+@pytest.mark.parametrize("owner,name", [(profiles, "execution_settings"), (analysis, "_frequency_analysis")])
 def test_moved_owner_interruptions_propagate(
     owner_profile: profiles.RunProfile, monkeypatch: pytest.MonkeyPatch, owner: object, name: str
 ) -> None:

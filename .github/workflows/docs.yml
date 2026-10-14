@@ -5,6 +5,8 @@ on:
       - master
 permissions:
   contents: write
+env:
+  PYYAML_FORCE_LIBYAML: "0"
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -16,7 +18,8 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.15"
+      - uses: astral-sh/setup-uv@v7
       - run: echo "cache_id=$(date --utc '+%V')" >> $GITHUB_ENV
       - uses: actions/cache@v4
         with:
@@ -24,5 +27,5 @@ jobs:
           path: ~/.cache
           restore-keys: |
             properdocs-material-
-      - run: pip install ".[docs]"
-      - run: properdocs gh-deploy --force
+      - run: uv sync --python 3.15 --extra docs
+      - run: uv run properdocs gh-deploy --force

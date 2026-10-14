@@ -24,7 +24,8 @@ from .models import (
     SavedOutput,
 )
 
-MANIFEST_SUFFIX = ".manifest.json"
+MANIFEST_SUFFIX: str = ".manifest.json"
+"""Filename suffix for versioned optimization-run provenance sidecars."""
 _INTERNAL_ARTIFACT_NAME = re.compile(r"\..*\.q2mm-(?:reservation|.*-[0-9a-f]{32}\.tmp)", re.IGNORECASE | re.DOTALL)
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ def _persistence_errors(target: Path) -> Iterator[None]:
     """Share the existing write-error policy without changing interruption handling."""
     try:
         yield
-    except (OutputFormatError, OutputExistsError):
+    except OutputFormatError, OutputExistsError:
         raise
     except Exception as exc:
         raise PersistenceError(f"Could not save {target}: {exc}") from exc

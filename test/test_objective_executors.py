@@ -8,6 +8,8 @@ declaration, and the no-silent-fallback ObjectiveGradientError.
 
 from __future__ import annotations
 
+from q2mm.settings import ScipySettings
+
 import importlib.util
 from typing import Any
 
@@ -438,7 +440,7 @@ def test_frozen_slots_preserved_by_optimizer(ch3f_problem: Any) -> None:
     active = np.array(sorted(int(i) for i in problem.active_space.active_indices)[:1], dtype=int)
     space = ActiveParameterSpace(layout=layout, baseline=baseline, active_indices=active)
     py = PythonObjectiveExecutor(plan, backend, problem.starting_force_field)
-    result = ScipyOptimizer(method="L-BFGS-B", maxiter=3, verbose=False).optimize(py, space)
+    result = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=3, verbose=False)).optimize(py, space)
     assert result.final_params.shape == (plan.n_params,)
     frozen = np.array([i for i in range(len(layout)) if i not in set(active.tolist())])
     np.testing.assert_array_equal(result.final_params[frozen], baseline[frozen])
@@ -590,7 +592,9 @@ def test_least_squares_nfev_and_history(ch3f_problem: Any) -> None:
     backend, problem = ch3f_problem
     plan = ObjectivePlan.from_problem(problem)
     py = PythonObjectiveExecutor(plan, backend, problem.starting_force_field)
-    result = ScipyOptimizer(method="least_squares", maxiter=5, verbose=False).optimize(py, problem.active_space)
+    result = ScipyOptimizer(ScipySettings(method="least_squares", maxiter=5, verbose=False)).optimize(
+        py, problem.active_space
+    )
     assert result.gradient_mode == "finite_difference"
     assert result.fd_step is not None
     assert result.n_evaluations > 0

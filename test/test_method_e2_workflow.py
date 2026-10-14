@@ -1,6 +1,8 @@
 """Tests for :class:`q2mm.workflows.MethodE2Workflow`."""
 
 from __future__ import annotations
+
+from q2mm.settings import ObjectiveSettings, MethodE2Settings, ScipySettings
 from q2mm.backends.registry import load_backend
 
 import numpy as np
@@ -17,49 +19,50 @@ class TestConstructor:
     def test_default_kwargs(self) -> None:
         """Defaults match the documented Limé & Norrby Method C/E2 values."""
         wf = MethodE2Workflow()
-        assert wf.negative_fc_threshold == pytest.approx(1e-3)
-        assert wf.replace_with_round2 == pytest.approx(1.0)
-        assert wf.allow_negative is False
+        assert wf.settings.negative_fc_threshold == pytest.approx(1e-3)
+        assert wf.settings.replace_with_round2 == pytest.approx(1.0)
+        assert wf.settings.allow_negative is False
 
     @pytest.mark.parametrize("bad", [-1.0, float("nan"), float("inf"), float("-inf")])
     def test_bad_threshold_raises(self, bad: float) -> None:
         """Non-finite or negative thresholds are rejected."""
         with pytest.raises(ValueError, match="negative_fc_threshold"):
-            MethodE2Workflow(negative_fc_threshold=bad)
+            MethodE2Workflow(MethodE2Settings(negative_fc_threshold=bad))
 
     @pytest.mark.parametrize("bad", [0.0, -1.0, float("nan"), float("inf")])
     def test_bad_replace_with_raises(self, bad: float) -> None:
         """Non-finite or non-positive replace_with values are rejected."""
         with pytest.raises(ValueError, match="replace_with_round2"):
-            MethodE2Workflow(replace_with_round2=bad)
+            MethodE2Workflow(MethodE2Settings(replace_with_round2=bad))
 
     def test_near_zero_replace_with_defaults_to_approxn(self) -> None:
-        """Default ``near_zero_replace_with`` is a copy of Approxn standards."""
+        """Default replacements match Approxn standards and cannot be mutated."""
         wf = MethodE2Workflow()
-        assert wf.near_zero_replace_with == APPROXN_DEFAULTS
-        wf.near_zero_replace_with["bond_k"] = 999.0
+        assert wf.settings.near_zero_replace_with == APPROXN_DEFAULTS
+        with pytest.raises(TypeError):
+            wf.settings.near_zero_replace_with["bond_k"] = 999.0
         assert APPROXN_DEFAULTS["bond_k"] != 999.0
 
     def test_near_zero_replace_with_empty_dict_opts_out(self) -> None:
         """Passing ``{}`` is an explicit opt-out to paper-literal lock-at-Round-1."""
-        wf = MethodE2Workflow(near_zero_replace_with={})
-        assert wf.near_zero_replace_with == {}
+        wf = MethodE2Workflow(MethodE2Settings(near_zero_replace_with={}))
+        assert wf.settings.near_zero_replace_with == {}
 
     def test_near_zero_replace_with_custom_dict_accepted(self) -> None:
         """Caller can override per-type replacement values."""
-        wf = MethodE2Workflow(near_zero_replace_with={"bond_k": 10.0})
-        assert wf.near_zero_replace_with == {"bond_k": 10.0}
+        wf = MethodE2Workflow(MethodE2Settings(near_zero_replace_with={"bond_k": 10.0}))
+        assert wf.settings.near_zero_replace_with == {"bond_k": 10.0}
 
     def test_near_zero_replace_with_bad_label_raises(self) -> None:
         """Labels outside the physical FC types are rejected."""
-        with pytest.raises(ValueError, match="unsupported kind"):
-            MethodE2Workflow(near_zero_replace_with={"torsion_k": 1.0})
+        with pytest.raises(ValueError, match="near_zero_replace_with"):
+            MethodE2Workflow(MethodE2Settings(near_zero_replace_with={"torsion_k": 1.0}))
 
     @pytest.mark.parametrize("bad", [-1.0, float("nan"), float("inf")])
     def test_near_zero_replace_with_bad_value_raises(self, bad: float) -> None:
         """Negative or non-finite replacement values are rejected."""
-        with pytest.raises(ValueError, match="must be finite and"):
-            MethodE2Workflow(near_zero_replace_with={"bond_k": bad})
+        with pytest.raises(ValueError, match="near_zero_replace_with"):
+            MethodE2Workflow(MethodE2Settings(near_zero_replace_with={"bond_k": bad}))
 
     def test_approxn_defaults_match_paper_in_mm3_units(self) -> None:
         """``APPROXN_DEFAULTS`` (canonical units) round-trips to the paper values."""
@@ -68,6 +71,22 @@ class TestConstructor:
         assert APPROXN_DEFAULTS["bond_k"] * KCALMOLA2_TO_MDYNA == pytest.approx(5.0)
         assert APPROXN_DEFAULTS["angle_k"] * KCALMOLRAD2_TO_MDYNA_RAD2 == pytest.approx(0.5)
         assert APPROXN_DEFAULTS["ub_k"] * KCALMOLA2_TO_MDYNA == pytest.approx(5.0)
+
+    def test_default_settings_preserve_canonical_conversion_arithmetic(self) -> None:
+        from q2mm.models.units import MDYNA_RAD2_TO_KCALMOLRAD2, MDYNA_TO_KCALMOLA2
+
+        assert APPROXN_DEFAULTS == {
+            "bond_k": 5.0 * MDYNA_TO_KCALMOLA2,
+            "angle_k": 0.5 * MDYNA_RAD2_TO_KCALMOLRAD2,
+            "ub_k": 5.0 * MDYNA_TO_KCALMOLA2,
+        }
+        settings = MethodE2Settings()
+        workflow = MethodE2Workflow(settings)
+        assert workflow.settings is settings
+        assert workflow.configuration_settings() == settings.model_dump(mode="json")
+        assert workflow.name == settings.name
+        with pytest.raises(ValueError, match="frozen"):
+            workflow.settings.negative_fc_threshold = 0.0
 
 
 class TestProtocolConformance:
@@ -94,8 +113,12 @@ class TestShortCircuit:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         case, backend = self._load()
-        make_evaluator = make_evaluator_factory(backend, case.problem.starting_force_field, executor="jax")
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
+        make_evaluator = make_evaluator_factory(
+            backend,
+            case.problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=2, ftol=1e-06, verbose=False))
         result = MethodE2Workflow().run(case.problem, make_evaluator, opt, n_evals=0)
 
         assert result.method == "method-e2"
@@ -123,8 +146,12 @@ class TestProblemImmutability:
         active_before = np.array(problem.active_space.active_indices, copy=True)
         baseline_before = np.array(problem.active_space.baseline, copy=True)
 
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = MethodE2Workflow().run(problem, make_evaluator, opt, n_evals=0)
 
         np.testing.assert_array_equal(problem.active_space.active_indices, active_before)
@@ -149,8 +176,12 @@ class TestTwoStageOnSn2:
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
         case, backend = self._load()
-        make_evaluator = make_evaluator_factory(backend, case.problem.starting_force_field, executor="jax")
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
+        make_evaluator = make_evaluator_factory(
+            backend,
+            case.problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=2, ftol=1e-06, verbose=False))
         result = MethodE2Workflow().run(case.problem, make_evaluator, opt, n_evals=0)
 
         assert result.method == "method-e2"
@@ -171,9 +202,13 @@ class TestTwoStageOnSn2:
         active_before = np.array(problem.active_space.active_indices, copy=True)
         baseline_before = np.array(problem.active_space.baseline, copy=True)
 
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        wf = MethodE2Workflow(MethodE2Settings(negative_fc_threshold=0.5))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         np.testing.assert_array_equal(problem.active_space.active_indices, active_before)
@@ -200,9 +235,13 @@ class TestTwoStageOnSn2:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        wf = MethodE2Workflow(MethodE2Settings(negative_fc_threshold=0.5))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         if len(result.stages) != 2:
@@ -255,9 +294,13 @@ class TestTwoStageOnSn2:
         active_before = np.array(problem.active_space.active_indices, copy=True)
         baseline_before = np.array(problem.active_space.baseline, copy=True)
 
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        wf = MethodE2Workflow(negative_fc_threshold=1e30)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        wf = MethodE2Workflow(MethodE2Settings(negative_fc_threshold=1e30))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         assert len(result.stages) == 1
@@ -277,9 +320,13 @@ class TestTwoStageOnSn2:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        wf = MethodE2Workflow(negative_fc_threshold=1e30)  # lock every FC
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        wf = MethodE2Workflow(MethodE2Settings(negative_fc_threshold=1e30))  # lock every FC
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         if result.stages[0].notes.get("round_2_skipped") != "no_active_params_after_lock":
@@ -294,9 +341,13 @@ class TestTwoStageOnSn2:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        wf = MethodE2Workflow(MethodE2Settings(negative_fc_threshold=0.5))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = wf.run(problem, make_evaluator, opt, n_evals=0)
         for stage in result.stages:
             assert stage.n_params == result.n_params
@@ -308,9 +359,13 @@ class TestTwoStageOnSn2:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=2, ftol=1e-6, verbose=False)
-        wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=2, ftol=1e-06, verbose=False))
+        wf = MethodE2Workflow(MethodE2Settings(negative_fc_threshold=0.5))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = wf.run(problem, make_evaluator, opt, n_evals=0)
         if len(result.stages) != 2:
             pytest.skip("System did not produce a Round 2.")
@@ -328,9 +383,13 @@ class TestTwoStageOnSn2:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        wf = MethodE2Workflow(negative_fc_threshold=0.5)
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        wf = MethodE2Workflow(MethodE2Settings(negative_fc_threshold=0.5))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         replacements = result.stages[0].notes.get("near_zero_replacements", [])
@@ -348,9 +407,13 @@ class TestTwoStageOnSn2:
 
         case, backend = self._load()
         problem = case.problem
-        opt = ScipyOptimizer(method="L-BFGS-B", maxiter=1, ftol=1e-6, verbose=False)
-        wf = MethodE2Workflow(negative_fc_threshold=0.5, near_zero_replace_with={})
-        make_evaluator = make_evaluator_factory(backend, problem.starting_force_field, executor="jax")
+        opt = ScipyOptimizer(ScipySettings(method="L-BFGS-B", maxiter=1, ftol=1e-06, verbose=False))
+        wf = MethodE2Workflow(MethodE2Settings(negative_fc_threshold=0.5, near_zero_replace_with={}))
+        make_evaluator = make_evaluator_factory(
+            backend,
+            problem.starting_force_field,
+            settings=ObjectiveSettings(executor="jax", gradient_mode="analytical"),
+        )
         result = wf.run(problem, make_evaluator, opt, n_evals=0)
 
         assert "near_zero_replacements" not in result.stages[0].notes
