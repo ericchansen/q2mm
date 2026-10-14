@@ -205,8 +205,7 @@ class Mol2:
         if lines is None:
             lines = self.lines
         with open(path, "w") as f:
-            for line in lines:
-                f.write(line)
+            f.writelines(lines)
 
     @property
     def _records_parsed(self) -> list[_Mol2Record]:

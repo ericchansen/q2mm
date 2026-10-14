@@ -342,7 +342,9 @@ class OptimizationRun:
         baseline.setflags(write=False)
         object.__setattr__(self, "active_indices", active_indices)
         object.__setattr__(self, "baseline", baseline)
-        final_layout = type(self)._layout_for(self.final_force_field)
+        from q2mm.models.parameters import ParameterLayout
+
+        final_layout = ParameterLayout.from_force_field(self.final_force_field)
         if final_layout.fingerprint != self.layout_fingerprint or len(final_layout) != result.n_params:
             raise ApplicationOptimizationError("Final force field structure does not match the result layout.")
         if not np.array_equal(final_layout.vector(self.final_force_field), result.final_params):
@@ -352,12 +354,6 @@ class OptimizationRun:
             raise ApplicationOptimizationError("input_fingerprints must contain canonical SHA-256 values.")
         object.__setattr__(self, "input_fingerprints", MappingProxyType(dict(sorted(fingerprints.items()))))
         object.__setattr__(self, "provenance", _safe_mapping(self.provenance, path="run.provenance"))
-
-    @staticmethod
-    def _layout_for(force_field: ForceField) -> Any:
-        from q2mm.models.parameters import ParameterLayout
-
-        return ParameterLayout.from_force_field(force_field)
 
     @property
     def optimization_result(self) -> OptimizationResult:

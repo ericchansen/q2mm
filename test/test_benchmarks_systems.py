@@ -27,6 +27,40 @@ from q2mm.benchmarks.systems import _paths
 
 
 class TestExternalDataRoots:
+    @pytest.mark.parametrize(
+        "system,chapter", [("pd_allyl", "Chapter 3"), ("pd_conjugate", "Chapter 5"), ("rh_conjugate", "Chapter 6")]
+    )
+    @pytest.mark.parametrize("preferred_exists", [False, True])
+    @pytest.mark.parametrize("fallback_exists", [False, True])
+    @pytest.mark.parametrize("explicit", [False, True])
+    def test_wahlers_training_path_preserves_loader_precedence(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        system: str,
+        chapter: str,
+        preferred_exists: bool,
+        fallback_exists: bool,
+        explicit: bool,
+    ) -> None:
+        from importlib import import_module
+
+        module = import_module(f"q2mm.benchmarks.systems.{system}")
+        chapter_dir = tmp_path / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter
+        preferred = chapter_dir / "Training Set Structures"
+        fallback = chapter_dir / "DFT-optmized training set structures"
+        if preferred_exists:
+            preferred.mkdir(parents=True)
+        if fallback_exists:
+            fallback.mkdir(parents=True)
+        monkeypatch.setenv("Q2MM_SUPPORTING_INFO", str(tmp_path))
+        roots = _paths.ExternalDataRoots(supporting_info=tmp_path) if explicit else None
+        seen: list[Path] = []
+        monkeypatch.setattr(module, "load_gaussian_molecules", lambda path: seen.append(path) or [])
+
+        assert module.load_molecules(data_roots=roots) == []
+        assert seen == [preferred if preferred_exists else fallback]
+
     def test_missing_rh_enamide_root_has_configuration_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("Q2MM_RH_ENAMIDE", raising=False)
         with pytest.raises(FileNotFoundError, match=r"ExternalDataRoots\(rh_enamide"):

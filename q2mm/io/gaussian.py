@@ -245,8 +245,7 @@ class GaussLog:
         if lines is None:
             lines = self.lines
         with open(path, "w") as f:
-            for line in lines:
-                f.write(line)
+            f.writelines(lines)
 
     @property
     def evecs(self) -> np.ndarray | None:

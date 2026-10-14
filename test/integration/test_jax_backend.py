@@ -384,17 +384,7 @@ class TestJaxOptimizerIntegration:
         vec = _params(ff).copy()
         analytical_grad = obj.gradient(vec)
 
-        eps = 1e-5
-        fd_grad = np.zeros_like(vec)
-        for i in range(len(vec)):
-            v_plus, v_minus = vec.copy(), vec.copy()
-            v_plus[i] += eps
-            v_minus[i] -= eps
-            obj.reset()
-            f_plus = obj.value(v_plus)
-            obj.reset()
-            f_minus = obj.value(v_minus)
-            fd_grad[i] = (f_plus - f_minus) / (2 * eps)
+        fd_grad = _fd_objective_gradient(obj, vec, h=1e-5)
 
         np.testing.assert_allclose(analytical_grad, fd_grad, atol=1e-3, rtol=1e-3)
 

@@ -398,6 +398,16 @@ def _ratio_tol(value: str) -> float | None:
     return None if parsed < 0 else parsed
 
 
+def _add_starting_profile_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--starting-point", default="qfuerza", choices=("qfuerza", "published"), help="Starting FF.")
+    parser.add_argument(
+        "--objective-profile",
+        default=None,
+        choices=sorted(KNOWN_OBJECTIVE_PROFILES),
+        help="Publication objective/completeness profile (default: repository compatibility for publication systems).",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="q2mm-benchmark", description=__doc__.splitlines()[0] if __doc__ else None)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -415,13 +425,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--optimizer", default="scipy-lbfgsb-jax", choices=sorted(OPTIMIZER_CATALOG), help="Optimizer key."
     )
     single.add_argument("--workflow", default="single-stage", choices=("single-stage", "method-e2"), help="Workflow.")
-    single.add_argument("--starting-point", default="qfuerza", choices=("qfuerza", "published"), help="Starting FF.")
-    single.add_argument(
-        "--objective-profile",
-        default=None,
-        choices=sorted(KNOWN_OBJECTIVE_PROFILES),
-        help="Publication objective/completeness profile (default: repository compatibility for publication systems).",
-    )
+    _add_starting_profile_options(single)
     single.add_argument("--skip-optimization", action="store_true", help="Compute baseline metrics only.")
     single.add_argument("--platform", default=None, help="OpenMM platform override.")
     single.add_argument("--output", type=Path, default=Path("results"), help="Output directory (default: ./results).")
@@ -443,13 +447,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--optimizer", default="scipy-lbfgsb-jax", choices=sorted(OPTIMIZER_CATALOG), help="Optimizer key."
     )
     batch.add_argument("--workflow", default="method-e2", choices=("single-stage", "method-e2"), help="Workflow.")
-    batch.add_argument("--starting-point", default="qfuerza", choices=("qfuerza", "published"), help="Starting FF.")
-    batch.add_argument(
-        "--objective-profile",
-        default=None,
-        choices=sorted(KNOWN_OBJECTIVE_PROFILES),
-        help="Publication objective/completeness profile (default: repository compatibility for publication systems).",
-    )
+    _add_starting_profile_options(batch)
     batch.add_argument("--skip-optimization", action="store_true", help="Compute baseline metrics only.")
     batch.add_argument("--platform", default=None, help="OpenMM platform override.")
     batch.add_argument("--output", type=Path, default=Path("results"), help="Output directory (default: ./results).")
@@ -465,13 +463,7 @@ def _build_parser() -> argparse.ArgumentParser:
     matrix.add_argument(
         "--optimizer", action="append", choices=sorted(OPTIMIZER_CATALOG), help="Optimizer key (repeatable)."
     )
-    matrix.add_argument("--starting-point", default="qfuerza", choices=("qfuerza", "published"), help="Starting FF.")
-    matrix.add_argument(
-        "--objective-profile",
-        default=None,
-        choices=sorted(KNOWN_OBJECTIVE_PROFILES),
-        help="Publication objective/completeness profile (default: repository compatibility for publication systems).",
-    )
+    _add_starting_profile_options(matrix)
     matrix.add_argument("--skip-optimization", action="store_true", help="Compute baseline metrics only.")
     matrix.add_argument("--platform", default=None, help="OpenMM platform override.")
     matrix.add_argument("--output", type=Path, default=Path("results"), help="Output directory (default: ./results).")

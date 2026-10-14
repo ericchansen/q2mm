@@ -52,15 +52,6 @@ from q2mm.backends.mm._openmm_terms import (
     _UBTerm,
     _VdwTerm,
 )
-from q2mm.backends.mm._openmm_units import (
-    _angle_k_to_harmonic,
-    _angle_k_to_openmm,
-    _bond_k_to_harmonic,
-    _bond_k_to_openmm,
-    _vdw_epsilon_to_openmm,
-    _vdw_radius_to_openmm,
-    _vdw_sigma_nm,
-)
 from q2mm.constants import (
     MM3_BOND_C3,
     MM3_BOND_C4,
@@ -77,10 +68,17 @@ from q2mm.models.units import (
     KCAL_TO_KJ,
     RAD_TO_DEG,
     ang_to_nm,
+    ang_to_nm as _vdw_radius_to_openmm,
+    canonical_to_openmm_angle_k as _angle_k_to_openmm,
+    canonical_to_openmm_bond_k as _bond_k_to_openmm,
     canonical_to_openmm_bond_k_nm,
+    canonical_to_openmm_epsilon as _vdw_epsilon_to_openmm,
+    canonical_to_openmm_harmonic_angle_k as _angle_k_to_harmonic,
+    canonical_to_openmm_harmonic_bond_k as _bond_k_to_harmonic,
     canonical_to_openmm_torsion_k,
     hessian_kjmolnm2_to_au,
     kj_to_kcal,
+    rmin_half_to_sigma_nm as _vdw_sigma_nm,
 )
 from q2mm.models.forcefield import AngleParam, BondParam, ForceField, FunctionalForm, TorsionParam, VdwParam
 from q2mm.models.molecule import Molecule
@@ -469,24 +467,7 @@ def _vdw_interacting_rows(molecule: Molecule, forcefield: ForceField) -> dict[in
     return partners
 
 
-def _build_atom_type_index(molecule: Molecule) -> dict[str, list[int]]:
-    """Build a mapping from atom type to atom indices in the molecule.
-
-    Args:
-        molecule: Molecule to index.
-
-    Returns:
-        dict mapping atom type strings to lists of 0-based atom indices.
-
-    """
-    index: dict[str, list[int]] = {}
-    for i, atype in enumerate(molecule.atom_types):
-        index.setdefault(atype, []).append(i)
-    return index
-
-
 def _find_dihedral_atoms(
-    type_to_indices: dict[str, list[int]],
     atom_types: tuple[str, str, str, str],
     molecule: Molecule,
 ) -> list[tuple[int, int, int, int]]:
@@ -497,7 +478,6 @@ def _find_dihedral_atoms(
     (O(n_torsions) instead of O(n^4) Cartesian product).
 
     Args:
-        type_to_indices: Atom type to index mapping.
         atom_types: Four atom types defining the dihedral.
         molecule: Molecule for bond connectivity and torsion enumeration.
 
@@ -548,7 +528,6 @@ def _build_cmap_force(molecule: Molecule, forcefield: ForceField) -> tuple[objec
         return None, []
 
     cmap_force = mm.CMAPTorsionForce()
-    type_to_indices = _build_atom_type_index(molecule)
     cmap_terms: list[_CmapTerm] = []
 
     for grid in forcefield.cmaps:
@@ -563,8 +542,8 @@ def _build_cmap_force(molecule: Molecule, forcefield: ForceField) -> tuple[objec
         energy_kj = (shifted.T.flatten() * KCAL_TO_KJ).tolist()
         map_index = cmap_force.addMap(grid.resolution, energy_kj)
 
-        phi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_phi, molecule)
-        psi_matches = _find_dihedral_atoms(type_to_indices, grid.atom_types_psi, molecule)
+        phi_matches = _find_dihedral_atoms(grid.atom_types_phi, molecule)
+        psi_matches = _find_dihedral_atoms(grid.atom_types_psi, molecule)
 
         # Pair phi/psi dihedrals sharing 3 overlapping atoms.
         psi_index: dict[tuple[int, ...], list[tuple[int, int, int, int]]] = {}
@@ -1012,54 +991,31 @@ class OpenMMBackend:
         improper_assignments = _collect_torsion_assignments(molecule, forcefield, is_improper=True)
 
         torsion_terms: list[_TorsionTerm] = []
-        for torsion, param in proper_assignments:
-            force_index = torsion_force.addTorsion(
-                torsion.atom_i,
-                torsion.atom_j,
-                torsion.atom_k,
-                torsion.atom_l,
-                param.periodicity,
-                np.deg2rad(float(param.phase)),
-                canonical_to_openmm_torsion_k(param.force_constant),
-            )
-            torsion_terms.append(
-                _TorsionTerm(
-                    force_index=force_index,
-                    atom_i=torsion.atom_i,
-                    atom_j=torsion.atom_j,
-                    atom_k=torsion.atom_k,
-                    atom_l=torsion.atom_l,
-                    elements=torsion.element_quad,
-                    periodicity=param.periodicity,
-                    env_id=torsion.env_id,
-                    ff_row=param.ff_row,
+        for assignments, is_improper in ((proper_assignments, False), (improper_assignments, True)):
+            for torsion, param in assignments:
+                force_index = torsion_force.addTorsion(
+                    torsion.atom_i,
+                    torsion.atom_j,
+                    torsion.atom_k,
+                    torsion.atom_l,
+                    param.periodicity,
+                    np.deg2rad(float(param.phase)),
+                    canonical_to_openmm_torsion_k(param.force_constant),
                 )
-            )
-
-        for imp_torsion, param in improper_assignments:
-            force_index = torsion_force.addTorsion(
-                imp_torsion.atom_i,
-                imp_torsion.atom_j,
-                imp_torsion.atom_k,
-                imp_torsion.atom_l,
-                param.periodicity,
-                np.deg2rad(float(param.phase)),
-                canonical_to_openmm_torsion_k(param.force_constant),
-            )
-            torsion_terms.append(
-                _TorsionTerm(
-                    force_index=force_index,
-                    atom_i=imp_torsion.atom_i,
-                    atom_j=imp_torsion.atom_j,
-                    atom_k=imp_torsion.atom_k,
-                    atom_l=imp_torsion.atom_l,
-                    elements=imp_torsion.element_quad,
-                    periodicity=param.periodicity,
-                    env_id=imp_torsion.env_id,
-                    ff_row=param.ff_row,
-                    is_improper=True,
+                torsion_terms.append(
+                    _TorsionTerm(
+                        force_index=force_index,
+                        atom_i=torsion.atom_i,
+                        atom_j=torsion.atom_j,
+                        atom_k=torsion.atom_k,
+                        atom_l=torsion.atom_l,
+                        elements=torsion.element_quad,
+                        periodicity=param.periodicity,
+                        env_id=torsion.env_id,
+                        ff_row=param.ff_row,
+                        is_improper=is_improper,
+                    )
                 )
-            )
 
         # --- Assign vdW parameters ---
         vdw_terms: list[_VdwTerm] = []

@@ -323,7 +323,9 @@ def test_cycling_phase_execution_and_counts_are_unchanged(monkeypatch: pytest.Mo
     from q2mm.models.results import OptimizationResult
     from q2mm.optimizers.catalog import _Construction
     from q2mm.optimizers.cycling import SensitivityResult
-    from test.test_multistart import QuadraticEvaluator
+
+    pytest.importorskip("scipy")
+    from test._shared import QuadraticEvaluator
 
     calls = []
     evaluator = QuadraticEvaluator(np.ones(2), initial=np.array([3.0, 4.0]))

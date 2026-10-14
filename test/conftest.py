@@ -51,30 +51,7 @@ from __future__ import annotations
 
 import pytest
 
-# Re-export shared constants and factories so conftest fixtures can use them.
-# Test files should import directly from ``test._shared``.
-from test._shared import (  # noqa: F401
-    CH3F_ENERGY,
-    CH3F_FREQS,
-    CH3F_HESS,
-    CH3F_MODES,
-    CH3F_XYZ,
-    COMPLEX_XYZ,
-    ETHANE_DIR,
-    EXAMPLES_DIR,
-    GS_FCHK,
-    REPO_ROOT,
-    SN2_ENERGY,
-    SN2_FREQS,
-    SN2_HESSIAN,
-    SN2_QM_REF,
-    SN2_XYZ,
-    SUPPORTING_INFO_DIR,
-    TS_FCHK,
-    make_diatomic,
-    make_noble_gas_pair,
-    make_water,
-)
+from test._shared import REPO_ROOT, SUPPORTING_INFO_DIR
 
 # ---------------------------------------------------------------------------
 # Backend availability detection

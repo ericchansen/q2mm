@@ -5,11 +5,13 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+pytest.importorskip("scipy")
+
 from q2mm.models.parameters import ActiveParameterSpace
 from q2mm.models.results import OptimizationResult, StageRecord
 from q2mm.objectives.protocols import ObjectiveEvaluator
 from q2mm.optimizers.multistart import MultiStartOptimizer
-from test.test_multistart import QuadraticEvaluator
+from test._shared import QuadraticEvaluator
 
 
 class Scripted:

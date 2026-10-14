@@ -10,7 +10,6 @@ import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from q2mm import constants as co
 from q2mm.io._helpers import (
@@ -48,9 +47,6 @@ from q2mm.models.units import (
     mm3_bond_k_to_canonical,
     mm3_sb_k_to_canonical,
 )
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 

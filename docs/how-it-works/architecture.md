@@ -270,7 +270,6 @@ q2mm/
 │   ├── mm/
 │   │   ├── openmm.py        # OpenMM backend (harmonic + MM3 dual-mode)
 │   │   ├── _openmm_terms.py # OpenMM internal term records
-│   │   ├── _openmm_units.py # OpenMM scalar unit converters
 │   │   ├── tinker.py        # Tinker backend (subprocess-based)
 │   │   ├── jax_engine.py    # JAX backend (differentiable, analytical gradients)
 │   │   ├── jax_md_engine.py # JAX-MD backend (periodic, neighbor lists)

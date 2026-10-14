@@ -126,6 +126,16 @@ def resolve_wahlers_opt_path(
     return si / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir / ff_filename
 
 
+def resolve_wahlers_training_set_dir(chapter_subdir: str, roots: ExternalDataRoots | None = None) -> Path:
+    """Resolve a Wahlers TS chapter's preferred or historical training directory."""
+    si = resolve_supporting_info_dir(roots)
+    chapter = si / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir
+    ts_dir = chapter / "Training Set Structures"
+    if not ts_dir.exists():
+        ts_dir = chapter / "DFT-optmized training set structures"
+    return ts_dir
+
+
 # ---------------------------------------------------------------------------
 # Deterministic sorting
 # ---------------------------------------------------------------------------

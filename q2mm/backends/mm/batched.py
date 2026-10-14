@@ -215,11 +215,7 @@ def group_by_topology(sessions: list[PreparedJax]) -> list[PreparedJaxBatch]:
 
     """
     groups: dict[str, list[PreparedJax]] = {}
-    order: list[str] = []
     for session in sessions:
         sig = _topology_signature(session._state)
-        if sig not in groups:
-            groups[sig] = []
-            order.append(sig)
-        groups[sig].append(session)
-    return [PreparedJaxBatch(groups[sig]) for sig in order]
+        groups.setdefault(sig, []).append(session)
+    return [PreparedJaxBatch(group) for group in groups.values()]

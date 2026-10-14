@@ -285,32 +285,6 @@ def _harmonic_angle_energy(
     return jnp.sum(k * (theta - theta0) ** 2)
 
 
-def _ub_energy(
-    k: jnp.ndarray,
-    r0: jnp.ndarray,
-    coords: jnp.ndarray,
-    ub_indices: jnp.ndarray,
-) -> jnp.ndarray:
-    """Urey-Bradley 1-3 interaction: ``E = Σ k_i · (r_13_i − r0_i)²``.
-
-    Args:
-        k (jnp.ndarray): Force constants, shape ``(n_ub,)``, in kcal/mol/Å².
-        r0 (jnp.ndarray): Equilibrium distances, shape ``(n_ub,)``, in Å.
-        coords (jnp.ndarray): Cartesian coordinates, shape ``(n_atoms, 3)``,
-            in Å.
-        ub_indices (jnp.ndarray): Atom index pairs ``(i, k)`` from the outer
-            atoms of each UB-enabled angle, shape ``(n_ub, 2)``.
-
-    Returns:
-        jnp.ndarray: Scalar total UB energy in kcal/mol.
-
-    """
-    r_ij = coords[ub_indices[:, 0]] - coords[ub_indices[:, 1]]
-    r = _safe_norm(r_ij, axis=-1)
-    dr = r - r0
-    return jnp.sum(k * dr**2)
-
-
 def _lj_12_6_energy(
     per_atom_sigma: jnp.ndarray, per_atom_epsilon: jnp.ndarray, coords: jnp.ndarray, pair_indices: jnp.ndarray
 ) -> jnp.ndarray:
@@ -1603,7 +1577,7 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
                 ub_params = params[ub_offset : ub_offset + 2 * n_ubt].reshape(n_ubt, 2)
                 k = ub_params[_ub_map, 0]
                 r0 = ub_params[_ub_map, 1]
-                E = E + _ub_energy(k, r0, coords, _ub_indices)
+                E = E + _harmonic_bond_energy(k, r0, coords, _ub_indices)
 
             if has_sb:
                 sb_k = params[sb_offset : sb_offset + n_sbt]
@@ -1657,7 +1631,7 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
                 ub_params = params[ub_offset : ub_offset + 2 * n_ubt].reshape(n_ubt, 2)
                 k = ub_params[_ub_map, 0]
                 r0 = ub_params[_ub_map, 1]
-                E = E + _ub_energy(k, r0, coords, _ub_indices)
+                E = E + _harmonic_bond_energy(k, r0, coords, _ub_indices)
 
             return E
 

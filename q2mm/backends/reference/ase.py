@@ -10,13 +10,12 @@ shared across sessions.
 from __future__ import annotations
 
 import copy
-import re
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 import numpy as np
 
-from q2mm._provenance import freeze_json_mapping
+from q2mm._provenance import _contains_absolute_path, freeze_json_mapping
 from q2mm.backends.contracts import (
     AbstractPreparedBackend,
     BackendConfigurationError,
@@ -58,21 +57,10 @@ else:
     _HARTREE_EV = _HARTREE_EV_IMPORT
 
 _CONVERSION_VERSION = 1
-_WINDOWS_ABSOLUTE_PATH = re.compile(r"^[A-Za-z]:[\\/]")
 
 
 class ASEEvaluationError(EvaluationError):
     """An ASE calculator evaluation failed."""
-
-
-def _contains_absolute_path(value: object) -> bool:
-    if isinstance(value, str):
-        return value.startswith(("/", "\\")) or _WINDOWS_ABSOLUTE_PATH.match(value) is not None
-    if isinstance(value, Mapping):
-        return any(_contains_absolute_path(item) for item in value.values())
-    if isinstance(value, (list, tuple)):
-        return any(_contains_absolute_path(item) for item in value)
-    return False
 
 
 def _safe_calculator_parameters(calculator: object) -> dict[str, object]:

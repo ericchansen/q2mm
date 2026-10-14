@@ -1,4 +1,4 @@
-"""Shared test constants and molecule factories.
+"""Shared test constants, molecule factories, and synthetic evaluator support.
 
 Centralises path definitions and molecule helpers so every test module
 can ``from test._shared import …`` instead of redefining them locally.
@@ -6,15 +6,22 @@ can ``from test._shared import …`` instead of redefining them locally.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 
 from q2mm.resources import sn2_reference_dir
+from q2mm.models.forcefield import ForceField, FunctionalForm, TorsionParam
+from q2mm.models.observations import ObservationSet
+from q2mm.models.parameters import ActiveParameterSpace, ParameterLayout
+from q2mm.models.problem import StationaryPointKind
+from q2mm.objectives._base import BaseObjectiveExecutor
+from q2mm.objectives.plan import ObjectivePlan
+from q2mm.objectives.protocols import GradientMode
 
 if TYPE_CHECKING:
-    from q2mm.models.forcefield import FunctionalForm
     from q2mm.models.molecule import Molecule
 
 # ---------------------------------------------------------------------------
@@ -232,3 +239,79 @@ def backend_functional_form(backend: object) -> FunctionalForm:
         if hasattr(FunctionalForm, name.upper()):
             return getattr(FunctionalForm, name.upper())  # type: ignore[no-any-return]
     raise RuntimeError(f"Backend {backend!r} reports no mappable functional forms: {supported!r}")
+
+
+def _synthetic_plan(
+    initial: np.ndarray,
+    bounds: list[tuple[float, float]] | None = None,
+    active_indices: np.ndarray | None = None,
+) -> tuple[ForceField, ActiveParameterSpace, ObjectivePlan]:
+    """Build a core-only synthetic torsion space and empty observation plan."""
+    baseline = np.asarray(initial, dtype=np.float64)
+    ff = ForceField(
+        name="synthetic",
+        torsions=tuple(
+            TorsionParam(
+                elements=("C", "C", "C", "C"),
+                periodicity=i + 1,
+                force_constant=float(value),
+                env_id=f"p{i}",
+            )
+            for i, value in enumerate(baseline)
+        ),
+        functional_form=FunctionalForm.HARMONIC,
+    )
+    layout = ParameterLayout.from_force_field(ff)
+    if bounds is not None:
+        layout = ParameterLayout(
+            slots=tuple(
+                replace(slot, bounds=(float(lo), float(hi)))
+                for slot, (lo, hi) in zip(layout.slots, bounds, strict=True)
+            )
+        )
+    space = ActiveParameterSpace(
+        layout=layout,
+        baseline=baseline,
+        active_indices=np.arange(baseline.size, dtype=int) if active_indices is None else active_indices,
+    )
+    plan = ObjectivePlan(
+        case_ids=("0",),
+        molecules=(make_diatomic(),),
+        stationary_points=(StationaryPointKind.GROUND_STATE,),
+        observations=ObservationSet(),
+        layout=layout,
+        active_space=space,
+    )
+    return ff, space, plan
+
+
+class QuadraticEvaluator(BaseObjectiveExecutor):
+    """Synthetic quadratic evaluator with analytical full-vector gradients."""
+
+    def __init__(
+        self,
+        target: np.ndarray,
+        bounds: list[tuple[float, float]] | None = None,
+        initial: np.ndarray | None = None,
+        active_indices: np.ndarray | None = None,
+    ) -> None:
+        self.target = np.asarray(target, dtype=np.float64)
+        baseline = (
+            np.zeros_like(self.target, dtype=np.float64) if initial is None else np.asarray(initial, dtype=np.float64)
+        )
+        self.forcefield, self.space, plan = _synthetic_plan(baseline, bounds, active_indices)
+        super().__init__(plan)
+        self._gradient_mode = GradientMode.ANALYTICAL
+
+    @property
+    def gradient_mode(self) -> GradientMode:
+        return self._gradient_mode
+
+    def _total(self, full_vector: np.ndarray) -> float:
+        return float(np.sum((np.asarray(full_vector, dtype=np.float64) - self.target) ** 2))
+
+    def _calculated(self, full_vector: np.ndarray) -> np.ndarray:
+        return np.zeros(0, dtype=np.float64)
+
+    def _data_gradient(self, full_vector: np.ndarray) -> np.ndarray:
+        return 2.0 * (np.asarray(full_vector, dtype=np.float64) - self.target)

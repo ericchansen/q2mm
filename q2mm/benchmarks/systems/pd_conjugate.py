@@ -8,8 +8,6 @@ be composed with the licensed MM3 base force field (see
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from q2mm.benchmarks.cases import BenchmarkCase
 from q2mm.benchmarks.publications import REPOSITORY_OBJECTIVE_PROFILE, publication_record
 from q2mm.benchmarks.systems._assembly import assemble_published_case
@@ -19,8 +17,8 @@ from q2mm.benchmarks.systems._paths import (
     ExternalDataRoots,
     StartingPoint,
     resolve_mm3_base_path,
-    resolve_supporting_info_dir,
     resolve_wahlers_opt_path,
+    resolve_wahlers_training_set_dir,
 )
 from q2mm.models.molecule import Molecule
 from q2mm.models.problem import StationaryPointKind
@@ -39,18 +37,9 @@ _CHAPTER = "Chapter 5"
 _OPT_FILENAME = "mm3.Pd-1,4.fld"
 
 
-def _training_set_dir(roots: ExternalDataRoots | None) -> Path:
-    si = resolve_supporting_info_dir(roots)
-    chapter = si / "wahlers" / "Wahlers_Jessica_Supporting_information" / _CHAPTER
-    ts_dir = chapter / "Training Set Structures"
-    if not ts_dir.exists():
-        ts_dir = chapter / "DFT-optmized training set structures"
-    return ts_dir
-
-
 def load_molecules(*, data_roots: ExternalDataRoots | None = None) -> list[Molecule]:
     """Load the 10 Pd 1,4-conjugate addition TS molecules (Wahlers Ch 5)."""
-    return load_gaussian_molecules(_training_set_dir(data_roots))
+    return load_gaussian_molecules(resolve_wahlers_training_set_dir(_CHAPTER, data_roots))
 
 
 def load(

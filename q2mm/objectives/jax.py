@@ -415,9 +415,7 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
             entries.append(entry)
             self._case_meta[case_id] = meta
 
-        # Per-session Hessian functions (one per topology group).
-        hess_fn_cache: dict[int, Callable] = {}
-
+        # Each case owns its Hessian function and captured energy kernel.
         def _make_hess_fn(efn):  # noqa: ANN001, ANN202
             def _energy_of_flat(fc, p):  # noqa: ANN001, ANN202
                 return efn(p, fc.reshape(-1, 3))
@@ -425,12 +423,8 @@ class JaxObjectiveExecutor(BaseObjectiveExecutor):
             return jax.hessian(_energy_of_flat, argnums=0)
 
         for entry in entries:
-            session = entry["session"]
-            h_id = id(session)
-            if entry["needs_hessian"] and h_id not in hess_fn_cache:
-                hess_fn_cache[h_id] = _make_hess_fn(session._energy_kernel())
             if entry["needs_hessian"]:
-                self._hess_fns[entry["case_id"]] = hess_fn_cache[h_id]
+                self._hess_fns[entry["case_id"]] = _make_hess_fn(entry["session"]._energy_kernel())
 
         def _make_nongeom_loss(entry_data: dict, mol_hess_fn: Callable | None, scale: float) -> Callable:
             coords = entry_data["coords"]

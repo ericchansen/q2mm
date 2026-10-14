@@ -7,6 +7,7 @@ import re
 from collections.abc import Mapping
 from typing import NoReturn
 
+_WINDOWS_ABSOLUTE_PATH = re.compile(r"^[A-Za-z]:[\\/]")
 _CREDENTIAL_KEY = re.compile(
     r"(?:^|[_-])(?:api[_-]?key|access[_-]?key|auth(?:orization)?|credential|"
     r"password|passwd|private[_-]?key|secret|session[_-]?key|token)(?:$|[_-])",
@@ -34,6 +35,17 @@ _CREDENTIAL_KEY_TERMS = (
     "sessionkey",
     "token",
 )
+
+
+def _contains_absolute_path(value: object) -> bool:
+    """Check nested values for platform-independent absolute-path spellings."""
+    if isinstance(value, str):
+        return value.startswith(("/", "\\")) or _WINDOWS_ABSOLUTE_PATH.match(value) is not None
+    if isinstance(value, Mapping):
+        return any(_contains_absolute_path(item) for item in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_contains_absolute_path(item) for item in value)
+    return False
 
 
 class FrozenJSONMapping(dict[str, object]):

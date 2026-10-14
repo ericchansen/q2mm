@@ -13,7 +13,7 @@ from typing import Any
 
 import numpy as np
 
-from q2mm._provenance import freeze_json_mapping
+from q2mm._provenance import _contains_absolute_path, freeze_json_mapping
 from q2mm.backends.contracts import (
     AbstractPreparedBackend,
     BackendConfigurationError,
@@ -68,7 +68,6 @@ _WAVEFUNCTION_PROTOCOLS = frozenset(
 )
 _NATIVE_FILES_PROTOCOLS = frozenset({"all", "input", "none"})
 _SAFE_VERSION = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$")
-_WINDOWS_ABSOLUTE_PATH = re.compile(r"^[A-Za-z]:[\\/]")
 _CONVERSION_SCHEMA_VERSION = 1
 
 
@@ -92,16 +91,6 @@ def _require_nonempty_string(value: object, *, name: str) -> str:
     except ValueError as exc:
         raise BackendConfigurationError(str(exc)) from exc
     return value
-
-
-def _contains_absolute_path(value: object) -> bool:
-    if isinstance(value, str):
-        return value.startswith(("/", "\\")) or _WINDOWS_ABSOLUTE_PATH.match(value) is not None
-    if isinstance(value, Mapping):
-        return any(_contains_absolute_path(item) for item in value.values())
-    if isinstance(value, (list, tuple)):
-        return any(_contains_absolute_path(item) for item in value)
-    return False
 
 
 def _freeze_safe_mapping(value: object, *, name: str) -> Mapping[str, object]:
