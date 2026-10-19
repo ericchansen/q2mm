@@ -55,6 +55,27 @@ def test_backend_options_require_strict_finite_json(value: object) -> None:
         BackendSettings(options={"nested": {"bad": value}})
 
 
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"auth": "redacted"},
+        {"AUTH": "redacted"},
+        {"service_auth": "redacted"},
+        {"auth-config": {"mode": "token"}},
+        {"nested": {"api_key": "redacted"}},
+        {"nested": {"clientSecret": "redacted"}},
+        {"nested": {"header": "Bearer secret-value"}},
+        {"nested": {"endpoint": "https://user:pass@example.com"}},
+    ],
+)
+def test_backend_options_reject_credential_keys_and_values_at_source(options: dict[str, object]) -> None:
+    with pytest.raises(ValidationError, match="credential-like"):
+        BackendSettings(options=options)
+    assert BackendSettings(options={"authoritative_case_ids": ["case-1"]}).options["authoritative_case_ids"] == (
+        "case-1",
+    )
+
+
 def test_omission_and_explicit_none_zero_false_default_are_distinct() -> None:
     omitted = ScipySettings()
     explicit = ScipySettings(maxiter=0, ftol=1e-8, fc_fraction=None, use_bounds=False)

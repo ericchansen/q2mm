@@ -126,6 +126,21 @@ class ResolvedExecutorConfiguration:
             raise ApplicationConfigurationError(str(exc)) from exc
 
 
+def _validate_execution_controls(regularization: float, n_evals: int) -> None:
+    if isinstance(regularization, bool) or not np.isfinite(regularization) or regularization < 0:
+        raise ApplicationConfigurationError("regularization must be non-negative and finite.")
+    if isinstance(n_evals, bool) or not isinstance(n_evals, int) or n_evals < 0:
+        raise ApplicationConfigurationError("n_evals must be a non-negative integer.")
+
+
+def _validate_result_vectors(result: OptimizationResult, baseline: np.ndarray, active_indices: Any) -> None:
+    inactive = np.setdiff1d(np.arange(result.n_params), np.asarray(active_indices, dtype=int))
+    if not np.array_equal(result.initial_params, baseline):
+        raise ApplicationOptimizationError("Result initial vector does not match the baseline.")
+    if not np.array_equal(result.final_params[inactive], baseline[inactive]):
+        raise ApplicationOptimizationError("Result final vector changes frozen parameter slots.")
+
+
 @dataclass(frozen=True, eq=False)
 class ResolvedExecutionConfiguration:
     """Complete resolved execution policy for an optimization run."""
@@ -143,10 +158,7 @@ class ResolvedExecutionConfiguration:
     def __post_init__(self) -> None:
         if not self.recipe_id:
             raise ApplicationConfigurationError("Resolved recipe_id must be non-empty.")
-        if isinstance(self.regularization, bool) or not np.isfinite(self.regularization) or self.regularization < 0:
-            raise ApplicationConfigurationError("regularization must be non-negative and finite.")
-        if isinstance(self.n_evals, bool) or not isinstance(self.n_evals, int) or self.n_evals < 0:
-            raise ApplicationConfigurationError("n_evals must be a non-negative integer.")
+        _validate_execution_controls(self.regularization, self.n_evals)
         if self.ratio_tol is not None and (not np.isfinite(self.ratio_tol) or self.ratio_tol < 0):
             raise ApplicationConfigurationError("ratio_tol must be non-negative and finite or None.")
 
@@ -303,20 +315,7 @@ class OptimizationRun:
             "n_parameters": len(problem.layout),
         }
         if problem.preparation_provenance is not None:
-            preparation = problem.preparation_provenance
-            payload = {
-                "schema_version": preparation.schema_version,
-                "profile": preparation.profile,
-                "initialize_source": preparation.initialize_source,
-                "functional_form": preparation.functional_form,
-                "qfuerza_settings": dict(preparation.qfuerza_settings),
-                "pre_qfuerza_vector_fingerprint": preparation.pre_qfuerza_vector_fingerprint,
-                "parameter_counts": dict(preparation.parameter_counts),
-                "stationary_points": list(preparation.stationary_points),
-                "case_ids": list(preparation.case_ids),
-                "input_fingerprints": dict(preparation.input_fingerprints),
-                "observation_recipe": dict(preparation.observation_recipe),
-            }
+            payload = vars(problem.preparation_provenance)
             provenance["preparation"] = payload
             provenance["preparation_fingerprint"] = canonical_fingerprint(payload, screen_secrets=True)
         if problem.publication_metadata is not None:
@@ -359,11 +358,7 @@ class OptimizationRun:
         baseline = np.array(self.baseline, dtype=float, copy=True)
         if baseline.shape != (result.n_params,):
             raise ApplicationOptimizationError("Run baseline must be a full-length parameter vector.")
-        inactive = np.setdiff1d(np.arange(result.n_params), np.asarray(active_indices, dtype=int))
-        if not np.array_equal(result.initial_params, baseline):
-            raise ApplicationOptimizationError("Result initial vector does not match the run baseline.")
-        if not np.array_equal(result.final_params[inactive], baseline[inactive]):
-            raise ApplicationOptimizationError("Result final vector changes frozen parameter slots.")
+        _validate_result_vectors(result, baseline, active_indices)
         baseline.setflags(write=False)
         object.__setattr__(self, "active_indices", active_indices)
         object.__setattr__(self, "baseline", baseline)

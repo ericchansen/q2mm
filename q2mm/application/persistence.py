@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import re
@@ -20,7 +21,6 @@ from .models import (
     OutputExistsError,
     OutputFormatError,
     PersistenceError,
-    ResolvedExecutionConfiguration,
     SavedOutput,
 )
 
@@ -115,49 +115,6 @@ def _write_staged_force_field(force_field: ForceField, path: Path, format_name: 
         return _serializer(format_name)(force_field, path)
 
 
-def _configuration_payload(configuration: ResolvedExecutionConfiguration) -> dict[str, Any]:
-    backend = configuration.backend
-    optimizer = configuration.optimizer
-    workflow = configuration.workflow
-    executor = configuration.executor
-    return {
-        "schema_version": configuration.schema_version,
-        "recipe_id": configuration.recipe_id,
-        "backend": {
-            "schema_version": backend.schema_version,
-            "key": backend.key,
-            "name": backend.name,
-            "role": backend.role,
-            "version": backend.version,
-            "capabilities": list(backend.capabilities),
-            "functional_forms": list(backend.functional_forms),
-            "details": dict(backend.details),
-        },
-        "optimizer": {
-            "schema_version": optimizer.schema_version,
-            "key": optimizer.key,
-            "label": optimizer.label,
-            "method": optimizer.method,
-            "settings": dict(optimizer.settings),
-            "expected_result_gradient_mode": optimizer.expected_result_gradient_mode,
-        },
-        "workflow": {
-            "schema_version": workflow.schema_version,
-            "key": workflow.key,
-            "settings": dict(workflow.settings),
-        },
-        "executor": {
-            "schema_version": executor.schema_version,
-            "kind": executor.kind,
-            "gradient_mode": executor.gradient_mode,
-            "fd_step": executor.fd_step,
-        },
-        "regularization": configuration.regularization,
-        "n_evals": configuration.n_evals,
-        "ratio_tol": configuration.ratio_tol,
-    }
-
-
 def _manifest_payload(run: OptimizationRun, format_name: str) -> dict[str, Any]:
     return {
         "schema": "q2mm.optimization-run-manifest",
@@ -168,7 +125,10 @@ def _manifest_payload(run: OptimizationRun, format_name: str) -> dict[str, Any]:
         "input_fingerprints": dict(run.input_fingerprints),
         "active_indices": list(run.active_indices),
         "baseline": run.baseline.tolist(),
-        "configuration": _configuration_payload(run.configuration),
+        "configuration": {
+            key: vars(value) if dataclasses.is_dataclass(value) else value
+            for key, value in vars(run.configuration).items()
+        },
         "provenance": dict(run.provenance),
         "result": result_payload(run.result),
     }
@@ -272,59 +232,51 @@ def _replace_transaction(
     with _reserve_outputs(
         (target for _temporary, target in staged), bare_targets=bare_targets, force_field_targets=force_field_targets
     ):
-        _install_staged(staged, overwrite=overwrite)
-
-
-def _install_staged(
-    staged: list[tuple[Path, Path]],
-    *,
-    overwrite: bool,
-) -> None:
-    backups: dict[Path, Path] = {}
-    reservations: list[Path] = []
-    attempted: list[Path] = []
-    phase = "snapshot" if overwrite else "reservation"
-    try:
-        if overwrite:
-            for _temporary, target in staged:
-                if target.exists():
-                    backup = _temp_sibling(target, "backup")
-                    backups[target] = backup
-                    os.replace(target, backup)
-        else:
-            for _temporary, target in staged:
+        backups: dict[Path, Path] = {}
+        reservations: list[Path] = []
+        attempted: list[Path] = []
+        phase = "snapshot" if overwrite else "reservation"
+        try:
+            if overwrite:
+                for _temporary, target in staged:
+                    if target.exists():
+                        backup = _temp_sibling(target, "backup")
+                        backups[target] = backup
+                        os.replace(target, backup)
+            else:
+                for _temporary, target in staged:
+                    try:
+                        descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                    except FileExistsError:
+                        raise OutputExistsError(f"Refusing to overwrite existing output: {target}") from None
+                    else:
+                        reservations.append(target)
+                        os.close(descriptor)
+            phase = "installation"
+            for temporary, target in staged:
+                # Record intent first so an interrupt after replace still rolls back.
+                attempted.append(target)
+                os.replace(temporary, target)
+        except BaseException as exc:
+            logger.error("Save failed during %s; attempting rollback: %s", phase, exc)
+            _cleanup_files(
+                (target for target in reversed(dict.fromkeys(reservations + attempted)) if target not in backups),
+                phase="Save not committed; rollback removal",
+            )
+            for target, backup in reversed(backups.items()):
                 try:
-                    descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-                except FileExistsError:
-                    raise OutputExistsError(f"Refusing to overwrite existing output: {target}") from None
-                else:
-                    reservations.append(target)
-                    os.close(descriptor)
-        phase = "installation"
-        for temporary, target in staged:
-            # Record intent first so an interrupt after replace still rolls back.
-            attempted.append(target)
-            os.replace(temporary, target)
-    except BaseException as exc:
-        logger.error("Save failed during %s; attempting rollback: %s", phase, exc)
-        _cleanup_files(
-            (target for target in reversed(dict.fromkeys(reservations + attempted)) if target not in backups),
-            phase="Save not committed; rollback removal",
-        )
-        for target, backup in reversed(backups.items()):
-            try:
-                if backup.exists():
-                    os.replace(backup, target)
-            except OSError as recovery_error:
-                logger.error(
-                    "Save not committed; rollback failed for %s; recovery backup %s retained: %s",
-                    target,
-                    backup,
-                    recovery_error,
-                )
-        raise
-    else:
-        _cleanup_files(backups.values(), phase="Save committed; backup cleanup")
+                    if backup.exists():
+                        os.replace(backup, target)
+                except OSError as recovery_error:
+                    logger.error(
+                        "Save not committed; rollback failed for %s; recovery backup %s retained: %s",
+                        target,
+                        backup,
+                        recovery_error,
+                    )
+            raise
+        else:
+            _cleanup_files(backups.values(), phase="Save committed; backup cleanup")
 
 
 def save(
@@ -382,18 +334,15 @@ def save(
     if collisions and not overwrite:
         raise OutputExistsError(f"Refusing to overwrite existing output(s): {', '.join(map(str, collisions))}")
 
-    ff_temporary = _temp_sibling(target, "output")
-    manifest_temporary = _temp_sibling(manifest_target, "manifest") if manifest_target is not None else None
-    temporaries = [item for item in (ff_temporary, manifest_temporary) if item is not None]
+    staged = [(_temp_sibling(target, "output"), target)]
+    if manifest_target is not None:
+        staged.append((_temp_sibling(manifest_target, "manifest"), manifest_target))
     try:
         with _persistence_errors(target):
-            _serializer(selected_format)(force_field, ff_temporary)
-            if manifest_temporary is not None:
+            _serializer(selected_format)(force_field, staged[0][0])
+            if manifest_target is not None:
                 assert isinstance(value, OptimizationRun)
-                _write_manifest(manifest_temporary, value, selected_format)
-            staged = [(ff_temporary, target)]
-            if manifest_temporary is not None and manifest_target is not None:
-                staged.append((manifest_temporary, manifest_target))
+                _write_manifest(staged[1][0], value, selected_format)
             _replace_transaction(
                 staged,
                 overwrite=overwrite,
@@ -401,7 +350,7 @@ def save(
                 force_field_targets=(target,),
             )
     finally:
-        _cleanup_files(temporaries, phase="Save staging cleanup")
+        _cleanup_files((temporary for temporary, _target in staged), phase="Save staging cleanup")
     return SavedOutput(path=target, format=selected_format, manifest_path=manifest_target)
 
 

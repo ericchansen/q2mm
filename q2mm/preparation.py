@@ -8,12 +8,11 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from numbers import Real
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
 
 from q2mm._canonical import canonical_fingerprint, scientific_value
-from q2mm._provenance import freeze_json_mapping
 from q2mm.backends.contracts import (
     Backend,
     BackendRole,
@@ -173,21 +172,13 @@ def _active_space(
     if isinstance(active_parameters, ActiveParameterSpace):
         if active_parameters.layout != layout:
             raise PreparationError("Explicit ActiveParameterSpace does not match the generated ParameterLayout.")
-        return ActiveParameterSpace(
-            layout=layout,
-            baseline=layout.vector(force_field),
-            active_indices=active_parameters.active_indices,
-        )
+        return active_parameters.with_baseline(layout.vector(force_field))
     raise PreparationError("active_parameters must be 'all', a ForceField subset, or an ActiveParameterSpace.")
 
 
-def _qfuerza_settings(config: QFuerzaSettings, stationary_point: StationaryPointKind) -> dict[str, object]:
+def _qfuerza_settings(config: QFuerzaSettings, stationary_point: StationaryPointKind) -> dict[str, Any]:
     return {
-        "strategy": config.strategy,
-        "zero_torsions": config.zero_torsions,
-        "au_hessian": config.au_hessian,
-        "invalid_policy": config.invalid_policy,
-        "replace_with": config.replace_with,
+        **config.model_dump(),
         "invert_ts_curvature": stationary_point is StationaryPointKind.TRANSITION_STATE,
     }
 
@@ -200,29 +191,15 @@ def _project_template(
     stationary_point: StationaryPointKind,
 ) -> ForceField:
     layout = space.layout
-    before = layout.vector(force_field)
     projected = qfuerza_into(
         force_field,
         molecules,
         active_bonds=space.active_owner_indices("bonds", fields=_BEND_FIELDS),
         active_angles=space.active_owner_indices("angles", fields=_BEND_FIELDS),
         active_torsions=space.active_owner_indices("torsions"),
-        strategy=config.strategy,
-        zero_torsions=config.zero_torsions,
-        au_hessian=config.au_hessian,
-        invalid_policy=config.invalid_policy,
-        invert_ts_curvature=stationary_point is StationaryPointKind.TRANSITION_STATE,
-        replace_with=config.replace_with,
+        **_qfuerza_settings(config, stationary_point),
     )
-    projected_vector = layout.vector(projected)
-    merged = before.copy()
-    merged[space.active_indices] = projected_vector[space.active_indices]
-    if not np.array_equal(
-        merged[np.setdiff1d(np.arange(len(layout)), space.active_indices)],
-        before[np.setdiff1d(np.arange(len(layout)), space.active_indices)],
-    ):
-        raise RuntimeError("QFUERZA template merge changed an inactive scalar.")
-    return layout.replace(force_field, merged)
+    return layout.replace(force_field, space.expand(space.pack(layout.vector(projected))))
 
 
 def _parameter_counts(
@@ -492,7 +469,7 @@ def match_frequencies(
             provenance,
             profile=_MATCHED_FREQUENCY_PROFILE,
             input_fingerprints=inputs,
-            observation_recipe=freeze_json_mapping(details, path="prepare.observation_recipe"),
+            observation_recipe=details,
         ),
     )
 
@@ -584,12 +561,7 @@ def prepare(
         starting_force_field = qfuerza_fresh(
             molecule_values[0],
             functional_form=resolved_form,
-            strategy=config.strategy,
-            zero_torsions=config.zero_torsions,
-            au_hessian=config.au_hessian,
-            invalid_policy=config.invalid_policy,
-            invert_ts_curvature=point is StationaryPointKind.TRANSITION_STATE,
-            replace_with=config.replace_with,
+            **_qfuerza_settings(config, point),
         )
         layout = ParameterLayout.from_force_field(starting_force_field)
         if layout != pre_layout:
@@ -605,11 +577,7 @@ def prepare(
             assert config is not None
             starting_force_field = _project_template(force_field, molecule_values, initial_space, config, point)
     after_vector = layout.vector(starting_force_field)
-    active_space = ActiveParameterSpace(
-        layout=layout,
-        baseline=after_vector,
-        active_indices=initial_space.active_indices,
-    )
+    active_space = initial_space.with_baseline(after_vector)
 
     if generic_observations is not None:
         resolved_observations, recipe_details = generic_observations
@@ -663,10 +631,7 @@ def prepare(
         stationary_points=tuple(point.value for _ in molecule_values),
         case_ids=ids,
         input_fingerprints=input_fingerprints,
-        observation_recipe=freeze_json_mapping(
-            recipe_details,
-            path="prepare.observation_recipe",
-        ),
+        observation_recipe=recipe_details,
     )
     return OptimizationProblem(
         cases=tuple(

@@ -75,7 +75,7 @@ def capture_execution_configuration(
         executor=ResolvedExecutorConfiguration(
             kind=settings.objective.executor,
             gradient_mode=settings.objective.gradient_mode,
-            fd_step=settings.objective.fd_step if settings.objective.gradient_mode == "finite_difference" else None,
+            fd_step=settings.objective.fd_step,
         ),
         regularization=settings.objective.regularization,
         n_evals=settings.n_evals,
