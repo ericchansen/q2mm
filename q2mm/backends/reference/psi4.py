@@ -16,6 +16,8 @@ import os
 import shutil
 import tempfile
 
+from typing import Any
+
 import numpy as np
 
 from q2mm.backends.contracts import (
@@ -25,12 +27,15 @@ from q2mm.backends.contracts import (
     BackendRole,
     BackendUnavailableError,
     Capability,
+    EnergyRequest,
     EnergyResult,
     EnergyUnit,
     EvaluationError,
+    FrequencyRequest,
     FrequencyResult,
     FrequencyUnit,
     GeometryResult,
+    HessianRequest,
     HessianResult,
     HessianUnit,
     LengthUnit,
@@ -45,15 +50,16 @@ from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.molecule import Molecule
 
 try:
-    import psi4 as _psi4
+    import psi4 as _psi4_mod
 
+    _psi4: Any = _psi4_mod
     _HAS_PSI4 = True
 except ImportError:
     _psi4 = None
     _HAS_PSI4 = False
 
 
-def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, multiplicity: int = 1) -> object:
+def _make_psi4_geometry(atoms: list[str], coords: np.ndarray, charge: int = 0, multiplicity: int = 1) -> Any:
     """Create a Psi4 molecule object from atoms and coordinates.
 
     Args:
@@ -157,7 +163,7 @@ class Psi4Backend:
 
     # -- internal Psi4 plumbing --------------------------------------------
 
-    def _load_molecule(self, molecule: Molecule) -> object:
+    def _load_molecule(self, molecule: Molecule) -> Any:
         atoms = list(molecule.symbols)
         coords = np.asarray(molecule.geometry, dtype=float)
         mol = _make_psi4_geometry(atoms, coords, self._charge, self._multiplicity)
@@ -219,29 +225,29 @@ class PreparedPsi4(AbstractPreparedBackend):
         )
         self._backend = backend
 
-    def _energy(self, request: ReferenceEnergyRequest) -> EnergyResult:
+    def _energy(self, request: EnergyRequest | ReferenceEnergyRequest) -> EnergyResult:
         try:
             value = self._backend._evaluate_energy(self.molecule)
         except Exception as exc:  # noqa: BLE001
             raise EvaluationError(f"Psi4 energy evaluation failed: {exc}") from exc
-        return EnergyResult(energy=value, unit=EnergyUnit.HARTREE, provenance=self._backend.info.provenance)
+        return EnergyResult(energy=value, unit=EnergyUnit.HARTREE, provenance=self._backend._provenance)
 
-    def _hessian(self, request: ReferenceHessianRequest) -> HessianResult:
+    def _hessian(self, request: HessianRequest | ReferenceHessianRequest) -> HessianResult:
         try:
             hess = self._backend._evaluate_hessian(self.molecule)
         except Exception as exc:  # noqa: BLE001
             raise EvaluationError(f"Psi4 Hessian evaluation failed: {exc}") from exc
         return HessianResult(
-            hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._backend.info.provenance
+            hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._backend._provenance
         )
 
-    def _frequencies(self, request: ReferenceFrequencyRequest) -> FrequencyResult:
+    def _frequencies(self, request: FrequencyRequest | ReferenceFrequencyRequest) -> FrequencyResult:
         try:
             freqs = self._backend._evaluate_frequencies(self.molecule)
         except Exception as exc:  # noqa: BLE001
             raise EvaluationError(f"Psi4 frequency evaluation failed: {exc}") from exc
         return FrequencyResult(
-            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=self._backend.info.provenance
+            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=self._backend._provenance
         )
 
     def _optimize_geometry(self, request: ReferenceGeometryOptimizationRequest) -> GeometryResult:
@@ -255,5 +261,5 @@ class PreparedPsi4(AbstractPreparedBackend):
             symbols=tuple(atoms),
             coordinates=readonly_array(coords),
             coordinate_unit=LengthUnit.ANGSTROM,
-            provenance=self._backend.info.provenance,
+            provenance=self._backend._provenance,
         )

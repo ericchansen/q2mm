@@ -5,16 +5,14 @@ from __future__ import annotations
 import dataclasses
 import logging
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from enum import Enum
 from numbers import Real
-from pathlib import Path
 from typing import Literal
 
 import numpy as np
 
-from q2mm._canonical import canonical_fingerprint
+from q2mm._canonical import canonical_fingerprint, scientific_value
 from q2mm._provenance import freeze_json_mapping
 from q2mm.backends.contracts import (
     Backend,
@@ -115,28 +113,8 @@ class StationaryPointObservations(ObservationRecipe):
         object.__setattr__(self, "linearity_tolerance", float(tolerance))
 
 
-def _scientific_value(value: object) -> object:
-    if isinstance(value, Path):
-        return value.name
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if dataclasses.is_dataclass(value):
-        return {
-            item.name: _scientific_value(getattr(value, item.name))
-            for item in dataclasses.fields(value)
-            if item.name not in {"bonds_explicit", "angles_explicit", "torsions_explicit", "improper_torsions"}
-        }
-    if isinstance(value, Mapping):
-        return {str(key): _scientific_value(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)):
-        return [_scientific_value(item) for item in value]
-    return value
-
-
 def _fingerprint(value: object) -> str:
-    return canonical_fingerprint(_scientific_value(value), screen_secrets=True)
+    return canonical_fingerprint(scientific_value(value), screen_secrets=True)
 
 
 def _normalize_molecules(value: Molecule | Sequence[Molecule]) -> tuple[Molecule, ...]:

@@ -10,7 +10,7 @@ from q2mm.backends.contracts import (
     ReferenceEnergyRequest,
     ReferenceHessianRequest,
 )
-from q2mm.backends.qm.psi4 import Psi4Backend
+from q2mm.backends.reference.psi4 import Psi4Backend
 from q2mm.backends.reference.qcengine import QCEngineBackend
 from q2mm.models.molecule import Molecule
 

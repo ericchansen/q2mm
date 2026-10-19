@@ -141,6 +141,7 @@ def test_reference_discovery_links_lazy_exports_to_canonical_owners(monkeypatch:
 _TREE_ENTRY = re.compile(r"^(?P<indent>(?:│   |    )*)(?:├── |└── )(?P<name>\S+)")
 _RETIRED_MODEL_PATHS = (
     PACKAGE_ROOT / "systems.py",
+    PACKAGE_ROOT / "backends" / "qm",
     PACKAGE_ROOT / "models" / "loaders.py",
     PACKAGE_ROOT / "models" / "datum.py",
     PACKAGE_ROOT / "optimizers" / "reference.py",
@@ -668,6 +669,7 @@ def test_benchmark_module_surface_is_present() -> None:
 
 _RETIRED_IMPORT_PREFIXES = (
     "q2mm.benchmark_runner",
+    "q2mm.backends.qm",
     "q2mm.diagnostics",
     "q2mm.systems",
     "q2mm.models.loaders",
@@ -990,7 +992,7 @@ _ENGINE_PREFIXES = (
     "q2mm.backends.mm.jax_md_engine",
     "q2mm.backends.mm.openmm",
     "q2mm.backends.mm.tinker",
-    "q2mm.backends.qm",
+    "q2mm.backends.reference",
 )
 _LAYER_FORBIDDEN: dict[str, tuple[str, ...]] = {
     "io": ("q2mm.objectives", "q2mm.optimizers", "q2mm.workflows", "q2mm.benchmarks"),

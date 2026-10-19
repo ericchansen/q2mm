@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 
 _PHYSICAL_FC_KINDS = frozenset({"bond_k", "angle_k", "ub_k"})
 
-APPROXN_DEFAULTS: Mapping[str, float] = MethodE2Settings().near_zero_replace_with
+APPROXN_DEFAULTS: Mapping[str, float] = dict(MethodE2Settings().near_zero_replace_with.items())
 
 
 def _iter_active_force_constants(
@@ -98,7 +98,11 @@ def _build_round2_observations(problem: OptimizationProblem, *, replace_with: fl
     from q2mm.models.observations import ObservationSet
 
     molecules = list(problem.molecules)
-    inverted_hessians = [invert_ts_curvature(mol.hessian, replace_with=replace_with) for mol in molecules]
+    inverted_hessians = []
+    for mol in molecules:
+        if mol.hessian is None:
+            raise ValueError(f"Method E2 Round 2 requires a Hessian on molecule {mol.name!r}.")
+        inverted_hessians.append(invert_ts_curvature(mol.hessian, replace_with=replace_with))
     return ObservationSet.from_molecules(
         molecules,
         case_ids=list(problem.case_ids),
@@ -199,10 +203,11 @@ class MethodE2Workflow:
         # --- Near-zero replacements before locking ---
         round2_baseline = round1_vector.copy()
         replaced: list[dict[str, Any]] = []
+        near_zero_map: dict[str, float] = dict(self.settings.near_zero_replace_with.items())
         for full_i, kind_value, old_value in candidates:
-            if kind_value not in self.settings.near_zero_replace_with:
+            if kind_value not in near_zero_map:
                 continue
-            new_val = self.settings.near_zero_replace_with[kind_value]
+            new_val = near_zero_map[kind_value]
             round2_baseline[full_i] = new_val
             replaced.append({"full_idx": full_i, "type": kind_value, "from": old_value, "to": new_val})
         if replaced:

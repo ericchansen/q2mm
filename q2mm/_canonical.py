@@ -8,6 +8,7 @@ contract.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import math
@@ -18,16 +19,7 @@ from typing import Any
 
 import numpy as np
 
-_SECRET_FRAGMENTS = (
-    "access_key",
-    "api_key",
-    "authorization",
-    "credential",
-    "password",
-    "private_key",
-    "secret",
-    "token",
-)
+from q2mm._provenance import _credential_like_key
 
 
 class CanonicalizationError(ValueError):
@@ -35,9 +27,46 @@ class CanonicalizationError(ValueError):
 
 
 def _screen_key(key: str, path: str) -> None:
-    normalized = key.lower().replace("-", "_")
-    if any(fragment in normalized for fragment in _SECRET_FRAGMENTS):
+    if _credential_like_key(key):
         raise CanonicalizationError(f"Secret-like field is not permitted at {path}.{key}.")
+
+
+def path_identity(value: str | Path | None) -> str | None:
+    """Return the filename portion of a path or None."""
+    if value is None:
+        return None
+    return Path(value).name
+
+
+def scientific_value(value: Any) -> Any:
+    """Recursively normalize scientific model structures for fingerprinting."""
+    if isinstance(value, Path):
+        return value.name
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    if dataclasses.is_dataclass(value):
+        payload: dict[str, Any] = {}
+        for item in dataclasses.fields(value):
+            if not item.init and item.name in {
+                "bonds_explicit",
+                "angles_explicit",
+                "torsions_explicit",
+                "improper_torsions",
+            }:
+                continue
+            field_value = getattr(value, item.name)
+            if item.name in {"source_path", "path"}:
+                payload[item.name] = path_identity(field_value)
+            else:
+                payload[item.name] = scientific_value(field_value)
+        return payload
+    if isinstance(value, Mapping):
+        return {str(key): scientific_value(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [scientific_value(item) for item in value]
+    return value
 
 
 def json_value(

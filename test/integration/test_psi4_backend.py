@@ -23,7 +23,7 @@ FIXTURE_DIR = REPO_ROOT / "examples" / "ch3f-sn2"
 QM_REF = sn2_reference_dir()
 
 try:
-    from q2mm.backends.qm.psi4 import Psi4Backend  # noqa: F401
+    from q2mm.backends.reference.psi4 import Psi4Backend  # noqa: F401
 
     HAS_PSI4 = True
 except ImportError:

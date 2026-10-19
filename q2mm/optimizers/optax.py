@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 
 _HAS_OPTAX = find_spec("optax") is not None
 
-optax = None
-jnp = None
+optax: Any = None
+jnp: Any = None
 
 
 def ensure_optax() -> None:
@@ -66,7 +66,7 @@ class OptaxOptimizer:
         """Return the immutable configured controls as JSON data."""
         return self.settings.model_dump(mode="json")
 
-    def _build_optimizer(self) -> object:
+    def _build_optimizer(self) -> Any:
         ensure_optax()
         lr = self._build_schedule()
         name = _OPTIMIZER_REGISTRY[self.settings.optimizer]
@@ -80,7 +80,7 @@ class OptaxOptimizer:
             return optax.sgd(learning_rate=lr, momentum=self.settings.momentum)
         raise ValueError(f"Unhandled optimizer: {name}")  # pragma: no cover
 
-    def _build_schedule(self) -> float | object:
+    def _build_schedule(self) -> Any:
         ensure_optax()
         if self.settings.schedule is None:
             return self.settings.learning_rate

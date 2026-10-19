@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import dataclasses
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 import numpy as np
 
-from q2mm._canonical import canonical_fingerprint, json_value
+from q2mm._canonical import canonical_fingerprint, json_value, path_identity, scientific_value
 from q2mm.models.forcefield import ForceField
 from q2mm.models.observations import observation_payload
 from q2mm.models.problem import OptimizationProblem
@@ -153,42 +151,6 @@ class ResolvedExecutionConfiguration:
             raise ApplicationConfigurationError("ratio_tol must be non-negative and finite or None.")
 
 
-def _path_identity(value: str | Path | None) -> str | None:
-    if value is None:
-        return None
-    return Path(value).name
-
-
-def _scientific_value(value: Any) -> Any:
-    if isinstance(value, Path):
-        return value.name
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, np.ndarray):
-        return value.tolist()
-    if dataclasses.is_dataclass(value):
-        payload: dict[str, Any] = {}
-        for item in dataclasses.fields(value):
-            if not item.init and item.name in {
-                "bonds_explicit",
-                "angles_explicit",
-                "torsions_explicit",
-                "improper_torsions",
-            }:
-                continue
-            field_value = getattr(value, item.name)
-            if item.name in {"source_path", "path"}:
-                payload[item.name] = _path_identity(field_value)
-            else:
-                payload[item.name] = _scientific_value(field_value)
-        return payload
-    if isinstance(value, Mapping):
-        return {str(key): _scientific_value(item) for key, item in value.items()}
-    if isinstance(value, (tuple, list)):
-        return [_scientific_value(item) for item in value]
-    return value
-
-
 def molecule_fingerprint_payload(molecule: Any) -> dict[str, Any]:
     """Return all canonical scientific molecule inputs in stable order."""
     return {
@@ -203,10 +165,10 @@ def molecule_fingerprint_payload(molecule: Any) -> dict[str, Any]:
         if molecule.partial_charges is None
         else [None if value is None else float(value) for value in molecule.partial_charges],
         "hessian": None if molecule.hessian is None else np.asarray(molecule.hessian, dtype=float).tolist(),
-        "hessian_provenance": _scientific_value(molecule.hessian_provenance),
-        "bonds": _scientific_value(molecule.bonds),
-        "angles": _scientific_value(molecule.angles),
-        "torsions": _scientific_value(molecule.torsions),
+        "hessian_provenance": scientific_value(molecule.hessian_provenance),
+        "bonds": scientific_value(molecule.bonds),
+        "angles": scientific_value(molecule.angles),
+        "torsions": scientific_value(molecule.torsions),
         "bonds_explicit": bool(molecule.bonds_explicit),
         "angles_explicit": bool(molecule.angles_explicit),
         "torsions_explicit": bool(molecule.torsions_explicit),
@@ -219,14 +181,14 @@ def force_field_fingerprint_payload(force_field: ForceField, vector: np.ndarray)
         "name": force_field.name,
         "functional_form": force_field.functional_form.value,
         "source_format": force_field.source_format,
-        "source_identity": _path_identity(force_field.source_path),
+        "source_identity": path_identity(force_field.source_path),
         "vector": np.asarray(vector, dtype=float).tolist(),
-        "bonds": _scientific_value(force_field.bonds),
-        "angles": _scientific_value(force_field.angles),
-        "stretch_bends": _scientific_value(force_field.stretch_bends),
-        "torsions": _scientific_value(force_field.torsions),
-        "vdws": _scientific_value(force_field.vdws),
-        "cmaps": _scientific_value(force_field.cmaps),
+        "bonds": scientific_value(force_field.bonds),
+        "angles": scientific_value(force_field.angles),
+        "stretch_bends": scientific_value(force_field.stretch_bends),
+        "torsions": scientific_value(force_field.torsions),
+        "vdws": scientific_value(force_field.vdws),
+        "cmaps": scientific_value(force_field.cmaps),
     }
     if force_field.nonbonded_excluded_atom_types:
         payload["nonbonded_excluded_atom_types"] = list(force_field.nonbonded_excluded_atom_types)

@@ -471,11 +471,10 @@ q2mm/
 │   │   ├── jax_md_engine.py # JAX-MD backend (periodic, neighbor lists)
 │   │   ├── batched.py       # Batched multi-molecule energy helpers
 │   │   └── _jax_common.py   # Backend jax/jnp/jaxopt globals + ForceField match/offset helpers (JAX import guard itself lives in q2mm/_jax_support.py)
-│   ├── qm/
-│   │   └── psi4.py       # Direct Psi4 reference backend
 │   └── reference/
-│       ├── qcengine.py   # QCEngine atomic energy, coordinate-gradient, and Hessian adapter
-│       └── ase.py        # Optional non-periodic ASE energy and force adapter
+│       ├── psi4.py      # Direct Psi4 reference backend
+│       ├── qcengine.py  # QCEngine atomic energy, coordinate-gradient, and Hessian adapter
+│       └── ase.py       # Optional non-periodic ASE energy and force adapter
 │
 ├── objectives/           # Shared create_evaluator + objective planning, executor protocol and residual semantics
 │   ├── plan.py           # ObjectivePlan: backend-neutral cases, observations, layout, active space

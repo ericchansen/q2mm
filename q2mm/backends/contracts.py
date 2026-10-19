@@ -57,6 +57,7 @@ import numpy as np
 import numpy.typing as npt
 
 from q2mm._provenance import freeze_json_mapping
+from q2mm.models.results import deep_freeze
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import ForceField
@@ -409,26 +410,6 @@ def _check_energy_unit_matches_role(unit: EnergyUnit, provenance: BackendProvena
 # ---------------------------------------------------------------------------
 
 
-def _deep_freeze(value: object) -> object:
-    """Return a recursively immutable copy of *value*.
-
-    Mappings become read-only :class:`~types.MappingProxyType` with **keys
-    preserved verbatim** and values recursively frozen; lists/tuples become
-    tuples of frozen values; sets become :class:`frozenset`; ndarrays become
-    read-only copies.  Source mutation at any depth cannot leak into the
-    returned structure.
-    """
-    if isinstance(value, Mapping):
-        return MappingProxyType({k: _deep_freeze(v) for k, v in value.items()})
-    if isinstance(value, np.ndarray):
-        return readonly_array(value, dtype=value.dtype)
-    if isinstance(value, (list, tuple)):
-        return tuple(_deep_freeze(v) for v in value)
-    if isinstance(value, (set, frozenset)):
-        return frozenset(_deep_freeze(v) for v in value)
-    return value
-
-
 def _freeze_options(options: Mapping[str, object]) -> Mapping[str, object]:
     """Return a deeply-immutable mapping proxy of *options*.
 
@@ -448,7 +429,7 @@ def _freeze_options(options: Mapping[str, object]) -> Mapping[str, object]:
     for key, value in options.items():
         if not isinstance(key, str):
             raise PreparationError(f"PreparationRequest.options keys must be strings; got {key!r}.")
-        frozen[key] = _deep_freeze(value)
+        frozen[key] = deep_freeze(value)
     return MappingProxyType(frozen)
 
 
