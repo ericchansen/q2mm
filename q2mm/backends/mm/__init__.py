@@ -14,7 +14,7 @@ OpenMM/Tinker are needed.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from q2mm.backends.mm.openmm import OpenMMBackend
 from q2mm.backends.mm.tinker import TinkerBackend
@@ -31,7 +31,7 @@ _LAZY_IMPORTS: dict[str, str] = {
 }
 
 
-def __getattr__(name: str) -> type:
+def __getattr__(name: str) -> Any:
     if name in _LAZY_IMPORTS:
         import importlib
 

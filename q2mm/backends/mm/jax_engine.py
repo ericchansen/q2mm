@@ -26,7 +26,7 @@ import logging
 import math
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -35,37 +35,25 @@ from q2mm._canonical import canonical_fingerprint
 logger = logging.getLogger(__name__)
 
 from q2mm.backends.contracts import (
-    AbstractPreparedBackend,
     BackendInfo,
     BackendProvenance,
     BackendRole,
     BackendUnavailableError,
-    BatchedEnergyRequest,
-    BatchedEnergyResult,
     Capability,
-    EnergyRequest,
-    EnergyResult,
     EnergyUnit,
     EvaluationError,
-    FrequencyRequest,
-    FrequencyResult,
-    FrequencyUnit,
     GeometryResult,
     HessianJacobianRequest,
     HessianJacobianResult,
-    HessianRequest,
-    HessianResult,
     HessianUnit,
     LengthUnit,
     MinimizationRequest,
-    ParameterGradientRequest,
-    ParameterGradientResult,
     PreparationError,
     PreparationRequest,
     PreparedBackend,
     readonly_array,
 )
-from q2mm.backends.mm._term_support import _validate_term_support
+from q2mm.backends.mm._term_support import _require_mm_force_field
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.constants import (
     MM3_BOND_C3,
@@ -83,20 +71,22 @@ from q2mm.models.molecule import Molecule
 
 from q2mm.backends.mm._jax_common import (
     _HAS_JAX,
+    _PreparedJaxBase,
     ensure_jax as _ensure_jax_common,
     layout_block_offsets,
-    match_angle as _match_angle,
-    match_bond as _match_bond,
-    match_vdw as _match_vdw,
+    match_mm_topology,
     params_and_coords as _params_and_coords_impl,
 )
 
 if TYPE_CHECKING:
     from q2mm.backends.mm.batched import PreparedJaxBatch
+    from q2mm.models.parameters import ParameterLayout
+
+type JaxArray = Any
 
 # Lazy placeholders — populated by _ensure_jax().
-jax = None
-jnp = None
+jax: Any = None
+jnp: Any = None
 
 
 def _ensure_jax() -> None:
@@ -128,7 +118,7 @@ _ANGLE_K_CONV = 1.0
 # ---------------------------------------------------------------------------
 
 
-def _safe_norm(x: jnp.ndarray, axis: int = -1) -> jnp.ndarray:
+def _safe_norm(x: JaxArray, axis: int = -1) -> JaxArray:
     """Euclidean norm with gradient-safe floor to avoid NaN at zero.
 
     Args:
@@ -142,7 +132,7 @@ def _safe_norm(x: jnp.ndarray, axis: int = -1) -> jnp.ndarray:
     return jnp.sqrt(jnp.maximum(jnp.sum(x**2, axis=axis), 1e-30))
 
 
-def _angle_from_vectors(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+def _angle_from_vectors(a: JaxArray, b: JaxArray) -> JaxArray:
     """Angle between two vectors via ``atan2(|a×b|, a·b)`` with safe VJP.
 
     Returns the angle (radians) in ``[0, π]`` with **correct gradients
@@ -184,7 +174,7 @@ def _angle_from_vectors(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
 
 
 @functools.lru_cache(maxsize=1)
-def _angle_from_vectors_impl() -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarray]:
+def _angle_from_vectors_impl() -> Callable[[JaxArray, JaxArray], JaxArray]:
     """Build the jax.custom_vjp-decorated angle function lazily.
 
     The decorator can't be applied at module import because ``jax`` is
@@ -195,7 +185,7 @@ def _angle_from_vectors_impl() -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarr
     _ensure_jax()
 
     @jax.custom_vjp
-    def _angle(a: jnp.ndarray, b: jnp.ndarray) -> jnp.ndarray:
+    def _angle(a: JaxArray, b: JaxArray) -> JaxArray:
         na = jnp.sqrt(jnp.sum(a * a, axis=-1) + 1e-30)
         nb = jnp.sqrt(jnp.sum(b * b, axis=-1) + 1e-30)
         cross = jnp.cross(a, b, axis=-1)
@@ -228,7 +218,8 @@ def _angle_from_vectors_impl() -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarr
         return (g[..., None] * da, g[..., None] * db)
 
     _angle.defvjp(_fwd, _bwd)
-    return _angle
+    fn: Callable[[JaxArray, JaxArray], JaxArray] = _angle
+    return fn
 
 
 # ---------------------------------------------------------------------------
@@ -236,9 +227,7 @@ def _angle_from_vectors_impl() -> Callable[[jnp.ndarray, jnp.ndarray], jnp.ndarr
 # ---------------------------------------------------------------------------
 
 
-def _harmonic_bond_energy(
-    k: jnp.ndarray, r0: jnp.ndarray, coords: jnp.ndarray, bond_indices: jnp.ndarray
-) -> jnp.ndarray:
+def _harmonic_bond_energy(k: JaxArray, r0: JaxArray, coords: JaxArray, bond_indices: JaxArray) -> JaxArray:
     """Harmonic bond stretch: ``E = Σ k_i · (r_i − r0_i)²``.
 
     Args:
@@ -260,9 +249,7 @@ def _harmonic_bond_energy(
     return jnp.sum(k * (r - r0) ** 2)
 
 
-def _harmonic_angle_energy(
-    k: jnp.ndarray, theta0: jnp.ndarray, coords: jnp.ndarray, angle_indices: jnp.ndarray
-) -> jnp.ndarray:
+def _harmonic_angle_energy(k: JaxArray, theta0: JaxArray, coords: JaxArray, angle_indices: JaxArray) -> JaxArray:
     """Harmonic angle bend: ``E = Σ k_i · (θ_i − θ0_i)²``.
 
     Args:
@@ -286,8 +273,8 @@ def _harmonic_angle_energy(
 
 
 def _lj_12_6_energy(
-    per_atom_sigma: jnp.ndarray, per_atom_epsilon: jnp.ndarray, coords: jnp.ndarray, pair_indices: jnp.ndarray
-) -> jnp.ndarray:
+    per_atom_sigma: JaxArray, per_atom_epsilon: JaxArray, coords: JaxArray, pair_indices: JaxArray
+) -> JaxArray:
     """Lennard-Jones 12-6 energy with geometric combining rules.
 
     ``E = Σ_{i<j} 4·ε_ij · [(σ_ij/r)¹² − (σ_ij/r)⁶]`` where
@@ -333,7 +320,7 @@ def _lj_12_6_energy(
 _RAD_TO_DEG = 180.0 / 3.141592653589793
 
 
-def _mm3_bond_energy(k: jnp.ndarray, r0: jnp.ndarray, coords: jnp.ndarray, bond_indices: jnp.ndarray) -> jnp.ndarray:
+def _mm3_bond_energy(k: JaxArray, r0: JaxArray, coords: JaxArray, bond_indices: JaxArray) -> JaxArray:
     """MM3 cubic bond stretch: ``E = Σ k·dr²·(1 − 2.55·dr + c4·dr²)``.
 
     Args:
@@ -352,9 +339,7 @@ def _mm3_bond_energy(k: jnp.ndarray, r0: jnp.ndarray, coords: jnp.ndarray, bond_
     return jnp.sum(k * dr**2 * (1.0 - MM3_BOND_C3 * dr + MM3_BOND_C4 * dr**2))
 
 
-def _mm3_angle_energy(
-    k: jnp.ndarray, theta0: jnp.ndarray, coords: jnp.ndarray, angle_indices: jnp.ndarray
-) -> jnp.ndarray:
+def _mm3_angle_energy(k: JaxArray, theta0: JaxArray, coords: JaxArray, angle_indices: JaxArray) -> JaxArray:
     """MM3 sextic angle bend with degree-based anharmonic corrections.
 
     ``E = Σ k·dθ²·(1 + a3·dθ_deg + a4·dθ_deg² + a5·dθ_deg³ + a6·dθ_deg⁴)``
@@ -389,11 +374,11 @@ def _mm3_angle_energy(
 
 
 def _mm3_vdw_energy(
-    per_atom_radius: jnp.ndarray,
-    per_atom_epsilon: jnp.ndarray,
-    coords: jnp.ndarray,
-    pair_indices: jnp.ndarray,
-) -> jnp.ndarray:
+    per_atom_radius: JaxArray,
+    per_atom_epsilon: JaxArray,
+    coords: JaxArray,
+    pair_indices: JaxArray,
+) -> JaxArray:
     """MM3 Buckingham exp-6 vdW with short-range repulsive wall.
 
     ``E = ε·(184000·exp(−12·r/rv) − 2.25·(rv/r)⁶)``
@@ -449,11 +434,11 @@ _MM3_DIPOLE_CONST = 14.3928 / 1.5  # ≈ 9.595 kcal·Å³/(mol·D²)
 
 
 def _mm3_dipole_energy(
-    dipole_moments: jnp.ndarray,
-    coords: jnp.ndarray,
-    bond_indices: jnp.ndarray,
-    dipole_pair_indices: jnp.ndarray,
-) -> jnp.ndarray:
+    dipole_moments: JaxArray,
+    coords: JaxArray,
+    bond_indices: JaxArray,
+    dipole_pair_indices: JaxArray,
+) -> JaxArray:
     """MM3 bond-dipole electrostatic energy.
 
     Each bond with a non-zero dipole moment contributes a point dipole
@@ -519,13 +504,13 @@ def _mm3_dipole_energy(
 
 
 def _mm3_stretch_bend_energy(
-    k_sb: jnp.ndarray,
-    r0_ij: jnp.ndarray,
-    r0_jk: jnp.ndarray,
-    theta0: jnp.ndarray,
-    coords: jnp.ndarray,
-    angle_indices: jnp.ndarray,
-) -> jnp.ndarray:
+    k_sb: JaxArray,
+    r0_ij: JaxArray,
+    r0_jk: JaxArray,
+    theta0: JaxArray,
+    coords: JaxArray,
+    angle_indices: JaxArray,
+) -> JaxArray:
     """MM3 stretch-bend cross-term energy.
 
     ``E = Σ k_sb · [(r_ij − r0_ij) + (r_jk − r0_jk)] · (θ − θ0)``
@@ -568,7 +553,7 @@ def _mm3_stretch_bend_energy(
     return jnp.sum(w * k_sb * dr_sum * dtheta)
 
 
-def _smoothstep(x: jnp.ndarray, edge0: float, edge1: float) -> jnp.ndarray:
+def _smoothstep(x: JaxArray, edge0: float, edge1: float) -> JaxArray:
     """Hermite smoothstep: 0 below *edge0*, 1 above *edge1*, C¹ between."""
     t = jnp.clip((x - edge0) / (edge1 - edge0), 0.0, 1.0)
     return t * t * (3.0 - 2.0 * t)
@@ -588,12 +573,12 @@ _SIN_HI = math.sin(math.radians(170.0))  # ≈ 0.1736
 
 
 def _torsion_energy(
-    k: jnp.ndarray,
-    periodicity: jnp.ndarray,
-    phase: jnp.ndarray,
-    coords: jnp.ndarray,
-    torsion_indices: jnp.ndarray,
-) -> jnp.ndarray:
+    k: JaxArray,
+    periodicity: JaxArray,
+    phase: JaxArray,
+    coords: JaxArray,
+    torsion_indices: JaxArray,
+) -> JaxArray:
     """Cosine torsion energy: ``E = Σ w_i · k_i · (1 + cos(n_i·φ_i − γ_i))``.
 
     Uses an atan2-based signed dihedral angle computation.  Torsion terms
@@ -766,6 +751,7 @@ class _JaxState:
     _kernel_signature: str | None = field(default=None, repr=False)
     # Compiled energy function (captures topology, JIT-compiled)
     _energy_fn: Callable | None = field(default=None, repr=False)
+    _batched_energy_fn: Callable | None = field(default=None, repr=False)
     _grad_fn: Callable | None = field(default=None, repr=False)
     _coord_hess_fn: Callable | None = field(default=None, repr=False)
     _batched_coord_hess_fn: Callable | None = field(default=None, repr=False)
@@ -851,16 +837,13 @@ class JaxBackend:
         """
         from q2mm.models.parameters import ParameterLayout
 
+        info = self.info
         if request.force_field is None:
             raise PreparationError("JAX requires a base ForceField in the PreparationRequest.")
-        info = self.info
         form = request.force_field.functional_form.value
-        if not info.supports_form(form):
-            raise PreparationError(
-                f"JAX does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
-            )
-        _validate_term_support(
-            request.force_field,
+        force_field = _require_mm_force_field(
+            request,
+            info,
             backend="JAX",
             unsupported=frozenset(
                 {"CMAP", "vdW reduction", "wildcard torsions", "stretch-bend", "bond dipoles"}
@@ -868,9 +851,9 @@ class JaxBackend:
                 else {"CMAP", "vdW reduction", "wildcard torsions"}
             ),
         )
-        layout = ParameterLayout.from_force_field(request.force_field)
+        layout = ParameterLayout.from_force_field(force_field)
         try:
-            state = self._build_state(request.molecule, request.force_field)
+            state = self._build_state(request.molecule, force_field)
         except Exception as exc:  # noqa: BLE001
             raise PreparationError(f"JAX failed to prepare case {request.case_id!r}: {exc}") from exc
         return PreparedJax(
@@ -878,7 +861,7 @@ class JaxBackend:
             info=info,
             case_id=request.case_id,
             molecule=request.molecule,
-            force_field=request.force_field,
+            force_field=force_field,
             layout=layout,
             state=state,
         )
@@ -892,7 +875,7 @@ class JaxBackend:
         """
         from q2mm.backends.mm.batched import group_by_topology
 
-        return group_by_topology(list(sessions))
+        return group_by_topology(sessions)
 
     def _build_state(self, molecule: Molecule, forcefield: ForceField) -> _JaxState:
         """Build a compiled private native state for *molecule* + *forcefield*.
@@ -900,48 +883,21 @@ class JaxBackend:
         Requires an explicit :class:`ForceField`; no auto-generation and no
         state pass-through union.
         """
-        # Match bonds
-        bond_atom_indices = []
-        bond_param_map = []
-        for bond in molecule.bonds:
-            idx, param = _match_bond(
-                forcefield,
-                bond.elements,
-                env_id=bond.env_id,
-                ff_row=bond.ff_row,
-                bond_order=getattr(bond, "bond_order", ""),
-                bond_length=bond.length,
-            )
-            if param is not None:
-                bond_atom_indices.append((bond.atom_i, bond.atom_j))
-                bond_param_map.append(idx)
-
-        # Match angles
-        angle_atom_indices = []
-        angle_param_map = []
-        for angle in molecule.angles:
-            idx, param = _match_angle(forcefield, angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
-            if param is not None:
-                angle_atom_indices.append((angle.atom_i, angle.atom_j, angle.atom_k))
-                angle_param_map.append(idx)
+        topo = match_mm_topology(molecule, forcefield, include_impropers=True, mask_excluded_vdw=False)
 
         # Match Urey-Bradley terms (1-3 distance for CHARMM angles)
         ub_angles = forcefield._ub_angles
         ub_angle_to_ub_idx = {id(a): i for i, a in enumerate(ub_angles)}
         ub_atom_indices: list[tuple[int, int]] = []
         ub_param_map: list[int] = []
-        for angle in molecule.angles:
-            matched = forcefield.match_angle(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
-            if matched is not None and matched.ub_force_constant is not None and matched.ub_equilibrium is not None:
-                ub_idx = ub_angle_to_ub_idx.get(id(matched))
+        for angle, _angle_idx, matched_angle in topo.matched_angles:
+            if matched_angle.ub_force_constant is not None and matched_angle.ub_equilibrium is not None:
+                ub_idx = ub_angle_to_ub_idx.get(id(matched_angle))
                 if ub_idx is not None:
                     ub_atom_indices.append((angle.atom_i, angle.atom_k))
                     ub_param_map.append(ub_idx)
 
-        # Match stretch-bend cross terms
-        # Use match_stretch_bend() with proper env_id/ff_row fallback.
-        # Look up adjacent bonds from the already-matched bond set (not
-        # re-matching with the wrong env_id).
+        # Match stretch-bend cross terms using already-matched bonds and angles.
         sb_angle_indices: list[tuple[int, int, int]] = []
         sb_param_map_list: list[int] = []
         sb_bond_ij_idx: list[int] = []
@@ -949,114 +905,39 @@ class JaxBackend:
         sb_angle_idx: list[int] = []
         sb_param_index = {id(p): i for i, p in enumerate(forcefield.stretch_bends)}
         bond_ff_index = {id(p): i for i, p in enumerate(forcefield.bonds)}
-        angle_ff_index = {id(p): i for i, p in enumerate(forcefield.angles)}
 
-        # Pre-build lookup from atom pair → matched bond param (using the
-        # bond's own env_id, not the angle's).
         matched_bond_by_atoms: dict[tuple[int, int], BondParam] = {}
-        for bond in molecule.bonds:
-            _, param = _match_bond(
-                forcefield,
-                bond.elements,
-                env_id=bond.env_id,
-                ff_row=bond.ff_row,
-                bond_order=getattr(bond, "bond_order", ""),
-                bond_length=bond.length,
-            )
-            if param is not None:
-                matched_bond_by_atoms[(bond.atom_i, bond.atom_j)] = param
-                matched_bond_by_atoms[(bond.atom_j, bond.atom_i)] = param
+        for bond, _bond_idx, bond_param in topo.matched_bonds:
+            matched_bond_by_atoms[(bond.atom_i, bond.atom_j)] = bond_param
+            matched_bond_by_atoms[(bond.atom_j, bond.atom_i)] = bond_param
 
-        for angle in molecule.angles:
+        for angle, angle_idx, _angle_param in topo.matched_angles:
             sb = forcefield.match_stretch_bend(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
             if sb is None:
                 continue
             bond_ij = matched_bond_by_atoms.get((angle.atom_i, angle.atom_j))
             bond_jk = matched_bond_by_atoms.get((angle.atom_j, angle.atom_k))
-            angle_param = forcefield.match_angle(angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
-            if bond_ij is not None and bond_jk is not None and angle_param is not None:
+            if bond_ij is not None and bond_jk is not None:
                 sb_angle_indices.append((angle.atom_i, angle.atom_j, angle.atom_k))
                 sb_param_map_list.append(sb_param_index[id(sb)])
                 sb_bond_ij_idx.append(bond_ff_index[id(bond_ij)])
                 sb_bond_jk_idx.append(bond_ff_index[id(bond_jk)])
-                sb_angle_idx.append(angle_ff_index[id(angle_param)])
-
-        # Match torsions — each detected torsion may match multiple FF
-        # entries (one per periodicity component), each becoming a separate
-        # term.  Both proper and improper torsions are routed through the
-        # same cosine-series energy term (mirrors OpenMM, which puts both
-        # into a single PeriodicTorsionForce; see openmm.py:1080-1132).
-        torsion_atom_indices: list[tuple[int, int, int, int]] = []
-        torsion_param_map: list[int] = []
-        torsion_param_index = {id(p): i for i, p in enumerate(forcefield.torsions)}
-        for torsion in molecule.torsions:
-            matches = forcefield.match_torsion(
-                torsion.element_quad, env_id=torsion.env_id, ff_row=torsion.ff_row, is_improper=False
-            )
-            for param in matches:
-                j_ff = torsion_param_index[id(param)]
-                torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
-                torsion_param_map.append(j_ff)
-        for imp in molecule.improper_torsions:
-            matches = forcefield.match_torsion(imp.element_quad, env_id=imp.env_id, ff_row=imp.ff_row, is_improper=True)
-            for param in matches:
-                j_ff = torsion_param_index[id(param)]
-                torsion_atom_indices.append((imp.atom_i, imp.atom_j, imp.atom_k, imp.atom_l))
-                torsion_param_map.append(j_ff)
-
-        # Match vdW
-        atom_vdw_map = []
-        for atom_index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=False)):
-            idx, param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
-            if param is not None:
-                atom_vdw_map.append(idx)
-            else:
-                atom_vdw_map.append(-1)
-
-        # Validate vdW mapping: if the force field defines vdW parameters,
-        # disallow any unmatched atoms.  Using -1 as an index would silently
-        # select the last vdW entry via JAX negative indexing, corrupting
-        # the energy and gradients.  When the force field defines no vdW
-        # terms at all, vdW energy is effectively disabled and unmatched
-        # atoms are safe.
-        excluded_types = {value.casefold() for value in forcefield.nonbonded_excluded_atom_types}
-        explicitly_excluded = frozenset(
-            index
-            for index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=True))
-            if symbol.casefold() in excluded_types or atom_type.casefold() in excluded_types
-        )
-        unmatched = [i for i, idx in enumerate(atom_vdw_map) if idx == -1 and i not in explicitly_excluded]
-        if getattr(forcefield, "vdws", None) and unmatched:
-            raise ValueError(
-                f"Unmatched vdW parameters for atoms at indices {unmatched}. "
-                "Ensure all atom types/elements have corresponding vdW "
-                "parameters in the force field, or remove vdW terms from "
-                "the force field if vdW interactions are not intended."
-            )
+                sb_angle_idx.append(angle_idx)
 
         # Build vdW pair list with 1-2 and 1-3 exclusions
         vdw_pairs = _build_vdw_pairs(
             len(molecule.symbols),
-            [(b.atom_i, b.atom_j) for b in molecule.bonds],
-            excluded_atoms=explicitly_excluded,
+            [(b.atom_i, b.atom_j) for b in molecule.bonds or ()],
+            excluded_atoms=topo.explicitly_excluded_atoms,
         )
 
-        # Build bond-dipole electrostatics topology
-        # Collect bonds with non-zero dipole moments and their atom indices
+        # Build bond-dipole electrostatics topology from matched bonds
         dipole_bond_list: list[tuple[int, int]] = []
         dipole_moment_list: list[float] = []
-        for bond_idx, bond in enumerate(molecule.bonds):
-            idx, param = _match_bond(
-                forcefield,
-                bond.elements,
-                env_id=bond.env_id,
-                ff_row=bond.ff_row,
-                bond_order=getattr(bond, "bond_order", ""),
-                bond_length=bond.length,
-            )
-            if param is not None and abs(param.dipole_moment) > 1e-10:
+        for bond, _bond_idx, bond_param in topo.matched_bonds:
+            if abs(bond_param.dipole_moment) > 1e-10:
                 dipole_bond_list.append((bond.atom_i, bond.atom_j))
-                dipole_moment_list.append(param.dipole_moment)
+                dipole_moment_list.append(bond_param.dipole_moment)
 
         # Build dipole pair list: exclude bond pairs that share an atom
         dipole_pairs_list: list[tuple[int, int]] = []
@@ -1064,7 +945,6 @@ class JaxBackend:
             bond_atom_sets = [set(pair) for pair in dipole_bond_list]
             for i in range(len(dipole_bond_list)):
                 for j in range(i + 1, len(dipole_bond_list)):
-                    # Exclude if the two bonds share any atom (1-2/1-3 at bond level)
                     if not bond_atom_sets[i] & bond_atom_sets[j]:
                         dipole_pairs_list.append((i, j))
 
@@ -1075,30 +955,20 @@ class JaxBackend:
         dipole_pair_arr = (
             np.array(dipole_pairs_list, dtype=np.int32) if dipole_pairs_list else np.empty((0, 2), dtype=np.int32)
         )
-
-        bond_indices_arr = (
-            np.array(bond_atom_indices, dtype=np.int32) if bond_atom_indices else np.empty((0, 2), dtype=np.int32)
-        )
-        angle_indices_arr = (
-            np.array(angle_atom_indices, dtype=np.int32) if angle_atom_indices else np.empty((0, 3), dtype=np.int32)
-        )
-        torsion_indices_arr = (
-            np.array(torsion_atom_indices, dtype=np.int32) if torsion_atom_indices else np.empty((0, 4), dtype=np.int32)
-        )
         ub_indices_arr = (
             np.array(ub_atom_indices, dtype=np.int32) if ub_atom_indices else np.empty((0, 2), dtype=np.int32)
         )
 
         state = _JaxState(
             molecule=molecule,
-            bond_indices=bond_indices_arr,
-            angle_indices=angle_indices_arr,
-            torsion_indices=torsion_indices_arr,
+            bond_indices=topo.bond_indices,
+            angle_indices=topo.angle_indices,
+            torsion_indices=topo.torsion_indices,
             vdw_pair_indices=vdw_pairs,
-            bond_param_map=np.array(bond_param_map, dtype=np.int32),
-            angle_param_map=np.array(angle_param_map, dtype=np.int32),
-            torsion_param_map=np.array(torsion_param_map, dtype=np.int32),
-            atom_vdw_map=np.array(atom_vdw_map, dtype=np.int32),
+            bond_param_map=topo.bond_param_map,
+            angle_param_map=topo.angle_param_map,
+            torsion_param_map=topo.torsion_param_map,
+            atom_vdw_map=topo.atom_vdw_map,
             n_bond_types=len(forcefield.bonds),
             n_angle_types=len(forcefield.angles),
             n_torsion_types=len(forcefield.torsions),
@@ -1126,13 +996,14 @@ class JaxBackend:
         state._energy_fn = _compile_energy_fn(state, forcefield)
         return state
 
-    def _params_and_coords(self, state: _JaxState, forcefield: ForceField) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def _params_and_coords(self, state: _JaxState, forcefield: ForceField) -> tuple[JaxArray, JaxArray]:
         """Extract JAX arrays from force field and molecule."""
         return _params_and_coords_impl(state.molecule.geometry, forcefield)
 
     def _evaluate_energy(self, state: _JaxState, forcefield: ForceField) -> float:
         """Potential energy in kcal/mol for a prepared native state."""
         params, coords = self._params_and_coords(state, forcefield)
+        assert state._energy_fn is not None
         return float(state._energy_fn(params, coords))
 
     def _evaluate_param_grad(self, state: _JaxState, forcefield: ForceField) -> tuple[float, np.ndarray]:
@@ -1152,7 +1023,7 @@ class JaxBackend:
         """Evaluate a batch of parameter vectors via ``jax.vmap`` (kcal/mol)."""
         coords = jnp.array(state.molecule.geometry, dtype=jnp.float64)
         batch_params = jnp.array(param_matrix, dtype=jnp.float64)
-        if not hasattr(state, "_batched_energy_fn") or state._batched_energy_fn is None:
+        if state._batched_energy_fn is None:
             state._batched_energy_fn = jax.jit(jax.vmap(state._energy_fn, in_axes=(0, None)))
         return np.asarray(state._batched_energy_fn(batch_params, coords))
 
@@ -1160,9 +1031,11 @@ class JaxBackend:
         """Coordinate Hessian d2E/dcoords2 in Hartree/Bohr2."""
         params, coords = self._params_and_coords(state, forcefield)
         if state._coord_hess_fn is None:
+            energy_fn = state._energy_fn
+            assert energy_fn is not None
 
-            def _energy_of_flat_coords(flat_coords: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
-                return state._energy_fn(params_, flat_coords.reshape(-1, 3))
+            def _energy_of_flat_coords(flat_coords: JaxArray, params_: JaxArray) -> JaxArray:
+                return energy_fn(params_, flat_coords.reshape(-1, 3))
 
             state._coord_hess_fn = jax.jit(jax.hessian(_energy_of_flat_coords, argnums=0))
 
@@ -1176,13 +1049,15 @@ class JaxBackend:
         flat_coords = coords.flatten()
 
         if state._hess_param_jac_fn is None:
+            energy_fn = state._energy_fn
+            assert energy_fn is not None
 
-            def _energy_of_flat_coords(flat_coords_: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
-                return state._energy_fn(params_, flat_coords_.reshape(-1, 3))
+            def _energy_of_flat_coords(flat_coords_: JaxArray, params_: JaxArray) -> JaxArray:
+                return energy_fn(params_, flat_coords_.reshape(-1, 3))
 
             hess_fn = jax.hessian(_energy_of_flat_coords, argnums=0)
 
-            def _hess_and_jac(flat_coords_: jnp.ndarray, params_: jnp.ndarray) -> tuple:
+            def _hess_and_jac(flat_coords_: JaxArray, params_: JaxArray) -> tuple:
                 h = hess_fn(flat_coords_, params_)
                 dh_dp = jax.jacrev(hess_fn, argnums=1)(flat_coords_, params_)
                 return h, dh_dp
@@ -1208,6 +1083,7 @@ class JaxBackend:
 
         params, coords = self._params_and_coords(state, forcefield)
         energy_fn = state._energy_fn
+        assert energy_fn is not None
         coord_grad_fn = jax.jit(jax.grad(lambda c, p: energy_fn(p, c.reshape(-1, 3)), argnums=0))
 
         x0 = np.asarray(coords.flatten())
@@ -1236,7 +1112,7 @@ class JaxBackend:
         return opt_energy, list(state.molecule.symbols), opt_coords
 
 
-class PreparedJax(AbstractPreparedBackend):
+class PreparedJax(_PreparedJaxBase):
     """Prepared JAX session for a single training case.
 
     Owns the molecule, base force field, parameter layout, and one compiled
@@ -1246,6 +1122,10 @@ class PreparedJax(AbstractPreparedBackend):
     cases.  Compatible conformers may share only the compiled kernel.
     """
 
+    _backend_label = "JAX"
+    _backend: JaxBackend
+    _state: _JaxState
+
     def __init__(
         self,
         *,
@@ -1254,22 +1134,18 @@ class PreparedJax(AbstractPreparedBackend):
         case_id: str,
         molecule: Molecule,
         force_field: ForceField,
-        layout: object,
+        layout: ParameterLayout,
         state: _JaxState,
     ) -> None:
         super().__init__(
+            backend=backend,
             info=info,
             case_id=case_id,
             molecule=molecule,
             force_field=force_field,
             layout=layout,
+            state=state,
         )
-        self._backend = backend
-        self._state = state
-
-    def _ff_for(self, parameters: np.ndarray) -> ForceField:
-        vec = self._validate_vector(parameters)
-        return self.layout.replace(self.force_field, vec)
 
     def _energy_kernel(self) -> Callable:
         """Return this session's compiled ``energy_fn(params, coords)`` kernel.
@@ -1279,17 +1155,10 @@ class PreparedJax(AbstractPreparedBackend):
         conformers can share a compiled topology kernel without exposing the
         private native state as a public handle.
         """
+        assert self._state._energy_fn is not None
         return self._state._energy_fn
 
-    def _energy(self, request: EnergyRequest) -> EnergyResult:  # type: ignore[override]
-        ff = self._ff_for(request.parameters)
-        try:
-            value = self._backend._evaluate_energy(self._state, ff)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX energy evaluation failed: {exc}") from exc
-        return EnergyResult(energy=float(value), unit=EnergyUnit.KCAL_PER_MOL, provenance=self._info.provenance)
-
-    def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
+    def _minimize(self, request: MinimizationRequest) -> GeometryResult:
         ff = self._ff_for(request.parameters)
         max_iterations = request.max_iterations if request.max_iterations is not None else 200
         tolerance = request.tolerance if request.tolerance is not None else 1e-5
@@ -1308,46 +1177,10 @@ class PreparedJax(AbstractPreparedBackend):
             symbols=tuple(atoms),
             coordinates=readonly_array(coords),
             coordinate_unit=LengthUnit.ANGSTROM,
-            provenance=self._info.provenance,
+            provenance=self._provenance,
         )
 
-    def _hessian(self, request: HessianRequest) -> HessianResult:  # type: ignore[override]
-        ff = self._ff_for(request.parameters)
-        try:
-            hess = self._backend._evaluate_hessian(self._state, ff)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX Hessian evaluation failed: {exc}") from exc
-        return HessianResult(
-            hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._info.provenance
-        )
-
-    def _frequencies(self, request: FrequencyRequest) -> FrequencyResult:  # type: ignore[override]
-        from q2mm.models.hessian import hessian_to_frequencies
-
-        ff = self._ff_for(request.parameters)
-        try:
-            hess_au = self._backend._evaluate_hessian(self._state, ff)
-            freqs = hessian_to_frequencies(hess_au, list(self.molecule.symbols), on_error=request.on_error)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX frequency evaluation failed: {exc}") from exc
-        return FrequencyResult(
-            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=self._info.provenance
-        )
-
-    def _parameter_gradient(self, request: ParameterGradientRequest) -> ParameterGradientResult:  # type: ignore[override]
-        ff = self._ff_for(request.parameters)
-        try:
-            energy, grad = self._backend._evaluate_param_grad(self._state, ff)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX parameter-gradient evaluation failed: {exc}") from exc
-        return ParameterGradientResult(
-            energy=float(energy),
-            gradient=readonly_array(grad),
-            unit=EnergyUnit.KCAL_PER_MOL,
-            provenance=self._info.provenance,
-        )
-
-    def _hessian_parameter_jacobian(self, request: HessianJacobianRequest) -> HessianJacobianResult:  # type: ignore[override]
+    def _hessian_parameter_jacobian(self, request: HessianJacobianRequest) -> HessianJacobianResult:
         ff = self._ff_for(request.parameters)
         try:
             hess, jac = self._backend._evaluate_hessian_param_jac(self._state, ff)
@@ -1357,17 +1190,7 @@ class PreparedJax(AbstractPreparedBackend):
             hessian=readonly_array(hess),
             jacobian=readonly_array(jac),
             unit=HessianUnit.HARTREE_PER_BOHR2,
-            provenance=self._info.provenance,
-        )
-
-    def _batched_energy(self, request: BatchedEnergyRequest) -> BatchedEnergyResult:  # type: ignore[override]
-        mat = self._validate_matrix(request.parameter_matrix)
-        try:
-            energies = self._backend._evaluate_batched_energy(self._state, self.force_field, mat)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX batched-energy evaluation failed: {exc}") from exc
-        return BatchedEnergyResult(
-            energies=readonly_array(energies), unit=EnergyUnit.KCAL_PER_MOL, provenance=self._info.provenance
+            provenance=self._provenance,
         )
 
 
@@ -1542,100 +1365,65 @@ def _compile_energy_fn(state: _JaxState, forcefield: ForceField) -> Callable:
     _dipole_bond_indices = jnp.array(_dipole_bond_indices) if has_dipoles else None
     _dipole_pair_indices = jnp.array(_dipole_pair_indices) if has_dipoles else None
 
-    if use_mm3:
+    bond_energy_fn = _mm3_bond_energy if use_mm3 else _harmonic_bond_energy
+    angle_energy_fn = _mm3_angle_energy if use_mm3 else _harmonic_angle_energy
 
-        @jax.jit
-        def energy_fn(params: jnp.ndarray, coords: jnp.ndarray) -> jnp.ndarray:
-            """Compute total MM3 energy from parameter and coordinate arrays."""
-            E = jnp.float64(0.0)
+    @jax.jit
+    def energy_fn(params: JaxArray, coords: JaxArray) -> JaxArray:
+        """Compute total MM energy from parameter and coordinate arrays."""
+        E = jnp.float64(0.0)
 
-            if has_bonds:
-                bond_params = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
-                k = bond_params[_bond_map, 0] * _BOND_K_CONV
-                r0 = bond_params[_bond_map, 1]
-                E = E + _mm3_bond_energy(k, r0, coords, _bond_indices)
+        if has_bonds:
+            bond_params = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
+            k = bond_params[_bond_map, 0] * _BOND_K_CONV
+            r0 = bond_params[_bond_map, 1]
+            E = E + bond_energy_fn(k, r0, coords, _bond_indices)
 
-            if has_angles:
-                angle_params = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
-                k = angle_params[_angle_map, 0] * _ANGLE_K_CONV
-                theta0_deg = angle_params[_angle_map, 1]
-                theta0 = theta0_deg * (jnp.pi / 180.0)
-                E = E + _mm3_angle_energy(k, theta0, coords, _angle_indices)
+        if has_angles:
+            angle_params = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
+            k = angle_params[_angle_map, 0] * _ANGLE_K_CONV
+            theta0_deg = angle_params[_angle_map, 1]
+            theta0 = theta0_deg * (jnp.pi / 180.0)
+            E = E + angle_energy_fn(k, theta0, coords, _angle_indices)
 
-            if has_torsions:
-                torsion_k = params[torsion_offset : torsion_offset + n_tt]
-                k = torsion_k[_torsion_map]
-                E = E + _torsion_energy(k, _torsion_n, _torsion_gamma, coords, _torsion_indices)
+        if has_torsions:
+            torsion_k = params[torsion_offset : torsion_offset + n_tt]
+            k = torsion_k[_torsion_map]
+            E = E + _torsion_energy(k, _torsion_n, _torsion_gamma, coords, _torsion_indices)
 
-            if has_vdw:
-                vdw_params = params[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)
-                per_atom_radius = vdw_params[_atom_vdw_map, 0]
-                per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
+        if has_vdw:
+            vdw_params = params[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)
+            per_atom_radius = vdw_params[_atom_vdw_map, 0]
+            per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
+            if use_mm3:
                 E = E + _mm3_vdw_energy(per_atom_radius, per_atom_epsilon, coords, _vdw_pairs)
-
-            if has_ub:
-                ub_params = params[ub_offset : ub_offset + 2 * n_ubt].reshape(n_ubt, 2)
-                k = ub_params[_ub_map, 0]
-                r0 = ub_params[_ub_map, 1]
-                E = E + _harmonic_bond_energy(k, r0, coords, _ub_indices)
-
-            if has_sb:
-                sb_k = params[sb_offset : sb_offset + n_sbt]
-                k = sb_k[_sb_map]
-                # Read equilibrium values from the runtime param vector
-                bond_params_sb = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
-                angle_params_sb = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
-                r0_ij = bond_params_sb[_sb_bond_ij_idx, 1]
-                r0_jk = bond_params_sb[_sb_bond_jk_idx, 1]
-                theta0 = angle_params_sb[_sb_angle_idx, 1] * (jnp.pi / 180.0)
-                E = E + _mm3_stretch_bend_energy(k, r0_ij, r0_jk, theta0, coords, _sb_angle_indices)
-
-            if has_dipoles:
-                E = E + _mm3_dipole_energy(_dipole_moments, coords, _dipole_bond_indices, _dipole_pair_indices)
-
-            return E
-
-    else:
-
-        @jax.jit
-        def energy_fn(params: jnp.ndarray, coords: jnp.ndarray) -> jnp.ndarray:
-            """Compute total harmonic energy from parameter and coordinate arrays."""
-            E = jnp.float64(0.0)
-
-            if has_bonds:
-                bond_params = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
-                k = bond_params[_bond_map, 0] * _BOND_K_CONV
-                r0 = bond_params[_bond_map, 1]
-                E = E + _harmonic_bond_energy(k, r0, coords, _bond_indices)
-
-            if has_angles:
-                angle_params = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
-                k = angle_params[_angle_map, 0] * _ANGLE_K_CONV
-                theta0_deg = angle_params[_angle_map, 1]
-                theta0 = theta0_deg * (jnp.pi / 180.0)
-                E = E + _harmonic_angle_energy(k, theta0, coords, _angle_indices)
-
-            if has_torsions:
-                torsion_k = params[torsion_offset : torsion_offset + n_tt]
-                k = torsion_k[_torsion_map]
-                E = E + _torsion_energy(k, _torsion_n, _torsion_gamma, coords, _torsion_indices)
-
-            if has_vdw:
-                vdw_params = params[vdw_offset : vdw_offset + 2 * n_vt].reshape(n_vt, 2)
-                per_atom_radius = vdw_params[_atom_vdw_map, 0]
-                per_atom_epsilon = vdw_params[_atom_vdw_map, 1]
+            else:
                 per_atom_sigma = per_atom_radius * 2.0 / (2.0 ** (1.0 / 6.0))
                 E = E + _lj_12_6_energy(per_atom_sigma, per_atom_epsilon, coords, _vdw_pairs)
 
-            if has_ub:
-                ub_params = params[ub_offset : ub_offset + 2 * n_ubt].reshape(n_ubt, 2)
-                k = ub_params[_ub_map, 0]
-                r0 = ub_params[_ub_map, 1]
-                E = E + _harmonic_bond_energy(k, r0, coords, _ub_indices)
+        if has_ub:
+            ub_params = params[ub_offset : ub_offset + 2 * n_ubt].reshape(n_ubt, 2)
+            k = ub_params[_ub_map, 0]
+            r0 = ub_params[_ub_map, 1]
+            E = E + _harmonic_bond_energy(k, r0, coords, _ub_indices)
 
-            return E
+        if use_mm3 and has_sb:
+            sb_k = params[sb_offset : sb_offset + n_sbt]
+            k = sb_k[_sb_map]
+            bond_params_sb = params[bond_offset : bond_offset + 2 * n_bt].reshape(n_bt, 2)
+            angle_params_sb = params[angle_offset : angle_offset + 2 * n_at].reshape(n_at, 2)
+            r0_ij = bond_params_sb[_sb_bond_ij_idx, 1]
+            r0_jk = bond_params_sb[_sb_bond_jk_idx, 1]
+            theta0 = angle_params_sb[_sb_angle_idx, 1] * (jnp.pi / 180.0)
+            E = E + _mm3_stretch_bend_energy(k, r0_ij, r0_jk, theta0, coords, _sb_angle_indices)
 
-    return energy_fn
+        if use_mm3 and has_dipoles:
+            E = E + _mm3_dipole_energy(_dipole_moments, coords, _dipole_bond_indices, _dipole_pair_indices)
+
+        return E
+
+    compiled_fn: Callable = energy_fn
+    return compiled_fn
 
 
 # ---------------------------------------------------------------------------

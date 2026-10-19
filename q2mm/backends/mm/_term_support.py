@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from q2mm.backends.contracts import PreparationError
+from q2mm.backends.contracts import BackendInfo, PreparationError, PreparationRequest
 from q2mm.models.forcefield import ForceField, TorsionParam
 
 _Term = Literal[
@@ -47,3 +47,23 @@ def _validate_term_support(force_field: ForceField, *, backend: str, unsupported
             f"{backend} does not support populated {', '.join(rejected)} "
             f"for functional form {force_field.functional_form.value!r}."
         )
+
+
+def _require_mm_force_field(
+    request: PreparationRequest,
+    info: BackendInfo,
+    *,
+    backend: str,
+    unsupported: frozenset[_Term] = frozenset(),
+) -> ForceField:
+    """Require a base ForceField with a supported functional form and supported populated terms."""
+    if request.force_field is None:
+        raise PreparationError(f"{backend} requires a base ForceField in the PreparationRequest.")
+    form = request.force_field.functional_form.value
+    if not info.supports_form(form):
+        raise PreparationError(
+            f"{backend} does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
+        )
+    if unsupported:
+        _validate_term_support(request.force_field, backend=backend, unsupported=unsupported)
+    return request.force_field

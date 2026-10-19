@@ -291,6 +291,14 @@ class ManifestFailure:
             raise ValueError("ManifestFailure.message must be a non-empty string.")
 
 
+def _normalize_records(records: Iterable[DiscoveryRecord], *, owner: str) -> tuple[DiscoveryRecord, ...]:
+    """Validate and sort discovery records into a deterministic tuple."""
+    items = tuple(records)
+    if not all(isinstance(record, DiscoveryRecord) for record in items):
+        raise ValueError(f"{owner}.records must all be DiscoveryRecord instances.")
+    return tuple(sorted(items, key=lambda record: record.sort_key))
+
+
 @dataclass(frozen=True, eq=False)
 class DiscoverySnapshot:
     """Immutable result of one discovery pass.
@@ -313,11 +321,8 @@ class DiscoverySnapshot:
             if key != descriptor.name:
                 raise ValueError(f"DiscoverySnapshot key {key!r} must equal descriptor name {descriptor.name!r}.")
             frozen[key] = descriptor
-        records = tuple(self.records)
-        if not all(isinstance(record, DiscoveryRecord) for record in records):
-            raise ValueError("DiscoverySnapshot.records must all be DiscoveryRecord instances.")
         object.__setattr__(self, "descriptors", MappingProxyType(frozen))
-        object.__setattr__(self, "records", tuple(sorted(records, key=lambda record: record.sort_key)))
+        object.__setattr__(self, "records", _normalize_records(self.records, owner="DiscoverySnapshot"))
 
 
 @dataclass(frozen=True)
@@ -334,10 +339,7 @@ class DiscoveryReport:
 
     def __post_init__(self) -> None:
         """Validate and normalize records to a deterministically-ordered tuple."""
-        records = tuple(self.records)
-        if not all(isinstance(record, DiscoveryRecord) for record in records):
-            raise ValueError("DiscoveryReport.records must all be DiscoveryRecord instances.")
-        object.__setattr__(self, "records", tuple(sorted(records, key=lambda record: record.sort_key)))
+        object.__setattr__(self, "records", _normalize_records(self.records, owner="DiscoveryReport"))
 
     @property
     def registered(self) -> tuple[str, ...]:
@@ -377,9 +379,7 @@ def _as_str_sequence(value: object) -> list[str] | None:
 
 def _is_json_safe(value: object) -> bool:
     """Return whether *value* uses the closed JSON data vocabulary."""
-    if value is None or isinstance(value, (str, bool)):
-        return True
-    if isinstance(value, int):
+    if value is None or isinstance(value, (str, int)):
         return True
     if isinstance(value, float):
         return math.isfinite(value)

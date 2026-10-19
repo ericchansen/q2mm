@@ -48,67 +48,59 @@ import importlib.util
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 from q2mm.backends.contracts import (
-    AbstractPreparedBackend,
     BackendInfo,
     BackendProvenance,
     BackendRole,
     BackendUnavailableError,
-    BatchedEnergyRequest,
-    BatchedEnergyResult,
     Capability,
-    EnergyRequest,
-    EnergyResult,
     EnergyUnit,
     EvaluationError,
-    FrequencyRequest,
-    FrequencyResult,
-    FrequencyUnit,
     GeometryResult,
-    HessianRequest,
-    HessianResult,
-    HessianUnit,
     LengthUnit,
     MinimizationRequest,
-    ParameterGradientRequest,
-    ParameterGradientResult,
     PreparationError,
     PreparationRequest,
     readonly_array,
 )
-from q2mm.backends.mm._term_support import _validate_term_support
+from q2mm.backends.mm._term_support import _require_mm_force_field
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
 from q2mm.models.forcefield import ForceField
 from q2mm.models.molecule import Molecule
 
 from q2mm.backends.mm._jax_common import (
+    _PreparedJaxBase,
     ensure_jax as _ensure_jax_common,
     layout_block_offsets,
-    match_angle as _match_angle,
-    match_bond as _match_bond,
-    match_vdw as _match_vdw,
+    match_mm_topology,
     params_and_coords as _params_and_coords_impl,
 )
 
+if TYPE_CHECKING:
+    from q2mm.models.parameters import ParameterLayout
+
+type JaxArray = Any
+
 # Lazy placeholders — populated by _ensure_jax_md().
-jax = None
-jnp = None
+jax: Any = None
+jnp: Any = None
 
 # Cheap availability check — does NOT import jax-md or initialize CUDA.
 _HAS_JAX_MD: bool = importlib.util.find_spec("jax_md") is not None
 
 # Lazy-loaded jax-md symbols (populated by _ensure_jax_md).
-NonbondedOptions = None
-CoulombHandler = None
-CutoffCoulomb = None
-oplsaa_energy = None
-create_parameters = None
-create_topology = None
+NonbondedOptions: Any = None
+CoulombHandler: Any = None
+CutoffCoulomb: Any = None
+oplsaa_energy: Any = None
+create_parameters: Any = None
+create_topology: Any = None
 
 # Hessian unit conversion imported from q2mm.models.units
 
@@ -200,11 +192,12 @@ class _JaxMdState:
     # Compiled functions (lazy, JIT-compiled)
     _energy_fn: Callable | None = field(default=None, repr=False)
     _scalar_energy_fn: Callable | None = field(default=None, repr=False)
+    _batched_energy_fn: Callable | None = field(default=None, repr=False)
     _grad_fn: Callable | None = field(default=None, repr=False)
     _coord_hess_fn: Callable | None = field(default=None, repr=False)
     # jax-md neighbor list function
-    _neighbor_fn: object | None = field(default=None, repr=False)
-    _nlist: object | None = field(default=None, repr=False)
+    _neighbor_fn: Any = field(default=None, repr=False)
+    _nlist: Any = field(default=None, repr=False)
 
 
 # ---------------------------------------------------------------------------
@@ -216,10 +209,10 @@ def _build_jaxmd_params_fn(
     state: _JaxMdState,
     forcefield: ForceField,
 ) -> Callable[
-    [jnp.ndarray],
+    [JaxArray],
     tuple[
-        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
-        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        tuple[JaxArray, JaxArray, JaxArray, JaxArray, JaxArray],
+        tuple[JaxArray, JaxArray, JaxArray],
     ],
 ]:
     """Create a function that maps a flat param vector to jax-md Parameters.
@@ -263,10 +256,10 @@ def _build_jaxmd_params_fn(
     n_torsions = len(state.torsion_param_map)
 
     def build_params(
-        param_vector: jnp.ndarray,
+        param_vector: JaxArray,
     ) -> tuple[
-        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray],
-        tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray],
+        tuple[JaxArray, JaxArray, JaxArray, JaxArray, JaxArray],
+        tuple[JaxArray, JaxArray, JaxArray],
     ]:
         """Unpack a flat parameter vector into per-term JAX-MD arrays.
 
@@ -333,8 +326,8 @@ def _build_jaxmd_params_fn(
 
 
 def _compile_energy_fn(
-    state: _JaxMdState, forcefield: ForceField, coulomb: object, nb_options: object
-) -> tuple[Callable, Callable, object, object]:
+    state: _JaxMdState, forcefield: ForceField, coulomb: Any, nb_options: Any
+) -> tuple[Callable, Callable, Any, Any]:
     """Compile the jax-md energy function for a specific topology.
 
     Args:
@@ -451,7 +444,7 @@ def _compile_energy_fn(
     has_torsions = torsion_arr.shape[0] > 0
     has_vdw = state.n_vdw_types > 0
 
-    def energy_fn(param_vector: jnp.ndarray, coords: jnp.ndarray, nlist_: object) -> dict[str, jnp.ndarray]:
+    def energy_fn(param_vector: JaxArray, coords: JaxArray, nlist_: Any) -> dict[str, JaxArray]:
         """Compute total energy given param vector and coordinates.
 
         Returns dict with per-term breakdown.
@@ -487,8 +480,9 @@ def _compile_energy_fn(
         # Torsion energy: E = k * (1 + cos(n*phi - gamma))
         if has_torsions:
             idx = _torsion_indices
+            assert idx is not None
 
-            def compute_dihedral(p0: jnp.ndarray, p1: jnp.ndarray, p2: jnp.ndarray, p3: jnp.ndarray) -> jnp.ndarray:
+            def compute_dihedral(p0: JaxArray, p1: JaxArray, p2: JaxArray, p3: JaxArray) -> JaxArray:
                 """Compute signed dihedral angle (radians) for four points."""
                 b0 = displacement_fn(p1, p0)
                 b1 = displacement_fn(p2, p1)
@@ -568,7 +562,7 @@ def _compile_energy_fn(
             "total": E_total,
         }
 
-    def scalar_energy_fn(param_vector: jnp.ndarray, coords: jnp.ndarray, nlist_: object) -> jnp.ndarray:
+    def scalar_energy_fn(param_vector: JaxArray, coords: JaxArray, nlist_: object) -> JaxArray:
         """Scalar total energy for gradient/hessian computation."""
         return energy_fn(param_vector, coords, nlist_)["total"]
 
@@ -603,8 +597,8 @@ class JaxMdBackend:
     def __init__(
         self,
         box: tuple[float, float, float] = (100.0, 100.0, 100.0),
-        coulomb: CoulombHandler | None = None,
-        nb_options: NonbondedOptions | None = None,
+        coulomb: Any = None,
+        nb_options: Any = None,
     ) -> None:
         if not _HAS_JAX_MD:
             raise BackendUnavailableError("jax-md is not installed. Install with `pip install jax-md`.")
@@ -663,22 +657,16 @@ class JaxMdBackend:
         """
         from q2mm.models.parameters import ParameterLayout
 
-        if request.force_field is None:
-            raise PreparationError("JAX-MD requires a base ForceField in the PreparationRequest.")
         info = self.info
-        form = request.force_field.functional_form.value
-        if not info.supports_form(form):
-            raise PreparationError(
-                f"JAX-MD does not support functional form {form!r}. Supported: {sorted(info.functional_forms)}"
-            )
-        _validate_term_support(
-            request.force_field,
+        force_field = _require_mm_force_field(
+            request,
+            info,
             backend="JAX-MD",
             unsupported=frozenset({"Urey-Bradley", "CMAP", "improper torsions", "bond dipoles", "vdW reduction"}),
         )
-        layout = ParameterLayout.from_force_field(request.force_field)
+        layout = ParameterLayout.from_force_field(force_field)
         try:
-            state = self._build_state(request.molecule, request.force_field)
+            state = self._build_state(request.molecule, force_field)
         except PreparationError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -688,7 +676,7 @@ class JaxMdBackend:
             info=info,
             case_id=request.case_id,
             molecule=request.molecule,
-            force_field=request.force_field,
+            force_field=force_field,
             layout=layout,
             state=state,
         )
@@ -713,89 +701,18 @@ class JaxMdBackend:
                 "Use the JAX backend for force fields with stretch-bend parameters."
             )
 
-        # Match bonds
-        bond_atom_indices = []
-        bond_param_map = []
-        for bond in molecule.bonds:
-            idx, param = _match_bond(
-                forcefield,
-                bond.elements,
-                env_id=bond.env_id,
-                ff_row=bond.ff_row,
-                bond_order=getattr(bond, "bond_order", ""),
-                bond_length=bond.length,
-            )
-            if param is not None:
-                bond_atom_indices.append((bond.atom_i, bond.atom_j))
-                bond_param_map.append(idx)
-
-        # Match angles
-        angle_atom_indices = []
-        angle_param_map = []
-        for angle in molecule.angles:
-            idx, param = _match_angle(forcefield, angle.elements, env_id=angle.env_id, ff_row=angle.ff_row)
-            if param is not None:
-                angle_atom_indices.append((angle.atom_i, angle.atom_j, angle.atom_k))
-                angle_param_map.append(idx)
-
-        # Match torsions — each detected torsion may match multiple FF
-        # entries (one per periodicity component)
-        torsion_atom_indices: list[tuple[int, int, int, int]] = []
-        torsion_param_map: list[int] = []
-        torsion_param_index = {id(p): i for i, p in enumerate(forcefield.torsions)}
-        for torsion in molecule.torsions:
-            matches = forcefield.match_torsion(
-                torsion.element_quad, env_id=torsion.env_id, ff_row=torsion.ff_row, is_improper=False
-            )
-            for param in matches:
-                j_ff = torsion_param_index[id(param)]
-                torsion_atom_indices.append((torsion.atom_i, torsion.atom_j, torsion.atom_k, torsion.atom_l))
-                torsion_param_map.append(j_ff)
-
-        # Match vdW
-        atom_vdw_map = []
-        excluded_types = {value.casefold() for value in forcefield.nonbonded_excluded_atom_types}
-        for symbol, atom_type in zip(molecule.symbols, molecule.atom_types, strict=False):
-            if symbol.casefold() in excluded_types or atom_type.casefold() in excluded_types:
-                atom_vdw_map.append(-1)
-                continue
-            idx, param = _match_vdw(forcefield, atom_type=atom_type, element=symbol)
-            atom_vdw_map.append(idx if idx is not None else -1)
-
-        # Validate vdW
-        explicitly_excluded = {
-            index
-            for index, (symbol, atom_type) in enumerate(zip(molecule.symbols, molecule.atom_types, strict=True))
-            if symbol.casefold() in excluded_types or atom_type.casefold() in excluded_types
-        }
-        unmatched = [i for i, idx in enumerate(atom_vdw_map) if idx == -1 and i not in explicitly_excluded]
-        if getattr(forcefield, "vdws", None) and unmatched:
-            raise ValueError(
-                f"Unmatched vdW parameters for atoms at indices {unmatched}. "
-                "Ensure all atom types/elements have corresponding vdW "
-                "parameters in the force field."
-            )
-
-        bond_indices_arr = (
-            np.array(bond_atom_indices, dtype=np.int32) if bond_atom_indices else np.empty((0, 2), dtype=np.int32)
-        )
-        angle_indices_arr = (
-            np.array(angle_atom_indices, dtype=np.int32) if angle_atom_indices else np.empty((0, 3), dtype=np.int32)
-        )
-        torsion_indices_arr = (
-            np.array(torsion_atom_indices, dtype=np.int32) if torsion_atom_indices else np.empty((0, 4), dtype=np.int32)
-        )
+        topo = match_mm_topology(molecule, forcefield, include_impropers=False, mask_excluded_vdw=True)
 
         state = _JaxMdState(
             molecule=molecule,
             box=self._box.copy(),
-            bond_indices=bond_indices_arr,
-            angle_indices=angle_indices_arr,
-            torsion_indices=torsion_indices_arr,
-            bond_param_map=np.array(bond_param_map, dtype=np.int32),
-            angle_param_map=np.array(angle_param_map, dtype=np.int32),
-            torsion_param_map=np.array(torsion_param_map, dtype=np.int32),
-            atom_vdw_map=np.array(atom_vdw_map, dtype=np.int32),
+            bond_indices=topo.bond_indices,
+            angle_indices=topo.angle_indices,
+            torsion_indices=topo.torsion_indices,
+            bond_param_map=topo.bond_param_map,
+            angle_param_map=topo.angle_param_map,
+            torsion_param_map=topo.torsion_param_map,
+            atom_vdw_map=topo.atom_vdw_map,
             n_bond_types=len(forcefield.bonds),
             n_angle_types=len(forcefield.angles),
             n_torsion_types=len(forcefield.torsions),
@@ -818,19 +735,21 @@ class JaxMdBackend:
 
         return state
 
-    def _params_and_coords(self, state: _JaxMdState, forcefield: ForceField) -> tuple[jnp.ndarray, jnp.ndarray]:
+    def _params_and_coords(self, state: _JaxMdState, forcefield: ForceField) -> tuple[JaxArray, JaxArray]:
         """Extract JAX arrays from force field and molecule."""
         return _params_and_coords_impl(state.molecule.geometry, forcefield)
 
     def _evaluate_energy(self, state: _JaxMdState, forcefield: ForceField) -> float:
         """Total energy in kcal/mol for a prepared native state."""
         params, coords = self._params_and_coords(state, forcefield)
+        assert state._energy_fn is not None
         result = state._energy_fn(params, coords, state._nlist)
         return float(result["total"])
 
     def _evaluate_energy_breakdown(self, state: _JaxMdState, forcefield: ForceField) -> dict[str, float]:
         """Per-term energy breakdown (kcal/mol) for a prepared native state."""
         params, coords = self._params_and_coords(state, forcefield)
+        assert state._energy_fn is not None
         result = state._energy_fn(params, coords, state._nlist)
         return {k: float(v) for k, v in result.items()}
 
@@ -853,7 +772,7 @@ class JaxMdBackend:
         batch_params = jnp.array(param_matrix, dtype=jnp.float64)
         nlist = state._nlist
 
-        if not hasattr(state, "_batched_energy_fn") or state._batched_energy_fn is None:
+        if state._batched_energy_fn is None:
             state._batched_energy_fn = jax.jit(jax.vmap(state._scalar_energy_fn, in_axes=(0, None, None)))
 
         return np.asarray(state._batched_energy_fn(batch_params, coords, nlist))
@@ -864,9 +783,11 @@ class JaxMdBackend:
 
         if state._coord_hess_fn is None:
             nlist = state._nlist
+            scalar_fn = state._scalar_energy_fn
+            assert scalar_fn is not None
 
-            def _energy_of_flat_coords(flat_coords: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
-                return state._scalar_energy_fn(params_, flat_coords.reshape(-1, 3), nlist)
+            def _energy_of_flat_coords(flat_coords: JaxArray, params_: JaxArray) -> JaxArray:
+                return scalar_fn(params_, flat_coords.reshape(-1, 3), nlist)
 
             state._coord_hess_fn = jax.jit(jax.hessian(_energy_of_flat_coords, argnums=0))
 
@@ -885,13 +806,13 @@ class JaxMdBackend:
 
         params, coords = self._params_and_coords(state, forcefield)
         neighbor_fn = state._neighbor_fn
-
         scalar_fn = state._scalar_energy_fn
+        assert scalar_fn is not None
 
         # Mutable container for neighbor list — updated when atoms move
         nlist_ref = [state._nlist]
 
-        def _update_nlist(new_coords: jnp.ndarray) -> None:
+        def _update_nlist(new_coords: JaxArray) -> None:
             """Re-allocate neighbor list for new coordinates."""
             nlist_ref[0] = neighbor_fn.allocate(new_coords)
 
@@ -924,12 +845,14 @@ class JaxMdBackend:
         return opt_energy, list(state.molecule.symbols), opt_coords
 
 
-class PreparedJaxMd(AbstractPreparedBackend):
+class PreparedJaxMd(_PreparedJaxBase):
     """Prepared JAX-MD session for a single training case.
 
     Owns the molecule, base force field, parameter layout, and one compiled
     private :class:`_JaxMdState` reused across parameter vectors.
     """
+
+    _backend_label = "JAX-MD"
 
     def __init__(
         self,
@@ -939,32 +862,20 @@ class PreparedJaxMd(AbstractPreparedBackend):
         case_id: str,
         molecule: Molecule,
         force_field: ForceField,
-        layout: object,
+        layout: ParameterLayout,
         state: _JaxMdState,
     ) -> None:
         super().__init__(
+            backend=backend,
             info=info,
             case_id=case_id,
             molecule=molecule,
             force_field=force_field,
-            layout=layout,  # type: ignore[arg-type]
+            layout=layout,
+            state=state,
         )
-        self._backend = backend
-        self._state = state
 
-    def _ff_for(self, parameters: np.ndarray) -> ForceField:
-        vec = self._validate_vector(parameters)
-        return self.layout.replace(self.force_field, vec)
-
-    def _energy(self, request: EnergyRequest) -> EnergyResult:  # type: ignore[override]
-        ff = self._ff_for(request.parameters)
-        try:
-            value = self._backend._evaluate_energy(self._state, ff)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX-MD energy evaluation failed: {exc}") from exc
-        return EnergyResult(energy=float(value), unit=EnergyUnit.KCAL_PER_MOL, provenance=self._info.provenance)
-
-    def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
+    def _minimize(self, request: MinimizationRequest) -> GeometryResult:
         ff = self._ff_for(request.parameters)
         if request.tolerance is not None:
             raise EvaluationError(
@@ -982,53 +893,7 @@ class PreparedJaxMd(AbstractPreparedBackend):
             symbols=tuple(atoms),
             coordinates=readonly_array(coords),
             coordinate_unit=LengthUnit.ANGSTROM,
-            provenance=self._info.provenance,
-        )
-
-    def _hessian(self, request: HessianRequest) -> HessianResult:  # type: ignore[override]
-        ff = self._ff_for(request.parameters)
-        try:
-            hess = self._backend._evaluate_hessian(self._state, ff)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX-MD Hessian evaluation failed: {exc}") from exc
-        return HessianResult(
-            hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=self._info.provenance
-        )
-
-    def _frequencies(self, request: FrequencyRequest) -> FrequencyResult:  # type: ignore[override]
-        from q2mm.models.hessian import hessian_to_frequencies
-
-        ff = self._ff_for(request.parameters)
-        try:
-            hess_au = self._backend._evaluate_hessian(self._state, ff)
-            freqs = hessian_to_frequencies(hess_au, list(self.molecule.symbols), on_error=request.on_error)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX-MD frequency evaluation failed: {exc}") from exc
-        return FrequencyResult(
-            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=self._info.provenance
-        )
-
-    def _parameter_gradient(self, request: ParameterGradientRequest) -> ParameterGradientResult:  # type: ignore[override]
-        ff = self._ff_for(request.parameters)
-        try:
-            energy, grad = self._backend._evaluate_param_grad(self._state, ff)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX-MD parameter-gradient evaluation failed: {exc}") from exc
-        return ParameterGradientResult(
-            energy=float(energy),
-            gradient=readonly_array(grad),
-            unit=EnergyUnit.KCAL_PER_MOL,
-            provenance=self._info.provenance,
-        )
-
-    def _batched_energy(self, request: BatchedEnergyRequest) -> BatchedEnergyResult:  # type: ignore[override]
-        mat = self._validate_matrix(request.parameter_matrix)
-        try:
-            energies = self._backend._evaluate_batched_energy(self._state, self.force_field, mat)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"JAX-MD batched-energy evaluation failed: {exc}") from exc
-        return BatchedEnergyResult(
-            energies=readonly_array(energies), unit=EnergyUnit.KCAL_PER_MOL, provenance=self._info.provenance
+            provenance=self._provenance,
         )
 
 

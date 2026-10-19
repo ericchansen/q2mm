@@ -51,7 +51,7 @@ from abc import ABC
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Literal, Protocol, runtime_checkable
 
 import numpy as np
 import numpy.typing as npt
@@ -137,6 +137,30 @@ def _role_capability_conflicts(
 ) -> frozenset[Capability]:
     """Return capabilities that have no request family for *role*."""
     return frozenset(capabilities) - _ROLE_CAPABILITIES[role]
+
+
+def _normalize_capabilities_and_forms(
+    role: BackendRole,
+    capabilities: Collection[Capability],
+    functional_forms: Collection[str],
+    *,
+    owner: str,
+    verb: str,
+) -> tuple[frozenset[Capability], frozenset[str]]:
+    """Validate and freeze capability and functional-form sets for *role*."""
+    caps = frozenset(capabilities)
+    if not all(isinstance(c, Capability) for c in caps):
+        raise ValueError(f"{owner} capabilities must contain only Capability members.")
+    conflicts = _role_capability_conflicts(role, caps)
+    if conflicts:
+        values = sorted(capability.value for capability in conflicts)
+        raise ValueError(f"{owner}: role {role.value!r} cannot {verb} capabilities {values}.")
+    forms = frozenset(functional_forms)
+    if not all(isinstance(f, str) for f in forms):
+        raise ValueError(f"{owner} functional forms must contain only strings.")
+    if role is BackendRole.REFERENCE and forms:
+        raise ValueError(f"{owner}: reference backends must declare no functional forms.")
+    return caps, forms
 
 
 class EnergyUnit(str, enum.Enum):
@@ -240,21 +264,15 @@ class BackendInfo:
             raise ValueError("BackendInfo.name must be a non-empty string.")
         if not isinstance(self.role, BackendRole):
             raise ValueError(f"BackendInfo.role must be a BackendRole; got {self.role!r}.")
-        # Normalize capabilities/forms to frozensets of the right element types.
-        caps = frozenset(self.capabilities)
-        if not all(isinstance(c, Capability) for c in caps):
-            raise ValueError("BackendInfo.capabilities must all be Capability members.")
-        conflicts = _role_capability_conflicts(self.role, caps)
-        if conflicts:
-            values = sorted(capability.value for capability in conflicts)
-            raise ValueError(f"BackendInfo: role {self.role.value!r} cannot declare capabilities {values}.")
-        forms = frozenset(self.functional_forms)
-        if not all(isinstance(f, str) for f in forms):
-            raise ValueError("BackendInfo.functional_forms must all be strings.")
+        caps, forms = _normalize_capabilities_and_forms(
+            self.role,
+            self.capabilities,
+            self.functional_forms,
+            owner="BackendInfo",
+            verb="declare",
+        )
         object.__setattr__(self, "capabilities", caps)
         object.__setattr__(self, "functional_forms", forms)
-        if self.role is BackendRole.REFERENCE and forms:
-            raise ValueError("BackendInfo: reference backends must declare no functional_forms.")
         if self.provenance is not None:
             if not isinstance(self.provenance, BackendProvenance):
                 raise ValueError("BackendInfo.provenance must be a BackendProvenance or None.")
@@ -467,8 +485,8 @@ class PreparationRequest:
 
 
 @dataclass(frozen=True, eq=False)
-class EnergyRequest:
-    """Single-point energy for a full parameter vector."""
+class _ParameterVectorRequest:
+    """Base for MM requests carrying one validated full parameter vector."""
 
     parameters: np.ndarray
 
@@ -477,7 +495,12 @@ class EnergyRequest:
 
 
 @dataclass(frozen=True, eq=False)
-class MinimizationRequest:
+class EnergyRequest(_ParameterVectorRequest):
+    """Single-point energy for a full parameter vector."""
+
+
+@dataclass(frozen=True, eq=False)
+class MinimizationRequest(_ParameterVectorRequest):
     """Energy-minimize (relax) the geometry for a full parameter vector.
 
     Args:
@@ -489,28 +512,22 @@ class MinimizationRequest:
 
     """
 
-    parameters: np.ndarray
     max_iterations: int | None = None
     tolerance: float | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "parameters", _readonly_vector(self.parameters, name="parameters"))
+        super().__post_init__()
         if self.max_iterations is not None and self.max_iterations <= 0:
             raise EvaluationError("MinimizationRequest.max_iterations must be positive.")
 
 
 @dataclass(frozen=True, eq=False)
-class HessianRequest:
+class HessianRequest(_ParameterVectorRequest):
     """Cartesian Hessian for a full parameter vector."""
-
-    parameters: np.ndarray
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "parameters", _readonly_vector(self.parameters, name="parameters"))
 
 
 @dataclass(frozen=True, eq=False)
-class FrequencyRequest:
+class FrequencyRequest(_ParameterVectorRequest):
     """Vibrational frequencies for a full parameter vector.
 
     Args:
@@ -520,31 +537,17 @@ class FrequencyRequest:
 
     """
 
-    parameters: np.ndarray
     on_error: str = "raise"
 
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "parameters", _readonly_vector(self.parameters, name="parameters"))
-
 
 @dataclass(frozen=True, eq=False)
-class ParameterGradientRequest:
+class ParameterGradientRequest(_ParameterVectorRequest):
     """Energy plus analytical ``dE/dp`` for a full parameter vector."""
 
-    parameters: np.ndarray
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "parameters", _readonly_vector(self.parameters, name="parameters"))
-
 
 @dataclass(frozen=True, eq=False)
-class HessianJacobianRequest:
+class HessianJacobianRequest(_ParameterVectorRequest):
     """Hessian plus its analytical ``dH/dp`` Jacobian for a full vector."""
-
-    parameters: np.ndarray
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "parameters", _readonly_vector(self.parameters, name="parameters"))
 
 
 @dataclass(frozen=True, eq=False)
@@ -563,7 +566,7 @@ class BatchedEnergyRequest:
 
 
 @dataclass(frozen=True, eq=False)
-class BatchedHessianRequest:
+class BatchedHessianRequest(_ParameterVectorRequest):
     """Cartesian Hessians for a batch of topology-compatible prepared cases.
 
     Carries one full parameter vector applied to every case in the batch; the
@@ -574,11 +577,6 @@ class BatchedHessianRequest:
         parameters: Full parameter vector (length ``len(layout)``).
 
     """
-
-    parameters: np.ndarray
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "parameters", _readonly_vector(self.parameters, name="parameters"))
 
 
 # ---------------------------------------------------------------------------
@@ -1125,6 +1123,41 @@ class AbstractPreparedBackend(ABC):
             raise UnsupportedCapabilityError(self._info.name, Capability.ENERGY)
         return self._layout
 
+    @property
+    def _provenance(self) -> BackendProvenance:
+        """Return this session's non-null BackendProvenance."""
+        if self._info.provenance is None:
+            raise EvaluationError(f"{self._info.name}: session info has no BackendProvenance.")
+        return self._info.provenance
+
+    def _ff_for(self, parameters: np.ndarray) -> ForceField:
+        """Validate *parameters* against :attr:`layout` and return an updated :class:`ForceField`."""
+        vec = self._validate_vector(parameters)
+        return self.layout.replace(self.force_field, vec)
+
+    def _raw_hessian(self, ff: ForceField) -> np.ndarray:
+        """Compute the raw atomic-unit Cartesian Hessian for *ff* (MM subclasses)."""
+        raise UnsupportedCapabilityError(self._info.name, Capability.HESSIAN)
+
+    def _mm_frequencies(self, request: FrequencyRequest, *, backend_label: str) -> FrequencyResult:
+        """Compute MM vibrational frequencies by converting :meth:`_raw_hessian` via :func:`hessian_to_frequencies`."""
+        from q2mm.models.hessian import hessian_to_frequencies
+
+        ff = self._ff_for(request.parameters)
+        try:
+            hess_au = self._raw_hessian(ff)
+            on_error: Literal["raise", "penalty"] = "penalty" if request.on_error == "penalty" else "raise"
+            if request.on_error not in ("raise", "penalty"):
+                raise ValueError(f"Invalid on_error mode: {request.on_error!r}")
+            freqs = hessian_to_frequencies(hess_au, list(self.molecule.symbols), on_error=on_error)
+        except Exception as exc:  # noqa: BLE001
+            raise EvaluationError(f"{backend_label} frequency evaluation failed: {exc}") from exc
+        return FrequencyResult(
+            frequencies=readonly_array(freqs),
+            unit=FrequencyUnit.INVERSE_CM,
+            provenance=self._provenance,
+        )
+
     # -- validation helpers -------------------------------------------------
 
     def _require(self, capability: Capability) -> None:
@@ -1523,20 +1556,13 @@ class BackendDescriptor:
             raise ValueError("BackendDescriptor.name must be non-empty.")
         if not isinstance(self.role, BackendRole):
             raise ValueError("BackendDescriptor.role must be a BackendRole.")
-        capabilities = frozenset(self.capability_ceiling)
-        if not all(isinstance(capability, Capability) for capability in capabilities):
-            raise ValueError("BackendDescriptor.capability_ceiling must contain only Capability members.")
-        forms = frozenset(self.functional_form_ceiling)
-        if not all(isinstance(form, str) for form in forms):
-            raise ValueError("BackendDescriptor.functional_form_ceiling must contain only strings.")
-        if self.role is BackendRole.REFERENCE and forms:
-            raise ValueError("BackendDescriptor reference backends must have an empty functional_form_ceiling.")
-        conflicts = _role_capability_conflicts(self.role, capabilities)
-        if conflicts:
-            values = sorted(capability.value for capability in conflicts)
-            raise ValueError(
-                f"BackendDescriptor role {self.role.value!r} cannot include capabilities {values} in its ceiling."
-            )
+        capabilities, forms = _normalize_capabilities_and_forms(
+            self.role,
+            self.capability_ceiling,
+            self.functional_form_ceiling,
+            owner="BackendDescriptor",
+            verb="include",
+        )
         object.__setattr__(self, "capability_ceiling", capabilities)
         object.__setattr__(self, "functional_form_ceiling", forms)
         if not isinstance(self.factory, str) or ":" not in self.factory:
