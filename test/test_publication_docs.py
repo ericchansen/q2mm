@@ -137,7 +137,7 @@ class DenyEngines(importlib.abc.MetaPathFinder):
         blocked = (
             "jax", "jaxlib", "openmm", "psi4", "scipy", "mkdocs",
             "properdocs", "mkdocs_gen_files", "q2mm.backends.mm",
-            "q2mm.backends.qm", "q2mm.io",
+            "q2mm.backends.reference", "q2mm.io",
         )
         if any(fullname == name or fullname.startswith(name + ".") for name in blocked):
             raise AssertionError("Unexpected engine/docs/data-reader import: " + fullname)

@@ -197,14 +197,16 @@ class ScipyOptimizer:
         if use_fractional:
             from q2mm.models.parameters import fractional_bounds
 
-            return fractional_bounds(
+            bounds_arr = fractional_bounds(
                 space.kinds,
                 space.bounds,
                 x0,
                 fc_fraction=self.settings.fc_fraction,
                 eq_fraction=self.settings.eq_fraction,
-            ).tolist()
-        return space.bounds.tolist()
+            )
+        else:
+            bounds_arr = space.bounds
+        return [(float(lo), float(hi)) for lo, hi in bounds_arr]
 
     def _run_minimize(
         self,
@@ -258,10 +260,13 @@ class ScipyOptimizer:
             physical = centers + half_widths * x_solver
             # Remove mapping roundoff only for feasible solver coordinates.
             # Truly out-of-bounds trials must remain ineligible for recovery.
-            return np.where(
-                (x_solver >= -1.0) & (x_solver <= 1.0),
-                np.clip(physical, physical_bounds[:, 0], physical_bounds[:, 1]),
-                physical,
+            return np.asarray(
+                np.where(
+                    (x_solver >= -1.0) & (x_solver <= 1.0),
+                    np.clip(physical, physical_bounds[:, 0], physical_bounds[:, 1]),
+                    physical,
+                ),
+                dtype=float,
             )
 
         best_x = x0.copy()

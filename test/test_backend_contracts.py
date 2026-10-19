@@ -919,7 +919,7 @@ def test_catalog_is_lazy_in_fresh_interpreter() -> None:
         "for m in ('jax', 'jaxlib', 'openmm', 'qcengine', 'qcelemental', 'ase',\n"
         "          'q2mm.backends.mm.jax_engine', 'q2mm.backends.mm.openmm',\n"
         "          'q2mm.backends.mm.jax_md_engine', 'q2mm.backends.mm.tinker',\n"
-        "          'q2mm.backends.qm.psi4',\n"
+        "          'q2mm.backends.reference.psi4',\n"
         "          'q2mm.backends.reference.qcengine', 'q2mm.backends.reference.ase'):\n"
         "    assert m not in sys.modules, f'{m} was imported during catalog()'\n"
         "print('LAZY_OK')\n"

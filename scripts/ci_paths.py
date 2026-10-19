@@ -82,7 +82,10 @@ COMPONENT_PATHS = {
         "q2mm/backends/mm/_jax_common.py",
         "q2mm/_jax_support.py",
     ),
-    "psi4": ("q2mm/backends/qm/*",),
+    "psi4": (
+        "q2mm/backends/reference/__init__.py",
+        "q2mm/backends/reference/psi4.py",
+    ),
     "qcengine": (
         "q2mm/backends/reference/__init__.py",
         "q2mm/backends/reference/qcengine.py",

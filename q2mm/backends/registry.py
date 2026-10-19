@@ -141,7 +141,7 @@ _BUILTIN_MANIFESTS: tuple[dict[str, object], ...] = (
         "role": "reference",
         "capability_ceiling": ["energy", "hessian", "frequencies", "geometry_optimization"],
         "functional_form_ceiling": [],
-        "factory": "q2mm.backends.qm.psi4:Psi4Backend",
+        "factory": "q2mm.backends.reference.psi4:Psi4Backend",
         "probe": {"modules": ["psi4"]},
     },
     {

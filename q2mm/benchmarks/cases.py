@@ -13,39 +13,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from types import MappingProxyType
 from typing import Any
 
 import numpy as np
 
 from q2mm.models.problem import OptimizationProblem
+from q2mm.models.results import deep_freeze
 
 __all__ = ["BenchmarkCase"]
-
-
-def _freeze(value: Any) -> Any:
-    """Recursively convert *value* into an immutable equivalent.
-
-    - ``numpy.ndarray`` -> a defensive, read-only copy (breaks aliasing
-      with the caller's array *and* rejects in-place mutation via
-      ``arr[:] = ...`` on the stored copy itself).
-    - ``Mapping`` (e.g. ``dict``) -> a ``MappingProxyType`` wrapping a
-      *new* dict built from recursively-frozen values (never the
-      caller's own dict object, so later mutation of the caller's dict
-      cannot leak through).
-    - ``list``/``tuple`` -> a tuple of recursively-frozen elements.
-    - Anything else (``str``, ``int``, ``float``, ``bool``, ``None``,
-      enums, other already-immutable value objects) is returned as-is.
-    """
-    if isinstance(value, np.ndarray):
-        frozen = np.array(value, copy=True)
-        frozen.setflags(write=False)
-        return frozen
-    if isinstance(value, Mapping):
-        return MappingProxyType({k: _freeze(v) for k, v in value.items()})
-    if isinstance(value, (list, tuple)):
-        return tuple(_freeze(v) for v in value)
-    return value
 
 
 @dataclass(frozen=True, eq=False)
@@ -86,7 +61,9 @@ class BenchmarkCase:
     description: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "qm_freqs_per_mol", tuple(_freeze(arr) for arr in self.qm_freqs_per_mol))
+        object.__setattr__(self, "qm_freqs_per_mol", tuple(deep_freeze(arr) for arr in self.qm_freqs_per_mol))
         object.__setattr__(self, "default_forms", tuple(self.default_forms))
-        object.__setattr__(self, "metadata", _freeze(self.metadata))
-        object.__setattr__(self, "normal_modes", _freeze(self.normal_modes) if self.normal_modes is not None else None)
+        object.__setattr__(self, "metadata", deep_freeze(self.metadata))
+        object.__setattr__(
+            self, "normal_modes", deep_freeze(self.normal_modes) if self.normal_modes is not None else None
+        )

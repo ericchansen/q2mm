@@ -43,7 +43,7 @@ creating the backend. Basis sets are set via `basis`.
 ## Configuration
 
 ```python
-from q2mm.backends.qm.psi4 import Psi4Backend
+from q2mm.backends.reference.psi4 import Psi4Backend
 
 backend = Psi4Backend(
     method="b3lyp",          # DFT functional or QM method
@@ -112,7 +112,7 @@ from q2mm.backends.contracts import (
     ReferenceGeometryOptimizationRequest,
     ReferenceHessianRequest,
 )
-from q2mm.backends.qm.psi4 import Psi4Backend
+from q2mm.backends.reference.psi4 import Psi4Backend
 from q2mm.io.xyz import load_xyz
 
 mol = load_xyz("molecule.xyz")
@@ -159,4 +159,4 @@ force-field optimization against this reference data.
 
 - [Backend comparison table](index.md#backend-overview)
 - [Tutorial: Generating QM Reference Data](../tutorial.md)
-- [API Reference: Psi4Backend](../reference/q2mm/backends/qm/psi4.md)
+- [API Reference: Psi4Backend](../reference/q2mm/backends/reference/psi4.md)

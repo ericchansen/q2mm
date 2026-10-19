@@ -26,8 +26,10 @@ logger = logging.getLogger("q2mm.benchmarks.runner")
 
 def write_json(path: Path, payload: Mapping[str, Any]) -> None:
     """Atomically write *payload* to *path* as strict, sorted-key JSON."""
+    from q2mm.application.persistence import _temp_sibling
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp-{os.getpid()}")
+    tmp = _temp_sibling(path, "candidate")
     try:
         with tmp.open("w", encoding="utf-8") as fh:
             json.dump(sanitize_for_json(payload), fh, indent=2, allow_nan=False, sort_keys=True)

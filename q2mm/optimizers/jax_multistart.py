@@ -27,6 +27,7 @@ class JaxMultiStartOptimizer(MultiStartOptimizer):
     _name = "jaxopt-multi"
     _candidate_name = "replica"
     _failure_gradient_mode = "analytical"
+    settings: JaxMultiStartSettings
 
     def __init__(
         self,

@@ -15,7 +15,7 @@ from scripts import ci_paths
         ("q2mm/backends/mm/tinker.py", {"tinker", "parity-openmm-tinker"}),
         ("q2mm/backends/mm/jax_engine.py", {"parity-openmm-jax", "parity-jax-jaxmd"}),
         ("q2mm/backends/mm/jax_md_engine.py", {"jax-md-cpu", "parity-jax-jaxmd"}),
-        ("q2mm/backends/qm/psi4.py", {"psi4-reference", "parity-psi4-qcengine"}),
+        ("q2mm/backends/reference/psi4.py", {"psi4-reference", "parity-psi4-qcengine"}),
         ("q2mm/backends/reference/qcengine.py", {"parity-psi4-qcengine"}),
         (".github/envs/openmm-jax.yml", {"parity-openmm-jax"}),
         (".github/envs/openmm.yml", {"openmm-cpu"}),

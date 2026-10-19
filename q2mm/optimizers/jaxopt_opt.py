@@ -29,11 +29,12 @@ from q2mm.objectives.protocols import ObjectiveEvaluator
 
 if TYPE_CHECKING:
     from q2mm.models.parameters import ActiveParameterSpace
+    from q2mm.objectives.jax import JaxObjectiveExecutor
 
 logger = logging.getLogger(__name__)
 
 
-def _require_jax_executor(evaluator: ObjectiveEvaluator) -> None:
+def _require_jax_executor(evaluator: ObjectiveEvaluator) -> JaxObjectiveExecutor:
     from q2mm.objectives.jax import JaxObjectiveExecutor
 
     if not isinstance(evaluator, JaxObjectiveExecutor):
@@ -41,6 +42,7 @@ def _require_jax_executor(evaluator: ObjectiveEvaluator) -> None:
             f"{type(evaluator).__name__} is not a JaxObjectiveExecutor; jaxopt-based optimizers require the "
             "JAX executor for JAX-native value_and_grad."
         )
+    return evaluator
 
 
 class JaxOptOptimizer:
@@ -55,7 +57,7 @@ class JaxOptOptimizer:
 
     def optimize(self, evaluator: ObjectiveEvaluator, space: ActiveParameterSpace) -> OptimizationResult:
         """Run the jaxopt optimization and return the canonical result."""
-        _require_jax_executor(evaluator)
+        jax_evaluator = _require_jax_executor(evaluator)
         from q2mm.backends.mm._jax_common import ensure_jaxopt
 
         ensure_jaxopt()
@@ -63,10 +65,11 @@ class JaxOptOptimizer:
         import jaxopt
         from q2mm.backends.mm._jax_common import jax, jnp
 
+        assert jax is not None and jnp is not None
         n_params = space.n_full
         fingerprint = space.layout.fingerprint
-        n_eval_before = evaluator.n_evaluations
-        hist_before = len(evaluator.history)
+        n_eval_before = jax_evaluator.n_evaluations
+        hist_before = len(jax_evaluator.history)
 
         initial_full = np.array(space.baseline, dtype=float)
         x0 = space.pack(initial_full)
@@ -78,11 +81,11 @@ class JaxOptOptimizer:
             return baseline_jax.at[active_indices_jax].set(x_active)
 
         def vag_fn(x_active: Any):  # noqa: ANN202
-            loss, full_grad = evaluator.value_and_grad_jax(expand_jax(x_active))
+            loss, full_grad = jax_evaluator.value_and_grad_jax(expand_jax(x_active))
             # jit=False dispatches concrete callbacks; abstract tracing is
             # not an evaluation. A completed value/gradient pair counts once.
             if not any(isinstance(value, jax.core.Tracer) for value in (x_active, loss, full_grad)):
-                evaluator.record_evaluation(float(loss))
+                jax_evaluator.record_evaluation(float(loss))
             return loss, full_grad[active_indices_jax]
 
         method_str = f"jaxopt:{self.settings.method}"
@@ -187,7 +190,7 @@ class JaxOptOptimizer:
             fd_step=None,
         )
 
-    def _build_solver(self, jaxopt_mod: object, loss_fn: object) -> object:
+    def _build_solver(self, jaxopt_mod: Any, loss_fn: Any) -> Any:
         if self.settings.method == "lbfgs":
             return jaxopt_mod.LBFGS(
                 fun=loss_fn, value_and_grad=True, jit=False, maxiter=self.settings.maxiter, tol=self.settings.tol
