@@ -98,10 +98,8 @@ def load(
 
     """
     publication_metadata = publication_record(KEY, objective_profile, starting_point)
-    resolved_roots = ExternalDataRoots() if data_roots is None else data_roots
-    molecules = load_molecules(data_roots=resolved_roots)
-    ff_path = resolve_rh_enamide_dir(resolved_roots) / "mm3.fld"
-    composed_ff, opt_only_ff = load_published_opt(ff_path)
+    molecules = load_molecules(data_roots=data_roots)
+    composed_ff, opt_only_ff = load_published_opt(resolve_rh_enamide_dir(data_roots) / "mm3.fld")
     return assemble_published_case(
         key=KEY,
         name=NAME,

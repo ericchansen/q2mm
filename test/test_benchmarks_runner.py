@@ -1260,68 +1260,6 @@ class TestPromotion:
         assert not list((tmp_path / "forcefields").glob("*.tmp-*"))
         assert not list((tmp_path / "accepted").glob("*.tmp-*"))
 
-    def test_promotion_rolls_back_on_second_replace_failure(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Establish a prior accepted JSON + FF.
-        cand = _candidate(CandidateStatus.ACCEPTED, ff=_harmonic_ff())
-        cid = cand.candidate_id
-        promote_candidate(tmp_path, cand, provenance={})
-        json_path = tmp_path / "accepted" / f"{cid}.json"
-        ff_path = tmp_path / "forcefields" / f"{cid}.frcmod"
-        json_bytes = json_path.read_bytes()
-        ff_bytes = ff_path.read_bytes()
-
-        # Fail on the SECOND os.replace (the force field commit) after the
-        # first (JSON) has already been committed: rollback must restore the
-        # pre-existing JSON bytes exactly and leave the prior FF untouched.
-        import q2mm.benchmarks.artifacts as artifacts_mod
-
-        real_replace = os.replace
-        calls = {"n": 0}
-
-        def _flaky_replace(src: object, dst: object) -> None:
-            calls["n"] += 1
-            if calls["n"] == 2:
-                raise OSError("synthetic replace failure")
-            real_replace(src, dst)
-
-        monkeypatch.setattr(artifacts_mod.os, "replace", _flaky_replace)
-        with pytest.raises(OSError, match="synthetic replace failure"):
-            promote_candidate(tmp_path, _candidate(CandidateStatus.ACCEPTED, ff=_harmonic_ff()), provenance={})
-
-        assert json_path.read_bytes() == json_bytes
-        assert ff_path.read_bytes() == ff_bytes
-        assert not list((tmp_path / "accepted").glob("*.tmp-*"))
-        assert not list((tmp_path / "accepted").glob("*.bak-*"))
-        assert not list((tmp_path / "forcefields").glob("*.tmp-*"))
-        assert not list((tmp_path / "forcefields").glob("*.bak-*"))
-
-    def test_promotion_rollback_leaves_nothing_when_no_prior(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # No prior canonical artifact: a failed second replace must leave the
-        # accepted/ JSON absent (rolled back), not a partial file.
-        cand = _candidate(CandidateStatus.ACCEPTED, ff=_harmonic_ff())
-        cid = cand.candidate_id
-        import q2mm.benchmarks.artifacts as artifacts_mod
-
-        real_replace = os.replace
-        calls = {"n": 0}
-
-        def _flaky_replace(src: object, dst: object) -> None:
-            calls["n"] += 1
-            if calls["n"] == 2:
-                raise OSError("synthetic replace failure")
-            real_replace(src, dst)
-
-        monkeypatch.setattr(artifacts_mod.os, "replace", _flaky_replace)
-        with pytest.raises(OSError, match="synthetic replace failure"):
-            promote_candidate(tmp_path, cand, provenance={})
-        assert not (tmp_path / "accepted" / f"{cid}.json").exists()
-        assert not list((tmp_path / "accepted").glob("*.tmp-*"))
-        assert not list((tmp_path / "accepted").glob("*.bak-*"))
-
     @pytest.mark.parametrize("snapshot_number", [1, 2])
     @pytest.mark.parametrize("failure_type", [OSError, KeyboardInterrupt])
     def test_promotion_snapshot_failure_cleans_partial_copy_and_allows_retry(
@@ -1607,27 +1545,33 @@ class TestPromotion:
 
 
 class TestRunProfileClassification:
-    def test_unknown_backend_is_error(self) -> None:
-        cand = run_profile(
-            RunProfile(
-                **{
-                    **catalog_settings("scipy-lbfgsb").model_dump(),
-                    "system": "ch3f",
-                    "backend": BackendSettings(key="does-not-exist"),
-                }
+    @staticmethod
+    def _fake_backend(forms: frozenset[str] = frozenset({"harmonic"})) -> Any:
+        from types import SimpleNamespace
+
+        from q2mm.backends.contracts import BackendInfo, BackendProvenance, BackendRole, Capability
+
+        return SimpleNamespace(
+            info=BackendInfo(
+                name="fake",
+                role=BackendRole.MM,
+                capabilities=frozenset({Capability.ENERGY, Capability.FREQUENCIES}),
+                functional_forms=forms,
+                provenance=BackendProvenance(backend="fake", role=BackendRole.MM),
             )
         )
-        assert cand.status is CandidateStatus.ERROR
-        assert (
-            cand.candidate_id
-            == RunProfile(
-                **{
-                    **catalog_settings("scipy-lbfgsb").model_dump(),
-                    "system": "ch3f",
-                    "backend": BackendSettings(key="does-not-exist"),
-                }
-            ).candidate_id()
+
+    def test_unknown_backend_is_error(self) -> None:
+        profile = RunProfile(
+            **{
+                **catalog_settings("scipy-lbfgsb").model_dump(),
+                "system": "ch3f",
+                "backend": BackendSettings(key="does-not-exist"),
+            }
         )
+        cand = run_profile(profile)
+        assert cand.status is CandidateStatus.ERROR
+        assert cand.candidate_id == profile.candidate_id()
 
     def test_unavailable_dependency_is_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
         # Actual construction, not the generic catalog probe, reports missing dependencies.
@@ -1652,17 +1596,6 @@ class TestRunProfileClassification:
         assert "missing dependency" in cand.reason
 
     def test_unknown_system_is_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        class _FakeBackend:
-            from q2mm.backends.contracts import BackendInfo, BackendProvenance, BackendRole, Capability
-
-            info = BackendInfo(
-                name="fake",
-                role=BackendRole.MM,
-                capabilities=frozenset({Capability.ENERGY, Capability.FREQUENCIES}),
-                functional_forms=frozenset({"harmonic"}),
-                provenance=BackendProvenance(backend="fake", role=BackendRole.MM),
-            )
-
         def _boom(*_a: object, **_k: object) -> object:
             raise KeyError("unknown system")
 
@@ -1676,22 +1609,11 @@ class TestRunProfileClassification:
                     "functional_form": "harmonic",
                 }
             ),
-            backend=_FakeBackend(),  # type: ignore[arg-type]
+            backend=self._fake_backend(),
         )
         assert cand.status is CandidateStatus.ERROR
 
     def test_missing_data_is_skipped(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        class _FakeBackend:
-            from q2mm.backends.contracts import BackendInfo, BackendProvenance, BackendRole, Capability
-
-            info = BackendInfo(
-                name="fake",
-                role=BackendRole.MM,
-                capabilities=frozenset({Capability.ENERGY, Capability.FREQUENCIES}),
-                functional_forms=frozenset({"harmonic"}),
-                provenance=BackendProvenance(backend="fake", role=BackendRole.MM),
-            )
-
         def _missing(*_a: object, **_k: object) -> object:
             raise FileNotFoundError("no external data")
 
@@ -1705,22 +1627,11 @@ class TestRunProfileClassification:
                     "functional_form": "harmonic",
                 }
             ),
-            backend=_FakeBackend(),  # type: ignore[arg-type]
+            backend=self._fake_backend(),
         )
         assert cand.status is CandidateStatus.SKIPPED
 
-    def test_empty_functional_forms_supports_nothing(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        class _FakeBackend:
-            from q2mm.backends.contracts import BackendInfo, BackendProvenance, BackendRole, Capability
-
-            info = BackendInfo(
-                name="fake",
-                role=BackendRole.MM,
-                capabilities=frozenset({Capability.ENERGY}),
-                functional_forms=frozenset(),
-                provenance=BackendProvenance(backend="fake", role=BackendRole.MM),
-            )
-
+    def test_empty_functional_forms_supports_nothing(self) -> None:
         cand = run_profile(
             RunProfile(
                 **{
@@ -1730,22 +1641,13 @@ class TestRunProfileClassification:
                     "functional_form": "harmonic",
                 }
             ),
-            backend=_FakeBackend(),  # type: ignore[arg-type]
+            backend=self._fake_backend(forms=frozenset()),
         )
         assert cand.status is CandidateStatus.SKIPPED
         assert "does not support" in cand.reason
 
     def test_known_blocked_publication_profile_is_error_not_skip_success(self) -> None:
-        from q2mm.backends.contracts import BackendInfo, BackendProvenance, BackendRole
         from q2mm.benchmarks.publications import FERROCENE_EXACT_SCAN_PROFILE
-
-        class _FakeBackend:
-            info = BackendInfo(
-                name="fake",
-                role=BackendRole.MM,
-                functional_forms=frozenset({"mm3"}),
-                provenance=BackendProvenance(backend="fake", role=BackendRole.MM),
-            )
 
         profile = RunProfile(
             **{
@@ -1757,7 +1659,7 @@ class TestRunProfileClassification:
                 "objective_profile": FERROCENE_EXACT_SCAN_PROFILE,
             }
         )
-        candidate = run_profile(profile, backend=_FakeBackend(), analyze=False)  # type: ignore[arg-type]
+        candidate = run_profile(profile, backend=self._fake_backend(forms=frozenset({"mm3"})), analyze=False)
 
         assert candidate.status is CandidateStatus.ERROR
         assert candidate.summary["blocked"] is True

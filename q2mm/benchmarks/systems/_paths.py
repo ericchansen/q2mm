@@ -67,9 +67,9 @@ def resolve_external_roots(roots: ExternalDataRoots | None) -> ExternalDataRoots
     if roots is None:
         return environment
     return ExternalDataRoots(
-        rh_enamide=roots.rh_enamide if roots.rh_enamide is not None else environment.rh_enamide,
-        supporting_info=roots.supporting_info if roots.supporting_info is not None else environment.supporting_info,
-        mm3_base=roots.mm3_base if roots.mm3_base is not None else environment.mm3_base,
+        rh_enamide=roots.rh_enamide or environment.rh_enamide,
+        supporting_info=roots.supporting_info or environment.supporting_info,
+        mm3_base=roots.mm3_base or environment.mm3_base,
     )
 
 
@@ -116,24 +116,24 @@ def resolve_mm3_base_path(roots: ExternalDataRoots | None = None) -> Path:
     return path
 
 
+def _wahlers_chapter_dir(chapter_subdir: str, roots: ExternalDataRoots | None = None) -> Path:
+    return resolve_supporting_info_dir(roots) / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir
+
+
 def resolve_wahlers_opt_path(
     chapter_subdir: str,
     ff_filename: str,
     roots: ExternalDataRoots | None = None,
 ) -> Path:
     """Resolve the path to a Wahlers chapter's standalone OPT .fld file."""
-    si = resolve_supporting_info_dir(roots)
-    return si / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir / ff_filename
+    return _wahlers_chapter_dir(chapter_subdir, roots) / ff_filename
 
 
 def resolve_wahlers_training_set_dir(chapter_subdir: str, roots: ExternalDataRoots | None = None) -> Path:
     """Resolve a Wahlers TS chapter's preferred or historical training directory."""
-    si = resolve_supporting_info_dir(roots)
-    chapter = si / "wahlers" / "Wahlers_Jessica_Supporting_information" / chapter_subdir
+    chapter = _wahlers_chapter_dir(chapter_subdir, roots)
     ts_dir = chapter / "Training Set Structures"
-    if not ts_dir.exists():
-        ts_dir = chapter / "DFT-optmized training set structures"
-    return ts_dir
+    return ts_dir if ts_dir.exists() else chapter / "DFT-optmized training set structures"
 
 
 # ---------------------------------------------------------------------------

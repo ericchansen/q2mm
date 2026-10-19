@@ -59,12 +59,13 @@ def _mm_real_frequencies(backend: Backend, molecules: Sequence[Any], ff: ForceFi
     from q2mm.models.parameters import ParameterLayout
 
     params = ParameterLayout.from_force_field(ff).vector(ff)
-    all_real: list[float] = []
-    for idx, mol in enumerate(molecules):
-        prepared = backend.prepare(PreparationRequest(case_id=str(idx), molecule=mol, force_field=ff))
-        mm_freqs = prepared.frequencies(FrequencyRequest(parameters=params)).frequencies
-        all_real.extend(real_frequencies(mm_freqs).tolist())
-    return np.array(sorted(all_real), dtype=float)
+    return real_frequencies(
+        freq
+        for idx, mol in enumerate(molecules)
+        for freq in backend.prepare(PreparationRequest(case_id=str(idx), molecule=mol, force_field=ff))
+        .frequencies(FrequencyRequest(parameters=params))
+        .frequencies
+    )
 
 
 def _frequency_analysis(

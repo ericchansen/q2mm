@@ -179,10 +179,9 @@ def _cmd_preflight() -> int:
 
 
 def _summarise(outcome: RunOutcome) -> None:
-    counts = {status: len(outcome.by_status(status)) for status in CandidateStatus}
     print("\nCandidate outcomes:")
     for status in CandidateStatus:
-        print(f"  {status.value:<9} {counts[status]}")
+        print(f"  {status.value:<9} {len(outcome.by_status(status))}")
     for candidate in outcome.candidates:
         summary = candidate.summary
         line = f"  [{candidate.status.value:<8}] {candidate.candidate_id}"

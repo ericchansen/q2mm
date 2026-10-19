@@ -84,19 +84,19 @@ def _data_provenance(case: BenchmarkCase, resolved_roots: Mapping[str, str]) -> 
     )
 
     problem = case.problem
+    pub = problem.publication_metadata
+    prep = problem.preparation_provenance
     fingerprint, input_fingerprints = _problem_fingerprints(problem)
     cases = [{"case_id": c.case_id, "stationary_point": c.stationary_point.value} for c in problem.cases]
-    hessians: list[dict[str, Any]] = []
-    for c in problem.cases:
-        hp = c.molecule.hessian_provenance
-        hessians.append(
-            {
-                "case_id": c.case_id,
-                "units": None if hp is None else hp.units.value,
-                "source": None if hp is None else hp.source,
-                "path": None if hp is None else hp.path,
-            }
-        )
+    hessians = [
+        {
+            "case_id": c.case_id,
+            "units": None if (hp := c.molecule.hessian_provenance) is None else hp.units.value,
+            "source": None if hp is None else hp.source,
+            "path": None if hp is None else hp.path,
+        }
+        for c in problem.cases
+    ]
     return {
         "scientific_problem": {
             "fingerprint_version": PROBLEM_FINGERPRINT_VERSION,
@@ -105,18 +105,10 @@ def _data_provenance(case: BenchmarkCase, resolved_roots: Mapping[str, str]) -> 
         },
         "metadata": dict(case.metadata),
         "objective_profile": (
-            problem.publication_metadata.objective_profile.identifier
-            if problem.publication_metadata is not None
-            else None
-            if problem.preparation_provenance is None
-            else problem.preparation_provenance.profile
+            pub.objective_profile.identifier if pub is not None else None if prep is None else prep.profile
         ),
-        "publication_metadata": (
-            None if problem.publication_metadata is None else problem.publication_metadata.to_dict()
-        ),
-        "publication_metadata_fingerprint": (
-            None if problem.publication_metadata is None else problem.publication_metadata.fingerprint
-        ),
+        "publication_metadata": None if pub is None else pub.to_dict(),
+        "publication_metadata_fingerprint": None if pub is None else pub.fingerprint,
         "cases": cases,
         "hessians": hessians,
         "default_forms": list(case.default_forms),
@@ -177,6 +169,8 @@ def _resolved_summary(
 ) -> dict[str, Any]:
     """Project resolved settings without rebuilding any configured component."""
     problem = case.problem
+    pub = problem.publication_metadata
+    method = optimizer_method(profile.optimizer)
     return {
         "system": profile.system,
         "backend": profile.backend.key,
@@ -184,20 +178,16 @@ def _resolved_summary(
         "functional_form": form,
         "workflow": profile.workflow.name,
         "optimizer": profile.optimizer.kind,
-        "optimizer_method": optimizer_method(profile.optimizer),
-        "optimizer_label": optimizer_method(profile.optimizer),
+        "optimizer_method": method,
+        "optimizer_label": method,
         "evaluator": evaluator_kind,
         "gradient_mode": gradient_mode,
         "expected_result_gradient_mode": expected_grad,
         "effective_regularization": profile.effective_regularization,
         "starting_point": profile.starting_point,
         "objective_profile": profile.effective_objective_profile,
-        "reproduction_status": (
-            None if problem.publication_metadata is None else problem.publication_metadata.status.value
-        ),
-        "publication_metadata_fingerprint": (
-            None if problem.publication_metadata is None else problem.publication_metadata.fingerprint
-        ),
+        "reproduction_status": None if pub is None else pub.status.value,
+        "publication_metadata_fingerprint": None if pub is None else pub.fingerprint,
         "publication_success_spec": None if success_spec is None else success_spec.to_dict(),
         "starting_point_audit": case.metadata.get("starting_point_audit"),
         "n_molecules": len(problem.molecules),
@@ -289,7 +279,7 @@ class CandidateResult:
     final_force_field: ForceField | None = None
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "summary", deep_freeze(dict(self.summary)))
+        object.__setattr__(self, "summary", deep_freeze(self.summary))
         if not self.reason:
             raise ValueError("CandidateResult.reason must be non-empty.")
         has_run = self.status in (CandidateStatus.ACCEPTED, CandidateStatus.REJECTED)
@@ -321,7 +311,7 @@ class CandidateResult:
             "profile_fingerprint": self.profile.fingerprint(),
             "resolved": self.resolved.to_dict() if self.resolved is not None else None,
             "resolved_fingerprint": self.resolved.fingerprint() if self.resolved is not None else None,
-            "summary": sanitize_for_json(dict(self.summary)),
+            "summary": sanitize_for_json(self.summary),
             "optimization_result": (
                 sanitize_for_json(result_to_dict(self.optimization_result))
                 if self.optimization_result is not None
@@ -341,7 +331,7 @@ class LoadedCandidate:
     record: Mapping[str, Any]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "record", deep_freeze(dict(self.record)))
+        object.__setattr__(self, "record", deep_freeze(self.record))
 
     @property
     def summary(self) -> Mapping[str, Any]:
@@ -359,9 +349,7 @@ class RunOutcome:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "candidates", tuple(self.candidates))
-        object.__setattr__(
-            self, "promoted", MappingProxyType({k: MappingProxyType(dict(v)) for k, v in self.promoted.items()})
-        )
+        object.__setattr__(self, "promoted", deep_freeze(self.promoted))
 
     def by_status(self, status: CandidateStatus) -> tuple[CandidateResult, ...]:
         """Return candidates in a given terminal status."""

@@ -203,6 +203,14 @@ def _run_profile_inner(
         if profile.system in ("ch3f", "ch3f-sn2"):
             load_kwargs["backend"] = backend
         case = load_system(profile.system, **load_kwargs)
+    except FileNotFoundError as exc:
+        return _terminal(
+            requested_id,
+            AcceptancePolicy.skipped(f"system {profile.system!r} data unavailable: {exc}"),
+            profile,
+            None,
+            {},
+        )
     except Exception as exc:
         from q2mm.benchmarks.publications import PublicationProfileBlockedError, PublicationProfileError
 
@@ -224,15 +232,7 @@ def _run_profile_inner(
             )
         if isinstance(exc, PublicationProfileError):
             raise ConfigurationError(str(exc)) from exc
-        if not isinstance(exc, FileNotFoundError):
-            raise
-        return _terminal(
-            requested_id,
-            AcceptancePolicy.skipped(f"system {profile.system!r} data unavailable: {exc}"),
-            profile,
-            None,
-            {},
-        )
+        raise
 
     problem = case.problem
     success_spec = None

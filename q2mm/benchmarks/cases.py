@@ -61,9 +61,7 @@ class BenchmarkCase:
     description: str = ""
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "qm_freqs_per_mol", tuple(deep_freeze(arr) for arr in self.qm_freqs_per_mol))
+        object.__setattr__(self, "qm_freqs_per_mol", deep_freeze(tuple(self.qm_freqs_per_mol)))
         object.__setattr__(self, "default_forms", tuple(self.default_forms))
         object.__setattr__(self, "metadata", deep_freeze(self.metadata))
-        object.__setattr__(
-            self, "normal_modes", deep_freeze(self.normal_modes) if self.normal_modes is not None else None
-        )
+        object.__setattr__(self, "normal_modes", deep_freeze(self.normal_modes))
