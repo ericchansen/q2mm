@@ -175,15 +175,16 @@ class Psi4Backend:
         mol = self._load_molecule(molecule)
         return float(_psi4.energy(self._method, molecule=mol))
 
-    def _evaluate_hessian(self, molecule: Molecule) -> np.ndarray:
+    def _frequency_wfn(self, molecule: Molecule) -> Any:
         mol = self._load_molecule(molecule)
         _, wfn = _psi4.frequency(self._method, molecule=mol, return_wfn=True)
-        return np.array(wfn.hessian())
+        return wfn
+
+    def _evaluate_hessian(self, molecule: Molecule) -> np.ndarray:
+        return np.array(self._frequency_wfn(molecule).hessian())
 
     def _evaluate_frequencies(self, molecule: Molecule) -> list[float]:
-        mol = self._load_molecule(molecule)
-        _, wfn = _psi4.frequency(self._method, molecule=mol, return_wfn=True)
-        return list(np.array(wfn.frequencies()))
+        return list(np.array(self._frequency_wfn(molecule).frequencies()))
 
     def _evaluate_optimize(self, molecule: Molecule, opt_type: str) -> tuple[float, list[str], np.ndarray]:
         mol = self._load_molecule(molecule)

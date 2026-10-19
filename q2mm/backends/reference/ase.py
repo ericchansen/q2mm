@@ -36,6 +36,7 @@ from q2mm.backends.contracts import (
     ReferenceEnergyRequest,
     readonly_array,
 )
+from q2mm.backends.reference import _validate_reference_prepare
 from q2mm.models.molecule import Molecule
 
 _ase: Any = None
@@ -44,17 +45,13 @@ _BOHR_ANGSTROM: Any = None
 _HARTREE_EV: Any = None
 
 try:
-    import ase as _ase_import
-    from ase import Atoms as _Atoms_import
-    from ase.units import Bohr as _BOHR_ANGSTROM_IMPORT
-    from ase.units import Hartree as _HARTREE_EV_IMPORT
+    import ase as _ase_mod
+    from ase import Atoms as _Atoms_cls
+    from ase.units import Bohr as _BOHR_VAL, Hartree as _HARTREE_VAL
+
+    _ase, _Atoms, _BOHR_ANGSTROM, _HARTREE_EV = _ase_mod, _Atoms_cls, _BOHR_VAL, _HARTREE_VAL
 except ImportError:
     pass
-else:
-    _ase = _ase_import
-    _Atoms = _Atoms_import
-    _BOHR_ANGSTROM = _BOHR_ANGSTROM_IMPORT
-    _HARTREE_EV = _HARTREE_EV_IMPORT
 
 _CONVERSION_VERSION = 1
 
@@ -129,19 +126,14 @@ def _runtime_capabilities(calculator: object) -> tuple[frozenset[Capability], tu
     return frozenset(capabilities), implemented
 
 
-def _periodic_state_reason(atoms: object) -> str:
-    """Return a reason when an Atoms-like object carries PBC or a nonzero cell."""
+def _unsupported_atoms_state_reason(atoms: object) -> str:
+    """Return a reason when an Atoms-like object carries PBC, a cell, or per-atom charge/spin."""
     pbc = np.asarray(getattr(atoms, "pbc"), dtype=bool)
     cell = np.asarray(getattr(atoms, "cell"), dtype=float)
     if np.any(pbc):
         return "periodic boundary conditions are enabled"
     if cell.size and np.any(cell != 0.0):
         return "a nonzero simulation cell is present"
-    return ""
-
-
-def _per_atom_state_reason(atoms: object) -> str:
-    """Return a reason when unsupported charge or spin arrays are present."""
     for name in ("initial_charges", "initial_magmoms"):
         if getattr(atoms, "has")(name):
             return f"unsupported per-atom {name} state is present"
@@ -151,7 +143,7 @@ def _per_atom_state_reason(atoms: object) -> str:
 def _validate_calculator_owned_atoms(calculator: object) -> None:
     try:
         atoms = getattr(calculator, "atoms", None)
-        reason = "" if atoms is None else _periodic_state_reason(atoms) or _per_atom_state_reason(atoms)
+        reason = "" if atoms is None else _unsupported_atoms_state_reason(atoms)
     except Exception as exc:
         raise BackendConfigurationError("ASE calculator-owned Atoms state could not be validated.") from exc
     if reason:
@@ -220,12 +212,7 @@ class ASEBackend:
 
     def prepare(self, request: PreparationRequest) -> PreparedASE:
         """Build an isolated non-periodic ASE Atoms/calculator session."""
-        if request.force_field is not None:
-            raise PreparationError("ASE reference preparation does not accept a force_field.")
-        if request.options:
-            raise PreparationError("ASE reference preparation does not accept per-case options.")
-        if not isinstance(request.molecule, Molecule):
-            raise PreparationError("ASE reference preparation requires a q2mm Molecule.")
+        molecule = _validate_reference_prepare(request, backend="ASE")
 
         calculator = _deepcopy_calculator(self._calculator_template, preparing=True)
         try:
@@ -235,7 +222,6 @@ class ASEBackend:
         if capabilities != self._capabilities or properties != self._implemented_properties:
             raise PreparationError("Copying the ASE calculator changed its runtime capabilities.")
 
-        molecule = request.molecule
         try:
             atoms = _Atoms(
                 symbols=list(molecule.symbols),
@@ -247,22 +233,16 @@ class ASEBackend:
                     "q2mm_multiplicity": molecule.multiplicity,
                 },
             )
-            reason = _periodic_state_reason(atoms)
-            if reason:
-                raise ValueError(reason)
-            reason = _per_atom_state_reason(atoms)
+            reason = _unsupported_atoms_state_reason(atoms)
             if reason:
                 raise ValueError(reason)
             atoms.calc = calculator
-            reason = _periodic_state_reason(atoms)
-            if reason:
-                raise ValueError(f"calculator attachment introduced {reason}")
-            reason = _per_atom_state_reason(atoms)
+            reason = _unsupported_atoms_state_reason(atoms)
             if reason:
                 raise ValueError(f"calculator attachment introduced {reason}")
             owned_atoms = getattr(calculator, "atoms", None)
             if owned_atoms is not None:
-                reason = _periodic_state_reason(owned_atoms) or _per_atom_state_reason(owned_atoms)
+                reason = _unsupported_atoms_state_reason(owned_atoms)
                 if reason:
                     raise ValueError(f"calculator attachment introduced {reason} in calculator-owned state")
         except Exception as exc:
@@ -363,15 +343,12 @@ class PreparedASE(AbstractPreparedBackend):
                 raise ValueError("q2mm charge metadata changed")
             if self._atoms.info.get("q2mm_multiplicity") != self.molecule.multiplicity:
                 raise ValueError("q2mm multiplicity metadata changed")
-            reason = _periodic_state_reason(self._atoms)
-            if reason:
-                raise ValueError(reason)
-            reason = _per_atom_state_reason(self._atoms)
+            reason = _unsupported_atoms_state_reason(self._atoms)
             if reason:
                 raise ValueError(reason)
             owned_atoms = getattr(self._calculator, "atoms", None)
             if owned_atoms is not None:
-                reason = _periodic_state_reason(owned_atoms) or _per_atom_state_reason(owned_atoms)
+                reason = _unsupported_atoms_state_reason(owned_atoms)
                 if reason:
                     raise ValueError(f"calculator-owned Atoms state has {reason}")
         except Exception as exc:

@@ -841,6 +841,122 @@ def test_coordinate_gradient_and_hessian_provenance_contracts() -> None:
         molecule_provenance.source_details["new"] = "value"  # type: ignore[index]
 
 
+def test_mm_frequencies_penalty_mode_recovers_from_nonfinite_raw_hessian() -> None:
+    """FrequencyRequest(on_error='penalty') converts non-finite raw Hessians to PENALTY_FREQUENCY."""
+    from q2mm.models.hessian import PENALTY_FREQUENCY
+
+    mol, ff, layout = _methane()
+    prov = BackendProvenance(backend="nan-hess", role=BackendRole.MM)
+    info = BackendInfo(
+        name="nan-hess",
+        role=BackendRole.MM,
+        capabilities=frozenset({Capability.HESSIAN, Capability.FREQUENCIES}),
+        functional_forms=frozenset({"harmonic"}),
+        provenance=prov,
+    )
+
+    class _NanHessianPrepared(AbstractPreparedBackend):
+        def _raw_hessian(self, _ff: ForceField) -> np.ndarray:
+            n3 = 3 * len(self.molecule.symbols)
+            hess = np.eye(n3)
+            hess[0, 0] = np.nan
+            return hess
+
+        def _hessian(self, request: HessianRequest | ReferenceHessianRequest) -> HessianResult:
+            assert isinstance(request, HessianRequest)
+            hess = self._raw_hessian(self._ff_for(request.parameters))
+            return HessianResult(
+                hessian=hess,
+                unit=HessianUnit.HARTREE_PER_BOHR2,
+                provenance=self._provenance,
+            )
+
+        def _frequencies(self, request: FrequencyRequest | object) -> FrequencyResult:
+            assert isinstance(request, FrequencyRequest)
+            return self._mm_frequencies(request, backend_label="nan-hess")
+
+    prepared = _NanHessianPrepared(info=info, case_id="0", molecule=mol, force_field=ff, layout=layout)
+    vec = layout.vector(ff)
+
+    # Strict HessianResult validation still rejects non-finite Hessians.
+    with pytest.raises(EvaluationError, match="non-finite"):
+        prepared.hessian(HessianRequest(parameters=vec))
+
+    # Default on_error="raise" still raises EvaluationError on non-finite Hessians.
+    with pytest.raises(EvaluationError, match="frequency evaluation failed"):
+        prepared.frequencies(FrequencyRequest(parameters=vec, on_error="raise"))
+
+    # Penalty mode returns PENALTY_FREQUENCY rather than failing in HessianResult.
+    freq_res = prepared.frequencies(FrequencyRequest(parameters=vec, on_error="penalty"))
+    assert freq_res.unit is FrequencyUnit.INVERSE_CM
+    assert np.all(freq_res.frequencies == PENALTY_FREQUENCY)
+    assert freq_res.frequencies.shape == (3 * len(mol.symbols),)
+
+
+def test_shared_mm_helpers_openmm_tinker_and_jax_topology() -> None:
+    """Directly verify shared OpenMM 1-4 scaling, Tinker template selection, and JAX topology matching."""
+    from dataclasses import replace
+    from pathlib import Path
+
+    from q2mm.backends.contracts import PreparationError
+    from q2mm.backends.mm._jax_common import match_mm_topology
+    from q2mm.backends.mm.openmm import _exception_14_params
+    from q2mm.backends.mm.tinker import TinkerBackend
+    from q2mm.models.forcefield import AngleParam, BondParam, TorsionParam, VdwParam
+
+    class _FakeVdwForce:
+        def getParticleParameters(self, idx: int) -> tuple[float, float, float]:
+            return (0.0, 0.30, 0.16) if idx == 0 else (0.0, 0.50, 0.04)
+
+    sig_14, eps_14 = _exception_14_params(_FakeVdwForce(), 0, 1)
+    assert sig_14 == pytest.approx(0.40)
+    assert eps_14 == pytest.approx(((0.16 * 0.04) ** 0.5) / 2.0)
+
+    tinker_backend = object.__new__(TinkerBackend)
+    tinker_backend._params_file = "default_mm3.prm"
+    standalone_ff = ForceField(
+        functional_form=FunctionalForm.MM3,
+        bonds=(BondParam(("C", "H"), 1.1, 100.0),),
+        angles=(AngleParam(("H", "C", "H"), 109.5, 50.0),),
+        vdws=(VdwParam("H", 1.2, 0.1),),
+    )
+    assert tinker_backend._uses_template_export(standalone_ff) is False
+    template_ff = replace(
+        standalone_ff,
+        source_format="tinker_prm",
+        source_path=Path("template.prm"),
+        vdws=(VdwParam("H", 1.2, 0.1, reduction=0.92),),
+    )
+    assert tinker_backend._uses_template_export(template_ff) is True
+    with pytest.raises(PreparationError, match="reduction"):
+        tinker_backend._uses_template_export(replace(template_ff, source_format=""))
+    with pytest.raises(PreparationError, match="functional form"):
+        tinker_backend._uses_template_export(replace(standalone_ff, functional_form=FunctionalForm.HARMONIC))
+
+    mol = Molecule(
+        symbols=("B", "H", "H", "H"),
+        geometry=np.array([[0.0, 0.0, 0.0], [1.2, 0.0, 0.0], [-0.6, 1.04, 0.0], [-0.6, -1.04, 0.0]]),
+        atom_types=("B", "H", "H", "H"),
+    )
+    ff_with_improper = ForceField(
+        functional_form=FunctionalForm.HARMONIC,
+        bonds=(BondParam(("B", "H"), 1.2, 100.0),),
+        angles=(AngleParam(("H", "B", "H"), 120.0, 50.0),),
+        torsions=(TorsionParam(("H", "H", "B", "H"), force_constant=1.0, is_improper=True),),
+        vdws=(VdwParam("B", 1.5, 0.05), VdwParam("H", 1.2, 0.02)),
+        nonbonded_excluded_atom_types=frozenset({"B"}),
+    )
+    topo_jax = match_mm_topology(mol, ff_with_improper, include_impropers=True, mask_excluded_vdw=False)
+    topo_jaxmd = match_mm_topology(mol, ff_with_improper, include_impropers=False, mask_excluded_vdw=True)
+    assert len(topo_jax.matched_bonds) == 3
+    assert len(topo_jax.matched_angles) == 3
+    assert len(topo_jax.torsion_indices) > 0
+    assert len(topo_jaxmd.torsion_indices) == 0
+    assert topo_jax.explicitly_excluded_atoms == frozenset({0})
+    assert topo_jax.atom_vdw_map[0] >= 0
+    assert topo_jaxmd.atom_vdw_map[0] == -1
+
+
 # ---------------------------------------------------------------------------
 # Preparation reuse: JAX objective executor prepares each case exactly once
 # ---------------------------------------------------------------------------

@@ -35,7 +35,6 @@ from q2mm.backends.contracts import (
     EvaluationError,
     FrequencyRequest,
     FrequencyResult,
-    FrequencyUnit,
     GeometryResult,
     HessianRequest,
     HessianResult,
@@ -44,8 +43,12 @@ from q2mm.backends.contracts import (
     MinimizationRequest,
     PreparationError,
     PreparationRequest,
+    ReferenceEnergyRequest,
+    ReferenceFrequencyRequest,
+    ReferenceHessianRequest,
     readonly_array,
 )
+from q2mm.backends.mm._term_support import _require_mm_force_field
 from q2mm.constants import (
     DEFAULT_BOND_TOLERANCE,
     MM3_BOND_C3,
@@ -203,12 +206,13 @@ class TinkerBackend:
         """
         from q2mm.backends.contracts import BackendUnavailableError
 
-        self._tinker_dir = tinker_dir or _find_tinker_dir()
+        resolved_dir = tinker_dir or _find_tinker_dir()
         self._bond_tolerance = bond_tolerance
-        if self._tinker_dir is None:
+        if resolved_dir is None:
             raise BackendUnavailableError(
                 "Tinker not found. Install from https://dasher.wustl.edu/tinker/ or pass tinker_dir parameter."
             )
+        self._tinker_dir: str = resolved_dir
 
         if params_file is None:
             # Try common locations for MM3 params
@@ -220,17 +224,29 @@ class TinkerBackend:
                 if os.path.isfile(c):
                     params_file = c
                     break
-        self._params_file = params_file
-        if self._params_file is None:
+        if params_file is None:
             raise BackendUnavailableError(
                 "MM3 parameter file not found. Provide params_file parameter "
                 "or place mm3.prm alongside the Tinker bin directory."
             )
+        self._params_file: str = params_file
 
     @property
     def info(self) -> BackendInfo:
         """Immutable capability declaration for this backend."""
         return _TINKER_INFO
+
+    def _uses_template_export(self, forcefield: ForceField) -> bool:
+        """Validate MM3 form and Tinker export terms, returning whether template export applies."""
+        _validate_form(forcefield, _TINKER_INFO)
+        use_template = forcefield.source_format == "tinker_prm" and bool(forcefield.source_path or self._params_file)
+        _validate_tinker_export_terms(
+            forcefield,
+            supports_reduction=use_template,
+            supports_placeholder_elements=use_template,
+            error_type=PreparationError,
+        )
+        return use_template
 
     def prepare(self, request: PreparationRequest) -> PreparedTinker:
         """Build a prepared session for one training case.
@@ -247,31 +263,21 @@ class TinkerBackend:
                 form or populated terms are unsupported.
 
         """
-        if request.force_field is None:
-            raise PreparationError("Tinker requires a base ForceField in the PreparationRequest.")
-        _validate_form(request.force_field, _TINKER_INFO)
-        use_template = request.force_field.source_format == "tinker_prm" and bool(
-            request.force_field.source_path or self._params_file
-        )
-        _validate_tinker_export_terms(
-            request.force_field,
-            supports_reduction=use_template,
-            supports_placeholder_elements=use_template,
-            error_type=PreparationError,
-        )
+        force_field = _require_mm_force_field(request, _TINKER_INFO, backend="Tinker")
+        use_template = self._uses_template_export(force_field)
         try:
             atom_types = self._molecule_type_numbers(request.molecule)
             self._tinker_xyz_lines(request.molecule, atom_types)
             if not use_template:
-                self._standalone_prm_lines(request.force_field, list(request.molecule.symbols), atom_types)
+                self._standalone_prm_lines(force_field, list(request.molecule.symbols), atom_types)
         except ValueError as exc:
             raise PreparationError(f"Tinker preparation failed: {exc}") from exc
-        layout = ParameterLayout.from_force_field(request.force_field)
+        layout = ParameterLayout.from_force_field(force_field)
         return PreparedTinker(
             backend=self,
             case_id=request.case_id,
             molecule=request.molecule,
-            force_field=request.force_field,
+            force_field=force_field,
             layout=layout,
         )
 
@@ -289,14 +295,7 @@ class TinkerBackend:
             str: Path to the Tinker XYZ file.
 
         """
-        _validate_form(forcefield, _TINKER_INFO)
-        use_template = forcefield.source_format == "tinker_prm" and bool(forcefield.source_path or self._params_file)
-        _validate_tinker_export_terms(
-            forcefield,
-            supports_reduction=use_template,
-            supports_placeholder_elements=use_template,
-            error_type=PreparationError,
-        )
+        use_template = self._uses_template_export(forcefield)
 
         atoms = list(molecule.symbols)
         atom_type_numbers = self._molecule_type_numbers(molecule)
@@ -336,8 +335,9 @@ class TinkerBackend:
     def _molecule_type_numbers(molecule: Molecule) -> list[int]:
         """Resolve actual XYZ types without guessing an unknown element's class."""
         default_types = {"C": 1, "H": 5, "F": 11, "Cl": 12, "Br": 13, "N": 8, "O": 6, "S": 15, "P": 25}
+        atom_types = molecule.atom_types if molecule.atom_types is not None else molecule.symbols
         numbers = []
-        for atom, atom_type in zip(molecule.symbols, molecule.atom_types, strict=True):
+        for atom, atom_type in zip(molecule.symbols, atom_types, strict=True):
             number = _tinker_atom_type_number(atom_type)
             if number is None:
                 if atom not in default_types:
@@ -351,7 +351,7 @@ class TinkerBackend:
     def _tinker_xyz_lines(molecule: Molecule, atom_type_numbers: list[int]) -> list[str]:
         """Stage XYZ records so invalid coordinates cannot replace any inputs."""
         bonds: dict[int, list[int]] = {i: [] for i in range(molecule.n_atoms)}
-        for bond in molecule.bonds:
+        for bond in molecule.bonds or ():
             bonds[bond.atom_i].append(bond.atom_j)
             bonds[bond.atom_j].append(bond.atom_i)
         lines = [f"     {molecule.n_atoms}  Q2MM Tinker input\n"]
@@ -485,18 +485,18 @@ class TinkerBackend:
             _require_unique_tinker_types(identities, "bond", types)
             t1, t2 = types
             _require_finite_tinker_values(bond.force_constant, bond.equilibrium)
-            native_k = canonical_to_mm3_bond_k(bond.force_constant)
-            _require_finite_tinker_values(native_k)
-            lines.append(f"bond   {t1:5d} {t2:5d}         {native_k:8.4f}   {bond.equilibrium:8.4f}\n")
+            bond_k = canonical_to_mm3_bond_k(bond.force_constant)
+            _require_finite_tinker_values(bond_k)
+            lines.append(f"bond   {t1:5d} {t2:5d}         {bond_k:8.4f}   {bond.equilibrium:8.4f}\n")
 
         for angle in ff.angles:
             types = tuple(elem_to_type[e] for e in angle.elements)
             _require_unique_tinker_types(identities, "angle", types)
             t1, t2, t3 = types
             _require_finite_tinker_values(angle.force_constant, angle.equilibrium)
-            native_k = canonical_to_mm3_angle_k(angle.force_constant)
-            _require_finite_tinker_values(native_k)
-            lines.append(f"angle  {t1:5d} {t2:5d} {t3:5d}         {native_k:8.4f}   {angle.equilibrium:8.4f}\n")
+            angle_k = canonical_to_mm3_angle_k(angle.force_constant)
+            _require_finite_tinker_values(angle_k)
+            lines.append(f"angle  {t1:5d} {t2:5d} {t3:5d}         {angle_k:8.4f}   {angle.equilibrium:8.4f}\n")
 
         torsion_groups: dict[tuple[int, ...], list[TorsionParam]] = {}
         for tp in ff.torsions:
@@ -507,9 +507,9 @@ class TinkerBackend:
             for tp in tps:
                 _require_finite_tinker_values(tp.force_constant, tp.phase)
                 raw_parts.extend((str(tp.force_constant), str(tp.phase), str(tp.periodicity)))
-            terms = _tinker_torsion_terms(raw_parts, len(lines) + 1)
+            torsion_terms = _tinker_torsion_terms(raw_parts, len(lines) + 1)
             parts = []
-            for amplitude, phase, fold in sorted(terms, key=lambda term: term[2]):
+            for amplitude, phase, fold in sorted(torsion_terms, key=lambda term: term[2]):
                 parts.extend([f"{amplitude:8.4f}", f"{phase:6.1f}", f" {fold}"])
             lines.append(f"torsion {types[0]:4d} {types[1]:4d} {types[2]:4d} {types[3]:4d}  {'  '.join(parts)}\n")
 
@@ -729,27 +729,6 @@ class TinkerBackend:
             # Tinker outputs Hessian in kcal/(mol·Å²); convert to Hartree/Bohr²
             return hessian * KCALMOLA2_TO_HESSIAN_AU
 
-    def _evaluate_frequencies(
-        self, structure: Molecule, forcefield: ForceField, on_error: str = "raise"
-    ) -> list[float]:
-        """Calculate vibrational frequencies in cm⁻¹.
-
-        Args:
-            structure (Molecule): Molecule to evaluate.
-            forcefield (ForceField): Force field with the parameter values.
-            on_error: Forwarded to
-                :func:`~q2mm.models.hessian.hessian_to_frequencies`.
-
-        Returns:
-            list[float]: Vibrational frequencies in cm⁻¹.
-
-        """
-        from q2mm.models.hessian import hessian_to_frequencies
-
-        hessian_au = self._evaluate_hessian(structure, forcefield)
-        symbols = list(structure.symbols)
-        return hessian_to_frequencies(hessian_au, symbols, on_error=on_error)
-
 
 class PreparedTinker(AbstractPreparedBackend):
     """Prepared Tinker session for a single training case.
@@ -777,16 +756,13 @@ class PreparedTinker(AbstractPreparedBackend):
         )
         self._backend = backend
 
-    def _ff_for(self, parameters: np.ndarray) -> ForceField:
-        vec = self._validate_vector(parameters)
-        return self.layout.replace(self.force_field, vec)
-
-    def _energy(self, request: EnergyRequest) -> EnergyResult:  # type: ignore[override]
+    def _energy(self, request: EnergyRequest | ReferenceEnergyRequest) -> EnergyResult:
+        assert isinstance(request, EnergyRequest)
         ff = self._ff_for(request.parameters)
         value = self._backend._evaluate_energy(self.molecule, ff)
         return EnergyResult(energy=float(value), unit=EnergyUnit.KCAL_PER_MOL, provenance=_TINKER_PROVENANCE)
 
-    def _minimize(self, request: MinimizationRequest) -> GeometryResult:  # type: ignore[override]
+    def _minimize(self, request: MinimizationRequest) -> GeometryResult:
         ff = self._ff_for(request.parameters)
         rms_grad = request.tolerance if request.tolerance is not None else 0.01
         energy, atoms, coords = self._backend._evaluate_minimize(
@@ -801,19 +777,17 @@ class PreparedTinker(AbstractPreparedBackend):
             provenance=_TINKER_PROVENANCE,
         )
 
-    def _hessian(self, request: HessianRequest) -> HessianResult:  # type: ignore[override]
+    def _raw_hessian(self, ff: ForceField) -> np.ndarray:
+        return self._backend._evaluate_hessian(self.molecule, ff)
+
+    def _hessian(self, request: HessianRequest | ReferenceHessianRequest) -> HessianResult:
+        assert isinstance(request, HessianRequest)
         ff = self._ff_for(request.parameters)
-        hess = self._backend._evaluate_hessian(self.molecule, ff)
+        hess = self._raw_hessian(ff)
         return HessianResult(
             hessian=readonly_array(hess), unit=HessianUnit.HARTREE_PER_BOHR2, provenance=_TINKER_PROVENANCE
         )
 
-    def _frequencies(self, request: FrequencyRequest) -> FrequencyResult:  # type: ignore[override]
-        ff = self._ff_for(request.parameters)
-        try:
-            freqs = self._backend._evaluate_frequencies(self.molecule, ff, on_error=request.on_error)
-        except Exception as exc:  # noqa: BLE001
-            raise EvaluationError(f"Tinker frequency evaluation failed: {exc}") from exc
-        return FrequencyResult(
-            frequencies=readonly_array(freqs), unit=FrequencyUnit.INVERSE_CM, provenance=_TINKER_PROVENANCE
-        )
+    def _frequencies(self, request: FrequencyRequest | ReferenceFrequencyRequest) -> FrequencyResult:
+        assert isinstance(request, FrequencyRequest)
+        return self._mm_frequencies(request, backend_label="Tinker")

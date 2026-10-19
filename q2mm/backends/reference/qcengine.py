@@ -31,13 +31,13 @@ from q2mm.backends.contracts import (
     HessianRequest,
     HessianResult,
     HessianUnit,
-    PreparationError,
     PreparationRequest,
     ReferenceCoordinateGradientRequest,
     ReferenceEnergyRequest,
     ReferenceHessianRequest,
     readonly_array,
 )
+from q2mm.backends.reference import _validate_reference_prepare
 from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.molecule import Molecule
 
@@ -310,13 +310,8 @@ class QCEngineBackend:
 
     def prepare(self, request: PreparationRequest) -> PreparedQCEngine:
         """Create a reusable reference session without executing a job."""
-        if request.force_field is not None:
-            raise PreparationError("QCEngine reference preparation does not accept a force_field.")
-        if request.options:
-            raise PreparationError("QCEngine reference preparation does not accept per-case options.")
-        if not isinstance(request.molecule, Molecule):
-            raise PreparationError("QCEngine reference preparation requires a q2mm Molecule.")
-        return PreparedQCEngine(backend=self, case_id=request.case_id, molecule=request.molecule)
+        molecule = _validate_reference_prepare(request, backend="QCEngine")
+        return PreparedQCEngine(backend=self, case_id=request.case_id, molecule=molecule)
 
     def _build_specification(self, driver: str) -> Any:
         model: dict[str, object] = {"method": self._method}

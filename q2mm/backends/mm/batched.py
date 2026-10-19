@@ -12,16 +12,22 @@ parameter vector; no ForceField crosses the boundary.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-try:
-    import jax
-    import jax.numpy as jnp
+jax: Any = None
+jnp: Any = None
 
+try:
+    import jax as _jax_mod
+    import jax.numpy as _jnp_mod
+
+    jax = _jax_mod
+    jnp = _jnp_mod
     _HAS_JAX = True
 except ImportError:  # pragma: no cover
     _HAS_JAX = False
@@ -31,6 +37,7 @@ from q2mm.backends.contracts import (
     BatchedHessianResult,
     EvaluationError,
     HessianUnit,
+    PreparedBackend,
     readonly_array,
 )
 from q2mm.models.units import KCALMOLA2_TO_HESSIAN_AU
@@ -173,22 +180,28 @@ class PreparedJaxBatch:
         params = jnp.array(params_np, dtype=jnp.float64)
 
         if state._coord_hess_fn is None:
+            energy_fn = state._energy_fn
+            assert energy_fn is not None
 
-            def _energy_of_flat_coords(flat_coords: jnp.ndarray, params_: jnp.ndarray) -> jnp.ndarray:
-                return state._energy_fn(params_, flat_coords.reshape(-1, 3))
+            def _energy_of_flat_coords(flat_coords: Any, params_: Any) -> Any:
+                return energy_fn(params_, flat_coords.reshape(-1, 3))
 
             state._coord_hess_fn = jax.jit(jax.hessian(_energy_of_flat_coords, argnums=0))
 
+        coord_hess_fn = state._coord_hess_fn
+        assert coord_hess_fn is not None
         if len(self._geometries) == 1:
             flat = jnp.array(self._geometries[0], dtype=jnp.float64).flatten()
-            hess = state._coord_hess_fn(flat, params)
+            hess = coord_hess_fn(flat, params)
             return [np.asarray(hess) * KCALMOLA2_TO_HESSIAN_AU]
 
         if state._batched_coord_hess_fn is None:
-            state._batched_coord_hess_fn = jax.jit(jax.vmap(state._coord_hess_fn, in_axes=(0, None)))
+            state._batched_coord_hess_fn = jax.jit(jax.vmap(coord_hess_fn, in_axes=(0, None)))
 
+        batched_coord_hess_fn = state._batched_coord_hess_fn
+        assert batched_coord_hess_fn is not None
         batch_coords = jnp.stack([jnp.array(g, dtype=jnp.float64).flatten() for g in self._geometries])
-        batch_hess = state._batched_coord_hess_fn(batch_coords, params)
+        batch_hess = batched_coord_hess_fn(batch_coords, params)
         return [np.asarray(batch_hess[i]) * KCALMOLA2_TO_HESSIAN_AU for i in range(len(self._geometries))]
 
 
@@ -197,7 +210,7 @@ class PreparedJaxBatch:
 # ---------------------------------------------------------------------------
 
 
-def group_by_topology(sessions: list[PreparedJax]) -> list[PreparedJaxBatch]:
+def group_by_topology(sessions: Sequence[PreparedBackend]) -> list[PreparedJaxBatch]:
     """Group prepared sessions into typed batches by topology compatibility.
 
     Two sessions are compatible if all their static kernel inputs and
@@ -214,8 +227,12 @@ def group_by_topology(sessions: list[PreparedJax]) -> list[PreparedJaxBatch]:
         List of :class:`PreparedJaxBatch`, one per distinct topology.
 
     """
+    from q2mm.backends.mm.jax_engine import PreparedJax
+
     groups: dict[str, list[PreparedJax]] = {}
     for session in sessions:
+        if not isinstance(session, PreparedJax):
+            raise EvaluationError(f"PreparedJaxBatch requires PreparedJax sessions; got {type(session).__name__}.")
         sig = _topology_signature(session._state)
         groups.setdefault(sig, []).append(session)
     return [PreparedJaxBatch(group) for group in groups.values()]

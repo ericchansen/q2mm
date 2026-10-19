@@ -411,6 +411,51 @@ _REFERENCE_DRIVERS: dict[Capability, tuple[str, Callable[[], object], type]] = {
 }
 
 
+def _verify_undeclared_batched_hessian(
+    descriptor: BackendDescriptor,
+    backend: Backend,
+    prepared: object,
+) -> Capability:
+    try:
+        prepare_hessian_batches(backend, [prepared])  # type: ignore[list-item]
+    except UnsupportedCapabilityError:
+        return Capability.BATCHED_HESSIAN
+    except Exception as exc:  # noqa: BLE001
+        raise ConformanceError(
+            f"{descriptor.name}: undeclared capability batched_hessian raised "
+            f"{type(exc).__name__}, expected UnsupportedCapabilityError."
+        ) from exc
+    raise ConformanceError(
+        f"{descriptor.name}: undeclared capability batched_hessian did not raise UnsupportedCapabilityError."
+    )
+
+
+def _verify_reusable_state(
+    descriptor: BackendDescriptor,
+    reusable: tuple[Callable[[object], object], object, type, Capability] | None,
+    *,
+    n_atoms: int,
+    n_params: int,
+    kind: str,
+) -> Capability:
+    if reusable is None:
+        raise ConformanceError(
+            f"{descriptor.name}: reusable_state was selected but no selected {kind} capability can prove reuse."
+        )
+    method, request, result_type, capability = reusable
+    for _ in range(2):
+        result = _call_declared(descriptor, capability, method, request)
+        _validate_result(
+            descriptor,
+            capability,
+            result,
+            result_type,
+            n_atoms=n_atoms,
+            n_params=n_params,
+        )
+    return Capability.REUSABLE_STATE
+
+
 def run_mm_conformance(case: MMConformanceCase) -> ConformanceOutcome:
     """Run the selected API-v1 MM checks and all undeclared-operation gates."""
     if not isinstance(case, MMConformanceCase):
@@ -480,40 +525,18 @@ def run_mm_conformance(case: MMConformanceCase) -> ConformanceOutcome:
                 ) from exc
             executed.append(Capability.BATCHED_HESSIAN)
     else:
-        try:
-            prepare_hessian_batches(case.backend, [prepared])
-        except UnsupportedCapabilityError:
-            unsupported.append(Capability.BATCHED_HESSIAN)
-        except Exception as exc:  # noqa: BLE001
-            raise ConformanceError(
-                f"{case.descriptor.name}: undeclared capability batched_hessian raised "
-                f"{type(exc).__name__}, expected UnsupportedCapabilityError."
-            ) from exc
-        else:
-            raise ConformanceError(
-                f"{case.descriptor.name}: undeclared capability batched_hessian did not raise "
-                "UnsupportedCapabilityError."
-            )
+        unsupported.append(_verify_undeclared_batched_hessian(case.descriptor, case.backend, prepared))
 
     if Capability.REUSABLE_STATE in info.capabilities:
-        if reusable is None:
-            raise ConformanceError(
-                f"{case.descriptor.name}: reusable_state was selected but no selected prepared-session "
-                "capability can prove reuse."
-            )
-        method, request, result_type, capability = reusable
-        first = _call_declared(case.descriptor, capability, method, request)
-        second = _call_declared(case.descriptor, capability, method, request)
-        for result in (first, second):
-            _validate_result(
+        executed.append(
+            _verify_reusable_state(
                 case.descriptor,
-                capability,
-                result,
-                result_type,
+                reusable,
                 n_atoms=case.molecule.n_atoms,
                 n_params=len(vector),
+                kind="prepared-session",
             )
-        executed.append(Capability.REUSABLE_STATE)
+        )
 
     _assert_unmutated(case.descriptor.name, case.molecule, molecule_before)
     _assert_unmutated(case.descriptor.name, case.force_field, force_field_before)
@@ -560,39 +583,18 @@ def run_reference_conformance(case: ReferenceConformanceCase) -> ConformanceOutc
             _prove_unsupported(case.descriptor, capability, method, request)
             unsupported.append(capability)
 
-    try:
-        prepare_hessian_batches(case.backend, [prepared])
-    except UnsupportedCapabilityError:
-        unsupported.append(Capability.BATCHED_HESSIAN)
-    except Exception as exc:  # noqa: BLE001
-        raise ConformanceError(
-            f"{case.descriptor.name}: undeclared capability batched_hessian raised "
-            f"{type(exc).__name__}, expected UnsupportedCapabilityError."
-        ) from exc
-    else:
-        raise ConformanceError(
-            f"{case.descriptor.name}: undeclared capability batched_hessian did not raise UnsupportedCapabilityError."
-        )
+    unsupported.append(_verify_undeclared_batched_hessian(case.descriptor, case.backend, prepared))
 
     if Capability.REUSABLE_STATE in info.capabilities:
-        if reusable is None:
-            raise ConformanceError(
-                f"{case.descriptor.name}: reusable_state was selected but no selected reference capability can prove reuse."
-            )
-        method, request, result_type, capability = reusable
-        for result in (
-            _call_declared(case.descriptor, capability, method, request),
-            _call_declared(case.descriptor, capability, method, request),
-        ):
-            _validate_result(
+        executed.append(
+            _verify_reusable_state(
                 case.descriptor,
-                capability,
-                result,
-                result_type,
+                reusable,
                 n_atoms=case.molecule.n_atoms,
                 n_params=0,
+                kind="reference",
             )
-        executed.append(Capability.REUSABLE_STATE)
+        )
 
     _assert_unmutated(case.descriptor.name, case.molecule, molecule_before)
     return ConformanceOutcome(
