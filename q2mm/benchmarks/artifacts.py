@@ -61,26 +61,27 @@ def persist_candidate(output_dir: Path, candidate: CandidateResult, provenance: 
     return path
 
 
-def _ff_extension(ff: ForceField) -> str:
-    from q2mm.models.forcefield import FunctionalForm
+_FF_FORMATS: dict[str, tuple[str, str]] = {
+    "mm3": (".fld", "mm3_fld"),
+    "harmonic": (".frcmod", "amber_frcmod"),
+}
 
-    if ff.functional_form is FunctionalForm.MM3:
-        return ".fld"
-    if ff.functional_form is FunctionalForm.HARMONIC:
-        return ".frcmod"
-    raise ValueError(f"no force-field serializer for functional form {ff.functional_form!r}.")
+
+def _ff_extension(ff: ForceField) -> str:
+    try:
+        return _FF_FORMATS[ff.functional_form.value][0]
+    except KeyError:
+        raise ValueError(f"no force-field serializer for functional form {ff.functional_form!r}.") from None
 
 
 def _serialize_ff(ff: ForceField, path: Path) -> None:
-    from q2mm.models.forcefield import FunctionalForm
     from q2mm.application.persistence import _write_staged_force_field
 
-    if ff.functional_form is FunctionalForm.MM3:
-        _write_staged_force_field(ff, path, "mm3_fld")
-    elif ff.functional_form is FunctionalForm.HARMONIC:
-        _write_staged_force_field(ff, path, "amber_frcmod")
-    else:
-        raise ValueError(f"no force-field serializer for functional form {ff.functional_form!r}.")
+    try:
+        _, fmt = _FF_FORMATS[ff.functional_form.value]
+    except KeyError:
+        raise ValueError(f"no force-field serializer for functional form {ff.functional_form!r}.") from None
+    _write_staged_force_field(ff, path, fmt)
 
 
 def _opposite_ext(ext: str) -> str:

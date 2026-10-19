@@ -82,7 +82,7 @@ def test_no_runtime_or_data_import_for_help_list_and_inspection() -> None:
         assert not forbidden.intersection(sys.modules)
         """
     )
-    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, encoding="utf-8")
     assert result.returncode == 0, result.stdout + result.stderr
 
 

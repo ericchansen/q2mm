@@ -10,7 +10,14 @@ from typing import Any
 import numpy as np
 
 from q2mm.benchmarks.cases import BenchmarkCase
-from q2mm.benchmarks.systems._paths import StartingPoint
+from q2mm.benchmarks.publications import REPOSITORY_OBJECTIVE_PROFILE, publication_record
+from q2mm.benchmarks.systems._forcefield import compose_opt_with_mm3_base
+from q2mm.benchmarks.systems._paths import (
+    ExternalDataRoots,
+    StartingPoint,
+    resolve_mm3_base_path,
+    resolve_wahlers_opt_path,
+)
 from q2mm.models.forcefield import ForceField, FunctionalForm
 from q2mm.models.hessian import hessian_to_frequencies
 from q2mm.models.molecule import Molecule
@@ -164,6 +171,54 @@ def assemble_published_case(
     )
 
 
+def assemble_wahlers_case(
+    *,
+    key: str,
+    name: str,
+    description: str,
+    default_forms: tuple[str, ...],
+    metadata: Mapping[str, Any],
+    chapter: str,
+    opt_filename: str,
+    metal: str,
+    molecules_loader: Callable[..., list[Molecule]],
+    data_roots: ExternalDataRoots | None = None,
+    starting_point: StartingPoint = "qfuerza",
+    qfuerza_replace_with: float = 1.0,
+    functional_form: str | None = None,
+    objective_profile: str = REPOSITORY_OBJECTIVE_PROFILE,
+    stationary_point: StationaryPointKind = StationaryPointKind.TRANSITION_STATE,
+    nonbonded_excluded_atom_types: tuple[str, ...] = (),
+    case_ids: tuple[str, ...] | None = None,
+) -> BenchmarkCase:
+    """Load and assemble a Wahlers dissertation chapter benchmark case."""
+    publication_metadata = publication_record(key, objective_profile, starting_point)
+    molecules = molecules_loader(data_roots=data_roots)
+    composed_ff, opt_only_ff = compose_opt_with_mm3_base(
+        resolve_wahlers_opt_path(chapter, opt_filename, data_roots),
+        resolve_mm3_base_path(data_roots),
+        metal=metal,
+    )
+    if nonbonded_excluded_atom_types:
+        composed_ff = dataclasses.replace(composed_ff, nonbonded_excluded_atom_types=nonbonded_excluded_atom_types)
+    return assemble_published_case(
+        key=key,
+        name=name,
+        molecules=molecules,
+        composed_ff=composed_ff,
+        opt_only_ff=opt_only_ff,
+        stationary_point=stationary_point,
+        starting_point=starting_point,
+        qfuerza_replace_with=qfuerza_replace_with,
+        functional_form=functional_form,
+        metadata=metadata,
+        publication_metadata=publication_metadata,
+        default_forms=default_forms,
+        description=description,
+        case_ids=case_ids,
+    )
+
+
 def assemble_qfuerza_fresh_case(
     *,
     key: str,
@@ -175,7 +230,7 @@ def assemble_qfuerza_fresh_case(
     qfuerza_replace_with: float,
     functional_form: str,
     metadata: Mapping[str, Any],
-    normal_modes_path: Callable[[Path | None], Path | None] | None = None,
+    normal_modes_path: Path | Callable[[Path | None], Path | None] | None = None,
     data_dir: Path | None = None,
     default_forms: tuple[str, ...] = ("harmonic", "mm3"),
     description: str = "",
@@ -202,7 +257,7 @@ def assemble_qfuerza_fresh_case(
     qm_real = np.asarray([observation.value for observation in problem.observations.values])
     normal_modes: dict[str, np.ndarray] | None = None
     if normal_modes_path is not None:
-        modes_path = normal_modes_path(data_dir)
+        modes_path = normal_modes_path(data_dir) if callable(normal_modes_path) else normal_modes_path
         if modes_path is not None and modes_path.exists():
             from q2mm.io.reference import load_normal_modes
 

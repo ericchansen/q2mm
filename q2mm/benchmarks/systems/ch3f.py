@@ -35,14 +35,19 @@ def _find_data_dir() -> Path:
     return data_dir
 
 
-def load_molecule(*, data_dir: Path | None = None) -> Molecule:
-    """Load the single CH3F molecule + its QM Hessian (B3LYP/6-31+G(d))."""
+def _load_sn2_molecule(
+    xyz_name: str,
+    hessian_name: str,
+    *,
+    data_dir: Path | None = None,
+    charge: int = 0,
+) -> Molecule:
     from q2mm.io.xyz import load_xyz
 
     qm_dir = data_dir or _find_data_dir()
-    xyz = qm_dir / "ch3f-optimized.xyz"
-    hess_path = qm_dir / "ch3f-hessian.npy"
-    molecule = load_xyz(xyz, bond_tolerance=1.5)
+    xyz = qm_dir / xyz_name
+    hess_path = qm_dir / hessian_name
+    molecule = load_xyz(xyz, charge=charge, bond_tolerance=1.5)
     return molecule.with_hessian(
         np.load(hess_path),
         HessianProvenance(
@@ -53,10 +58,9 @@ def load_molecule(*, data_dir: Path | None = None) -> Molecule:
     )
 
 
-def _normal_modes_path(data_dir_override: Path | None) -> Path:
-    """Resolve the CH3F normal-modes ``.npz`` path, honouring a CLI override."""
-    base = data_dir_override or _find_data_dir()
-    return base / "ch3f-normal-modes.npz"
+def load_molecule(*, data_dir: Path | None = None) -> Molecule:
+    """Load the single CH3F molecule + its QM Hessian (B3LYP/6-31+G(d))."""
+    return _load_sn2_molecule("ch3f-optimized.xyz", "ch3f-hessian.npy", data_dir=data_dir)
 
 
 def load(
@@ -106,8 +110,7 @@ def load(
         qfuerza_replace_with=qfuerza_replace_with,
         functional_form=functional_form,
         metadata=METADATA,
-        normal_modes_path=_normal_modes_path,
-        data_dir=data_dir,
+        normal_modes_path=(data_dir or _find_data_dir()) / "ch3f-normal-modes.npz",
         default_forms=DEFAULT_FORMS,
         description=DESCRIPTION,
     )

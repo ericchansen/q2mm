@@ -78,9 +78,8 @@ def load(
 
     """
     publication_metadata = publication_record(KEY, objective_profile, starting_point)
-    resolved_roots = ExternalDataRoots() if data_roots is None else data_roots
-    molecules = load_molecules(data_roots=resolved_roots)
-    composed_ff, opt_only_ff = load_published_opt(_ff_path(resolved_roots))
+    molecules = load_molecules(data_roots=data_roots)
+    composed_ff, opt_only_ff = load_published_opt(_ff_path(data_roots))
     return assemble_published_case(
         key=KEY,
         name=NAME,

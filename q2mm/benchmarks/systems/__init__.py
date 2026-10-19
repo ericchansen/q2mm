@@ -43,6 +43,12 @@ SYSTEM_KEYS: tuple[str, ...] = tuple(_REGISTRY)
 """Registered benchmark system keys, in registry order."""
 
 
+def _system_module(key: str) -> Any:
+    if key not in _REGISTRY:
+        raise KeyError(f"Unknown benchmark system {key!r}; available: {sorted(_REGISTRY)}")
+    return importlib.import_module(_REGISTRY[key])
+
+
 def load_system(key: str, **kwargs: Any) -> BenchmarkCase:
     """Build the :class:`~q2mm.benchmarks.cases.BenchmarkCase` for *key*.
 
@@ -64,10 +70,7 @@ def load_system(key: str, **kwargs: Any) -> BenchmarkCase:
         KeyError: If *key* is not in :data:`SYSTEM_KEYS`.
 
     """
-    if key not in _REGISTRY:
-        raise KeyError(f"Unknown benchmark system {key!r}; available: {sorted(_REGISTRY)}")
-    module = importlib.import_module(_REGISTRY[key])
-    case: BenchmarkCase = module.load(**kwargs)
+    case: BenchmarkCase = _system_module(key).load(**kwargs)
     return case
 
 
@@ -111,9 +114,7 @@ def system_metadata(key: str) -> SystemMetadata:
         KeyError: If *key* is not in :data:`SYSTEM_KEYS`.
 
     """
-    if key not in _REGISTRY:
-        raise KeyError(f"Unknown benchmark system {key!r}; available: {sorted(_REGISTRY)}")
-    module = importlib.import_module(_REGISTRY[key])
+    module = _system_module(key)
     return SystemMetadata(
         key=key,
         name=module.NAME,

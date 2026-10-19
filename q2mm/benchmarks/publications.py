@@ -207,9 +207,9 @@ _MM3_BASE = SourceArtifactIdentity(
 
 def _structural_targets(
     *,
-    source_bond_weight: float | None,
-    source_angle_weight: float | None,
     eigenmatrix_details: str,
+    source_bond_weight: float | None = 100.0,
+    source_angle_weight: float | None = 2.0,
 ) -> tuple[ObjectiveTarget, ...]:
     return (
         ObjectiveTarget(
@@ -256,8 +256,6 @@ def _structural_targets(
 
 _RH_TARGETS = (
     *_structural_targets(
-        source_bond_weight=100.0,
-        source_angle_weight=2.0,
         eigenmatrix_details="The source final fit used a restricted structure/Hessian selection, unlike all-nine compatibility rows.",
     ),
     ObjectiveTarget(
@@ -276,8 +274,6 @@ _RH_TARGETS = (
 )
 _HECK_TARGETS = (
     *_structural_targets(
-        source_bond_weight=100.0,
-        source_angle_weight=2.0,
         eigenmatrix_details="The deposited archive contains 23 of the 24 structures described in the dissertation.",
     ),
     ObjectiveTarget(
@@ -294,8 +290,6 @@ _HECK_TARGETS = (
 )
 _PD_ALLYL_TARGETS = (
     *_structural_targets(
-        source_bond_weight=100.0,
-        source_angle_weight=2.0,
         eigenmatrix_details="The compatibility row contains the 21 primary cases only.",
     ),
     ObjectiveTarget(
@@ -312,8 +306,6 @@ _PD_ALLYL_TARGETS = (
 )
 _PD_CONJUGATE_TARGETS = (
     *_structural_targets(
-        source_bond_weight=100.0,
-        source_angle_weight=2.0,
         eigenmatrix_details="All ten primary structures are represented.",
     ),
     ObjectiveTarget(
@@ -330,8 +322,6 @@ _PD_CONJUGATE_TARGETS = (
 )
 _RH_CONJUGATE_TARGETS = (
     *_structural_targets(
-        source_bond_weight=100.0,
-        source_angle_weight=2.0,
         eigenmatrix_details="The compatibility row combines the source's staged eight-case and two-case fits.",
     ),
     ObjectiveTarget(
@@ -343,8 +333,6 @@ _RH_CONJUGATE_TARGETS = (
 )
 _FERROCENE_TARGETS = (
     *_structural_targets(
-        source_bond_weight=100.0,
-        source_angle_weight=2.0,
         eigenmatrix_details="The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.",
     ),
     ObjectiveTarget(
@@ -507,6 +495,40 @@ _PROVISIONABLE: tuple[PublicationMetadata, ...] = (
     _with_start(_FERROCENE_NAMED, "published"),
 )
 
+
+def _historical_record(
+    *,
+    system: str,
+    citation: str,
+    doi: str,
+    zotero_key: str,
+    stationary_point: str,
+    target_category: PublicationTargetCategory,
+    artifact_identity: str,
+    artifact_role: str,
+    blocker: str,
+) -> PublicationMetadata:
+    return PublicationMetadata(
+        system=system,
+        status=ReproductionStatus.BLOCKED_HISTORICAL_RECORD,
+        objective_profile=_HISTORICAL_PROFILE,
+        governing_sources=(
+            PublicationCitation(
+                citation=citation,
+                authoritative_url=f"https://doi.org/{doi}",
+                doi=doi,
+                zotero_key=zotero_key,
+            ),
+        ),
+        authoritative_case_ids=(),
+        stationary_point=stationary_point,
+        targets=(ObjectiveTarget(target_category, _BLOCKED),),
+        source_artifacts=(SourceArtifactIdentity(identity=artifact_identity, role=artifact_role),),
+        blockers=(blocker,),
+        provisionable=False,
+    )
+
+
 _BLOCKED_RECORDS: tuple[PublicationMetadata, ...] = (
     dataclasses.replace(
         _HECK_BASE,
@@ -555,78 +577,38 @@ _BLOCKED_RECORDS: tuple[PublicationMetadata, ...] = (
             "QFUERZA initialization is unsupported until the D1 dummy-atom topology is represented and its frozen partition is proven.",
         ),
     ),
-    PublicationMetadata(
+    _historical_record(
         system="osmium-dihydroxylation",
-        status=ReproductionStatus.BLOCKED_HISTORICAL_RECORD,
-        objective_profile=_HISTORICAL_PROFILE,
-        governing_sources=(
-            PublicationCitation(
-                citation="Norrby et al., J. Am. Chem. Soc. 1999",
-                authoritative_url="https://doi.org/10.1021/ja992023n",
-                doi="10.1021/ja992023n",
-                zotero_key="BT3U4GKA",
-            ),
-        ),
-        authoritative_case_ids=(),
+        citation="Norrby et al., J. Am. Chem. Soc. 1999",
+        doi="10.1021/ja992023n",
+        zotero_key="BT3U4GKA",
         stationary_point="transition_state",
-        targets=(ObjectiveTarget(_CATEGORY.EIGENMATRIX_DIAGONAL, _BLOCKED),),
-        source_artifacts=(
-            SourceArtifactIdentity(
-                identity="os-dihydroxylation-alkene.fld",
-                role="legacy force field with unverified publication mapping",
-            ),
-        ),
-        blockers=(
-            "No authoritative QM training files are available and the legacy force-field-to-publication mapping is unverified.",
-        ),
-        provisionable=False,
+        target_category=_CATEGORY.EIGENMATRIX_DIAGONAL,
+        artifact_identity="os-dihydroxylation-alkene.fld",
+        artifact_role="legacy force field with unverified publication mapping",
+        blocker="No authoritative QM training files are available and the legacy force-field-to-publication mapping is unverified.",
     ),
-    PublicationMetadata(
+    _historical_record(
         system="ru-ketone-hydrogenation",
-        status=ReproductionStatus.BLOCKED_HISTORICAL_RECORD,
-        objective_profile=_HISTORICAL_PROFILE,
-        governing_sources=(
-            PublicationCitation(
-                citation="Limé et al., J. Chem. Theory Comput. 2014",
-                authoritative_url="https://doi.org/10.1021/ct500178w",
-                doi="10.1021/ct500178w",
-                zotero_key="KF2F4U5E",
-            ),
-        ),
-        authoritative_case_ids=(),
+        citation="Limé et al., J. Chem. Theory Comput. 2014",
+        doi="10.1021/ct500178w",
+        zotero_key="KF2F4U5E",
         stationary_point="transition_state",
-        targets=(ObjectiveTarget(_CATEGORY.EIGENMATRIX_DIAGONAL, _BLOCKED),),
-        source_artifacts=(
-            SourceArtifactIdentity(identity="ru-hydrogenation-ketone.fld", role="legacy force field only"),
-        ),
-        blockers=("No authoritative QM training files are available.",),
-        provisionable=False,
+        target_category=_CATEGORY.EIGENMATRIX_DIAGONAL,
+        artifact_identity="ru-hydrogenation-ketone.fld",
+        artifact_role="legacy force field only",
+        blocker="No authoritative QM training files are available.",
     ),
-    PublicationMetadata(
+    _historical_record(
         system="sulfone",
-        status=ReproductionStatus.BLOCKED_HISTORICAL_RECORD,
-        objective_profile=_HISTORICAL_PROFILE,
-        governing_sources=(
-            PublicationCitation(
-                citation="Hansen et al., J. Phys. Chem. A 2016 candidate mapping",
-                authoritative_url="https://doi.org/10.1021/acs.jpca.6b02757",
-                doi="10.1021/acs.jpca.6b02757",
-                zotero_key="RPQ4XDL2",
-            ),
-        ),
-        authoritative_case_ids=(),
+        citation="Hansen et al., J. Phys. Chem. A 2016 candidate mapping",
+        doi="10.1021/acs.jpca.6b02757",
+        zotero_key="RPQ4XDL2",
         stationary_point="unknown",
-        targets=(ObjectiveTarget(_CATEGORY.CONSTRAINED_SCAN_ENERGY, _BLOCKED),),
-        source_artifacts=(
-            SourceArtifactIdentity(
-                identity="sulfone.fld",
-                role="legacy force field with unverified candidate publication mapping",
-            ),
-        ),
-        blockers=(
-            "The legacy file-to-paper mapping is unverified and no authoritative QM training or scan data are available.",
-        ),
-        provisionable=False,
+        target_category=_CATEGORY.CONSTRAINED_SCAN_ENERGY,
+        artifact_identity="sulfone.fld",
+        artifact_role="legacy force field with unverified candidate publication mapping",
+        blocker="The legacy file-to-paper mapping is unverified and no authoritative QM training or scan data are available.",
     ),
 )
 
@@ -725,19 +707,8 @@ class PublicationOptimizationSuccessSpec:
     def to_dict(self) -> dict[str, object]:
         """Return the JSON-safe pre-flight gate."""
         return {
-            "system": self.system,
-            "objective_profile": self.objective_profile,
-            "starting_point": self.starting_point,
-            "minimum_absolute_improvement_percent": self.minimum_absolute_improvement_percent,
+            **dataclasses.asdict(self),
             "executor_ratio_bounds": list(self.executor_ratio_bounds),
-            "maximum_category_regression_percent_of_initial_total": (
-                self.maximum_category_regression_percent_of_initial_total
-            ),
-            "require_optimizer_convergence": self.require_optimizer_convergence,
-            "require_accepted_candidate": self.require_accepted_candidate,
-            "canonical_full_run": self.canonical_full_run,
-            "proof_status": self.proof_status,
-            "methodology_blocker": self.methodology_blocker,
         }
 
 

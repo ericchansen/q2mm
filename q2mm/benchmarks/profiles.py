@@ -280,10 +280,10 @@ class RunProfile(BenchmarkSelection, BenchmarkSettings):
         """Deterministic ``sha256:<hex>`` of the requested (logical) config."""
         return canonical_fingerprint(self.canonical_dict())
 
-    def prefix(self) -> str:
-        """Readable, filesystem-safe slug of the requested config (form may be ``auto``)."""
-        form = self.functional_form or "auto"
-        parts = [self.system, self.backend.key, form, self.optimizer.kind, self.starting_point]
+    def prefix(self, form: str | None = None) -> str:
+        """Readable, filesystem-safe slug of the config (form may be ``auto``)."""
+        resolved_form = form or self.functional_form or "auto"
+        parts = [self.system, self.backend.key, resolved_form, self.optimizer.kind, self.starting_point]
         if self.skip_optimization:
             parts.append("skip")
         return _slug(*parts)
@@ -320,8 +320,7 @@ def recommended_publication_profile(
     dictionaries update the selected policy's defaults through BaseSettings;
     complete typed components replace them.
     """
-    publication_systems = {"rh-enamide", "heck-relay", "pd-allyl", "pd-conjugate", "rh-conjugate", "ferrocene"}
-    if system not in publication_systems:
+    if system not in PUBLICATION_SYSTEM_KEYS:
         raise ValueError(f"No canonical publication policy is defined for {system!r}.")
     if system == "ferrocene" and starting_point != "published":
         raise ValueError("Ferrocene has no QFUERZA policy; use the explicit published-start partial profile.")
@@ -449,18 +448,28 @@ class ResolvedProfile:
             "device",
             "settings",
         ):
-            object.__setattr__(self, name, deep_freeze(dict(getattr(self, name))))
+            object.__setattr__(self, name, deep_freeze(getattr(self, name)))
 
     def _identity(self) -> dict[str, Any]:
+        publication = self.data_provenance.get("publication_metadata")
+        pub_map = publication if isinstance(publication, Mapping) else {}
+        pub_identity = pub_map.get("objective_profile")
+        raw_profile = (
+            pub_identity.get("identifier")
+            if isinstance(pub_identity, Mapping) and pub_identity.get("identifier") is not None
+            else self.data_provenance.get("objective_profile")
+        )
+        objective_profile = str(raw_profile) if raw_profile is not None else self.profile.effective_objective_profile
+        reproduction_status = str(pub_map["status"]) if pub_map.get("status") is not None else None
         return {
             "profile": self.profile.canonical_dict(),
-            "objective_profile": self._objective_profile(),
-            "static_descriptor": _jsonify(dict(self.static_descriptor)),
+            "objective_profile": objective_profile,
+            "static_descriptor": _jsonify(self.static_descriptor),
             "runtime_backend_key": self.runtime_backend_key,
             "backend_name": self.backend_name,
             "backend_role": self.backend_role,
             "backend_version": self.backend_version,
-            "backend_details": _jsonify(dict(self.backend_details)),
+            "backend_details": _jsonify(self.backend_details),
             "capabilities": list(self.capabilities),
             "backend_functional_forms": list(self.backend_functional_forms),
             "functional_form": self.functional_form,
@@ -470,42 +479,22 @@ class ResolvedProfile:
             "fd_step": self.fd_step,
             "effective_regularization": self.effective_regularization,
             "optimizer_method": self.optimizer_method,
-            "optimizer_settings": _jsonify(dict(self.optimizer_settings)),
+            "optimizer_settings": _jsonify(self.optimizer_settings),
             "workflow": self.workflow,
-            "workflow_settings": _jsonify(dict(self.workflow_settings)),
+            "workflow_settings": _jsonify(self.workflow_settings),
             "layout_fingerprint": self.layout_fingerprint,
             "n_active_params": self.n_active_params,
             "n_full_params": self.n_full_params,
             "n_molecules": self.n_molecules,
-            "data_provenance": _jsonify(dict(self.data_provenance)),
-            "reproduction_status": self._reproduction_status(),
-            "publication_metadata": self._publication_metadata(),
+            "data_provenance": _jsonify(self.data_provenance),
+            "reproduction_status": reproduction_status,
+            "publication_metadata": None if publication is None else _jsonify(publication),
             "resolved_data_roots": dict(self.resolved_data_roots),
             "dependency_versions": dict(self.dependency_versions),
-            "device": _jsonify(dict(self.device)),
+            "device": _jsonify(self.device),
             "seed": self.seed,
-            "settings": _jsonify(dict(self.settings)),
+            "settings": _jsonify(self.settings),
         }
-
-    def _publication_metadata(self) -> Any:
-        value = self.data_provenance.get("publication_metadata")
-        return None if value is None else _jsonify(value)
-
-    def _objective_profile(self) -> str | None:
-        publication = self.data_provenance.get("publication_metadata")
-        if isinstance(publication, Mapping):
-            identity = publication.get("objective_profile")
-            if isinstance(identity, Mapping) and identity.get("identifier") is not None:
-                return str(identity["identifier"])
-        value = self.data_provenance.get("objective_profile")
-        return str(value) if value is not None else self.profile.effective_objective_profile
-
-    def _reproduction_status(self) -> str | None:
-        publication = self.data_provenance.get("publication_metadata")
-        if not isinstance(publication, Mapping):
-            return None
-        value = publication.get("status")
-        return str(value) if value is not None else None
 
     def fingerprint(self) -> str:
         """Deterministic identity over the full exact resolved provenance."""
@@ -520,11 +509,7 @@ class ResolvedProfile:
 
     def prefix(self) -> str:
         """Readable slug embedding the concrete resolved functional form."""
-        p = self.profile
-        parts = [p.system, p.backend.key, self.functional_form, p.optimizer.kind, p.starting_point]
-        if p.skip_optimization:
-            parts.append("skip")
-        return _slug(*parts)
+        return self.profile.prefix(self.functional_form)
 
     def candidate_id(self) -> str:
         """Return the resolved candidate ID: resolved prefix + resolved fingerprint suffix."""
@@ -694,19 +679,13 @@ def _load_kwargs(profile: RunProfile, form: str) -> tuple[dict[str, Any], dict[s
 
     from q2mm.benchmarks.systems._paths import ExternalDataRoots, resolve_external_roots
 
-    explicit = ExternalDataRoots(
-        rh_enamide=_norm_path(roots["rh_enamide"]) if "rh_enamide" in roots else None,
-        supporting_info=_norm_path(roots["supporting_info"]) if "supporting_info" in roots else None,
-        mm3_base=_norm_path(roots["mm3_base"]) if "mm3_base" in roots else None,
-    )
+    ext_keys = ("rh_enamide", "supporting_info", "mm3_base")
+    explicit = ExternalDataRoots(**{k: _norm_path(roots[k]) for k in ext_keys if k in roots})
     # Fold explicit overrides together with the documented environment
     # fallbacks so provenance reflects exactly what the loader resolves.
     effective = resolve_external_roots(explicit)
     kwargs["data_roots"] = effective
-    for key in ("rh_enamide", "supporting_info", "mm3_base"):
-        value = getattr(effective, key)
-        if value is not None:
-            resolved[key] = str(Path(value).expanduser().resolve())
+    resolved = {k: str(_norm_path(str(val))) for k in ext_keys if (val := getattr(effective, k)) is not None}
     return kwargs, resolved
 
 

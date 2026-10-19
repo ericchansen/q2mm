@@ -61,6 +61,36 @@ class TestExternalDataRoots:
         assert module.load_molecules(data_roots=roots) == []
         assert seen == [preferred if preferred_exists else fallback]
 
+    @pytest.mark.parametrize("system", ["pd_allyl", "pd_conjugate", "rh_conjugate", "ferrocene"])
+    def test_wahlers_load_uses_module_load_molecules(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        system: str,
+    ) -> None:
+        from importlib import import_module
+        from unittest.mock import MagicMock
+
+        from q2mm.benchmarks.systems import _assembly
+        from q2mm.models.forcefield import ForceField, FunctionalForm
+
+        module = import_module(f"q2mm.benchmarks.systems.{system}")
+        sentinel_molecules = [MagicMock()]
+        ff = ForceField(functional_form=FunctionalForm.MM3)
+        monkeypatch.setattr(module, "load_molecules", lambda **_kw: sentinel_molecules)
+        monkeypatch.setattr(_assembly, "compose_opt_with_mm3_base", lambda *_a, **_kw: (ff, ff))
+        monkeypatch.setattr(_assembly, "resolve_wahlers_opt_path", lambda *_a, **_kw: Path("opt.fld"))
+        monkeypatch.setattr(_assembly, "resolve_mm3_base_path", lambda *_a, **_kw: Path("base.fld"))
+        captured: dict[str, object] = {}
+        monkeypatch.setattr(
+            _assembly,
+            "assemble_published_case",
+            lambda **kw: captured.update(kw) or MagicMock(),
+        )
+
+        module.load(starting_point="published")
+        assert captured["key"] == module.KEY
+        assert captured["molecules"] is sentinel_molecules
+
     def test_missing_rh_enamide_root_has_configuration_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv("Q2MM_RH_ENAMIDE", raising=False)
         with pytest.raises(FileNotFoundError, match=r"ExternalDataRoots\(rh_enamide"):

@@ -2,20 +2,14 @@
 
 from __future__ import annotations
 
-import dataclasses
-from pathlib import Path
-
 from q2mm.benchmarks.cases import BenchmarkCase
-from q2mm.benchmarks.publications import REPOSITORY_OBJECTIVE_PROFILE, publication_record
-from q2mm.benchmarks.systems._assembly import assemble_published_case
-from q2mm.benchmarks.systems._forcefield import compose_opt_with_mm3_base
+from q2mm.benchmarks.publications import REPOSITORY_OBJECTIVE_PROFILE
+from q2mm.benchmarks.systems._assembly import assemble_wahlers_case
 from q2mm.benchmarks.systems._molecules import load_gaussian_molecules
 from q2mm.benchmarks.systems._paths import (
     ExternalDataRoots,
     StartingPoint,
-    resolve_mm3_base_path,
-    resolve_supporting_info_dir,
-    resolve_wahlers_opt_path,
+    resolve_wahlers_training_set_dir,
 )
 from q2mm.models.molecule import Molecule
 from q2mm.models.problem import StationaryPointKind
@@ -36,14 +30,9 @@ _CHAPTER = "Chapter 4"
 _OPT_FILENAME = "mm3.ferrocene.fld"
 
 
-def _training_set_dir(roots: ExternalDataRoots | None) -> Path:
-    si = resolve_supporting_info_dir(roots)
-    return si / "wahlers" / "Wahlers_Jessica_Supporting_information" / _CHAPTER / "Training Set Structures"
-
-
 def load_molecules(*, data_roots: ExternalDataRoots | None = None) -> list[Molecule]:
     """Load exactly the seven source training logs in numeric semantic order."""
-    molecules = load_gaussian_molecules(_training_set_dir(data_roots))
+    molecules = load_gaussian_molecules(resolve_wahlers_training_set_dir(_CHAPTER, data_roots))
     by_name = {molecule.name: molecule for molecule in molecules}
     missing = [case_id for case_id in CASE_IDS if case_id not in by_name]
     extras = sorted(set(by_name).difference(CASE_IDS))
@@ -63,29 +52,22 @@ def load(
     objective_profile: str = REPOSITORY_OBJECTIVE_PROFILE,
 ) -> BenchmarkCase:
     """Build the provisionable seven-structure published-start partial profile."""
-    publication_metadata = publication_record(KEY, objective_profile, starting_point)
-    resolved_roots = ExternalDataRoots() if data_roots is None else data_roots
-    molecules = load_molecules(data_roots=resolved_roots)
-    composed_ff, opt_only_ff = compose_opt_with_mm3_base(
-        resolve_wahlers_opt_path(_CHAPTER, _OPT_FILENAME, resolved_roots),
-        resolve_mm3_base_path(resolved_roots),
-        metal=METAL,
-    )
-    composed_ff = dataclasses.replace(composed_ff, nonbonded_excluded_atom_types=("FE",))
-    return assemble_published_case(
+    return assemble_wahlers_case(
         key=KEY,
         name=NAME,
-        molecules=molecules,
-        composed_ff=composed_ff,
-        opt_only_ff=opt_only_ff,
-        stationary_point=StationaryPointKind.GROUND_STATE,
+        description=DESCRIPTION,
+        default_forms=DEFAULT_FORMS,
+        metadata=METADATA,
+        chapter=_CHAPTER,
+        opt_filename=_OPT_FILENAME,
+        metal=METAL,
+        molecules_loader=load_molecules,
+        data_roots=data_roots,
         starting_point=starting_point,
         qfuerza_replace_with=qfuerza_replace_with,
         functional_form=functional_form,
-        metadata=METADATA,
-        publication_metadata=publication_metadata,
-        metal=METAL,
-        default_forms=DEFAULT_FORMS,
-        description=DESCRIPTION,
+        objective_profile=objective_profile,
+        stationary_point=StationaryPointKind.GROUND_STATE,
+        nonbonded_excluded_atom_types=("FE",),
         case_ids=CASE_IDS,
     )

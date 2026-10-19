@@ -18,13 +18,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 from q2mm.benchmarks.cases import BenchmarkCase
 from q2mm.benchmarks.systems._assembly import assemble_qfuerza_fresh_case
 from q2mm.benchmarks.systems._paths import ExternalDataRoots, StartingPoint
-from q2mm.benchmarks.systems.ch3f import _find_data_dir
-from q2mm.models.hessian import HessianProvenance, HessianUnits
+from q2mm.benchmarks.systems.ch3f import _find_data_dir, _load_sn2_molecule
 from q2mm.models.molecule import Molecule
 from q2mm.models.problem import StationaryPointKind
 
@@ -57,17 +54,8 @@ def load_molecule(*, data_dir: Path | None = None) -> Molecule:
     anionic complex on which the QM Hessian was computed (see
     ``scripts/generate_sn2_reference.py``).
     """
-    from q2mm.io.xyz import load_xyz
-
     qm_dir = data_dir or _find_data_dir()
-    xyz = qm_dir / "sn2-ts-optimized.xyz"
-    hess_path = qm_dir / "sn2-ts-hessian.npy"
-    # ``_find_data_dir`` only checks for the GS ``ch3f-optimized.xyz``;
-    # the SN2 TS files (computed by ``generate_qm_data.py`` after the
-    # GS calc) may be absent in partial checkouts.  Surface a targeted
-    # error rather than let ``load_xyz`` or ``np.load`` emit a less
-    # actionable message downstream.
-    missing = [p.name for p in (xyz, hess_path) if not p.exists()]
+    missing = [name for name in ("sn2-ts-optimized.xyz", "sn2-ts-hessian.npy") if not (qm_dir / name).exists()]
     if missing:
         raise FileNotFoundError(
             f"SN2 TS reference data missing in {qm_dir}: {missing}. "
@@ -75,21 +63,7 @@ def load_molecule(*, data_dir: Path | None = None) -> Molecule:
             "Hessian + frequencies, or pass ``data_dir=`` pointing at a "
             "complete reference directory."
         )
-    molecule = load_xyz(xyz, charge=-1, bond_tolerance=1.5)
-    return molecule.with_hessian(
-        np.load(hess_path),
-        HessianProvenance(
-            units=HessianUnits.ATOMIC,
-            source="q2mm-sn2-resource",
-            path=str(hess_path.resolve()),
-        ),
-    )
-
-
-def _normal_modes_path(data_dir_override: Path | None) -> Path:
-    """Resolve the F⁻ + CH3F SN2 TS normal-modes ``.npz`` path."""
-    base = data_dir_override or _find_data_dir()
-    return base / "sn2-ts-normal-modes.npz"
+    return _load_sn2_molecule("sn2-ts-optimized.xyz", "sn2-ts-hessian.npy", data_dir=qm_dir, charge=-1)
 
 
 def load(
@@ -137,8 +111,7 @@ def load(
         qfuerza_replace_with=qfuerza_replace_with,
         functional_form=functional_form,
         metadata=METADATA,
-        normal_modes_path=_normal_modes_path,
-        data_dir=data_dir,
+        normal_modes_path=(data_dir or _find_data_dir()) / "sn2-ts-normal-modes.npz",
         default_forms=DEFAULT_FORMS,
         description=DESCRIPTION,
     )

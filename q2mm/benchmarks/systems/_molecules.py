@@ -85,13 +85,7 @@ def assign_mm3_atom_types(mol: Molecule) -> list[str]:
     for i, elem in enumerate(mol.symbols):
         n_bonds = organic_bond_counts.get(i, 0)
         type_map = _MM3_TYPE_MAP.get(elem, {})
-        if n_bonds in type_map:
-            mm3_type = type_map[n_bonds]
-        elif type_map:
-            mm3_type = type_map.get(0, next(iter(type_map.values())))
-        else:
-            mm3_type = elem
-        atom_types.append(mm3_type)
+        atom_types.append(type_map.get(n_bonds) or type_map.get(0) or next(iter(type_map.values()), elem))
     return atom_types
 
 
