@@ -7,13 +7,13 @@ connectivity, and other structural data from ``.mol2`` files.
 from __future__ import annotations
 
 import logging
-import os
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from q2mm.elements import MASSES, TWO_LETTER_ELEMENTS
 from q2mm.geometry import bond_length
+from q2mm.io._helpers import _TextFileBase
 from q2mm.models.identifiers import canonicalize_bond_env_id
 from q2mm.models.molecule import Bond, Molecule
 
@@ -148,7 +148,7 @@ def _molecule_from_mol2_record(record: _Mol2Record) -> Molecule:
     )
 
 
-class Mol2:
+class Mol2(_TextFileBase):
     """Retrieve structural data from Tripos Mol2 files.
 
     Please ensure that mol2 atom types match the atom types specified
@@ -165,7 +165,7 @@ class Mol2:
     ATOM_FLAG = "ATOM"
     BOND_FLAG = "BOND"
 
-    __slots__ = ["_lines", "path", "directory", "filename", "_records"]
+    __slots__ = ("_records",)
 
     def __init__(self, path: str) -> None:
         """Initialize a Mol2 instance.
@@ -174,38 +174,8 @@ class Mol2:
             path (str): Absolute path of the mol2 file.
 
         """
-        self._lines: list[str] | None = None
-        self.path = os.path.abspath(path)
-        self.directory = os.path.dirname(self.path)
-        self.filename = os.path.basename(self.path)
+        super().__init__(path)
         self._records: list[_Mol2Record] | None = None
-
-    @property
-    def lines(self) -> list[str]:
-        """Return the lines of the file.
-
-        Returns:
-            (list[str]): Lines of the file.
-
-        """
-        if self._lines is None:
-            with open(self.path) as f:
-                self._lines = f.readlines()
-        return self._lines
-
-    def write(self, path: str, lines: list[str] | None = None) -> None:
-        """Write lines to file at path.
-
-        Args:
-            path (str): Location of file to write.
-            lines (list[str] | None): Lines to write. Defaults to
-                ``self.lines``.
-
-        """
-        if lines is None:
-            lines = self.lines
-        with open(path, "w") as f:
-            f.writelines(lines)
 
     @property
     def _records_parsed(self) -> list[_Mol2Record]:

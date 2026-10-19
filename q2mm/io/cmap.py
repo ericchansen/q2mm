@@ -40,24 +40,35 @@ def parse_cmap_section(text: str) -> list[CmapGrid]:
     lines = text.splitlines()
     grids: list[CmapGrid] = []
 
-    def append_grid(header: tuple[tuple[str, ...], tuple[str, ...], int], values: list[float]) -> None:
-        phi_types, psi_types, resolution = header
-        try:
-            grids.append(
-                CmapGrid(
-                    atom_types_phi=phi_types,
-                    atom_types_psi=psi_types,
-                    resolution=resolution,
-                    energy=values,
-                )
-            )
-        except ValueError as exc:
-            logger.warning("Skipping malformed CMAP grid: %s", exc)
-
     in_cmap_section = False
-    current_header: tuple[tuple[str, ...], tuple[str, ...], int] | None = None
+    current_header: tuple[tuple[str, str, str, str], tuple[str, str, str, str], int] | None = None
     current_values: list[float] = []
     expected_count = 0
+
+    def finalize_current(*, where: str = "") -> None:
+        if current_header is None:
+            return
+        if len(current_values) == expected_count:
+            phi_types, psi_types, resolution = current_header
+            try:
+                grids.append(
+                    CmapGrid(
+                        atom_types_phi=phi_types,
+                        atom_types_psi=psi_types,
+                        resolution=resolution,
+                        energy=tuple(current_values),
+                    )
+                )
+            except ValueError as exc:
+                logger.warning("Skipping malformed CMAP grid: %s", exc)
+        else:
+            suffix = f" {where}" if where else ""
+            logger.warning(
+                "Incomplete CMAP grid%s: expected %d values, got %d. Skipping.",
+                suffix,
+                expected_count,
+                len(current_values),
+            )
 
     for raw_line in lines:
         line = raw_line.strip()
@@ -81,16 +92,7 @@ def parse_cmap_section(text: str) -> list[CmapGrid]:
             upper,
         ):
             if upper != "CMAP":
-                # Finalize any in-progress grid
-                if current_header is not None:
-                    if len(current_values) == expected_count:
-                        append_grid(current_header, current_values)
-                    else:
-                        logger.warning(
-                            "Incomplete CMAP grid at section boundary: expected %d values, got %d. Skipping.",
-                            expected_count,
-                            len(current_values),
-                        )
+                finalize_current(where="at section boundary")
                 in_cmap_section = False
                 current_header = None
                 current_values = []
@@ -102,17 +104,7 @@ def parse_cmap_section(text: str) -> list[CmapGrid]:
         # Try to parse as a CMAP header line: 8 atom types + resolution
         tokens = line.split()
         if len(tokens) == 9 and _is_header_line(tokens):
-            # Finalize previous grid if any
-            if current_header is not None:
-                if len(current_values) == expected_count:
-                    append_grid(current_header, current_values)
-                else:
-                    logger.warning(
-                        "Incomplete CMAP grid: expected %d values, got %d. Skipping.",
-                        expected_count,
-                        len(current_values),
-                    )
-
+            finalize_current()
             resolution = int(tokens[8])
             current_header = (
                 (tokens[0], tokens[1], tokens[2], tokens[3]),
@@ -131,16 +123,7 @@ def parse_cmap_section(text: str) -> list[CmapGrid]:
                 except ValueError:
                     logger.warning("Non-numeric token in CMAP grid data: %r", token)
 
-    # Finalize last grid
-    if current_header is not None and len(current_values) == expected_count:
-        append_grid(current_header, current_values)
-    elif current_header is not None:
-        logger.warning(
-            "Incomplete CMAP grid at end of file: expected %d values, got %d.",
-            expected_count,
-            len(current_values),
-        )
-
+    finalize_current(where="at end of file")
     logger.info("Parsed %d CMAP grid(s).", len(grids))
     return grids
 

@@ -257,7 +257,7 @@ def save_openmm_xml(
         # Collect unique (element, atom_type) pairs across all molecules
         seen_types: dict[str, tuple[str, float]] = {}
         for mol in molecules:
-            for symbol, atype in zip(mol.symbols, mol.atom_types):
+            for symbol, atype in zip(mol.symbols, mol.atom_types or mol.symbols):
                 type_name = atype if atype else symbol
                 if type_name not in seen_types:
                     if symbol not in MASSES:
@@ -284,7 +284,7 @@ def save_openmm_xml(
         for mol_idx, mol in enumerate(molecules):
             res_name = f"Q2MM{mol_idx}" if len(molecules) > 1 else "Q2MM"
             res_el = ET.SubElement(residues_el, "Residue", name=res_name)
-            for i, (symbol, atype) in enumerate(zip(mol.symbols, mol.atom_types)):
+            for i, (symbol, atype) in enumerate(zip(mol.symbols, mol.atom_types or mol.symbols)):
                 type_name = atype if atype else symbol
                 ET.SubElement(
                     res_el,
@@ -292,7 +292,7 @@ def save_openmm_xml(
                     name=f"{symbol}{i + 1}",
                     type=f"q2mm-{type_name}",
                 )
-            for bond in mol.bonds:
+            for bond in mol.bonds or ():
                 ET.SubElement(
                     res_el,
                     "Bond",
@@ -311,15 +311,15 @@ def save_openmm_xml(
         ET.SubElement(bond_force_el, "PerBondParameter", name="k")
         ET.SubElement(bond_force_el, "PerBondParameter", name="r0")
 
-        for bond in ff.bonds:
-            k_openmm = canonical_to_openmm_bond_k(bond.force_constant)
-            r0_nm = ang_to_nm(bond.equilibrium)
+        for bond_param in ff.bonds:
+            k_bond_openmm = canonical_to_openmm_bond_k(bond_param.force_constant)
+            r0_nm = ang_to_nm(bond_param.equilibrium)
 
-            class1, class2 = bond.env_id.split("-") if bond.env_id else bond.elements
+            class1, class2 = bond_param.env_id.split("-") if bond_param.env_id else bond_param.elements
             bond_el = ET.SubElement(bond_force_el, "Bond")
             bond_el.set("class1", class1)
             bond_el.set("class2", class2)
-            bond_el.set("k", f"{k_openmm:.6f}")
+            bond_el.set("k", f"{k_bond_openmm:.6f}")
             bond_el.set("r0", f"{r0_nm:.6f}")
 
     # ---- Custom angle force (MM3 sextic bend) ----
@@ -341,7 +341,7 @@ def save_openmm_xml(
         ET.SubElement(angle_force_el, "PerAngleParameter", name="theta0")
 
         for angle in ff.angles:
-            k_openmm = canonical_to_openmm_angle_k(angle.force_constant)
+            k_angle_openmm = canonical_to_openmm_angle_k(angle.force_constant)
             theta0_rad = deg_to_rad(angle.equilibrium)
 
             class1, class2, class3 = angle.env_id.split("-") if angle.env_id else angle.elements
@@ -349,7 +349,7 @@ def save_openmm_xml(
             angle_el.set("class1", class1)
             angle_el.set("class2", class2)
             angle_el.set("class3", class3)
-            angle_el.set("k", f"{k_openmm:.6f}")
+            angle_el.set("k", f"{k_angle_openmm:.6f}")
             angle_el.set("theta0", f"{theta0_rad:.6f}")
 
     # ---- Custom torsion force ----

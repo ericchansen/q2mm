@@ -8,16 +8,16 @@ Hessian data) and ``JaguarOut`` for reading Jaguar ``.out`` files
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from importlib.util import find_spec
 from string import digits
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
 from q2mm import constants as co
+from q2mm.io._helpers import _TextFileBase
 from q2mm.models.hessian import HessianProvenance, HessianUnits
 from q2mm.models.identifiers import _extract_element
 from q2mm.models.molecule import Molecule
@@ -110,7 +110,7 @@ def _molecule_from_jaguar_record(record: _JaguarRecord) -> Molecule:
     )
 
 
-class JaguarIn:
+class JaguarIn(_TextFileBase):
     """Retrieve data from Jaguar ``.in`` files.
 
     The Hessian is **not** mass-weighted and is returned in atomic units
@@ -128,39 +128,9 @@ class JaguarIn:
             path (str): Path to the Jaguar ``.in`` file.
 
         """
-        self._lines = None
-        self.path = os.path.abspath(path)
-        self.directory = os.path.dirname(self.path)
-        self.filename = os.path.basename(self.path)
-        self._hessian = None
-        self._molecules = None
-
-    @property
-    def lines(self) -> list[str]:
-        """Return the lines of the file.
-
-        Returns:
-            (list[str]): Lines of the file.
-
-        """
-        if self._lines is None:
-            with open(self.path) as f:
-                self._lines = f.readlines()
-        return self._lines
-
-    def write(self, path: str, lines: list[str] | None = None) -> None:
-        """Write lines to file at path.
-
-        Args:
-            path (str): Location of file to write.
-            lines (list[str] | None): Lines to write. Defaults to
-                ``self.lines``.
-
-        """
-        if lines is None:
-            lines = self.lines
-        with open(path, "w") as f:
-            f.writelines(lines)
+        super().__init__(path)
+        self._hessian: np.ndarray | None = None
+        self._molecules: list[Molecule] | None = None
 
     def get_hessian(self, num_atoms: int, *, tag_units: bool = False) -> np.ndarray:
         """Read the Hessian matrix from a Jaguar ``.in`` file.
@@ -243,7 +213,7 @@ class JaguarIn:
         if tag_units:
             ureg = _get_pint_ureg()
             if ureg is not None:
-                return ureg.Quantity(self._hessian, "hartree/bohr**2")
+                return cast(np.ndarray, ureg.Quantity(self._hessian, "hartree/bohr**2"))
         return self._hessian
 
     @property
@@ -316,7 +286,7 @@ class JaguarIn:
         )
 
 
-class JaguarOut:
+class JaguarOut(_TextFileBase):
     """Retrieve data from Schrödinger Jaguar ``.out`` files.
 
     Eigenvalues and eigenvectors are **not** mass-weighted.
@@ -329,42 +299,12 @@ class JaguarOut:
             path (str): Path to the Jaguar ``.out`` file.
 
         """
-        self._lines = None
-        self.path = os.path.abspath(path)
-        self.directory = os.path.dirname(self.path)
-        self.filename = os.path.basename(self.path)
-        self._records = None
-        self._eigenvalues = None
-        self._eigenvectors = None
-        self._frequencies = None
-        self._dummy_atom_eigenvector_indices = None
-
-    @property
-    def lines(self) -> list[str]:
-        """Return the lines of the file.
-
-        Returns:
-            (list[str]): Lines of the file.
-
-        """
-        if self._lines is None:
-            with open(self.path) as f:
-                self._lines = f.readlines()
-        return self._lines
-
-    def write(self, path: str, lines: list[str] | None = None) -> None:
-        """Write lines to file at path.
-
-        Args:
-            path (str): Location of file to write.
-            lines (list[str] | None): Lines to write. Defaults to
-                ``self.lines``.
-
-        """
-        if lines is None:
-            lines = self.lines
-        with open(path, "w") as f:
-            f.writelines(lines)
+        super().__init__(path)
+        self._records: list[_JaguarRecord] | None = None
+        self._eigenvalues: np.ndarray | None = None
+        self._eigenvectors: np.ndarray | None = None
+        self._frequencies: np.ndarray | None = None
+        self._dummy_atom_eigenvector_indices: list[int] | None = None
 
     @property
     def _records_parsed(self) -> list[_JaguarRecord]:
@@ -374,6 +314,7 @@ class JaguarOut:
         """
         if self._records is None:
             self.import_file()
+        assert self._records is not None
         return self._records
 
     @property
@@ -386,6 +327,7 @@ class JaguarOut:
         """numpy.ndarray: Eigenvalues derived from force constants and frequencies."""
         if self._eigenvalues is None:
             self.import_file()
+        assert self._eigenvalues is not None
         return self._eigenvalues
 
     @property
@@ -393,6 +335,7 @@ class JaguarOut:
         """numpy.ndarray: Cartesian eigenvectors with dummy-atom rows removed."""
         if self._eigenvectors is None:
             self.import_file()
+        assert self._eigenvectors is not None
         return self._eigenvectors
 
     @property
@@ -400,6 +343,7 @@ class JaguarOut:
         """numpy.ndarray: Vibrational frequencies in cm⁻¹."""
         if self._frequencies is None:
             self.import_file()
+        assert self._frequencies is not None
         return self._frequencies
 
     @property
@@ -407,6 +351,7 @@ class JaguarOut:
         """list[int]: Row indices in the eigenvector matrix that correspond to dummy atoms."""
         if self._dummy_atom_eigenvector_indices is None:
             self.import_file()
+        assert self._dummy_atom_eigenvector_indices is not None
         return self._dummy_atom_eigenvector_indices
 
     def import_file(self) -> None:
@@ -417,9 +362,9 @@ class JaguarOut:
         eigenvectors.
         """
         logger.log(10, f"READING: {self.filename}")
-        frequencies = []
-        force_constants = []
-        eigenvectors = []
+        frequencies: list[float] = []
+        force_constants: list[float] = []
+        eigenvectors: list[list[float]] = []
         records: list[_JaguarRecord] = []
         with open(self.path) as f:
             section_geometry = False
@@ -428,7 +373,7 @@ class JaguarOut:
             current_record: _JaguarRecord | None = None
             charge = 0
             multiplicity = 1
-            temp_eigenvectors = []
+            temp_eigenvectors: list[list[float]] = []
             for i, line in enumerate(f):
                 charge_match = re.search(r"net molecular charge:\s*(-?\d+)", line, re.IGNORECASE)
                 if charge_match is not None:
@@ -440,6 +385,7 @@ class JaguarOut:
                     cols = line.split()
                     if len(cols) == 0:
                         section_geometry = False
+                        assert current_record is not None
                         records.append(current_record)
                         continue
                     elif len(cols) == 1:
@@ -447,11 +393,13 @@ class JaguarOut:
                     else:
                         match = re.match(rf"\s+([\d\w]+)\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})\s+({co.RE_FLOAT})", line)
                         if match is not None:
-                            current_atom = _JaguarAtom()
-                            current_atom.element = match.group(1).translate(str.maketrans("", "", digits))
-                            current_atom.x = float(match.group(2))
-                            current_atom.y = float(match.group(3))
-                            current_atom.z = float(match.group(4))
+                            assert current_record is not None
+                            current_atom = _JaguarAtom(
+                                element=match.group(1).translate(str.maketrans("", "", digits)),
+                                x=float(match.group(2)),
+                                y=float(match.group(3)),
+                                z=float(match.group(4)),
+                            )
                             current_record.atoms.append(current_atom)
                             logger.log(
                                 0,
@@ -478,11 +426,10 @@ class JaguarOut:
                         section_eigenvectors = False
                         eigenvectors.extend(temp_eigenvectors)
                         continue
-                    else:
-                        for i, x in enumerate(cols[2:]):
-                            if not len(temp_eigenvectors) > i:
-                                temp_eigenvectors.append([])
-                            temp_eigenvectors[i].append(float(x))
+                    for j, x in enumerate(cols[2:]):
+                        if len(temp_eigenvectors) <= j:
+                            temp_eigenvectors.append([])
+                        temp_eigenvectors[j].append(float(x))
                 if section_eigenvalues is True and section_eigenvectors is False:
                     if "frequencies" in line:
                         cols = line.split()
@@ -496,47 +443,21 @@ class JaguarOut:
                     section_eigenvalues = True
         logger.log(1, f">>> len(frequencies): {len(frequencies)}")
         logger.log(1, f">>> frequencies:\n{frequencies}")
-        # logger.log(1, '>>> frequencies:\n{}'.format(
-        #         [x / co.FORCE_CONVERSION for x in frequencies]))
-        # logger.log(1, '>>> frequencies:\n{}'.format(
-        #         [x * 4.55633e-6 for x in frequencies]))
-        # logger.log(1, '>>> frequencies:\n{}'.format(
-        #         [x * 1.23981e-4 for x in frequencies]))
-        # logger.log(1, '>>> frequencies:\n{}'.format(
-        #         [x / 219474.6305 for x in frequencies]))
         eigenvalues = [
             -fc / co.FORCE_CONVERSION if f < 0 else fc / co.FORCE_CONVERSION
             for fc, f in zip(force_constants, frequencies)
         ]
         logger.log(1, f">>> eigenvalues:\n{eigenvalues}")
         # Remove eigenvector components related to dummy atoms.
-        # Find the index of the atoms that are dummies.
-        dummy_atom_indices = []
-        for i, atom in enumerate(records[-1].atoms):
-            if atom.is_dummy:
-                dummy_atom_indices.append(i)
+        dummy_atom_indices = [i for i, atom in enumerate(records[-1].atoms) if atom.is_dummy]
         logger.log(10, f"  -- Located {len(dummy_atom_indices)} dummy atoms.")
-        # Correlate those indices to the rows in the cartesian eigenvector.
-        dummy_atom_eigenvector_indices = []
-        for dummy_atom_index in dummy_atom_indices:
-            start = dummy_atom_index * 3
-            dummy_atom_eigenvector_indices.append(start)
-            dummy_atom_eigenvector_indices.append(start + 1)
-            dummy_atom_eigenvector_indices.append(start + 2)
-        new_eigenvectors = []
-        # Create new eigenvectors without the rows corresponding to the
-        # dummy atoms.
-        for eigenvector in eigenvectors:
-            new_eigenvectors.append([])
-            for i, eigenvector_row in enumerate(eigenvector):
-                if i not in dummy_atom_eigenvector_indices:
-                    new_eigenvectors[-1].append(eigenvector_row)
-        # Replace old eigenvectors with new where dummy atoms aren't included.
-        eigenvectors = np.array(new_eigenvectors)
+        dummy_atom_eigenvector_indices = [idx * 3 + offset for idx in dummy_atom_indices for offset in range(3)]
+        dummy_set = set(dummy_atom_eigenvector_indices)
+        filtered_eigenvectors = [[row for i, row in enumerate(evec) if i not in dummy_set] for evec in eigenvectors]
         self._dummy_atom_eigenvector_indices = dummy_atom_eigenvector_indices
         self._records = records
         self._eigenvalues = np.array(eigenvalues)
-        self._eigenvectors = np.array(eigenvectors)
+        self._eigenvectors = np.array(filtered_eigenvectors)
         self._frequencies = np.array(frequencies)
         logger.log(5, f"  -- Read {len(self._records)} structures")
         logger.log(5, f"  -- Read {len(self.frequencies)} frequencies.")

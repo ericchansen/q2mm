@@ -115,6 +115,16 @@ def _validate_scalar_observation(
     return normalized_value, normalized_weight, normalized_case_id, str(label)
 
 
+def _coerce_enum[E: Enum](value: E | str, enum_cls: type[E], label: str) -> E:
+    """Coerce *value* to *enum_cls*, raising a uniform ValueError on invalid members."""
+    if isinstance(value, enum_cls):
+        return value
+    try:
+        return enum_cls(value)
+    except ValueError as exc:
+        raise ValueError(f"Unknown {label} {value!r}.") from exc
+
+
 @dataclass(frozen=True)
 class ScanCoordinate:
     """One explicit coordinate value defining a constrained scan point."""
@@ -125,11 +135,7 @@ class ScanCoordinate:
     unit: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.kind, ScanCoordinateKind):
-            try:
-                object.__setattr__(self, "kind", ScanCoordinateKind(self.kind))
-            except ValueError as exc:
-                raise ValueError(f"Unknown scan coordinate kind {self.kind!r}.") from exc
+        object.__setattr__(self, "kind", _coerce_enum(self.kind, ScanCoordinateKind, "scan coordinate kind"))
         atom_indices = tuple(int(index) for index in self.atom_indices)
         expected = {
             ScanCoordinateKind.DISTANCE: (2, "angstrom"),
@@ -169,11 +175,7 @@ class AtomicPartialChargeObservation:
         )
         if not isinstance(self.atom_index, int) or isinstance(self.atom_index, bool) or self.atom_index < 0:
             raise ValueError("AtomicPartialChargeObservation.atom_index must be a non-negative integer.")
-        if not isinstance(self.unit, ChargeUnit):
-            try:
-                object.__setattr__(self, "unit", ChargeUnit(self.unit))
-            except ValueError as exc:
-                raise ValueError(f"Unknown atomic-charge unit {self.unit!r}.") from exc
+        object.__setattr__(self, "unit", _coerce_enum(self.unit, ChargeUnit, "atomic-charge unit"))
         object.__setattr__(self, "value", value)
         object.__setattr__(self, "weight", weight)
         object.__setattr__(self, "case_id", case_id)
@@ -205,11 +207,9 @@ class DirectElectrostaticPotentialObservation:
             raise ValueError("Direct ESP grid points must contain three finite Cartesian coordinates.")
         if self.point_unit != "angstrom":
             raise ValueError("Direct ESP grid points must use angstrom.")
-        if not isinstance(self.unit, ElectrostaticPotentialUnit):
-            try:
-                object.__setattr__(self, "unit", ElectrostaticPotentialUnit(self.unit))
-            except ValueError as exc:
-                raise ValueError(f"Unknown electrostatic-potential unit {self.unit!r}.") from exc
+        object.__setattr__(
+            self, "unit", _coerce_enum(self.unit, ElectrostaticPotentialUnit, "electrostatic-potential unit")
+        )
         object.__setattr__(self, "value", value)
         object.__setattr__(self, "weight", weight)
         object.__setattr__(self, "case_id", case_id)
@@ -242,16 +242,10 @@ class RelativeEnergyObservation:
         reference_case_id = str(self.reference_case_id).strip()
         if not group_id or not reference_case_id:
             raise ValueError("Relative-energy group and reference case IDs must be non-empty.")
-        if not isinstance(self.unit, ObservationEnergyUnit):
-            try:
-                object.__setattr__(self, "unit", ObservationEnergyUnit(self.unit))
-            except ValueError as exc:
-                raise ValueError(f"Unknown relative-energy unit {self.unit!r}.") from exc
-        if not isinstance(self.quantity, ThermodynamicQuantity):
-            try:
-                object.__setattr__(self, "quantity", ThermodynamicQuantity(self.quantity))
-            except ValueError as exc:
-                raise ValueError(f"Unknown thermodynamic quantity {self.quantity!r}.") from exc
+        object.__setattr__(self, "unit", _coerce_enum(self.unit, ObservationEnergyUnit, "relative-energy unit"))
+        object.__setattr__(
+            self, "quantity", _coerce_enum(self.quantity, ThermodynamicQuantity, "thermodynamic quantity")
+        )
         object.__setattr__(self, "value", value)
         object.__setattr__(self, "weight", weight)
         object.__setattr__(self, "case_id", case_id)
@@ -287,11 +281,7 @@ class ScanEnergyObservation:
             raise ValueError("Scan-energy group and reference case IDs must be non-empty.")
         if not isinstance(self.coordinate, ScanCoordinate):
             raise TypeError("ScanEnergyObservation.coordinate must be a ScanCoordinate.")
-        if not isinstance(self.unit, ObservationEnergyUnit):
-            try:
-                object.__setattr__(self, "unit", ObservationEnergyUnit(self.unit))
-            except ValueError as exc:
-                raise ValueError(f"Unknown scan-energy unit {self.unit!r}.") from exc
+        object.__setattr__(self, "unit", _coerce_enum(self.unit, ObservationEnergyUnit, "scan-energy unit"))
         object.__setattr__(self, "value", value)
         object.__setattr__(self, "weight", weight)
         object.__setattr__(self, "case_id", case_id)
@@ -321,11 +311,7 @@ class ParameterTetherObservation:
         )
         if not isinstance(self.parameter_id, ParameterId):
             raise TypeError("ParameterTetherObservation.parameter_id must be a ParameterId.")
-        if not isinstance(self.unit, ParameterUnit):
-            try:
-                object.__setattr__(self, "unit", ParameterUnit(self.unit))
-            except ValueError as exc:
-                raise ValueError(f"Unknown parameter-tether unit {self.unit!r}.") from exc
+        object.__setattr__(self, "unit", _coerce_enum(self.unit, ParameterUnit, "parameter-tether unit"))
         object.__setattr__(self, "value", value)
         object.__setattr__(self, "weight", weight)
         object.__setattr__(self, "case_id", case_id)

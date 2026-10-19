@@ -191,8 +191,8 @@ def _parse_datum(
         ]
 
     # ---- Scalar kinds -----------------------------------------------------
-    if kind in ("energy",):
-        value = _as_float(_require_key(datum, "value", context), "value", context)
+    value = _as_float(_require_key(datum, "value", context), "value", context)
+    if kind == "energy":
         return [
             Observation(
                 kind=kind,
@@ -204,7 +204,6 @@ def _parse_datum(
         ]
 
     if kind in ("bond_length", "bond_angle", "torsion_angle"):
-        value = _as_float(_require_key(datum, "value", context), "value", context)
         atoms_raw = datum.get("atoms")
         data_idx_raw = datum.get("data_idx")
 
@@ -246,7 +245,6 @@ def _parse_datum(
         raise ReferenceYAMLError(f"'{kind}' requires either 'atoms' or 'data_idx' in {context}.")
 
     if kind == "eig_diagonal":
-        value = _as_float(_require_key(datum, "value", context), "value", context)
         mode_idx = _as_int(_require_key(datum, "mode_idx", context), "mode_idx", context)
         if mode_idx < 0:
             raise ReferenceYAMLError(f"'mode_idx' must be non-negative in {context}, got {mode_idx}.")
@@ -261,35 +259,18 @@ def _parse_datum(
             )
         ]
 
-    if kind == "eig_offdiagonal":
-        value = _as_float(_require_key(datum, "value", context), "value", context)
+    if kind in ("eig_offdiagonal", "hessian_element"):
         row = _as_int(_require_key(datum, "row", context), "row", context)
         col = _as_int(_require_key(datum, "col", context), "col", context)
         if row < 0 or col < 0:
             raise ReferenceYAMLError(f"'row' and 'col' must be non-negative in {context}, got row={row}, col={col}.")
+        prefix = "eig" if kind == "eig_offdiagonal" else "hess"
         return [
             Observation(
-                kind="eig_offdiagonal",
+                kind=kind,
                 value=value,
                 weight=weight,
-                label=label if "label" in datum else f"eig[{row},{col}]",
-                case_id=case_id,
-                atom_indices=(row, col),
-            )
-        ]
-
-    if kind == "hessian_element":
-        value = _as_float(_require_key(datum, "value", context), "value", context)
-        row = _as_int(_require_key(datum, "row", context), "row", context)
-        col = _as_int(_require_key(datum, "col", context), "col", context)
-        if row < 0 or col < 0:
-            raise ReferenceYAMLError(f"'row' and 'col' must be non-negative in {context}, got row={row}, col={col}.")
-        return [
-            Observation(
-                kind="hessian_element",
-                value=value,
-                weight=weight,
-                label=label if "label" in datum else f"hess[{row},{col}]",
+                label=label if "label" in datum else f"{prefix}[{row},{col}]",
                 case_id=case_id,
                 atom_indices=(row, col),
             )
@@ -297,7 +278,6 @@ def _parse_datum(
 
     if kind == "frequency":
         # Single frequency entry (no bulk 'values')
-        value = _as_float(_require_key(datum, "value", context), "value", context)
         data_idx = _as_int(datum.get("data_idx", datum.get("index", 0)), "data_idx", context)
         if data_idx < 0:
             raise ReferenceYAMLError(f"'data_idx' must be non-negative in {context}, got {data_idx}.")
