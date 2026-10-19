@@ -16,7 +16,7 @@ import dataclasses
 from collections.abc import Iterable
 import logging
 import numpy as np
-from typing import Literal
+from typing import Any, Literal
 
 from q2mm.constants import BOHR_TO_ANG
 from q2mm.models.units import (
@@ -79,7 +79,7 @@ def _collect_matching(
     param: BondParam | AngleParam,
     items_attr: str,
     element_key_attr: str,
-) -> list[tuple[Molecule, object]]:
+) -> list[tuple[Molecule, Any]]:
     """Collect all items (bonds or angles) across molecules that match a parameter."""
     all_items = [(mol, item) for mol in molecules for item in getattr(mol, items_attr)]
     match_mode = _match_mode(param, [item for _, item in all_items])
@@ -99,38 +99,32 @@ def _should_keep_force_constant(value: float, invalid_policy: Literal["keep", "s
     return True
 
 
+def _project_subblock_along(hessian: np.ndarray, atom_a: int, atom_b: int, direction: np.ndarray) -> float:
+    """Project the -(atom_a, atom_b) 3x3 Hessian sub-block onto unit vector *direction*."""
+    a3, b3 = 3 * atom_a, 3 * atom_b
+    h_sub = -hessian[a3 : a3 + 3, b3 : b3 + 3]
+    # General eigenvalue decomposition (NOT eigh — sub-block is NOT symmetric).
+    # Keep complex eigenpairs through projection — only take real at the end
+    # (upstream seminario_sum uses np.abs on complex dot products).
+    eigenvalues, eigenvectors = np.linalg.eig(h_sub)
+    k = 0.0
+    for n in range(3):
+        k += eigenvalues[n] * np.abs(np.dot(eigenvectors[:, n], direction))
+    return float(np.real(k))
+
+
 def _project_hessian_block(hessian: np.ndarray, atom_i: int, atom_j: int, coords: np.ndarray, au_units: bool) -> float:
     """Project a single Hessian sub-block onto the bond vector.
 
     Returns the projected force constant in atomic units (Hartree/Bohr^2)
     or input units if au_units=False.
     """
-    if au_units:
-        coords_work = coords / BOHR_TO_ANG
-    else:
-        coords_work = coords.copy()
-
+    coords_work = coords / BOHR_TO_ANG if au_units else coords.copy()
     r_vec = coords_work[atom_j] - coords_work[atom_i]
-    r_len = np.linalg.norm(r_vec)
+    r_len = float(np.linalg.norm(r_vec))
     if r_len < 1e-10:
         return 0.0
-    r_hat = r_vec / r_len
-
-    i3, j3 = 3 * atom_i, 3 * atom_j
-    h_sub = -hessian[i3 : i3 + 3, j3 : j3 + 3]
-
-    # General eigenvalue decomposition (NOT eigh — sub-block is NOT symmetric)
-    eigenvalues, eigenvectors = np.linalg.eig(h_sub)
-    # Keep complex eigenpairs through projection — only take real at the end
-    # (upstream seminario_sum uses np.abs on complex dot products)
-
-    # Seminario projection: k = sum_n lambda_n * |e_n · r_hat|
-    # np.abs handles complex dot products correctly (returns magnitude)
-    k = 0.0
-    for n in range(3):
-        k += eigenvalues[n] * np.abs(np.dot(eigenvectors[:, n], r_hat))
-    # Result should be real (imaginary parts cancel in conjugate pairs)
-    return k.real
+    return _project_subblock_along(hessian, atom_i, atom_j, r_vec / r_len)
 
 
 def seminario_bond_fc(
@@ -235,24 +229,8 @@ def seminario_angle_fc(
     u_kj = np.cross(n_hat, r_kj_hat)
     u_kj /= np.linalg.norm(u_kj)
 
-    # Sub-block Hessians — keep complex eigenpairs through projection
-    i3, j3, k3 = 3 * atom_i, 3 * atom_j, 3 * atom_k
-
-    # For i-j interaction
-    h_ij = -hessian[i3 : i3 + 3, j3 : j3 + 3]
-    evals_ij, evecs_ij = np.linalg.eig(h_ij)
-    k_ij = 0.0
-    for n in range(3):
-        k_ij += evals_ij[n] * np.abs(np.dot(evecs_ij[:, n], u_ij))
-    k_ij = k_ij.real
-
-    # For k-j interaction
-    h_kj = -hessian[k3 : k3 + 3, j3 : j3 + 3]
-    evals_kj, evecs_kj = np.linalg.eig(h_kj)
-    k_kj = 0.0
-    for n in range(3):
-        k_kj += evals_kj[n] * np.abs(np.dot(evecs_kj[:, n], u_kj))
-    k_kj = k_kj.real
+    k_ij = _project_subblock_along(hessian, atom_i, atom_j, u_ij)
+    k_kj = _project_subblock_along(hessian, atom_k, atom_j, u_kj)
 
     # Combine via reciprocal sum: 1/k = 1/(k_ij·r_ij²) + 1/(k_kj·r_kj²)
     # Standard Seminario angle formula. Note: FUERZA still overestimates
@@ -273,7 +251,7 @@ def seminario_angle_fc(
     if au_units:
         k_angle *= HARTREE_RAD2_TO_KCALMOLRAD2
 
-    return k_angle
+    return float(k_angle)
 
 
 def qfuerza_fresh(
@@ -443,12 +421,12 @@ def qfuerza_into(
         raise ValueError("Molecule must have a Hessian attached. Use molecule.with_hessian(hess)")
 
     # Invert TS curvature if this is a transition-state Hessian
+    processed_hessians: dict[int, np.ndarray] | None = None
     if invert_ts_curvature:
-        processed_hessians: dict[int, np.ndarray] = {}
+        processed_hessians = {}
         for mol in molecules:
+            assert mol.hessian is not None
             processed_hessians[id(mol)] = _invert_ts_curvature(mol.hessian, replace_with=replace_with)
-    else:
-        processed_hessians = None
 
     return _estimate_into_ff(
         ff,
@@ -482,6 +460,7 @@ def _estimate_bond(
     equilibria = [bond.length for _, bond in matching_bonds]
     for molecule_item, bond in matching_bonds:
         hess = processed_hessians[id(molecule_item)] if processed_hessians else molecule_item.hessian
+        assert hess is not None
         k = seminario_bond_fc(
             bond.atom_i,
             bond.atom_j,
@@ -499,18 +478,14 @@ def _estimate_bond(
         else:
             logger.warning(f"  Bond {bond.elements} ({bond.atom_i}-{bond.atom_j}): invalid FC = {k} — skipped")
 
-    updates: dict[str, float] = {}
-    if equilibria:
-        updates["equilibrium"] = float(np.mean(equilibria))
+    new_eq = float(np.mean(equilibria)) if equilibria else bond_param.equilibrium
     if force_constants:
-        updates["force_constant"] = float(np.mean(force_constants))
-        logger.info(
-            f"  Bond {bond_param.key}: k={updates['force_constant']:.4f} kcal/(mol·Å²), "
-            f"r0={updates.get('equilibrium', bond_param.equilibrium):.4f} Å"
-        )
+        new_fc = float(np.mean(force_constants))
+        logger.info(f"  Bond {bond_param.key}: k={new_fc:.4f} kcal/(mol·Å²), r0={new_eq:.4f} Å")
     else:
+        new_fc = bond_param.force_constant
         logger.warning(f"  Bond {bond_param.key}: no valid force constants found, keeping existing force constant")
-    return dataclasses.replace(bond_param, **updates) if updates else bond_param
+    return dataclasses.replace(bond_param, equilibrium=new_eq, force_constant=new_fc)
 
 
 def _estimate_angle(
@@ -532,6 +507,7 @@ def _estimate_angle(
     equilibria = [angle.value for _, angle in matching_angles]
     for molecule_item, angle in matching_angles:
         hess = processed_hessians[id(molecule_item)] if processed_hessians else molecule_item.hessian
+        assert hess is not None
         k = seminario_angle_fc(
             angle.atom_i,
             angle.atom_j,
@@ -547,27 +523,23 @@ def _estimate_angle(
         else:
             logger.warning(f"  Angle {angle.elements}: invalid FC = {k} — skipped")
 
-    updates: dict[str, float] = {}
-    if equilibria:
-        updates["equilibrium"] = float(np.mean(equilibria))
+    new_eq = float(np.mean(equilibria)) if equilibria else angle_param.equilibrium
     if force_constants:
         fuerza_value = float(np.mean(force_constants))
         if strategy == "qfuerza" and _is_hydrogen_angle(angle_param.elements):
-            updates["force_constant"] = QFUERZA_H_ANGLE_DEFAULT_CANONICAL
+            new_fc = QFUERZA_H_ANGLE_DEFAULT_CANONICAL
             logger.info(
                 f"  Angle {angle_param.key}: QFUERZA H-angle substitution — "
                 f"{QFUERZA_H_ANGLE_DEFAULT_MDYNA} mdyn·Å/rad² "
                 f"(FUERZA was {fuerza_value:.4f} kcal/(mol·rad²))"
             )
         else:
-            updates["force_constant"] = fuerza_value
-            logger.info(
-                f"  Angle {angle_param.key}: k={updates['force_constant']:.4f}, "
-                f"theta0={updates.get('equilibrium', angle_param.equilibrium):.1f} deg"
-            )
+            new_fc = fuerza_value
+            logger.info(f"  Angle {angle_param.key}: k={new_fc:.4f}, theta0={new_eq:.1f} deg")
     else:
+        new_fc = angle_param.force_constant
         logger.warning(f"  Angle {angle_param.key}: no valid force constants found, keeping existing force constant")
-    return dataclasses.replace(angle_param, **updates) if updates else angle_param
+    return dataclasses.replace(angle_param, equilibrium=new_eq, force_constant=new_fc)
 
 
 def _estimate_into_ff(

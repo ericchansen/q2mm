@@ -8,13 +8,13 @@ mass-weighted Hessian matrices from MacroModel log files.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 
 import numpy as np
 
 from q2mm import constants as co
+from q2mm.io._helpers import _TextFileBase
 from q2mm.models.identifiers import (
     _extract_element,
     canonicalize_angle_env_id,
@@ -51,28 +51,8 @@ class _MacroModelAtom:
 
 
 @dataclass
-class _MacroModelBond:
-    """One bond parsed from a MacroModel ``.mmo`` bond-energy line."""
-
-    atom_nums: list[int]
-    value: float
-    ff_row: int
-    comment: str = ""
-
-
-@dataclass
-class _MacroModelAngle:
-    """One angle parsed from a MacroModel ``.mmo`` angle-energy line."""
-
-    atom_nums: list[int]
-    value: float
-    ff_row: int
-    comment: str = ""
-
-
-@dataclass
-class _MacroModelTorsion:
-    """One torsion parsed from a MacroModel ``.mmo`` torsion-energy line."""
+class _MacroModelTerm:
+    """One bond, angle, or torsion parsed from a MacroModel ``.mmo`` energy line."""
 
     atom_nums: list[int]
     value: float
@@ -92,73 +72,39 @@ class _MacroModelRecord:
 
     origin_name: str
     atoms: list[_MacroModelAtom] = field(default_factory=list)
-    bonds: list[_MacroModelBond] = field(default_factory=list)
-    angles: list[_MacroModelAngle] = field(default_factory=list)
-    torsions: list[_MacroModelTorsion] = field(default_factory=list)
+    bonds: list[_MacroModelTerm] = field(default_factory=list)
+    angles: list[_MacroModelTerm] = field(default_factory=list)
+    torsions: list[_MacroModelTerm] = field(default_factory=list)
 
 
-def _read_bond_line(line: str) -> _MacroModelBond | None:
-    """Parse a single line for bond data.
-
-    Args:
-        line: A line from the bond section of the ``.mmo`` file.
-
-    Returns:
-        A :class:`_MacroModelBond` if the line matches the bond pattern,
-        otherwise ``None``.
-
-    """
+def _read_bond_line(line: str) -> _MacroModelTerm | None:
+    """Parse a single line for bond data."""
     match = co.RE_BOND.match(line)
-    # atom_nums are 1-based atom indices (not atomic numbers)
     if match:
         atom_nums = [int(x) for x in [match.group(1), match.group(2)]]
         value = float(match.group(3))
         comment = match.group(4).strip()
         ff_row = int(match.group(5))
-        return _MacroModelBond(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
+        return _MacroModelTerm(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
     return None
 
 
-def _read_angle_line(line: str) -> _MacroModelAngle | None:
-    """Parse a single line for angle data.
-
-    Terminal atoms are reordered so that the lower index comes first.
-
-    Args:
-        line: A line from the angle section of the ``.mmo`` file.
-
-    Returns:
-        A :class:`_MacroModelAngle` if the line matches the angle pattern,
-        otherwise ``None``.
-
-    """
+def _read_angle_line(line: str) -> _MacroModelTerm | None:
+    """Parse a single line for angle data, ordering terminal atoms ascending."""
     match = co.RE_ANGLE.match(line)
     if match:
         atom_nums = [int(x) for x in [match.group(1), match.group(2), match.group(3)]]
-        # Reorder the terminal atoms so that the lower index atom is first.
         if atom_nums[0] > atom_nums[2]:
             atom_nums = [atom_nums[2], atom_nums[1], atom_nums[0]]
         value = float(match.group(4))
         comment = match.group(5).strip()
         ff_row = int(match.group(6))
-        return _MacroModelAngle(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
+        return _MacroModelTerm(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
     return None
 
 
-def _read_torsion_line(line: str) -> _MacroModelTorsion | None:
-    """Parse a single line for torsion data.
-
-    Atom indices are reordered so that the lower central-atom index comes
-    first.
-
-    Args:
-        line: A line from the torsion section of the ``.mmo`` file.
-
-    Returns:
-        A :class:`_MacroModelTorsion` if the line matches the torsion
-        pattern, otherwise ``None``.
-
-    """
+def _read_torsion_line(line: str) -> _MacroModelTerm | None:
+    """Parse a single line for torsion data, ordering central atoms ascending."""
     match = co.RE_TORSION.match(line)
     if match:
         atom_nums = [int(x) for x in [match.group(1), match.group(2), match.group(3), match.group(4)]]
@@ -167,7 +113,7 @@ def _read_torsion_line(line: str) -> _MacroModelTorsion | None:
         value = float(match.group(5))
         comment = match.group(6).strip()
         ff_row = int(match.group(7))
-        return _MacroModelTorsion(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
+        return _MacroModelTerm(atom_nums=atom_nums, comment=comment, value=value, ff_row=ff_row)
     return None
 
 
@@ -237,7 +183,7 @@ def _molecule_from_macromodel_record(record: _MacroModelRecord) -> Molecule:
     )
 
 
-class MacroModel:
+class MacroModel(_TextFileBase):
     """Extract structural data from MacroModel ``.mmo`` files.
 
     Reads bond lengths, angles, and torsions for each structure entry
@@ -251,38 +197,8 @@ class MacroModel:
             path (str): Path to the MacroModel ``.mmo`` file.
 
         """
-        self._lines = None
-        self.path = os.path.abspath(path)
-        self.directory = os.path.dirname(self.path)
-        self.filename = os.path.basename(self.path)
-        self._records = None
-
-    @property
-    def lines(self) -> list[str]:
-        """Return the lines of the file.
-
-        Returns:
-            (list[str]): Lines of the file.
-
-        """
-        if self._lines is None:
-            with open(self.path) as f:
-                self._lines = f.readlines()
-        return self._lines
-
-    def write(self, path: str, lines: list[str] | None = None) -> None:
-        """Write lines to file at path.
-
-        Args:
-            path (str): Location of file to write.
-            lines (list[str] | None): Lines to write. Defaults to
-                ``self.lines``.
-
-        """
-        if lines is None:
-            lines = self.lines
-        with open(path, "w") as f:
-            f.writelines(lines)
+        super().__init__(path)
+        self._records: list[_MacroModelRecord] | None = None
 
     @property
     def _records_parsed(self) -> list[_MacroModelRecord]:
@@ -290,35 +206,28 @@ class MacroModel:
 
         Not part of the public API — see :attr:`molecules`.
         """
-        # Atom reading not yet implemented; would be needed for
-        # Hessian extraction (requires atom count for matrix shape).
-        if self._records is None or self._records == []:
+        if not self._records:
             logger.log(10, f"READING: {self.filename}")
-            self._records = []
+            records: list[_MacroModelRecord] = []
             with open(self.path) as f:
                 count_current = 0
                 count_input = 0
                 count_structure = 0
                 count_previous = 0
-                bonds = []
-                angles = []
-                torsions = []
-                atoms = []
-                current_record = None
-                section = None
+                bonds: list[_MacroModelTerm] = []
+                angles: list[_MacroModelTerm] = []
+                torsions: list[_MacroModelTerm] = []
+                atoms: list[_MacroModelAtom] = []
+                current_record: _MacroModelRecord | None = None
+                section: str | None = None
                 for line in f:
-                    # The MMO file lists the bonds, angles, and torsions in
-                    # some order that I am unsure of. It seems consistent
-                    # with the same filename but with two files with the
-                    # exact same structure the ordering is off. This
-                    # reorders the lists before being added to the record.
                     if "Atomic Charges, Coordinates and Connectivity" in line:
                         section = "atoms"
                         continue
                     if section == "atoms":
                         if "(" in line:
                             split = [item.strip() for item in line.split()]
-                            atom_num = split[2][:-1]  # same as index
+                            atom_num = split[2][:-1]
                             ele_name = re.sub(r"[0-9]", "", split[0])
                             atom = _MacroModelAtom(
                                 atom_type_name=split[0],
@@ -331,13 +240,12 @@ class MacroModel:
                             atoms.append(atom)
                         if "Total" in line:
                             section = None
-                            # Sort the bonds, angles, and torsions before the start
-                            # of a new structure
                             bonds.sort(key=lambda x: (x.atom_nums[0], x.atom_nums[1]))
                             angles.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
                             torsions.sort(
                                 key=lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3])
                             )
+                            assert current_record is not None
                             current_record.bonds = bonds
                             current_record.angles = angles
                             current_record.torsions = torsions
@@ -349,24 +257,14 @@ class MacroModel:
                     if "Input Structure Name" in line:
                         count_structure += 1
                     count_previous = count_current
-                    # Sometimes only one of the above ("Input filename" and
-                    # "Input Structure Name") is used, sometimes both are used.
-                    # count_current will make sure you catch both.
                     count_current = max(count_input, count_structure)
-                    # If these don't match, then we reached the end of a
-                    # structure.
                     if count_current != count_previous:
                         bonds = []
                         angles = []
                         torsions = []
                         atoms = []
                         current_record = _MacroModelRecord(self.filename)
-                        self._records.append(current_record)
-                    # For each structure we come across, look for sections that
-                    # we are interested in: those pertaining to bonds, angles,
-                    # and torsions. Of course more could be added. We set the
-                    # section to None to mark the end of a section, and we leave
-                    # it None for parts of the file we don't care about.
+                        records.append(current_record)
                     if "BOND LENGTHS AND STRETCH ENERGIES" in line:
                         section = "bond"
                     if "ANGLES, BEND AND STRETCH BEND ENERGIES" in line:
@@ -389,6 +287,7 @@ class MacroModel:
                         torsion = _read_torsion_line(line)
                         if torsion is not None:
                             torsions.append(torsion)
+            self._records = records
         return self._records
 
     @property
@@ -397,7 +296,7 @@ class MacroModel:
         return [_molecule_from_macromodel_record(record) for record in self._records_parsed]
 
 
-class MacroModelLog:
+class MacroModelLog(_TextFileBase):
     """Retrieve data from MacroModel log files.
 
     The Hessian matrix read from these files is mass-weighted.
@@ -410,39 +309,9 @@ class MacroModelLog:
             path (str): Path to the MacroModel log file.
 
         """
-        self._lines = None
-        self.path = os.path.abspath(path)
-        self.directory = os.path.dirname(self.path)
-        self.filename = os.path.basename(self.path)
-        self._hessian = None
-        self._records = None
-
-    @property
-    def lines(self) -> list[str]:
-        """Return the lines of the file.
-
-        Returns:
-            (list[str]): Lines of the file.
-
-        """
-        if self._lines is None:
-            with open(self.path) as f:
-                self._lines = f.readlines()
-        return self._lines
-
-    def write(self, path: str, lines: list[str] | None = None) -> None:
-        """Write lines to file at path.
-
-        Args:
-            path (str): Location of file to write.
-            lines (list[str] | None): Lines to write. Defaults to
-                ``self.lines``.
-
-        """
-        if lines is None:
-            lines = self.lines
-        with open(path, "w") as f:
-            f.writelines(lines)
+        super().__init__(path)
+        self._hessian: np.ndarray | None = None
+        self._records: list[_MacroModelRecord] | None = None
 
     @property
     def hessian(self) -> np.ndarray:
@@ -457,7 +326,10 @@ class MacroModelLog:
             logger.log(10, f"READING: {self.filename}")
             with open(self.path) as f:
                 lines = f.read()
-            num_atoms = int(re.search(r"Read\s+(\d+)\s+atoms.", lines).group(1))
+            atoms_match = re.search(r"Read\s+(\d+)\s+atoms.", lines)
+            if atoms_match is None:
+                raise ValueError(f"Could not find atom count in MacroModel log {self.filename}.")
+            num_atoms = int(atoms_match.group(1))
             logger.log(5, f"  -- Read {num_atoms} atoms.")
 
             hessian = np.zeros([num_atoms * 3, num_atoms * 3], dtype=float)
@@ -467,20 +339,17 @@ class MacroModelLog:
             start_row = False
             start_col = False
             row_num = 0
-            col_nums = []
-            elements = []
+            col_nums: list[int] = []
+            elements: list[float] = []
             for i, word in enumerate(words):
-                # 1. Start of Hessian section.
                 if word == "Mass-weighted":
                     section_hessian = True
                     continue
-                # 5. End of Hessian. Add last row of Hessian and break.
                 if word == "Eigenvalues:":
                     for col_num, element in zip(col_nums, elements):
                         hessian[row_num - 1, col_num - 1] = element
                     section_hessian = False
                     break
-                # 4. End of a Hessian row. Add to matrix and reset.
                 if section_hessian and start_col and word == "Element":
                     for col_num, element in zip(col_nums, elements):
                         hessian[row_num - 1, col_num - 1] = element
@@ -490,15 +359,12 @@ class MacroModelLog:
                     col_nums = []
                     elements = []
                     continue
-                # 2. Start of a Hessian row.
                 if section_hessian and word == "Element":
                     row_num = int(words[i + 1])
                     col_nums = []
                     elements = []
                     start_row = True
                     continue
-                # 3. Okay, made it through the row number. Now look for columns
-                #    and elements.
                 if section_hessian and start_row and word == ":":
                     start_row = False
                     start_col = True
@@ -521,61 +387,42 @@ class MacroModelLog:
         """
         if self._records is None:
             logger.log(10, f"READING: {self.filename}")
-            self._records = []
+            records: list[_MacroModelRecord] = []
             with open(self.path) as f:
                 count_current = 0
                 count_input = 0
                 count_structure = 0
                 count_previous = 0
-                bonds = []
-                angles = []
-                torsions = []
-                current_record = None
-                section = None
+                bonds: list[_MacroModelTerm] = []
+                angles: list[_MacroModelTerm] = []
+                torsions: list[_MacroModelTerm] = []
+                current_record: _MacroModelRecord | None = None
+                section: str | None = None
                 for line in f:
                     if "m_atom" in line:
                         section = "atom"
                     elif "m_bond" in line:
                         section = "bond"
-                    elif ":::" in line and "ready" not in section:
+                    elif ":::" in line and section is not None and "ready" not in section:
                         section = section + "ready"
-                    elif ":::" in line and "ready" in section:
+                    elif ":::" in line and section is not None and "ready" in section:
                         section = None
-                    elif section == "atom ready":
-                        # read in atoms to list
-                        continue
-                    elif section == "bond ready":
-                        # read in bond atom numbers, populate later with atoms
+                    elif section in ("atom ready", "bond ready"):
                         continue
                     else:
                         continue
-                    # The MMO file lists the bonds, angles, and torsions in
-                    # some order that I am unsure of. It seems consistent
-                    # with the same filename but with two files with the
-                    # exact same structure the ordering is off. This
-                    # reorders the lists before being added to the record.
                     if "Input filename" in line:
                         count_input += 1
                     if "Input Structure Name" in line:
                         count_structure += 1
                     count_previous = count_current
-                    # Sometimes only one of the above ("Input filename" and
-                    # "Input Structure Name") is used, sometimes both are used.
-                    # count_current will make sure you catch both.
                     count_current = max(count_input, count_structure)
-                    # If these don't match, then we reached the end of a
-                    # structure.
                     if count_current != count_previous:
                         bonds = []
                         angles = []
                         torsions = []
                         current_record = _MacroModelRecord(self.filename)
-                        self._records.append(current_record)
-                    # For each structure we come across, look for sections that
-                    # we are interested in: those pertaining to bonds, angles,
-                    # and torsions. Of course more could be added. We set the
-                    # section to None to mark the end of a section, and we leave
-                    # it None for parts of the file we don't care about.
+                        records.append(current_record)
                     if "BOND LENGTHS AND STRETCH ENERGIES" in line:
                         section = "bond"
                     if "ANGLES, BEND AND STRETCH BEND ENERGIES" in line:
@@ -598,15 +445,14 @@ class MacroModelLog:
                         torsion = _read_torsion_line(line)
                         if torsion is not None:
                             torsions.append(torsion)
-                    if "Connection Table" in line:
-                        # Sort the bonds, angles, and torsions before the start
-                        # of a new structure
+                    if "Connection Table" in line and current_record is not None:
                         bonds.sort(key=lambda x: (x.atom_nums[0], x.atom_nums[1]))
                         angles.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[0], x.atom_nums[2]))
                         torsions.sort(key=lambda x: (x.atom_nums[1], x.atom_nums[2], x.atom_nums[0], x.atom_nums[3]))
                         current_record.bonds = bonds
                         current_record.angles = angles
                         current_record.torsions = torsions
+            self._records = records
             logger.log(5, f"  -- Imported {len(self._records)} structure(s).")
         return self._records
 

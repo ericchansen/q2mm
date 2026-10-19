@@ -10,11 +10,12 @@ parsing.
 """
 
 import dataclasses
+from pathlib import Path
 
 import pytest
 
-from q2mm.io._helpers import _normalize_equilibrium_angle, _torsion_file_value
-from q2mm.models.forcefield import TorsionParam
+from q2mm.io._helpers import _TextFileBase, _normalize_equilibrium_angle, _resolve_template_path, _torsion_file_value
+from q2mm.models.forcefield import ForceField, FunctionalForm, TorsionParam
 
 
 class TestNormalizeEquilibriumAngle:
@@ -101,6 +102,34 @@ class TestPureHelpersNotExportedFromIoPackage:
         import q2mm.io
 
         assert not hasattr(q2mm.io, "_torsion_file_value")
+
+    def test_text_file_base_and_resolve_template_not_package_attributes(self) -> None:
+        import q2mm.io
+
+        assert not hasattr(q2mm.io, "_TextFileBase")
+        assert not hasattr(q2mm.io, "_resolve_template_path")
+
+
+class TestSharedTextFileBaseAndTemplateResolution:
+    """Legacy file-wrapper parsers share ``_TextFileBase`` and template path resolution."""
+
+    def test_legacy_file_parsers_subclass_text_file_base(self) -> None:
+        from q2mm.io.gaussian import GaussLog
+        from q2mm.io.jaguar import JaguarIn, JaguarOut
+        from q2mm.io.macromodel import MacroModel, MacroModelLog
+        from q2mm.io.mol2 import Mol2
+
+        for cls in (GaussLog, JaguarIn, JaguarOut, MacroModel, MacroModelLog, Mol2):
+            assert issubclass(cls, _TextFileBase)
+
+    def test_resolve_template_path_prefers_explicit_then_matching_source_format(self, tmp_path: Path) -> None:
+        source = tmp_path / "source.fld"
+        override = tmp_path / "override.fld"
+        ff = ForceField(functional_form=FunctionalForm.MM3, source_path=source, source_format="mm3_fld")
+
+        assert _resolve_template_path(ff, override, "mm3_fld") == override
+        assert _resolve_template_path(ff, None, "mm3_fld") == source
+        assert _resolve_template_path(ff, None, "tinker_prm") is None
 
 
 class TestFormatStagingRowsArePrivate:

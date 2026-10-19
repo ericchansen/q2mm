@@ -9,9 +9,12 @@ import re
 from collections.abc import Callable, Hashable, Sequence
 from pathlib import Path
 
+from typing import Any, cast
+
 from q2mm.io._helpers import (
     _clean_atom_types,
     _normalize_equilibrium_angle,
+    _resolve_template_path,
     _split_env_id,
     _validate_form_for_format,
 )
@@ -283,6 +286,9 @@ def _tinker_import_ff(path: str | Path) -> tuple[list[_TinkerParameterRow], list
             for slot, (amplitude, _phase, _fold) in enumerate(_tinker_torsion_terms(parts, row), start=1):
                 rows.append(_TinkerParameterRow("df", amplitude, row, slot, parts[1:5]))
             continue
+        atom_count: int
+        ptypes: tuple[str, ...]
+        allowed_lengths: tuple[int, ...]
         if record in _BONDS:
             atom_count, ptypes, allowed_lengths = 2, ("bf", "be"), (5,)
         elif record in _ANGLES:
@@ -430,12 +436,12 @@ def load_tinker_prm(path: str | Path) -> ForceField:
         atom_types = _clean_atom_types(row.atom_types, 4)
 
         if row.ptype == "bf" and len(atom_types) >= 2:
-            elems = tuple(_elem(t) for t in atom_types[:2])
+            t0, t1 = atom_types[:2]
             env_id = canonicalize_bond_env_id(atom_types[:2])
             eq_val = eq_lookup.get(("be", row.ff_row), 0.0)
             bonds.append(
                 BondParam(
-                    elements=elems,
+                    elements=(_elem(t0), _elem(t1)),
                     equilibrium=eq_val,
                     force_constant=mm3_bond_k_to_canonical(row.value),
                     label=f"Tinker row {row.ff_row}",
@@ -444,12 +450,12 @@ def load_tinker_prm(path: str | Path) -> ForceField:
                 )
             )
         elif row.ptype == "af" and len(atom_types) >= 3:
-            elems = tuple(_elem(t) for t in atom_types[:3])
+            t0, t1, t2 = atom_types[:3]
             env_id = canonicalize_angle_env_id(atom_types[:3])
             eq_val = eq_lookup.get(("ae", row.ff_row), 0.0)
             angles.append(
                 AngleParam(
-                    elements=elems,
+                    elements=(_elem(t0), _elem(t1), _elem(t2)),
                     equilibrium=eq_val,
                     force_constant=mm3_angle_k_to_canonical(row.value),
                     label=f"Tinker row {row.ff_row}",
@@ -458,7 +464,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
                 )
             )
         elif row.ptype == "df" and len(atom_types) >= 4:
-            elems = tuple(_elem(t) for t in atom_types[:4])
+            t0, t1, t2, t3 = atom_types[:4]
             env_id = canonicalize_torsion_env_id(atom_types[:4])
             amplitude, phase, periodicity = _tinker_torsion_terms(_tinker_tokens(lines[row.ff_row - 1]), row.ff_row)[
                 row.ff_col - 1
@@ -466,7 +472,7 @@ def load_tinker_prm(path: str | Path) -> ForceField:
             coefficient = _tinker_scaled_torsion(amplitude, torsion_unit, row.ff_row)
             torsions.append(
                 TorsionParam(
-                    elements=elems,
+                    elements=(_elem(t0), _elem(t1), _elem(t2), _elem(t3)),
                     periodicity=periodicity,
                     force_constant=coefficient,
                     phase=phase,
@@ -491,10 +497,10 @@ def load_tinker_prm(path: str | Path) -> ForceField:
 
     return ForceField(
         name=f"Tinker from {Path(path).name}",
-        bonds=bonds,
-        angles=angles,
-        torsions=torsions,
-        vdws=vdws,
+        bonds=tuple(bonds),
+        angles=tuple(angles),
+        torsions=tuple(torsions),
+        vdws=tuple(vdws),
         source_path=Path(path),
         source_format="tinker_prm",
         functional_form=FunctionalForm.MM3,
@@ -530,7 +536,7 @@ def _tinker_template_pairs[TemplateParam: (BondParam, AngleParam, TorsionParam, 
         if isinstance(comparison, BondParam) and isinstance(expected, BondParam):
             if comparison.context in ("", "0000 0000") and expected.context in ("", "0000 0000"):
                 # Compare generic aliases without changing either bound parameter.
-                comparison = dataclasses.replace(comparison, context=expected.context)
+                comparison = cast(TemplateParam, dataclasses.replace(cast(Any, comparison), context=expected.context))
         if comparison != expected:
             raise ValueError(f"Tinker row {original.ff_row}: template cannot represent non-scalar parameter edits")
         for field in editable:
@@ -559,11 +565,12 @@ def _tinker_replace_token(lines: list[str], row: int, column: int, value: float)
 def _tinker_torsion_for_binding(param: TorsionParam) -> TorsionParam:
     """Use proper-torsion reversal equivalence without rewriting source columns."""
     atom_types = _split_env_id(param.env_id, 4)
-    elements = tuple(param.elements)
+    e0, e1, e2, e3 = param.elements
+    elements = min((e0, e1, e2, e3), (e3, e2, e1, e0))
     return dataclasses.replace(
         param,
         env_id=canonicalize_torsion_env_id(atom_types) if atom_types else param.env_id,
-        elements=min(elements, elements[::-1]),
+        elements=elements,
     )
 
 
@@ -573,47 +580,47 @@ def _tinker_template_lines(ff: ForceField, template: Path) -> list[str]:
         lines = f.readlines()
     unit = _tinker_torsion_unit(lines)
 
-    for before, after in _tinker_template_pairs(
+    for bond_before, bond_after in _tinker_template_pairs(
         original.bonds, ff.bonds, lambda p: p.env_id, ("force_constant", "equilibrium")
     ):
-        assert before.ff_row is not None
-        if before.force_constant != after.force_constant:
-            _tinker_replace_token(lines, before.ff_row, 3, canonical_to_mm3_bond_k(after.force_constant))
-        if before.equilibrium != after.equilibrium:
-            _tinker_replace_token(lines, before.ff_row, 4, after.equilibrium)
-    for before, after in _tinker_template_pairs(
+        assert bond_before.ff_row is not None
+        if bond_before.force_constant != bond_after.force_constant:
+            _tinker_replace_token(lines, bond_before.ff_row, 3, canonical_to_mm3_bond_k(bond_after.force_constant))
+        if bond_before.equilibrium != bond_after.equilibrium:
+            _tinker_replace_token(lines, bond_before.ff_row, 4, bond_after.equilibrium)
+    for angle_before, angle_after in _tinker_template_pairs(
         original.angles, ff.angles, lambda p: p.env_id, ("force_constant", "equilibrium")
     ):
-        assert before.ff_row is not None
-        if before.force_constant != after.force_constant:
-            _tinker_replace_token(lines, before.ff_row, 4, canonical_to_mm3_angle_k(after.force_constant))
-        if before.equilibrium != after.equilibrium:
-            _tinker_replace_token(lines, before.ff_row, 5, _normalize_equilibrium_angle(after.equilibrium))
-    for before, after in _tinker_template_pairs(
+        assert angle_before.ff_row is not None
+        if angle_before.force_constant != angle_after.force_constant:
+            _tinker_replace_token(lines, angle_before.ff_row, 4, canonical_to_mm3_angle_k(angle_after.force_constant))
+        if angle_before.equilibrium != angle_after.equilibrium:
+            _tinker_replace_token(lines, angle_before.ff_row, 5, _normalize_equilibrium_angle(angle_after.equilibrium))
+    for tor_before, tor_after in _tinker_template_pairs(
         tuple(_tinker_torsion_for_binding(param) for param in original.torsions),
         tuple(_tinker_torsion_for_binding(param) for param in ff.torsions),
         lambda p: (p.env_id, p.periodicity),
         ("force_constant", "phase"),
     ):
-        assert before.ff_row is not None
-        terms = _tinker_torsion_terms(_tinker_tokens(lines[before.ff_row - 1]), before.ff_row)
-        slot = next(index for index, term in enumerate(terms) if term[2] == before.periodicity)
-        if before.force_constant != after.force_constant:
-            amplitude = after.force_constant / unit
-            if after.force_constant != 0.0 and amplitude == 0.0:
-                raise ValueError(f"Tinker row {before.ff_row}: torsion scaling underflow")
-            _tinker_replace_token(lines, before.ff_row, 5 + 3 * slot, amplitude)
-            serialized = _tinker_tokens(lines[before.ff_row - 1])[5 + 3 * slot]
-            _tinker_scaled_torsion(_tinker_float(serialized, before.ff_row), unit, before.ff_row)
-        if before.phase != after.phase:
-            _tinker_replace_token(lines, before.ff_row, 6 + 3 * slot, after.phase)
-    for before, after in _tinker_template_pairs(
+        assert tor_before.ff_row is not None
+        terms = _tinker_torsion_terms(_tinker_tokens(lines[tor_before.ff_row - 1]), tor_before.ff_row)
+        slot = next(index for index, term in enumerate(terms) if term[2] == tor_before.periodicity)
+        if tor_before.force_constant != tor_after.force_constant:
+            amplitude = tor_after.force_constant / unit
+            if tor_after.force_constant != 0.0 and amplitude == 0.0:
+                raise ValueError(f"Tinker row {tor_before.ff_row}: torsion scaling underflow")
+            _tinker_replace_token(lines, tor_before.ff_row, 5 + 3 * slot, amplitude)
+            serialized = _tinker_tokens(lines[tor_before.ff_row - 1])[5 + 3 * slot]
+            _tinker_scaled_torsion(_tinker_float(serialized, tor_before.ff_row), unit, tor_before.ff_row)
+        if tor_before.phase != tor_after.phase:
+            _tinker_replace_token(lines, tor_before.ff_row, 6 + 3 * slot, tor_after.phase)
+    for vdw_before, vdw_after in _tinker_template_pairs(
         original.vdws, ff.vdws, lambda p: p.atom_type, ("radius", "epsilon", "reduction")
     ):
-        assert before.ff_row is not None
+        assert vdw_before.ff_row is not None
         for column, field in enumerate(("radius", "epsilon", "reduction"), start=2):
-            if getattr(before, field) != getattr(after, field):
-                _tinker_replace_token(lines, before.ff_row, column, getattr(after, field))
+            if getattr(vdw_before, field) != getattr(vdw_after, field):
+                _tinker_replace_token(lines, vdw_before.ff_row, column, getattr(vdw_after, field))
     return lines
 
 
@@ -668,9 +675,7 @@ def save_tinker_prm(
     _validate_form_for_format(ff, "tinker_prm")
     _validate_tinker_export_terms(ff, supports_reduction=True)
     output_path = Path(path)
-    template = Path(template_path) if template_path is not None else None
-    if template is None and ff.source_format == "tinker_prm" and ff.source_path is not None:
-        template = ff.source_path
+    template = _resolve_template_path(ff, template_path, "tinker_prm")
 
     if template is not None:
         lines = _tinker_template_lines(ff, template)

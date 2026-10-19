@@ -5,8 +5,10 @@ Private module — import from ``q2mm.io`` sub-modules, not directly.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from q2mm.models.forcefield import (
@@ -23,8 +25,36 @@ from q2mm.models.identifiers import (
     canonicalize_bond_env_id,
 )
 
+
+class _TextFileBase:
+    """Shared path and lazy-line-reading base for legacy text-file parsers."""
+
+    __slots__ = ("_lines", "path", "directory", "filename")
+
+    def __init__(self, path: str) -> None:
+        self._lines: list[str] | None = None
+        self.path = os.path.abspath(path)
+        self.directory = os.path.dirname(self.path)
+        self.filename = os.path.basename(self.path)
+
+    @property
+    def lines(self) -> list[str]:
+        """Return the lines of the file."""
+        if self._lines is None:
+            with open(self.path) as f:
+                self._lines = f.readlines()
+        return self._lines
+
+    def write(self, path: str, lines: list[str] | None = None) -> None:
+        """Write lines to file at *path* (defaults to ``self.lines``)."""
+        if lines is None:
+            lines = self.lines
+        with open(path, "w") as f:
+            f.writelines(lines)
+
+
 # ---------------------------------------------------------------------------
-# Format compatibility
+# Format compatibility & template resolution
 # ---------------------------------------------------------------------------
 
 _FORMAT_COMPATIBLE_FORMS: dict[str, set[str]] = {
@@ -46,8 +76,21 @@ def _validate_form_for_format(ff: ForceField, target_format: str) -> None:
         )
 
 
+def _resolve_template_path(
+    ff: ForceField,
+    template_path: str | Path | None,
+    source_format: str,
+) -> Path | None:
+    """Resolve an explicit *template_path* or fall back to ``ff.source_path`` when formats match."""
+    if template_path is not None:
+        return Path(template_path)
+    if ff.source_format == source_format and ff.source_path is not None:
+        return ff.source_path
+    return None
+
+
 # ---------------------------------------------------------------------------
-# Env-id splitting
+# Env-id splitting & atom-type cleaning
 # ---------------------------------------------------------------------------
 
 
@@ -58,12 +101,7 @@ def _split_env_id(env_id: str, expected_len: int) -> list[str]:
     return []
 
 
-# ---------------------------------------------------------------------------
-# Atom-type cleaning
-# ---------------------------------------------------------------------------
-
-
-def _clean_atom_types(atom_types: list[str] | tuple[str, ...] | None, expected_len: int) -> list[str]:
+def _clean_atom_types(atom_types: Sequence[str] | None, expected_len: int) -> list[str]:
     if atom_types is None:
         return []
     if isinstance(atom_types, str):
@@ -79,28 +117,30 @@ def _clean_atom_types(atom_types: list[str] | tuple[str, ...] | None, expected_l
 # ---------------------------------------------------------------------------
 
 
-def _build_param_maps(params: list, secondary_key: str) -> tuple[dict, dict]:
-    """Build ff_row and secondary-key lookup dicts for a list of parameters."""
+def _build_param_maps[P: (BondParam, AngleParam, StretchBendParam, VdwParam)](
+    params: Sequence[P], secondary_key: str
+) -> tuple[dict[int, P], dict[str, P]]:
+    """Build ff_row and secondary-key lookup dicts for a sequence of parameters."""
     by_row = {p.ff_row: p for p in params if p.ff_row is not None}
     by_key = {getattr(p, secondary_key): p for p in params if getattr(p, secondary_key, None)}
     return by_row, by_key
 
 
-def _build_bond_maps(bonds: list[BondParam]) -> tuple[dict[int, BondParam], dict[str, BondParam]]:
+def _build_bond_maps(bonds: Sequence[BondParam]) -> tuple[dict[int, BondParam], dict[str, BondParam]]:
     return _build_param_maps(bonds, "env_id")
 
 
-def _build_angle_maps(angles: list[AngleParam]) -> tuple[dict[int, AngleParam], dict[str, AngleParam]]:
+def _build_angle_maps(angles: Sequence[AngleParam]) -> tuple[dict[int, AngleParam], dict[str, AngleParam]]:
     return _build_param_maps(angles, "env_id")
 
 
 def _build_sb_maps(
-    stretch_bends: list[StretchBendParam],
+    stretch_bends: Sequence[StretchBendParam],
 ) -> tuple[dict[int, StretchBendParam], dict[str, StretchBendParam]]:
     return _build_param_maps(stretch_bends, "env_id")
 
 
-def _build_vdw_maps(vdws: list[VdwParam]) -> tuple[dict[int, VdwParam], dict[str, VdwParam]]:
+def _build_vdw_maps(vdws: Sequence[VdwParam]) -> tuple[dict[int, VdwParam], dict[str, VdwParam]]:
     return _build_param_maps(vdws, "atom_type")
 
 
@@ -109,14 +149,14 @@ def _build_vdw_maps(vdws: list[VdwParam]) -> tuple[dict[int, VdwParam], dict[str
 # ---------------------------------------------------------------------------
 
 
-def _match_for_export(
+def _match_for_export[P: (BondParam, AngleParam, StretchBendParam)](
     ff_row: int | None,
-    atom_types: list[str] | tuple[str, ...] | None,
-    by_row: dict,
-    by_env: dict,
+    atom_types: Sequence[str] | None,
+    by_row: dict[int, P],
+    by_env: dict[str, P],
     expected_len: int,
-    canonicalize_fn: Callable,
-) -> Any:
+    canonicalize_fn: Callable[[Sequence[str]], str],
+) -> P | None:
     """Match a parsed file row to an internal param by ``ff_row`` or ``env_id``.
 
     Pure: takes the row's primitive identity data (*ff_row*, *atom_types*)
@@ -133,7 +173,7 @@ def _match_for_export(
 
 def _match_bond_for_export(
     ff_row: int | None,
-    atom_types: list[str] | tuple[str, ...] | None,
+    atom_types: Sequence[str] | None,
     bond_by_row: dict[int, BondParam],
     bond_by_env: dict[str, BondParam],
 ) -> BondParam | None:
@@ -142,7 +182,7 @@ def _match_bond_for_export(
 
 def _match_angle_for_export(
     ff_row: int | None,
-    atom_types: list[str] | tuple[str, ...] | None,
+    atom_types: Sequence[str] | None,
     angle_by_row: dict[int, AngleParam],
     angle_by_env: dict[str, AngleParam],
 ) -> AngleParam | None:
@@ -151,7 +191,7 @@ def _match_angle_for_export(
 
 def _match_sb_for_export(
     ff_row: int | None,
-    atom_types: list[str] | tuple[str, ...] | None,
+    atom_types: Sequence[str] | None,
     sb_by_row: dict[int, StretchBendParam],
     sb_by_env: dict[str, StretchBendParam],
 ) -> StretchBendParam | None:

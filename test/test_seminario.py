@@ -97,6 +97,50 @@ class TestGaussLogParsing(unittest.TestCase):
             "returned.",
         )
 
+    def test_no_frequency_log_caches_none_without_rereading(self) -> None:
+        """Repeated access to frequencies/evals/evecs on a no-frequency log reads the body once."""
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "single_point.log"
+            path.write_text(
+                " Standard orientation:\n"
+                " ---------------------------------------------------------------------\n"
+                " Center     Atomic      Atomic             Coordinates (Angstroms)\n"
+                " Number     Number       Type             X           Y           Z\n"
+                " ---------------------------------------------------------------------\n"
+                "      1          1           0        0.000000    0.000000    0.000000\n"
+                " ---------------------------------------------------------------------\n",
+                encoding="utf-8",
+            )
+            log = GaussLog(str(path))
+            with patch.object(GaussLog, "read_out", autospec=True, side_effect=GaussLog.read_out) as spy:
+                self.assertIsNone(log.frequencies)
+                path.unlink()
+                self.assertIsNone(log.evals)
+                self.assertIsNone(log.evecs)
+                self.assertIsNone(log.frequencies)
+                self.assertEqual(spy.call_count, 1)
+
+
+class TestSeminarioAngleCancellingProjections(unittest.TestCase):
+    """Regression test for equal-and-opposite angle projections in seminario_angle_fc."""
+
+    def test_cancelling_projections_return_inf_without_zero_division(self) -> None:
+        from unittest.mock import patch
+
+        from q2mm.models.seminario import seminario_angle_fc
+
+        coords = np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 1.0, 0.0]], dtype=float)
+        hessian = np.zeros((9, 9), dtype=float)
+        with (
+            np.errstate(divide="ignore"),
+            patch("q2mm.models.seminario._project_subblock_along", side_effect=[1.0, -1.0]),
+        ):
+            result = seminario_angle_fc(0, 1, 2, coords, hessian, au_units=False)
+        self.assertIsInstance(result, float)
+        self.assertTrue(np.isinf(result))
+
 
 @unittest.skipUnless((ETHANE_DIR / "GS.mol2").exists(), "Ethane mol2 fixture not found")
 class TestMol2Parsing(unittest.TestCase):

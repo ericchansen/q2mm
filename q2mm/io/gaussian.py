@@ -7,7 +7,6 @@ and ESP data from Gaussian output files.
 from __future__ import annotations
 
 import logging
-import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,12 +15,15 @@ import numpy as np
 
 from q2mm import constants as co
 from q2mm.constants import DEFAULT_BOND_TOLERANCE
+from q2mm.io._helpers import _TextFileBase
 from q2mm.models.hessian import HessianProvenance, HessianUnits, hessian_to_atomic_units
 from q2mm.models.identifiers import _extract_element
 from q2mm.models.molecule import Molecule
 from q2mm.models.observations import ObservationSet
 
 logger = logging.getLogger(__name__)
+_MASS_SYMBOLS: tuple[str, ...] = tuple(co.MASSES.keys())
+_MASS_VALUES: tuple[float, ...] = tuple(co.MASSES.values())
 
 
 @dataclass
@@ -57,7 +59,7 @@ class _GaussianAtom:
         if self.element:
             return _extract_element(self.element)
         if self.atomic_num is not None and self.atomic_num >= 1:
-            return list(co.MASSES.keys())[self.atomic_num - 1]
+            return _MASS_SYMBOLS[self.atomic_num - 1]
         return ""
 
 
@@ -177,25 +179,22 @@ def _gaussian_archive_records(path: str, filename: str, *, au_hessian: bool) -> 
     return records
 
 
-class GaussLog:
+class GaussLog(_TextFileBase):
     """Retrieves data from Gaussian log files.
 
     If you are extracting frequencies/Hessian data from this file, use
     the keyword NoSymmetry when running the Gaussian calculation.
     """
 
-    __slots__ = [
-        "_lines",
-        "path",
-        "directory",
-        "filename",
+    __slots__ = (
+        "_body_parsed",
         "_evals",
         "_evecs",
         "_frequencies_cm",
         "_records",
         "_esp_rms",
         "_au_hessian",
-    ]
+    )
 
     def __init__(self, path: str, au_hessian: bool = False) -> None:
         """Instantiate a file object for the file at the location path passed.
@@ -209,43 +208,14 @@ class GaussLog:
                 (Hartree/Bohr²). Defaults to False.
 
         """
-        self._lines = None
-        self.path = os.path.abspath(path)
-        self.directory = os.path.dirname(self.path)
-        self.filename = os.path.basename(self.path)
-        self._evals = None
-        self._evecs = None
-        self._frequencies_cm = None
-        self._records = None
-        self._esp_rms = None
+        super().__init__(path)
+        self._body_parsed = False
+        self._evals: np.ndarray | None = None
+        self._evecs: np.ndarray | None = None
+        self._frequencies_cm: np.ndarray | None = None
+        self._records: list[_GaussianRecord] | None = None
+        self._esp_rms: float | None = None
         self._au_hessian = au_hessian
-
-    @property
-    def lines(self) -> list[str]:
-        """Return the lines of the file.
-
-        Returns:
-            (list[str]): Lines of the file.
-
-        """
-        if self._lines is None:
-            with open(self.path) as f:
-                self._lines = f.readlines()
-        return self._lines
-
-    def write(self, path: str, lines: list[str] | None = None) -> None:
-        """Write lines to file at path.
-
-        Args:
-            path (str): Location of file to write.
-            lines (list[str] | None): Lines to write. Defaults to
-                ``self.lines``.
-
-        """
-        if lines is None:
-            lines = self.lines
-        with open(path, "w") as f:
-            f.writelines(lines)
 
     @property
     def evecs(self) -> np.ndarray | None:
@@ -258,7 +228,7 @@ class GaussLog:
                 Gaussian frequency analysis, or None if not a frequency job.
 
         """
-        if self._evecs is None:
+        if not self._body_parsed:
             self.read_out()
         return self._evecs
 
@@ -277,7 +247,7 @@ class GaussLog:
                 or None if not a frequency job.
 
         """
-        if self._evals is None:
+        if not self._body_parsed:
             self.read_out()
         return self._evals
 
@@ -291,7 +261,7 @@ class GaussLog:
             (np.ndarray | None): Frequencies in cm⁻¹, or None if not a frequency job.
 
         """
-        if self._frequencies_cm is None:
+        if not self._body_parsed:
             self.read_out()
         return self._frequencies_cm
 
@@ -303,6 +273,7 @@ class GaussLog:
         """
         if self._records is None:
             self.read_archive()
+        assert self._records is not None
         return self._records
 
     @property
@@ -323,23 +294,19 @@ class GaussLog:
         and ``_esp_rms`` from the Gaussian log file body.
         """
         logger.log(5, f"READING: {self.filename}")
-        self._evals = []
-        self._evecs = []
-        self._frequencies_cm = []
-        self._records = []
-        force_constants = []
-        evecs = []
+        self._evals = None
+        self._evecs = None
+        self._frequencies_cm = None
+        evals_list: list[float] = []
+        evecs_list: list[list[float]] = []
+        frequencies_cm_list: list[float] = []
+        records: list[_GaussianRecord] = []
+        force_constants: list[float] = []
+        evecs: list[list[float]] = []
         with open(self.path) as f:
-            # The keyword "harmonic" shows up before the section we're
-            # interested in. It can show up multiple times depending on the
-            # options in the Gaussian .com file.
             past_first_harm = False
-            # High precision mode, turned on by including "freq=hpmodes" in the
-            # Gaussian .com file.
             hpmodes = False
             file_iterator = iter(f)
-            # This while loop breaks when the end of the file is reached, or
-            # if the high quality modes have been read already.
             while True:
                 try:
                     line = next(file_iterator)
@@ -348,10 +315,10 @@ class GaussLog:
                 if "Charges from ESP fit" in line:
                     pattern = re.compile(rf"RMS=\s+({co.RE_FLOAT})")
                     match = pattern.search(line)
-                    self._esp_rms = float(match.group(1))
-                # Gathering some geometric information.
+                    if match is not None:
+                        self._esp_rms = float(match.group(1))
                 elif "Standard orientation:" in line:
-                    self._records.append(_GaussianRecord(self.filename, self.path))
+                    records.append(_GaussianRecord(self.filename, self.path))
                     next(file_iterator)
                     next(file_iterator)
                     next(file_iterator)
@@ -359,7 +326,7 @@ class GaussLog:
                     line = next(file_iterator)
                     while "---" not in line:
                         cols = line.split()
-                        self._records[-1].atoms.append(
+                        records[-1].atoms.append(
                             _GaussianAtom(
                                 index=int(cols[0]),
                                 atomic_num=int(cols[1]),
@@ -371,87 +338,38 @@ class GaussLog:
                         line = next(file_iterator)
                     logger.log(
                         5,
-                        f"  -- Found {len(self._records[-1].atoms)} atoms.",
+                        f"  -- Found {len(records[-1].atoms)} atoms.",
                     )
                 elif "Harmonic" in line:
-                    # The high quality eigenvectors come before the low quality
-                    # ones. If you see "Harmonic" again, it means you're at the
-                    # low quality ones now, so break.
                     if past_first_harm:
                         break
-                    else:
-                        past_first_harm = True
+                    past_first_harm = True
                 elif "Frequencies" in line:
-                    # We're going to keep reusing these.
-                    # We accumulate sets of eigevectors and eigenvalues, add
-                    # them to self._evecs and self._evals, and then reuse this
-                    # for the next set.
                     del force_constants[:]
                     del evecs[:]
-                    # Values inside line look like:
-                    #     "Frequencies --- xxxx.xxxx xxxx.xxxx"
-                    # That's why we remove the 1st two columns. This is
-                    # consistent with and without "hpmodes".
-                    # For "hpmodes" option, there are 5 of these frequencies.
-                    # Without "hpmodes", there are 3.
-                    # Thus the eigenvectors and eigenvalues will come in sets of
-                    # either 5 or 3.
                     cols = line.split()
                     for frequency in map(float, cols[2:]):
-                        # Store actual frequency in cm⁻¹
-                        self._frequencies_cm.append(frequency)
-                        # Has 1. or -1. depending on the sign of the frequency.
-                        if frequency < 0.0:
-                            force_constants.append(-1.0)
-                        else:
-                            force_constants.append(1.0)
-                        # For now this is empty, but we will add to it soon.
+                        frequencies_cm_list.append(frequency)
+                        force_constants.append(-1.0 if frequency < 0.0 else 1.0)
                         evecs.append([])
 
-                    # Moving on to the reduced masses.
                     line = next(file_iterator)
                     cols = line.split()
-                    # Again, trim the "Reduced masses ---".
-                    # It's "Red. masses --" for without "hpmodes".
                     for i, mass in enumerate(map(float, cols[3:])):
-                        # +/- 1 / reduced mass
-                        force_constants[i] = force_constants[i] / mass
+                        force_constants[i] /= mass
 
-                    # Now we are on the line with the force constants.
                     line = next(file_iterator)
                     cols = line.split()
-                    # Trim "Force constants ---". It's "Frc consts --" without
-                    # "hpmodes".
                     for i, force_constant in enumerate(map(float, cols[3:])):
-                        # AU_TO_MDYNA conversion (15.569141)
                         force_constants[i] *= force_constant / co.AU_TO_MDYNA
 
-                    # Force constants were calculated above as follows:
-                    #    a = +/- 1 depending on the sign of the frequency
-                    #    b = a / reduced mass (obtained from the Gaussian log)
-                    #    c = b * force constant / conversion factor (force
-                    #         (constant obtained from Gaussian log) (conversion
-                    #         factor is inside constants module)
-
-                    # Skip the IR intensities.
                     next(file_iterator)
-                    # This is different depending on whether you use "hpmodes".
                     line = next(file_iterator)
-                    # "Coord" seems to only appear when the "hpmodes" is used.
                     if "Coord" in line:
                         hpmodes = True
-                    # This is different depending on whether you use
-                    # "freq=projected".
                     line = next(file_iterator)
-                    # The "projected" keyword seems to add "IRC Coupling".
                     if "IRC Coupling" in line:
                         line = next(file_iterator)
-                    # We're on to the eigenvectors.
-                    # Until the end of this section containing the eigenvectors,
-                    # the number of columns remains constant. When that changes,
-                    # we know we're to the next set of frequencies, force
-                    # constants and eigenvectors.
-                    # Actually check that we've moved on, sometimes a "Depolar" entry is
                     if "Depolar" in line:
                         line = next(file_iterator)
                     if "Atom" in line:
@@ -460,89 +378,41 @@ class GaussLog:
                     cols_len = len(cols)
 
                     while len(cols) == cols_len:
-                        # This will come after all the eigenvectors have been
-                        # read. We can break out then.
                         if "Harmonic" in line:
                             break
-                        # If "hpmodes" is used, you have an extra column here
-                        # that is simply an index.
                         if hpmodes:
                             cols = cols[1:]
-                        # cols corresponds to line(s) (maybe only 1st line)
-                        # under section "Coord Atom Element:" (at least for
-                        # "hpmodes").
-
-                        # Just the square root of the mass from co.MASSES.
-                        # co.MASSES currently has the average mass.
-                        # Gaussian may use the mass of the most abundant
-                        # isotope. This may be a problem.
-                        mass_sqrt = np.sqrt(list(co.MASSES.items())[int(cols[1]) - 1][1])
-
+                        mass_sqrt = np.sqrt(_MASS_VALUES[int(cols[1]) - 1])
                         cols = cols[2:]
-                        # This corresponds to the same line still, but without
-                        # the atom elements.
-
-                        # This loop expands the LoL, evecs, as so.
-                        # Iteration 1: each sub-list has 1 element
-                        # Iteration 2: each sub-list has 2 elements
-                        # ... etc. until the length of the sublist is equal to
-                        # the number of atoms. Remember, for low precision
-                        # eigenvectors it only adds in sets of 3, not 5.
-
-                        # Elements of evecs are simply the data under
-                        # "Coord Atom Element" multiplied by the square root
-                        # of the weight.
                         for i in range(len(evecs)):
                             if hpmodes:
-                                # evecs is a LoL. Length of sublist is
-                                # equal to # of columns in section "Coord Atom
-                                # Element" minus 3, for the 1st 3 columns
-                                # (index, atom index, atomic number).
                                 evecs[i].append(float(cols[i]) * mass_sqrt)
                             else:
-                                # This is fow low precision eigenvectors. It's a
-                                # funny way to go in sets of 3. Take a look at
-                                # your low precision Gaussian log and it will
-                                # make more sense.
                                 for _ in range(3):
                                     x = float(cols.pop(0))
                                     evecs[i].append(x * mass_sqrt)
                         line = next(file_iterator)
                         cols = line.split()
 
-                    # Here the overall number of eigenvalues and eigenvectors is
-                    # increased by 5 (high precision) or 3 (low precision). The
-                    # total number goes to 3N - 6 for non-linear and 3N - 5 for
-                    # linear. Same goes for self._evecs.
                     for i in range(len(evecs)):
-                        self._evals.append(force_constants[i])
-                        self._evecs.append(evecs[i])
-                    # We know we're done if this is in the line.
+                        evals_list.append(force_constants[i])
+                        evecs_list.append(evecs[i])
                     if "Harmonic" in line:
                         break
-        if self._evals and self._evecs:
-            for evec in self._evecs:
-                # Each evec is a single eigenvector.
-                # Add up the sum of squares over an eigenvector.
-                sum_of_squares = 0.0
-                # Appropriately named, element is an element of that single
-                # eigenvector.
-                for element in evec:
-                    sum_of_squares += element * element
-                # Now x is the inverse of the square root of the sum of squares
-                # for an individual eigenvector.
-                element = 1 / np.sqrt(sum_of_squares)
+        self._records = records
+        if evals_list and evecs_list:
+            for evec in evecs_list:
+                inv_norm = 1.0 / float(np.sqrt(sum(element * element for element in evec)))
                 for i in range(len(evec)):
-                    evec[i] *= element
-            self._evals = np.array(self._evals)
-            self._evecs = np.array(self._evecs)
-            self._frequencies_cm = np.array(self._frequencies_cm)
+                    evec[i] *= inv_norm
+            self._evals = np.array(evals_list)
+            self._evecs = np.array(evecs_list)
+            self._frequencies_cm = np.array(frequencies_cm_list)
             logger.log(1, f">>> self._evals: {self._evals}")
             logger.log(1, f">>> self._evecs: {self._evecs}")
             logger.log(5, f"  -- {len(self._records)} structures found.")
+        self._body_parsed = True
 
-    # May want to move some attributes assigned to the structure class onto
-    # this filetype class.
     def read_archive(self) -> None:
         """Read the last complete archive section, preserving legacy behavior."""
         logger.log(5, f"READING: {self.filename}")

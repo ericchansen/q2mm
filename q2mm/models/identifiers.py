@@ -23,9 +23,14 @@ def _extract_element(atom_type: str) -> str:
     return letters[0].upper()
 
 
+def _clean_env_tokens(atom_types: Sequence[str]) -> list[str]:
+    """Strip and filter non-empty, non-separator atom-type tokens."""
+    return [item.strip() for item in atom_types if item and item.strip() and item.strip() != "-"]
+
+
 def canonicalize_bond_env_id(atom_types: Sequence[str]) -> str:
     """Canonicalize bond atom-type labels so bond direction does not matter."""
-    cleaned = [item.strip() for item in atom_types if item and item.strip() and item.strip() != "-"]
+    cleaned = _clean_env_tokens(atom_types)
     if len(cleaned) < 2:
         return "-".join(cleaned)
     return "-".join(sorted(cleaned[:2]))
@@ -33,7 +38,7 @@ def canonicalize_bond_env_id(atom_types: Sequence[str]) -> str:
 
 def canonicalize_angle_env_id(atom_types: Sequence[str]) -> str:
     """Canonicalize angle atom-type labels with fixed center and sorted outers."""
-    cleaned = [item.strip() for item in atom_types if item and item.strip() and item.strip() != "-"]
+    cleaned = _clean_env_tokens(atom_types)
     if len(cleaned) < 3:
         return "-".join(cleaned)
     outer = sorted([cleaned[0], cleaned[2]])
@@ -42,7 +47,7 @@ def canonicalize_angle_env_id(atom_types: Sequence[str]) -> str:
 
 def canonicalize_torsion_env_id(atom_types: Sequence[str]) -> str:
     """Canonicalize torsion atom-type labels so A-B-C-D == D-C-B-A."""
-    cleaned = [item.strip() for item in atom_types if item and item.strip() and item.strip() != "-"]
+    cleaned = _clean_env_tokens(atom_types)
     if len(cleaned) < 4:
         return "-".join(cleaned)
     forward = cleaned[:4]

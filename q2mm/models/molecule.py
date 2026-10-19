@@ -21,7 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from q2mm.geometry import dihedral_angle
+from q2mm.geometry import bond_angle, bond_length, dihedral_angle
 from q2mm.models.identifiers import (
     canonicalize_angle_env_id,
     canonicalize_bond_env_id,
@@ -39,11 +39,20 @@ if TYPE_CHECKING:
 from q2mm.elements import COVALENT_RADII
 
 
-def _immutable_array(values: Any, *, dtype: type = float) -> np.ndarray:
+def _immutable_array(values: Any, *, dtype: Any = float) -> np.ndarray:
     """Return a defensive, read-only copy of *values* as a NumPy array."""
-    array = np.array(values, dtype=dtype, copy=True)
+    array: np.ndarray = np.array(values, dtype=dtype, copy=True)
     array.setflags(write=False)
     return array
+
+
+def _build_adjacency(n_atoms: int, bonds: tuple[Bond, ...]) -> dict[int, list[int]]:
+    """Build an atom-index adjacency map from *bonds*."""
+    adj: dict[int, list[int]] = {i: [] for i in range(n_atoms)}
+    for bond in bonds:
+        adj[bond.atom_i].append(bond.atom_j)
+        adj[bond.atom_j].append(bond.atom_i)
+    return adj
 
 
 @dataclass(frozen=True)
@@ -67,7 +76,8 @@ class Bond:
     @property
     def element_pair(self) -> tuple[str, str]:
         """Sorted element pair for matching (e.g., ('C', 'F'))."""
-        return tuple(sorted(self.elements))
+        a, b = self.elements
+        return (a, b) if a <= b else (b, a)
 
 
 @dataclass(frozen=True)
@@ -85,8 +95,8 @@ class Angle:
     @property
     def element_triple(self) -> tuple[str, str, str]:
         """Canonical element triple: (outer, center, outer) sorted by outer elements."""
-        outer = tuple(sorted([self.elements[0], self.elements[2]]))
-        return (outer[0], self.elements[1], outer[1])
+        a, b, c = self.elements
+        return (a, b, c) if a <= c else (c, b, a)
 
 
 @dataclass(frozen=True)
@@ -202,21 +212,23 @@ class Molecule:
             raise ValueError("hessian_provenance requires a Hessian.")
 
         bonds_explicit = self.bonds is not None
-        bonds = tuple(self.bonds) if bonds_explicit else self._detect_bonds()
+        bonds = tuple(self.bonds) if self.bonds is not None else self._detect_bonds(atom_types)
         object.__setattr__(self, "bonds", bonds)
         object.__setattr__(self, "bonds_explicit", bonds_explicit)
 
+        adj = _build_adjacency(len(symbols), bonds)
+
         angles_explicit = self.angles is not None
-        angles = tuple(self.angles) if angles_explicit else self._detect_angles(bonds)
+        angles = tuple(self.angles) if self.angles is not None else self._detect_angles(adj, atom_types)
         object.__setattr__(self, "angles", angles)
         object.__setattr__(self, "angles_explicit", angles_explicit)
 
         torsions_explicit = self.torsions is not None
-        torsions = tuple(self.torsions) if torsions_explicit else self._detect_torsions(bonds)
+        torsions = tuple(self.torsions) if self.torsions is not None else self._detect_torsions(bonds, adj, atom_types)
         object.__setattr__(self, "torsions", torsions)
         object.__setattr__(self, "torsions_explicit", torsions_explicit)
 
-        object.__setattr__(self, "improper_torsions", self._detect_improper_torsions(bonds))
+        object.__setattr__(self, "improper_torsions", self._detect_improper_torsions(adj, atom_types))
 
     @property
     def n_atoms(self) -> int:
@@ -225,7 +237,7 @@ class Molecule:
 
     # ---- Topology detection (geometry-derived) ----
 
-    def _detect_bonds(self) -> tuple[Bond, ...]:
+    def _detect_bonds(self, atom_types: tuple[str, ...]) -> tuple[Bond, ...]:
         """Detect bonds based on covalent radii with tolerance factor."""
         tolerance = self.bond_tolerance
         bonds = []
@@ -233,7 +245,7 @@ class Molecule:
             for j in range(i + 1, self.n_atoms):
                 ri = COVALENT_RADII.get(self.symbols[i], 0.76)
                 rj = COVALENT_RADII.get(self.symbols[j], 0.76)
-                dist = float(np.linalg.norm(self.geometry[i] - self.geometry[j]))
+                dist = bond_length(self.geometry[i], self.geometry[j])
                 if dist < tolerance * (ri + rj):
                     bonds.append(
                         Bond(
@@ -241,54 +253,40 @@ class Molecule:
                             atom_j=j,
                             elements=(self.symbols[i], self.symbols[j]),
                             length=dist,
-                            env_id=canonicalize_bond_env_id([self.atom_types[i], self.atom_types[j]]),
+                            env_id=canonicalize_bond_env_id([atom_types[i], atom_types[j]]),
                         )
                     )
         return tuple(bonds)
 
-    def _detect_angles(self, bonds: tuple[Bond, ...]) -> tuple[Angle, ...]:
+    def _detect_angles(self, adj: dict[int, list[int]], atom_types: tuple[str, ...]) -> tuple[Angle, ...]:
         """Detect angles from resolved bonds."""
-        adj: dict[int, list[int]] = {i: [] for i in range(self.n_atoms)}
-        for bond in bonds:
-            adj[bond.atom_i].append(bond.atom_j)
-            adj[bond.atom_j].append(bond.atom_i)
-
         angles = []
         for center in range(self.n_atoms):
             neighbors = adj[center]
             for ii in range(len(neighbors)):
                 for jj in range(ii + 1, len(neighbors)):
                     a, b = neighbors[ii], neighbors[jj]
-                    v1 = self.geometry[a] - self.geometry[center]
-                    v2 = self.geometry[b] - self.geometry[center]
-                    cos_a = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-                    angle_val = np.degrees(np.arccos(np.clip(cos_a, -1, 1)))
                     angles.append(
                         Angle(
                             atom_i=a,
                             atom_j=center,
                             atom_k=b,
                             elements=(self.symbols[a], self.symbols[center], self.symbols[b]),
-                            value=float(angle_val),
-                            env_id=canonicalize_angle_env_id(
-                                [self.atom_types[a], self.atom_types[center], self.atom_types[b]]
-                            ),
+                            value=bond_angle(self.geometry[a], self.geometry[center], self.geometry[b]),
+                            env_id=canonicalize_angle_env_id([atom_types[a], atom_types[center], atom_types[b]]),
                         )
                     )
         return tuple(angles)
 
-    def _detect_torsions(self, bonds: tuple[Bond, ...]) -> tuple[Torsion, ...]:
+    def _detect_torsions(
+        self, bonds: tuple[Bond, ...], adj: dict[int, list[int]], atom_types: tuple[str, ...]
+    ) -> tuple[Torsion, ...]:
         """Detect torsion/dihedral angles from resolved bonds.
 
         For each bond B-C, finds all atoms A bonded to B (A != C) and all
         atoms D bonded to C (D != B) to form torsions A-B-C-D.  Deduplicates
         so that A-B-C-D and D-C-B-A are not both stored.
         """
-        adj: dict[int, list[int]] = {i: [] for i in range(self.n_atoms)}
-        for bond in bonds:
-            adj[bond.atom_i].append(bond.atom_j)
-            adj[bond.atom_j].append(bond.atom_i)
-
         seen: set[tuple[int, int, int, int]] = set()
         torsions: list[Torsion] = []
         for bond in bonds:
@@ -319,13 +317,13 @@ class Molecule:
                             ),
                             value=value,
                             env_id=canonicalize_torsion_env_id(
-                                [self.atom_types[a], self.atom_types[b], self.atom_types[c], self.atom_types[d]]
+                                [atom_types[a], atom_types[b], atom_types[c], atom_types[d]]
                             ),
                         )
                     )
         return tuple(torsions)
 
-    def _detect_improper_torsions(self, bonds: tuple[Bond, ...]) -> tuple[Torsion, ...]:
+    def _detect_improper_torsions(self, adj: dict[int, list[int]], atom_types: tuple[str, ...]) -> tuple[Torsion, ...]:
         """Detect improper torsions at trigonal (sp2) centres.
 
         For each atom with exactly 3 bonded neighbours, generates an
@@ -335,11 +333,6 @@ class Molecule:
 
         Neighbours are sorted by index for deterministic ordering.
         """
-        adj: dict[int, list[int]] = {i: [] for i in range(self.n_atoms)}
-        for bond in bonds:
-            adj[bond.atom_i].append(bond.atom_j)
-            adj[bond.atom_j].append(bond.atom_i)
-
         impropers: list[Torsion] = []
         for centre in range(self.n_atoms):
             nbrs = sorted(adj[centre])
@@ -366,7 +359,7 @@ class Molecule:
                     ),
                     value=value,
                     env_id=canonicalize_torsion_env_id(
-                        [self.atom_types[a], self.atom_types[centre], self.atom_types[b], self.atom_types[d]]
+                        [atom_types[a], atom_types[centre], atom_types[b], atom_types[d]]
                     ),
                 )
             )
@@ -402,7 +395,7 @@ class Molecule:
     def _replace_preserving_topology(self, **overrides: Any) -> Molecule:
         """Replace fields while preserving connectivity and refreshing geometry metadata."""
         geometry = np.asarray(overrides.get("geometry", self.geometry), dtype=float)
-        atom_types = tuple(overrides.get("atom_types", self.atom_types))
+        atom_types = tuple(overrides.get("atom_types", self.atom_types or self.symbols))
         if geometry.shape != (self.n_atoms, 3):
             raise ValueError(f"geometry must have shape ({self.n_atoms}, 3), got {geometry.shape}.")
         if len(atom_types) != self.n_atoms:
@@ -411,26 +404,22 @@ class Molecule:
         bonds = tuple(
             replace(
                 bond,
-                length=float(np.linalg.norm(geometry[bond.atom_i] - geometry[bond.atom_j])),
+                length=bond_length(geometry[bond.atom_i], geometry[bond.atom_j]),
                 env_id=canonicalize_bond_env_id([atom_types[bond.atom_i], atom_types[bond.atom_j]]),
             )
-            for bond in self.bonds
+            for bond in self.bonds or ()
         )
 
-        angles = []
-        for angle in self.angles:
-            v1 = geometry[angle.atom_i] - geometry[angle.atom_j]
-            v2 = geometry[angle.atom_k] - geometry[angle.atom_j]
-            cos_angle = np.dot(v1, v2) / (np.linalg.norm(v1) * np.linalg.norm(v2))
-            angles.append(
-                replace(
-                    angle,
-                    value=float(np.degrees(np.arccos(np.clip(cos_angle, -1.0, 1.0)))),
-                    env_id=canonicalize_angle_env_id(
-                        [atom_types[angle.atom_i], atom_types[angle.atom_j], atom_types[angle.atom_k]]
-                    ),
-                )
+        angles = tuple(
+            replace(
+                angle,
+                value=bond_angle(geometry[angle.atom_i], geometry[angle.atom_j], geometry[angle.atom_k]),
+                env_id=canonicalize_angle_env_id(
+                    [atom_types[angle.atom_i], atom_types[angle.atom_j], atom_types[angle.atom_k]]
+                ),
             )
+            for angle in self.angles or ()
+        )
 
         torsions = tuple(
             replace(
@@ -450,14 +439,14 @@ class Molecule:
                     ]
                 ),
             )
-            for torsion in self.torsions
+            for torsion in self.torsions or ()
         )
 
         kwargs: dict[str, Any] = {
             "geometry": geometry,
             "atom_types": atom_types,
             "bonds": bonds,
-            "angles": tuple(angles),
+            "angles": angles,
             "torsions": torsions,
         }
         kwargs.update(overrides)
@@ -547,4 +536,4 @@ class Molecule:
     def __repr__(self) -> str:
         formula = "".join(f"{s}{self.symbols.count(s)}" for s in dict.fromkeys(self.symbols))
         hess_str = f", hessian={self.hessian.shape}" if self.hessian is not None else ""
-        return f"Molecule({formula}, {self.n_atoms} atoms, {len(self.bonds)} bonds{hess_str})"
+        return f"Molecule({formula}, {self.n_atoms} atoms, {len(self.bonds or ())} bonds{hess_str})"

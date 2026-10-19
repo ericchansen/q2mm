@@ -21,6 +21,7 @@ from q2mm.io._helpers import (
     _match_bond_for_export,
     _match_sb_for_export,
     _normalize_equilibrium_angle,
+    _resolve_template_path,
     _split_env_id,
     _torsion_file_value,
     _validate_form_for_format,
@@ -1005,12 +1006,12 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
         atom_types = [t.strip() for t in row.atom_types if t.strip() and t.strip() != "-"]
 
         if row.ptype == "bf" and len(atom_types) >= 2:
-            elems = tuple(_extract_element(t) for t in atom_types[:2])
+            t0, t1 = atom_types[:2]
             env_id = canonicalize_bond_env_id(atom_types[:2])
             eq_val = eq_lookup.get(("be", row.ff_row), 0.0)
             bonds.append(
                 BondParam(
-                    elements=elems,
+                    elements=(_extract_element(t0), _extract_element(t1)),
                     equilibrium=eq_val,
                     force_constant=mm3_bond_k_to_canonical(row.value),
                     label=f"MM3 row {row.ff_row}",
@@ -1023,12 +1024,12 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
             )
 
         elif row.ptype == "af" and len(atom_types) >= 3:
-            elems = tuple(_extract_element(t) for t in atom_types[:3])
+            t0, t1, t2 = atom_types[:3]
             env_id = canonicalize_angle_env_id(atom_types[:3])
             eq_val = eq_lookup.get(("ae", row.ff_row), 0.0)
             angles.append(
                 AngleParam(
-                    elements=elems,
+                    elements=(_extract_element(t0), _extract_element(t1), _extract_element(t2)),
                     equilibrium=eq_val,
                     force_constant=mm3_angle_k_to_canonical(row.value),
                     label=f"MM3 row {row.ff_row}",
@@ -1037,10 +1038,11 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
                 )
             )
 
-        elif row.ptype == "df" and len(atom_types) >= 4:
-            elems = tuple(_extract_element(t) for t in atom_types[:4])
+        elif row.ptype in ("df", "imp1", "imp2") and len(atom_types) >= 4:
+            t0, t1, t2, t3 = atom_types[:4]
             env_id = "-".join(t.strip() for t in atom_types[:4])
-            periodicity = row.ff_col
+            is_improper = row.ptype != "df"
+            periodicity = row.ff_col if not is_improper else (1 if row.ptype == "imp1" else 2)
             # MM3 torsion alternates signs by order:
             #   (V1/2)(1+cos ω) + (V2/2)(1−cos 2ω) + (V3/2)(1+cos 3ω)
             #   + (V4/2)(1−cos 4ω) + (V5/2)(1+cos 5ω) + (V6/2)(1−cos 6ω)
@@ -1048,42 +1050,31 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
             # k*(1+cos(nφ−γ)) with k = V_n/2.  Even orders need γ=180° for
             # the minus sign: (1+cos(nω−π)) = (1−cos nω).
             phase = 180.0 if periodicity % 2 == 0 else 0.0
+            label_kind = " imp" if is_improper else ""
             torsions.append(
                 TorsionParam(
-                    elements=elems,
+                    elements=(
+                        _extract_element(t0),
+                        _extract_element(t1),
+                        _extract_element(t2),
+                        _extract_element(t3),
+                    ),
                     periodicity=periodicity,
                     force_constant=row.value / 2.0,
                     phase=phase,
-                    label=f"MM3 row {row.ff_row} V{periodicity}",
+                    label=f"MM3 row {row.ff_row}{label_kind} V{periodicity}",
                     env_id=env_id,
                     ff_row=row.ff_row,
-                )
-            )
-
-        elif row.ptype in ("imp1", "imp2") and len(atom_types) >= 4:
-            elems = tuple(_extract_element(t) for t in atom_types[:4])
-            env_id = "-".join(t.strip() for t in atom_types[:4])
-            periodicity = 1 if row.ptype == "imp1" else 2
-            phase = 180.0 if periodicity == 2 else 0.0
-            torsions.append(
-                TorsionParam(
-                    elements=elems,
-                    periodicity=periodicity,
-                    force_constant=row.value / 2.0,
-                    phase=phase,
-                    label=f"MM3 row {row.ff_row} imp V{periodicity}",
-                    env_id=env_id,
-                    ff_row=row.ff_row,
-                    is_improper=True,
+                    is_improper=is_improper,
                 )
             )
 
         elif row.ptype == "sb" and len(atom_types) >= 3:
-            elems = tuple(_extract_element(t) for t in atom_types[:3])
+            t0, t1, t2 = atom_types[:3]
             env_id = canonicalize_angle_env_id(atom_types[:3])
             stretch_bends.append(
                 StretchBendParam(
-                    elements=elems,
+                    elements=(_extract_element(t0), _extract_element(t1), _extract_element(t2)),
                     force_constant=mm3_sb_k_to_canonical(row.value),
                     label=f"MM3 row {row.ff_row} SB",
                     env_id=env_id,
@@ -1093,11 +1084,11 @@ def load_mm3_fld(path: str | Path, *, include_standard: bool = True) -> ForceFie
 
     ff = ForceField(
         name=f"MM3 from {Path(path).name}",
-        bonds=bonds,
-        angles=angles,
-        stretch_bends=stretch_bends,
-        torsions=torsions,
-        vdws=vdws,
+        bonds=tuple(bonds),
+        angles=tuple(angles),
+        stretch_bends=tuple(stretch_bends),
+        torsions=tuple(torsions),
+        vdws=tuple(vdws),
         source_path=Path(path),
         source_format="mm3_fld",
         functional_form=FunctionalForm.MM3,
@@ -1148,9 +1139,7 @@ def save_mm3_fld(
     """
     _validate_form_for_format(ff, "mm3_fld")
     output_path = Path(path)
-    template = Path(template_path) if template_path is not None else None
-    if template is None and ff.source_format == "mm3_fld" and ff.source_path is not None:
-        template = ff.source_path
+    template = _resolve_template_path(ff, template_path, "mm3_fld")
 
     if template is not None:
         template_rows, template_lines = _mm3_import_ff(template)

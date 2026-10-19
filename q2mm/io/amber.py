@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
 
-from q2mm.io._helpers import _validate_form_for_format
+from q2mm.io._helpers import _resolve_template_path, _validate_form_for_format
 from q2mm.models.forcefield import (
     AngleParam,
     BondParam,
@@ -308,10 +308,10 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
             types, rest = _parse_amber_types(line, 2)
             vals = _parse_floats(rest)
             if len(types) == 2 and all(types) and len(vals) >= 2:
-                elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
+                t0, t1 = types
                 bonds.append(
                     BondParam(
-                        elements=elems,
+                        elements=(_amber_type_to_element(t0, mass_map), _amber_type_to_element(t1, mass_map)),
                         equilibrium=vals[1],
                         force_constant=vals[0],
                         env_id=canonicalize_bond_env_id(types),
@@ -324,10 +324,14 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
             types, rest = _parse_amber_types(line, 3)
             vals = _parse_floats(rest)
             if len(types) == 3 and all(types) and len(vals) >= 2:
-                elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
+                t0, t1, t2 = types
                 angles.append(
                     AngleParam(
-                        elements=elems,
+                        elements=(
+                            _amber_type_to_element(t0, mass_map),
+                            _amber_type_to_element(t1, mass_map),
+                            _amber_type_to_element(t2, mass_map),
+                        ),
                         equilibrium=vals[1],
                         force_constant=vals[0],
                         env_id=canonicalize_angle_env_id(types),
@@ -338,10 +342,15 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
 
         elif section == "DIHE":
             record = dihe_rows[row]
-            elems = tuple(_amber_type_to_element(t, mass_map) for t in record.atom_types)
+            t0, t1, t2, t3 = record.atom_types
             torsions.append(
                 TorsionParam(
-                    elements=elems,
+                    elements=(
+                        _amber_type_to_element(t0, mass_map),
+                        _amber_type_to_element(t1, mass_map),
+                        _amber_type_to_element(t2, mass_map),
+                        _amber_type_to_element(t3, mass_map),
+                    ),
                     periodicity=abs(record.pn),
                     force_constant=record.barrier / record.effective_idivf,
                     phase=record.phase,
@@ -356,7 +365,7 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
             vals = _parse_floats(rest)
             # vals: barrier, phase, periodicity (no IDIVF)
             if len(types) == 4 and all(types) and len(vals) >= 3:
-                elems = tuple(_amber_type_to_element(t, mass_map) for t in types)
+                t0, t1, t2, t3 = types
                 pn = vals[2]
                 # IMPROPER has neither DIHE's continuation sign nor a zero-to-one convention.
                 if not math.isfinite(pn) or pn <= 0 or pn != int(pn):
@@ -364,7 +373,12 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
                 periodicity = int(pn)
                 torsions.append(
                     TorsionParam(
-                        elements=elems,
+                        elements=(
+                            _amber_type_to_element(t0, mass_map),
+                            _amber_type_to_element(t1, mass_map),
+                            _amber_type_to_element(t2, mass_map),
+                            _amber_type_to_element(t3, mass_map),
+                        ),
                         periodicity=periodicity,
                         force_constant=vals[0],
                         phase=vals[1],
@@ -397,10 +411,10 @@ def load_amber_frcmod(path: str | Path) -> ForceField:
 
     return ForceField(
         name=f"AMBER from {path.name}",
-        bonds=bonds,
-        angles=angles,
-        torsions=torsions,
-        vdws=vdws,
+        bonds=tuple(bonds),
+        angles=tuple(angles),
+        torsions=tuple(torsions),
+        vdws=tuple(vdws),
         source_path=path,
         source_format="amber_frcmod",
         functional_form=FunctionalForm.HARMONIC,
@@ -453,9 +467,7 @@ def save_amber_frcmod(
     """
     _validate_form_for_format(ff, "amber_frcmod")
     output_path = Path(path)
-    template = Path(template_path) if template_path is not None else None
-    if template is None and ff.source_format == "amber_frcmod" and ff.source_path is not None:
-        template = ff.source_path
+    template = _resolve_template_path(ff, template_path, "amber_frcmod")
 
     if template is not None:
         return _save_amber_frcmod_template(ff, output_path, template)

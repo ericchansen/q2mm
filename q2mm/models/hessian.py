@@ -20,10 +20,10 @@ from __future__ import annotations
 import copy
 import logging
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import numpy as np
 
@@ -32,6 +32,10 @@ from q2mm._provenance import freeze_json_mapping
 from q2mm.models.units import hessian_au_to_kjmola2
 
 logger = logging.getLogger(__name__)
+
+_BOHR_TO_M: float = co.BOHR_TO_ANG * 1e-10
+_EIGVAL_AU_TO_SI: float = co.HARTREE_TO_J / (co.AMU_TO_KG * _BOHR_TO_M**2)
+_RAD_S_TO_CM1_DENOM: float = 2.0 * np.pi * co.SPEED_OF_LIGHT_MS * 100.0
 
 
 def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
@@ -47,15 +51,20 @@ def _resolve_symbols(atoms_or_symbols: Sequence[str] | object) -> list[str]:
     """
     # Molecule (has .symbols attribute)
     if hasattr(atoms_or_symbols, "symbols"):
-        return list(atoms_or_symbols.symbols)
+        return [str(s) for s in getattr(atoms_or_symbols, "symbols")]
 
-    items = list(atoms_or_symbols)
-    if not items:
+    if not isinstance(atoms_or_symbols, Iterable) or isinstance(atoms_or_symbols, (str, bytes)):
+        raise TypeError(f"Expected element symbols (list[str]) or a Molecule; got {type(atoms_or_symbols).__name__}.")
+
+    raw_items = list(atoms_or_symbols)
+    if not raw_items:
         return []
 
-    if not isinstance(items[0], str):
-        raise TypeError(f"Expected element symbols (list[str]) or a Molecule; got list of {type(items[0]).__name__}.")
+    if not all(isinstance(s, str) for s in raw_items):
+        first_bad = next(s for s in raw_items if not isinstance(s, str))
+        raise TypeError(f"Expected element symbols (list[str]) or a Molecule; got list of {type(first_bad).__name__}.")
 
+    items = [str(s) for s in raw_items]
     unknown = [s for s in items if s not in co.MASSES]
     if unknown:
         raise ValueError(
@@ -167,7 +176,7 @@ def hessian_to_atomic_units(hessian: Any, units: HessianUnits | str | None) -> n
     stripped = _strip_pint(hessian)
     if stripped is not hessian:
         # Was pint-like — its own units are authoritative, already AU.
-        return stripped
+        return cast(np.ndarray, stripped)
     array = np.asarray(hessian, dtype=float)
     unit_value = getattr(units, "value", units)
     if unit_value == HessianUnits.ATOMIC.value:
@@ -310,16 +319,13 @@ def hessian_to_frequencies(
         raise
 
     # 5. Convert eigenvalues [Hartree / (amu · Bohr²)] → s⁻²
-    bohr_to_m = co.BOHR_TO_ANG * 1e-10
-    factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
-    vals_si = eigenvalues * factor
+    vals_si = eigenvalues * _EIGVAL_AU_TO_SI
 
     # 6. eigenvalue → angular frequency → cm⁻¹
     #    Negative eigenvalue → imaginary frequency (negative cm⁻¹)
-    freqs = np.sign(vals_si) * np.sqrt(np.abs(vals_si))
-    freqs /= 2.0 * np.pi * co.SPEED_OF_LIGHT_MS * 100.0
+    freqs = np.sign(vals_si) * np.sqrt(np.abs(vals_si)) / _RAD_S_TO_CM1_DENOM
 
-    result = freqs.tolist()
+    result: list[float] = freqs.tolist()
     if sort:
         result.sort()
     return result
@@ -366,21 +372,14 @@ def frequency_param_jacobian(
     if hessian_au.shape != (n3, n3):
         raise ValueError(f"hessian_au must have shape ({n3}, {n3}), got {hessian_au.shape}")
 
-    n_params = dH_dp_au.shape[2]
-
-    # Mass-weighting scale: 1/sqrt(m_i * m_j)
-    inv_sqrt = np.array([1.0 / np.sqrt(co.MASSES[s]) for s in symbols_list for _ in range(3)])
-    scale = np.outer(inv_sqrt, inv_sqrt)
+    scale = mass_weight_scale_3n(symbols_list)
 
     # Mass-weight the Hessian
-    hess = hessian_au.copy()
-    hess *= scale
+    hess = hessian_au * scale
     hess = 0.5 * (hess + hess.T)
 
     # Mass-weight each dH/dp slice
-    mw_dH_dp = np.empty((n3, n3, n_params))
-    for j in range(n_params):
-        mw_dH_dp[:, :, j] = dH_dp_au[:, :, j] * scale
+    mw_dH_dp = dH_dp_au * scale[:, :, np.newaxis]
 
     # Eigendecompose the mass-weighted Hessian
     eigenvalues, eigenvectors = np.linalg.eigh(hess)
@@ -389,22 +388,19 @@ def frequency_param_jacobian(
     d_eig_dp = np.einsum("ik,ijp,jk->kp", eigenvectors, mw_dH_dp, eigenvectors)
 
     # Chain through eigenvalue → frequency conversion
-    bohr_to_m = co.BOHR_TO_ANG * 1e-10
-    factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
-    vals_si = eigenvalues * factor
-    denom = 2.0 * np.pi * co.SPEED_OF_LIGHT_MS * 100.0
+    vals_si = eigenvalues * _EIGVAL_AU_TO_SI
 
     # freq = sign(λ) * sqrt(|λ|*factor) / denom
     # d(freq)/d(λ) = factor / (2 * sqrt(|λ|*factor) * denom)
     #              = sqrt(factor) / (2 * sqrt(|λ|) * denom)  [regularised]
     abs_vals_si = np.maximum(np.abs(vals_si), epsilon)
-    d_freq_d_eig = factor / (2.0 * np.sqrt(abs_vals_si) * denom)
+    d_freq_d_eig = _EIGVAL_AU_TO_SI / (2.0 * np.sqrt(abs_vals_si) * _RAD_S_TO_CM1_DENOM)
 
     # d(freq_k)/dp_j = d(freq_k)/d(λ_k) * d(λ_k)/dp_j
     d_freq_dp = d_freq_d_eig[:, np.newaxis] * d_eig_dp
 
     # Compute frequencies (same as hessian_to_frequencies)
-    freqs_arr = np.sign(vals_si) * np.sqrt(np.abs(vals_si)) / denom
+    freqs_arr = np.sign(vals_si) * np.sqrt(np.abs(vals_si)) / _RAD_S_TO_CM1_DENOM
 
     if sort:
         order = np.argsort(freqs_arr)
@@ -469,21 +465,17 @@ def _jax_frequency_param_jacobian(
     d_eig_dp = jnp.einsum("ik,ijp,jk->kp", eigenvectors, mw_dH_dp, eigenvectors)
 
     # Chain through eigenvalue → frequency conversion
-    bohr_to_m = co.BOHR_TO_ANG * 1e-10
-    factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
-    denom = 2.0 * jnp.pi * co.SPEED_OF_LIGHT_MS * 100.0
-
-    vals_si = eigenvalues * factor
+    vals_si = eigenvalues * _EIGVAL_AU_TO_SI
 
     # d(freq)/d(λ) with regularisation for near-zero eigenvalues
     abs_vals_si = jnp.maximum(jnp.abs(vals_si), epsilon)
-    d_freq_d_eig = factor / (2.0 * jnp.sqrt(abs_vals_si) * denom)
+    d_freq_d_eig = _EIGVAL_AU_TO_SI / (2.0 * jnp.sqrt(abs_vals_si) * _RAD_S_TO_CM1_DENOM)
 
     # d(freq_k)/dp_j = d(freq_k)/d(λ_k) * d(λ_k)/dp_j
     d_freq_dp = d_freq_d_eig[:, None] * d_eig_dp
 
     # Compute frequencies
-    freqs_arr = jnp.sign(vals_si) * jnp.sqrt(jnp.abs(vals_si)) / denom
+    freqs_arr = jnp.sign(vals_si) * jnp.sqrt(jnp.abs(vals_si)) / _RAD_S_TO_CM1_DENOM
 
     # Sort ascending (argsort is fine here — used only for output ordering,
     # not differentiated through)
@@ -526,13 +518,9 @@ def _jax_frequencies_from_hessian(
 
     eigenvalues = jnp.linalg.eigvalsh(hess)
 
-    bohr_to_m = co.BOHR_TO_ANG * 1e-10
-    factor = co.HARTREE_TO_J / (co.AMU_TO_KG * bohr_to_m**2)
-    denom = 2.0 * jnp.pi * co.SPEED_OF_LIGHT_MS * 100.0
-
-    vals_si = eigenvalues * factor
-    freqs_arr = jnp.sign(vals_si) * jnp.sqrt(jnp.abs(vals_si)) / denom
-    return jnp.sort(freqs_arr)
+    vals_si = eigenvalues * _EIGVAL_AU_TO_SI
+    freqs_arr = jnp.sign(vals_si) * jnp.sqrt(jnp.abs(vals_si)) / _RAD_S_TO_CM1_DENOM
+    return cast(np.ndarray, jnp.sort(freqs_arr))
 
 
 def symbols_to_masses_3n(symbols: list[str] | Sequence[str]) -> list[float]:
@@ -654,8 +642,7 @@ def reform_hessian(eigenvalues: np.ndarray, eigenvectors: np.ndarray) -> np.ndar
         np.ndarray: Hessian matrix
 
     """
-    reformed_hessian = eigenvectors.dot(np.diag(eigenvalues).dot(eigenvectors.T))
-    return reformed_hessian
+    return cast(np.ndarray, eigenvectors.dot(np.diag(eigenvalues).dot(eigenvectors.T)))
 
 
 # ---- Eigenmatrix operations ----
@@ -697,7 +684,7 @@ def transform_to_eigenmatrix(
         :func:`mass_weight_hessian`).
 
     """
-    return eigenvectors.T @ hessian @ eigenvectors
+    return cast(np.ndarray, eigenvectors.T @ hessian @ eigenvectors)
 
 
 def extract_eigenmatrix_data(
@@ -833,7 +820,7 @@ def invert_ts_curvature_jax(
     rest = jnp.where(evals[1:] < 0, 0.0, evals[1:])
     new_evals = jnp.concatenate([new_smallest[jnp.newaxis], rest])
 
-    return (evecs * new_evals) @ evecs.T
+    return cast(np.ndarray, (evecs * new_evals) @ evecs.T)
 
 
 def invert_ts_curvature(

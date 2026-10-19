@@ -80,7 +80,8 @@ class BondParam:
     @property
     def key(self) -> tuple[str, str]:
         """Sorted element pair for canonical matching (e.g., ``('C', 'F')``)."""
-        return tuple(sorted(self.elements))
+        a, b = self.elements
+        return (a, b) if a <= b else (b, a)
 
 
 @dataclass(frozen=True)
@@ -107,8 +108,8 @@ class AngleParam:
     @property
     def key(self) -> tuple[str, str, str]:
         """Canonical key: center fixed, outers sorted."""
-        outer = tuple(sorted([self.elements[0], self.elements[2]]))
-        return (outer[0], self.elements[1], outer[1])
+        a, b, c = self.elements
+        return (a, b, c) if a <= c else (c, b, a)
 
 
 @dataclass(frozen=True)
@@ -132,8 +133,8 @@ class StretchBendParam:
     @property
     def key(self) -> tuple[str, str, str]:
         """Canonical key: center fixed, outers sorted."""
-        outer = tuple(sorted([self.elements[0], self.elements[2]]))
-        return (outer[0], self.elements[1], outer[1])
+        a, b, c = self.elements
+        return (a, b, c) if a <= c else (c, b, a)
 
 
 @dataclass(frozen=True)
@@ -622,43 +623,33 @@ class ForceField:
         """
         # Unique bond types
         bond_types: dict[tuple[str, str], list[float]] = {}
-        for bond in molecule.bonds:
-            key = bond.element_pair
-            if key not in bond_types:
-                bond_types[key] = []
-            bond_types[key].append(bond.length)
+        for bond in molecule.bonds or ():
+            bond_types.setdefault(bond.element_pair, []).append(bond.length)
 
-        bonds = []
-        for key, lengths in bond_types.items():
-            avg_len = np.mean(lengths)
-            bonds.append(
-                BondParam(
-                    elements=key,
-                    equilibrium=avg_len,
-                    force_constant=default_bond_k,
-                    label=f"{key[0]}-{key[1]} (auto)",
-                )
+        bonds = [
+            BondParam(
+                elements=key,
+                equilibrium=float(np.mean(lengths)),
+                force_constant=default_bond_k,
+                label=f"{key[0]}-{key[1]} (auto)",
             )
+            for key, lengths in bond_types.items()
+        ]
 
         # Unique angle types
         angle_types: dict[tuple[str, str, str], list[float]] = {}
-        for angle in molecule.angles:
-            key = angle.element_triple
-            if key not in angle_types:
-                angle_types[key] = []
-            angle_types[key].append(angle.value)
+        for angle in molecule.angles or ():
+            angle_types.setdefault(angle.element_triple, []).append(angle.value)
 
-        angles = []
-        for key, values in angle_types.items():
-            avg_val = np.mean(values)
-            angles.append(
-                AngleParam(
-                    elements=key,
-                    equilibrium=avg_val,
-                    force_constant=default_angle_k,
-                    label=f"{key[0]}-{key[1]}-{key[2]} (auto)",
-                )
+        angles = [
+            AngleParam(
+                elements=key,
+                equilibrium=float(np.mean(values)),
+                force_constant=default_angle_k,
+                label=f"{key[0]}-{key[1]}-{key[2]} (auto)",
             )
+            for key, values in angle_types.items()
+        ]
 
         return cls(
             name=name or f"Auto FF for {molecule.name}",
