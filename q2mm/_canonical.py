@@ -26,11 +26,6 @@ class CanonicalizationError(ValueError):
     """Raised when a value cannot be represented as safe strict JSON."""
 
 
-def _screen_key(key: str, path: str) -> None:
-    if _credential_like_key(key):
-        raise CanonicalizationError(f"Secret-like field is not permitted at {path}.{key}.")
-
-
 def path_identity(value: str | Path | None) -> str | None:
     """Return the filename portion of a path or None."""
     if value is None:
@@ -57,10 +52,9 @@ def scientific_value(value: Any) -> Any:
             }:
                 continue
             field_value = getattr(value, item.name)
-            if item.name in {"source_path", "path"}:
-                payload[item.name] = path_identity(field_value)
-            else:
-                payload[item.name] = scientific_value(field_value)
+            payload[item.name] = (
+                path_identity(field_value) if item.name in {"source_path", "path"} else scientific_value(field_value)
+            )
         return payload
     if isinstance(value, Mapping):
         return {str(key): scientific_value(item) for key, item in value.items()}
@@ -84,94 +78,56 @@ def json_value(
     output always complies with RFC 8259.  In strict mode mapping keys must be
     strings and unknown objects are rejected.
     """
-    if isinstance(value, Mapping):
-        result: dict[str, Any] = {}
-        for raw_key, item in value.items():
-            if not isinstance(raw_key, str):
-                if not coerce_keys:
-                    raise CanonicalizationError(f"JSON object key at {_path} must be a string, got {raw_key!r}.")
-                key = str(raw_key)
-            else:
-                key = raw_key
-            if screen_secrets:
-                _screen_key(key, _path)
-            result[key] = json_value(
-                item,
-                strict=strict,
-                stringify_unknown=stringify_unknown,
-                coerce_keys=coerce_keys,
-                screen_secrets=screen_secrets,
-                _path=f"{_path}.{key}",
+
+    def normalize(current: Any, path: str) -> Any:
+        if isinstance(current, Mapping):
+            result: dict[str, Any] = {}
+            for raw_key, item in current.items():
+                if not isinstance(raw_key, str):
+                    if not coerce_keys:
+                        raise CanonicalizationError(f"JSON object key at {path} must be a string, got {raw_key!r}.")
+                    key = str(raw_key)
+                else:
+                    key = raw_key
+                if screen_secrets and _credential_like_key(key):
+                    raise CanonicalizationError(f"Secret-like field is not permitted at {path}.{key}.")
+                result[key] = normalize(item, f"{path}.{key}")
+            return result
+        if isinstance(current, (list, tuple)):
+            return [normalize(item, f"{path}[{index}]") for index, item in enumerate(current)]
+        if isinstance(current, (set, frozenset)):
+            if strict:
+                raise CanonicalizationError(f"Unordered collection is not permitted at {path}.")
+            return sorted(
+                (normalize(item, f"{path}[]") for item in current),
+                key=lambda item: canonical_json(item, strict=False, stringify_unknown=True, coerce_keys=True),
             )
-        return result
-    if isinstance(value, (list, tuple)):
-        return [
-            json_value(
-                item,
-                strict=strict,
-                stringify_unknown=stringify_unknown,
-                coerce_keys=coerce_keys,
-                screen_secrets=screen_secrets,
-                _path=f"{_path}[{index}]",
-            )
-            for index, item in enumerate(value)
-        ]
-    if isinstance(value, (set, frozenset)):
-        if strict:
-            raise CanonicalizationError(f"Unordered collection is not permitted at {_path}.")
-        return sorted(
-            (
-                json_value(
-                    item,
-                    strict=False,
-                    stringify_unknown=stringify_unknown,
-                    coerce_keys=coerce_keys,
-                    screen_secrets=screen_secrets,
-                    _path=f"{_path}[]",
-                )
-                for item in value
-            ),
-            key=lambda item: canonical_json(item, strict=False, stringify_unknown=True, coerce_keys=True),
-        )
-    if isinstance(value, Enum):
-        return json_value(
-            value.value,
-            strict=strict,
-            stringify_unknown=stringify_unknown,
-            coerce_keys=coerce_keys,
-            screen_secrets=screen_secrets,
-            _path=_path,
-        )
-    if isinstance(value, bool) or value is None or isinstance(value, (str, int)):
-        return value
-    if isinstance(value, float):
-        if math.isnan(value):
-            return "NaN"
-        if math.isinf(value):
-            return "Infinity" if value > 0 else "-Infinity"
-        return value
-    if isinstance(value, np.floating):
-        return json_value(float(value), _path=_path)
-    if isinstance(value, np.integer):
-        return int(value)
-    if isinstance(value, np.ndarray):
-        return json_value(
-            value.tolist(),
-            strict=strict,
-            stringify_unknown=stringify_unknown,
-            coerce_keys=coerce_keys,
-            screen_secrets=screen_secrets,
-            _path=_path,
-        )
-    if isinstance(value, Path):
-        if strict:
-            raise CanonicalizationError(f"Filesystem path is not permitted in canonical JSON at {_path}.")
-        return str(value)
-    if stringify_unknown:
-        return str(value)
-    if not strict:
-        return value
-    raise CanonicalizationError(f"Unsupported JSON value at {_path}: {type(value).__name__}.")
+        if isinstance(current, Enum):
+            return normalize(current.value, path)
+        if isinstance(current, bool) or current is None or isinstance(current, (str, int)):
+            return current
+        if isinstance(current, (float, np.floating)):
+            scalar = float(current)
+            if math.isnan(scalar):
+                return "NaN"
+            if math.isinf(scalar):
+                return "Infinity" if scalar > 0 else "-Infinity"
+            return scalar
+        if isinstance(current, np.integer):
+            return int(current)
+        if isinstance(current, np.ndarray):
+            return normalize(current.tolist(), path)
+        if isinstance(current, Path):
+            if strict:
+                raise CanonicalizationError(f"Filesystem path is not permitted in canonical JSON at {path}.")
+            return str(current)
+        if stringify_unknown:
+            return str(current)
+        if not strict:
+            return current
+        raise CanonicalizationError(f"Unsupported JSON value at {path}: {type(current).__name__}.")
+
+    return normalize(value, _path)
 
 
 def canonical_json(

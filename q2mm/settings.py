@@ -21,6 +21,7 @@ from pydantic import (
 )
 from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
 
+from q2mm._provenance import freeze_json_mapping, thaw_json_value
 from q2mm.constants import KCAL_TO_KJ, MDYNA_TO_KJMOLA2, MM3_STR
 
 
@@ -32,24 +33,16 @@ def _freeze(value: Any) -> Any:
     return value
 
 
-def _thaw(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        return {key: _thaw(item) for key, item in value.items()}
-    if isinstance(value, tuple):
-        return [_thaw(item) for item in value]
-    return value
-
-
 JsonOptions = Annotated[
     Mapping[str, JsonValue],
-    BeforeValidator(_thaw),
-    AfterValidator(_freeze),
-    PlainSerializer(_thaw, return_type=dict),
+    BeforeValidator(thaw_json_value),
+    AfterValidator(lambda value: freeze_json_mapping(value, path="BackendSettings.options")),
+    PlainSerializer(thaw_json_value, return_type=dict),
 ]
 PathOptions = Annotated[
     Mapping[str, str],
     AfterValidator(_freeze),
-    PlainSerializer(_thaw, return_type=dict),
+    PlainSerializer(thaw_json_value, return_type=dict),
 ]
 Positive = Annotated[float, Field(gt=0)]
 NonNegative = Annotated[float, Field(ge=0)]
@@ -112,7 +105,7 @@ class BackendSettings(Settings):
 
     def factory_options(self) -> dict[str, Any]:
         """Return ordinary recursive JSON containers for the backend factory."""
-        return dict(self.model_dump(mode="json")["options"])
+        return dict(thaw_json_value(self.options))
 
 
 class ObjectiveSettings(Settings):
@@ -264,7 +257,7 @@ class SingleStageSettings(Settings):
 _NearZero = Annotated[
     Mapping[Literal["bond_k", "angle_k", "ub_k"], NonNegative],
     AfterValidator(_freeze),
-    PlainSerializer(_thaw, return_type=dict),
+    PlainSerializer(thaw_json_value, return_type=dict),
 ]
 
 

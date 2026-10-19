@@ -10,41 +10,26 @@ from q2mm.objectives.plan import ObjectivePlan
 from q2mm.objectives.protocols import ObjectiveEvaluator
 from q2mm.optimizers.protocols import _Optimizer
 from q2mm.settings import (
-    ScipySettings,
-    MultiStartSettings,
-    CyclingSettings,
     BasinHoppingSettings,
-    JaxOptSettings,
-    JaxMultiStartSettings,
-    OptaxSettings,
-    OptimizerSettings,
+    CyclingSettings,
+    MultiStartSettings,
+    ScipySettings,
 )
 from q2mm.workflows.base import EvaluatorFactory, Workflow
 
-from .models import ApplicationConfigurationError, ApplicationOptimizationError
+from .models import (
+    ApplicationConfigurationError,
+    ApplicationOptimizationError,
+    _validate_execution_controls,
+    _validate_result_vectors,
+)
 
 
-def _result_gradient_mode(optimizer: _Optimizer, executor_gradient: str) -> str:
+def _result_gradient_mode(target: object, executor_gradient: str) -> str:
     """Resolve declared typed algorithm semantics, including configured subclasses."""
-    settings = getattr(optimizer, "settings", None)
+    settings = getattr(target, "settings", target)
     if isinstance(settings, MultiStartSettings):
-        return _result_gradient_mode(getattr(optimizer, "optimizer"), executor_gradient)
-    if isinstance(
-        settings,
-        (
-            ScipySettings,
-            CyclingSettings,
-            BasinHoppingSettings,
-            JaxOptSettings,
-            JaxMultiStartSettings,
-            OptaxSettings,
-        ),
-    ):
-        return _settings_gradient_mode(settings, executor_gradient)
-    return executor_gradient
-
-
-def _settings_gradient_mode(settings: OptimizerSettings, executor_gradient: str) -> str:
+        return _result_gradient_mode(getattr(target, "optimizer", settings.optimizer), executor_gradient)
     if isinstance(settings, ScipySettings):
         from q2mm.optimizers.scipy_opt import ScipyOptimizer
 
@@ -53,12 +38,8 @@ def _settings_gradient_mode(settings: OptimizerSettings, executor_gradient: str)
         if settings.method == "least_squares" or executor_gradient == "none":
             return "finite_difference"
         return executor_gradient
-    if isinstance(settings, MultiStartSettings):
-        return _settings_gradient_mode(settings.optimizer, executor_gradient)
     if isinstance(settings, CyclingSettings):
-        if settings.max_cycles == 0:
-            return "none"
-        return _settings_gradient_mode(settings.full_optimizer, executor_gradient)
+        return "none" if settings.max_cycles == 0 else _result_gradient_mode(settings.full_optimizer, executor_gradient)
     if isinstance(settings, BasinHoppingSettings):
         return "finite_difference" if executor_gradient == "none" else executor_gradient
     return executor_gradient
@@ -80,11 +61,7 @@ def optimize(
     """
     if not isinstance(problem, OptimizationProblem):
         raise ApplicationConfigurationError("optimize requires an OptimizationProblem.")
-    if isinstance(regularization, bool) or not np.isfinite(regularization) or regularization < 0:
-        raise ApplicationConfigurationError("regularization must be non-negative and finite.")
-    if isinstance(n_evals, bool) or not isinstance(n_evals, int) or n_evals < 0:
-        raise ApplicationConfigurationError("n_evals must be a non-negative integer.")
-    gradient_modes: list[str] = []
+    _validate_execution_controls(regularization, n_evals)
     executor_controls: tuple[str, float | None] | None = None
 
     def checked_factory(plan: ObjectivePlan) -> ObjectiveEvaluator:
@@ -99,7 +76,6 @@ def optimize(
         if executor_controls is not None and controls != executor_controls:
             raise ApplicationOptimizationError("Workflow evaluators disagree on executor gradient mode or fd_step.")
         executor_controls = controls
-        gradient_modes.append(_result_gradient_mode(optimizer, controls[0]))
         return evaluator
 
     try:
@@ -116,22 +92,19 @@ def optimize(
         raise ApplicationOptimizationError(f"Workflow returned {type(result).__name__}; expected OptimizationResult.")
     if result.layout_fingerprint != problem.layout.fingerprint or result.n_params != len(problem.layout):
         raise ApplicationOptimizationError("Optimization result does not match the problem parameter layout.")
-    inactive = np.setdiff1d(np.arange(problem.active_space.n_full), problem.active_space.active_indices)
-    baseline = np.asarray(problem.active_space.baseline)
-    if not np.array_equal(result.initial_params, baseline):
-        raise ApplicationOptimizationError("Optimization result initial vector does not match the problem baseline.")
-    if not np.array_equal(result.final_params[inactive], baseline[inactive]):
-        raise ApplicationOptimizationError("Optimization result changed frozen parameter slots.")
-    if gradient_modes and result.gradient_mode != gradient_modes[-1]:
-        raise ApplicationOptimizationError(
-            f"Optimization result gradient_mode={result.gradient_mode!r}; expected {gradient_modes[-1]!r}."
-        )
+    _validate_result_vectors(result, np.asarray(problem.active_space.baseline), problem.active_space.active_indices)
+    if executor_controls is not None:
+        expected_gradient = _result_gradient_mode(optimizer, executor_controls[0])
+        if result.gradient_mode != expected_gradient:
+            raise ApplicationOptimizationError(
+                f"Optimization result gradient_mode={result.gradient_mode!r}; expected {expected_gradient!r}."
+            )
     from q2mm.optimizers.scipy_opt import ScipyOptimizer, _is_feasible
     from q2mm.workflows.single_stage import SingleStageWorkflow
 
     if isinstance(optimizer, ScipyOptimizer) and isinstance(workflow, SingleStageWorkflow):
         space = problem.active_space
-        bounds = optimizer._resolve_bounds(space, space.pack(baseline))
+        bounds = optimizer._resolve_bounds(space, space.pack(space.baseline))
         if not _is_feasible(space.pack(result.final_params), bounds):
             raise ApplicationOptimizationError("Optimization result violates the effective SciPy active bounds.")
     if len(result.initial_samples) != n_evals or len(result.final_samples) != n_evals:

@@ -5,14 +5,9 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping
-from typing import NoReturn
+from typing import Any, NoReturn
 
 _WINDOWS_ABSOLUTE_PATH = re.compile(r"^[A-Za-z]:[\\/]")
-_CREDENTIAL_KEY = re.compile(
-    r"(?:^|[_-])(?:api[_-]?key|access[_-]?key|auth(?:orization)?|credential|"
-    r"password|passwd|private[_-]?key|secret|session[_-]?key|token)(?:$|[_-])",
-    re.IGNORECASE,
-)
 _CREDENTIAL_DATA = (
     re.compile(r"^\s*(?:basic|bearer)\s+\S+", re.IGNORECASE),
     re.compile(r"-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----"),
@@ -81,13 +76,11 @@ class FrozenJSONMapping(dict[str, object]):
 
 
 def _freeze_json_value(value: object, *, path: str) -> object:
-    if value is None or isinstance(value, bool):
+    if value is None or isinstance(value, (bool, int)):
         return value
     if isinstance(value, str):
         if any(pattern.search(value) for pattern in _CREDENTIAL_DATA):
             raise ValueError(f"{path} contains credential-like data.")
-        return value
-    if isinstance(value, int):
         return value
     if isinstance(value, float):
         if not math.isfinite(value):
@@ -100,12 +93,20 @@ def _freeze_json_value(value: object, *, path: str) -> object:
     raise ValueError(f"{path} contains non-JSON-safe value of type {type(value).__name__}.")
 
 
+def thaw_json_value(value: Any) -> Any:
+    """Recursively convert frozen JSON mappings and tuples into mutable dicts and lists."""
+    if isinstance(value, Mapping):
+        return {key: thaw_json_value(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [thaw_json_value(item) for item in value]
+    return value
+
+
 def _credential_like_key(key: str) -> bool:
     """Return whether a key can identify secret material in common styles."""
-    if _CREDENTIAL_KEY.search(key):
-        return True
-    normalized = re.sub(r"[^a-z0-9]", "", key.casefold())
-    return any(normalized.startswith(term) or normalized.endswith(term) for term in _CREDENTIAL_KEY_TERMS)
+    lowered = key.casefold()
+    normalized = re.sub(r"[^a-z0-9]", "", lowered)
+    return "auth" in re.split(r"[^a-z0-9]+", lowered) or any(term in normalized for term in _CREDENTIAL_KEY_TERMS)
 
 
 def freeze_json_mapping(value: Mapping[str, object], *, path: str) -> FrozenJSONMapping:
