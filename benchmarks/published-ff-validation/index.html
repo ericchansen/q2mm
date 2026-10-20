@@ -1,0 +1,7067 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Quantum-guided molecular mechanics force field optimization">
+      
+      
+      
+        <link rel="canonical" href="https://ericchansen.github.io/q2mm/benchmarks/published-ff-validation/">
+      
+      
+        <link rel="prev" href="../crossover/">
+      
+      
+        <link rel="next" href="../qfuerza-validation/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Published FF Validation - Q2MM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#publication-reproduction-coverage" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Q2MM" class="md-header__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Q2MM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Published FF Validation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="deep-purple" data-md-color-accent="amber"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Q2MM" class="md-nav__button md-logo" aria-label="Q2MM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Q2MM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/ericchansen/q2mm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    ericchansen/q2mm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorial/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tutorial
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../platform-support/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Platform Support
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    How It Works
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    How It Works
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/theory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Theory & Methods
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/fitting-objectives/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fitting Objectives
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/data-types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Data Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/optimization-guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimization Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-it-works/comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Differences from v4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backend Engines
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backend Engines
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/authoring/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Authoring a Plugin
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenMM
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/jax-engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/jax-md/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JAX-MD
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../backends/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Psi4 (Reference)
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Command Line
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../optimizer-comparison/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Optimizer Comparison
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../gpu/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    GPU Acceleration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../crossover/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    When Analytical Wins
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Published FF Validation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Published FF Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#current-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current matrix
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Current matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rh-enamide-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rh-enamide profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rh-enamide profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#heck-relay-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Heck relay profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Heck relay profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rosales-heck-publication-24-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rosales-heck-publication-24-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pd-allyl-amination-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pd-allyl amination profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pd-allyl amination profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wahlers-pd-allyl-eight-block-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wahlers-pd-allyl-eight-block-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pd-14-conjugate-addition-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pd 1,4-conjugate addition profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pd 1,4-conjugate addition profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rh-14-conjugate-addition-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rh 1,4-conjugate addition profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rh 1,4-conjugate addition profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ferrocene-ground-state-force-field-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ferrocene ground-state force field profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ferrocene ground-state force field profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wahlers-ferrocene-seven-structure-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wahlers-ferrocene-seven-structure-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wahlers-ferrocene-full-scan-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wahlers-ferrocene-full-scan-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wahlers-ferrocene-seven-structure-v1-qfuerza" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wahlers-ferrocene-seven-structure-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#osmium-dihydroxylation-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        osmium-dihydroxylation profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="osmium-dihydroxylation profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#historical-force-field-record-v1-not-specified" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        historical-force-field-record-v1 / not specified
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ru-ketone-hydrogenation-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ru-ketone-hydrogenation profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ru-ketone-hydrogenation profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#historical-force-field-record-v1-not-specified_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        historical-force-field-record-v1 / not specified
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sulfone-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sulfone profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="sulfone profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#historical-force-field-record-v1-not-specified_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        historical-force-field-record-v1 / not specified
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compatibility-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compatibility profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#typed-but-unsupported-source-terms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Typed but unsupported source terms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#historical-force-field-only-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Historical force-field-only records
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executable-proof" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executable proof
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qfuerza-validation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QFUERZA Validation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../qfuerza-recovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    QFUERZA Recovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Systems
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Systems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/small-molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Small Molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/rh-enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh-Enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/heck-relay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Heck Relay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/pd-allyl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pd-Allyl
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/pd-conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pd 1,4-Conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/rh-conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rh 1,4-Conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../systems/ferrocene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ferrocene
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9" >
+        
+          
+          <label class="md-nav__link" for="__nav_9" id="__nav_9_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    q2mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1" id="__nav_9_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_9_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    q2mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_1" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/application/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    application
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_1" id="__nav_9_1_1_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    application
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/evaluation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    evaluation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/models/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/optimization/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimization
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/application/persistence/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    persistence
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    backends
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2" id="__nav_9_1_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/conformance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    conformance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/contracts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    contracts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/discovery/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    discovery
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/mm/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2_4" id="__nav_9_1_2_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_2_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    mm
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/batched/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    batched
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/jax_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/jax_md_engine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_md_engine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/mm/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_2_5" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/backends/reference/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_2_5" id="__nav_9_1_2_5_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_2_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_2_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/reference/ase/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ase
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/reference/psi4/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    psi4
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/reference/qcengine/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qcengine
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/backends/registry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    registry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/benchmarks/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    benchmarks
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3" id="__nav_9_1_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    benchmarks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/acceptance/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    acceptance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/analysis/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/artifacts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    artifacts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/cases/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cases
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/cli/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cli
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/profiles/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    profiles
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/publications/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    publications
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/records/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    records
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/runner/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    runner
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_3_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/benchmarks/systems/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    systems
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_3_10" id="__nav_9_1_3_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="4" aria-labelledby="__nav_9_1_3_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_3_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    systems
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/ch3f/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ch3f
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/ch3f_sn2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ch3f_sn2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/ferrocene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    ferrocene
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/heck_relay/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    heck_relay
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/pd_allyl/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pd_allyl
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/pd_conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    pd_conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/rh_conjugate/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rh_conjugate
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/benchmarks/systems/rh_enamide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    rh_enamide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/constants/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    constants
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/elements/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    elements
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/geometry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    geometry
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_8" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/io/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    io
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_8" id="__nav_9_1_8_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    io
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/amber/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    amber
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/cmap/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cmap
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/fchk/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    fchk
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/gaussian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    gaussian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/jaguar/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaguar
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/macromodel/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    macromodel
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/mm3/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mm3
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/mol2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    mol2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/molecules/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/openmm/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    openmm
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/qcelemental/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    qcelemental
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/tinker/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    tinker
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/io/xyz/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    xyz
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_9" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/models/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    models
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_9" id="__nav_9_1_9_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_9_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_9">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    models
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/forcefield/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    forcefield
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/hessian/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    hessian
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/identifiers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    identifiers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/molecule/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    molecule
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/observations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    observations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/parameters/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    parameters
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/problem/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    problem
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/publication/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    publication
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/results/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    results
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/seminario/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    seminario
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/models/units/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    units
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_10" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/objectives/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    objectives
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_10" id="__nav_9_1_10_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_10_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_10">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    objectives
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/jax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/metrics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    metrics
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/plan/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    plan
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/protocols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    protocols
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/objectives/python/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    python
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_11" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/optimizers/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optimizers
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_11" id="__nav_9_1_11_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_11_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_11">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    optimizers
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/basinhopping/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    basinhopping
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/catalog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    catalog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/cycling/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    cycling
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/jax_multistart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jax_multistart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/jaxopt_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    jaxopt_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/multistart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    multistart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/optax/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    optax
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/protocols/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    protocols
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/optimizers/scipy_opt/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    scipy_opt
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/preparation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    preparation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/resources/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    resources
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/settings/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    settings
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_9_1_15" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../reference/q2mm/workflows/" class="md-nav__link ">
+              
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    workflows
+  
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_9_1_15" id="__nav_9_1_15_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        <nav class="md-nav" data-md-level="3" aria-labelledby="__nav_9_1_15_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_9_1_15">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    workflows
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/workflows/base/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    base
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/workflows/method_e2/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    method_e2
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/q2mm/workflows/single_stage/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    single_stage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../references/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    References
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#current-matrix" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Current matrix
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Current matrix">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rh-enamide-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rh-enamide profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rh-enamide profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#heck-relay-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Heck relay profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Heck relay profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rosales-heck-publication-24-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        rosales-heck-publication-24-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pd-allyl-amination-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pd-allyl amination profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pd-allyl amination profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wahlers-pd-allyl-eight-block-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wahlers-pd-allyl-eight-block-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pd-14-conjugate-addition-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Pd 1,4-conjugate addition profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Pd 1,4-conjugate addition profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rh-14-conjugate-addition-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rh 1,4-conjugate addition profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rh 1,4-conjugate addition profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_4" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ferrocene-ground-state-force-field-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Ferrocene ground-state force field profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Ferrocene ground-state force field profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-published_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wahlers-ferrocene-seven-structure-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wahlers-ferrocene-seven-structure-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wahlers-ferrocene-full-scan-v1-published" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wahlers-ferrocene-full-scan-v1 / published
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#repository-geometry-eigenmatrix-v1-qfuerza_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        repository-geometry-eigenmatrix-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wahlers-ferrocene-seven-structure-v1-qfuerza" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        wahlers-ferrocene-seven-structure-v1 / qfuerza
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#osmium-dihydroxylation-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        osmium-dihydroxylation profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="osmium-dihydroxylation profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#historical-force-field-record-v1-not-specified" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        historical-force-field-record-v1 / not specified
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ru-ketone-hydrogenation-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ru-ketone-hydrogenation profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ru-ketone-hydrogenation profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#historical-force-field-record-v1-not-specified_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        historical-force-field-record-v1 / not specified
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sulfone-profiles" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sulfone profiles
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="sulfone profiles">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#historical-force-field-record-v1-not-specified_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        historical-force-field-record-v1 / not specified
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compatibility-profile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compatibility profile
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#typed-but-unsupported-source-terms" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Typed but unsupported source terms
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#historical-force-field-only-records" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Historical force-field-only records
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#executable-proof" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executable proof
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="publication-reproduction-coverage">Publication reproduction coverage<a class="headerlink" href="#publication-reproduction-coverage" title="Permanent link">&para;</a></h1>
+<p>Publication-scale systems are the strongest software-path tests in q2mm because
+they combine many QM Hessians, full + OPT force-field composition, frozen
+parameters, QFUERZA initialization, evaluation, optimizer entry, and
+persistence. They do <strong>not</strong> all reproduce the complete source objective.</p>
+<p>The canonical machine-readable records are in
+<a href="https://github.com/ericchansen/q2mm/blob/master/q2mm/benchmarks/publications.py"><code>q2mm.benchmarks.publications</code></a>;
+the source-linked evidence is
+<a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md">Publication Force-Field Coverage</a>.</p>
+<h2 id="current-matrix">Current matrix<a class="headerlink" href="#current-matrix" title="Permanent link">&para;</a></h2>
+<p>The following is a deterministic projection of <strong>every canonical
+system/profile/starting-point record</strong>, including blocked and historical rows.
+<strong>Provisionable</strong> means the recorded problem can be constructed when its
+required inputs are supplied; it does not mean those inputs are bundled, that
+optimization converges, or that the source study is exactly reproduced.</p>
+<p>Read the <a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#reproduction-status-vocabulary">claim vocabulary</a>
+alongside each row. Target dispositions mean: <code>implemented</code> is populated in this
+profile; <code>available</code> has source values but is not populated; <code>omitted</code> is not
+populated; <code>blocked</code> has unresolved input or execution requirements. They are
+not interchangeable. An empty membership means no authoritative training cases
+are recorded, not a successful zero-case problem.</p>
+<p>The committed Markdown and built site share the same projection. Refresh it
+after changing canonical metadata with
+<code>python scripts/gen_publication_pages.py --write</code>; run the command without
+<code>--write</code> to check freshness. The docs build and core tests also reject stale
+snapshots. This check verifies documentation consistency, <strong>not scientific
+validation</strong>.</p>
+<!-- BEGIN GENERATED publication-profiles -->
+
+<p><a id="rh-enamide"></a></p>
+<h3 id="rh-enamide-profiles">Rh-enamide profiles<a class="headerlink" href="#rh-enamide-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide">Source evidence and limitations</a> · <a href="../../systems/rh-enamide/">System guide</a></p>
+<h4 id="repository-geometry-eigenmatrix-v1-published"><code>repository-geometry-eigenmatrix-v1</code> / <code>published</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-published" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">9</td>
+<td><code>transition_state</code></td>
+<td><code>partial_repository_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>1ZDMPfromJCTCSI_loner1.01</code>, <code>2DMPEConformation1fromJCTCSI_isomer1.01</code>, <code>3DMPEConformation2fromJCTCSI_isomer2.01</code>, <code>4RR-Me-DuPHOSpro-RfromJCTCSI_isomer3.01</code>, <code>5RR-Me-DuPHOSpro-SfromJCTCSI_isomer4.01</code>, <code>6RR-Me-BPEpro-RConformation1fromJCTCSI_isomer5.01</code>, <code>7RR-Me-BPEpro-RConformation2fromJCTCSI_isomer6.01</code>, <code>8RR-Me-BPEpro-SConformation1fromJCTCSI_isomer7.01</code>, <code>9RR-Me-BPEpro-SConformation2fromJCTCSI_isomer8.01</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The source final fit used a restricted structure/Hessian selection, unlike all-nine compatibility rows.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The source final fit used a restricted structure/Hessian selection, unlike all-nine compatibility rows.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>The paper used ESP charges with a 0.02 e tolerance; MM backends do not expose calculated atomic charges.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>relative_enthalpy</code></a></td>
+<td><code>available</code></td>
+<td>Source conformer/diastereomer enthalpies are tabulated; the compatibility profile intentionally omits them.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> Inputs are tracked in the source repository and excluded from distribution artifacts; redistribution/licensing is not established.</li>
+<li><strong>Note:</strong> The published objective also used ESP charges and relative enthalpies.</li>
+</ul>
+<h4 id="repository-geometry-eigenmatrix-v1-qfuerza"><code>repository-geometry-eigenmatrix-v1</code> / <code>qfuerza</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-qfuerza" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qfuerza</code></td>
+<td style="text-align: right;">9</td>
+<td><code>transition_state</code></td>
+<td><code>partial_repository_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>1ZDMPfromJCTCSI_loner1.01</code>, <code>2DMPEConformation1fromJCTCSI_isomer1.01</code>, <code>3DMPEConformation2fromJCTCSI_isomer2.01</code>, <code>4RR-Me-DuPHOSpro-RfromJCTCSI_isomer3.01</code>, <code>5RR-Me-DuPHOSpro-SfromJCTCSI_isomer4.01</code>, <code>6RR-Me-BPEpro-RConformation1fromJCTCSI_isomer5.01</code>, <code>7RR-Me-BPEpro-RConformation2fromJCTCSI_isomer6.01</code>, <code>8RR-Me-BPEpro-SConformation1fromJCTCSI_isomer7.01</code>, <code>9RR-Me-BPEpro-SConformation2fromJCTCSI_isomer8.01</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The source final fit used a restricted structure/Hessian selection, unlike all-nine compatibility rows.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The source final fit used a restricted structure/Hessian selection, unlike all-nine compatibility rows.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>The paper used ESP charges with a 0.02 e tolerance; MM backends do not expose calculated atomic charges.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-enamide"><code>relative_enthalpy</code></a></td>
+<td><code>available</code></td>
+<td>Source conformer/diastereomer enthalpies are tabulated; the compatibility profile intentionally omits them.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> Inputs are tracked in the source repository and excluded from distribution artifacts; redistribution/licensing is not established.</li>
+<li><strong>Note:</strong> The published objective also used ESP charges and relative enthalpies.</li>
+</ul>
+<p><a id="heck-relay"></a></p>
+<h3 id="heck-relay-profiles">Heck relay profiles<a class="headerlink" href="#heck-relay-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay">Source evidence and limitations</a> · <a href="../../systems/heck-relay/">System guide</a></p>
+<h4 id="repository-geometry-eigenmatrix-v1-published_1"><code>repository-geometry-eigenmatrix-v1</code> / <code>published</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-published_1" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">23</td>
+<td><code>transition_state</code></td>
+<td><code>executable_archive_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>aagts1</code>, <code>aagts2</code>, <code>bgts1</code>, <code>bgts2</code>, <code>cf3ets1</code>, <code>cf3ets2</code>, <code>dimeets1</code>, <code>dimeets2</code>, <code>epgts1</code>, <code>epgts2</code>, <code>ipets1</code>, <code>ipets2</code>, <code>meets1</code>, <code>meets2</code>, <code>prrts2</code>, <code>prsts1</code>, <code>prsts2</code>, <code>tbets1</code>, <code>tbets2</code>, <code>tmets1</code>, <code>tmets2</code>, <code>zpgts1</code>, <code>zpgts2</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The deposited archive contains 23 of the 24 structures described in the dissertation.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The deposited archive contains 23 of the 24 structures described in the dissertation.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>direct_electrostatic_potential</code></a></td>
+<td><code>blocked</code></td>
+<td>Bond dipoles were fitted to direct CHELPG ESP error, not to atomic-charge residuals.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>equilibrium_parameter_tether</code></a></td>
+<td><code>blocked</code></td>
+<td>The source used equilibrium-value tethers; authoritative per-slot target values are not reconstructed.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Note:</strong> This row preserves the deposited 23-case archive and a partial repository objective.</li>
+</ul>
+<h4 id="repository-geometry-eigenmatrix-v1-qfuerza_1"><code>repository-geometry-eigenmatrix-v1</code> / <code>qfuerza</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-qfuerza_1" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qfuerza</code></td>
+<td style="text-align: right;">23</td>
+<td><code>transition_state</code></td>
+<td><code>executable_archive_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>aagts1</code>, <code>aagts2</code>, <code>bgts1</code>, <code>bgts2</code>, <code>cf3ets1</code>, <code>cf3ets2</code>, <code>dimeets1</code>, <code>dimeets2</code>, <code>epgts1</code>, <code>epgts2</code>, <code>ipets1</code>, <code>ipets2</code>, <code>meets1</code>, <code>meets2</code>, <code>prrts2</code>, <code>prsts1</code>, <code>prsts2</code>, <code>tbets1</code>, <code>tbets2</code>, <code>tmets1</code>, <code>tmets2</code>, <code>zpgts1</code>, <code>zpgts2</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The deposited archive contains 23 of the 24 structures described in the dissertation.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The deposited archive contains 23 of the 24 structures described in the dissertation.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>direct_electrostatic_potential</code></a></td>
+<td><code>blocked</code></td>
+<td>Bond dipoles were fitted to direct CHELPG ESP error, not to atomic-charge residuals.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>equilibrium_parameter_tether</code></a></td>
+<td><code>blocked</code></td>
+<td>The source used equilibrium-value tethers; authoritative per-slot target values are not reconstructed.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Note:</strong> This row preserves the deposited 23-case archive and a partial repository objective.</li>
+</ul>
+<h4 id="rosales-heck-publication-24-v1-published"><code>rosales-heck-publication-24-v1</code> / <code>published</code><a class="headerlink" href="#rosales-heck-publication-24-v1-published" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">24</td>
+<td><code>transition_state</code></td>
+<td><code>blocked_historical_record</code></td>
+<td>No</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>aagts1</code>, <code>aagts2</code>, <code>bgts1</code>, <code>bgts2</code>, <code>cf3ets1</code>, <code>cf3ets2</code>, <code>dimeets1</code>, <code>dimeets2</code>, <code>epgts1</code>, <code>epgts2</code>, <code>ipets1</code>, <code>ipets2</code>, <code>meets1</code>, <code>meets2</code>, <code>prrts1</code>, <code>prrts2</code>, <code>prsts1</code>, <code>prsts2</code>, <code>tbets1</code>, <code>tbets2</code>, <code>tmets1</code>, <code>tmets2</code>, <code>zpgts1</code>, <code>zpgts2</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The deposited archive contains 23 of the 24 structures described in the dissertation.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The deposited archive contains 23 of the 24 structures described in the dissertation.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>direct_electrostatic_potential</code></a></td>
+<td><code>blocked</code></td>
+<td>Bond dipoles were fitted to direct CHELPG ESP error, not to atomic-charge residuals.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#heck-relay"><code>equilibrium_parameter_tether</code></a></td>
+<td><code>blocked</code></td>
+<td>The source used equilibrium-value tethers; authoritative per-slot target values are not reconstructed.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> The sole missing member of the publication's 24-case set is prrts1.</li>
+<li><strong>Note:</strong> No synthetic prrts1 structure is permitted.</li>
+</ul>
+<p><a id="pd-allyl"></a></p>
+<h3 id="pd-allyl-amination-profiles">Pd-allyl amination profiles<a class="headerlink" href="#pd-allyl-amination-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl">Source evidence and limitations</a> · <a href="../../systems/pd-allyl/">System guide</a></p>
+<h4 id="repository-geometry-eigenmatrix-v1-published_2"><code>repository-geometry-eigenmatrix-v1</code> / <code>published</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-published_2" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">21</td>
+<td><code>transition_state</code></td>
+<td><code>partial_repository_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS10</code>, <code>TS11</code>, <code>TS12</code>, <code>TS13</code>, <code>TS14</code>, <code>TS15</code>, <code>TS16</code>, <code>TS17</code>, <code>TS18</code>, <code>TS19</code>, <code>TS2</code>, <code>TS20</code>, <code>TS21</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code>, <code>TS8</code>, <code>TS9</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The compatibility row contains the 21 primary cases only.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The compatibility row contains the 21 primary cases only.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>The source electrostatic stage is not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>equilibrium_parameter_tether</code></a></td>
+<td><code>blocked</code></td>
+<td>The source used equilibrium-value tethers; exact per-slot targets are unavailable.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> Complete eight-block rederivation requires auxiliary TS22-TS25 oxazole Hessian data.</li>
+<li><strong>Note:</strong> The executable compatibility row contains the 21 primary TS1-TS21 structures.</li>
+</ul>
+<h4 id="repository-geometry-eigenmatrix-v1-qfuerza_2"><code>repository-geometry-eigenmatrix-v1</code> / <code>qfuerza</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-qfuerza_2" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qfuerza</code></td>
+<td style="text-align: right;">21</td>
+<td><code>transition_state</code></td>
+<td><code>partial_repository_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS10</code>, <code>TS11</code>, <code>TS12</code>, <code>TS13</code>, <code>TS14</code>, <code>TS15</code>, <code>TS16</code>, <code>TS17</code>, <code>TS18</code>, <code>TS19</code>, <code>TS2</code>, <code>TS20</code>, <code>TS21</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code>, <code>TS8</code>, <code>TS9</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The compatibility row contains the 21 primary cases only.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The compatibility row contains the 21 primary cases only.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>The source electrostatic stage is not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>equilibrium_parameter_tether</code></a></td>
+<td><code>blocked</code></td>
+<td>The source used equilibrium-value tethers; exact per-slot targets are unavailable.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> Complete eight-block rederivation requires auxiliary TS22-TS25 oxazole Hessian data.</li>
+<li><strong>Note:</strong> The executable compatibility row contains the 21 primary TS1-TS21 structures.</li>
+</ul>
+<h4 id="wahlers-pd-allyl-eight-block-v1-published"><code>wahlers-pd-allyl-eight-block-v1</code> / <code>published</code><a class="headerlink" href="#wahlers-pd-allyl-eight-block-v1-published" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">25</td>
+<td><code>transition_state</code></td>
+<td><code>blocked_historical_record</code></td>
+<td>No</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code>, <code>TS8</code>, <code>TS9</code>, <code>TS10</code>, <code>TS11</code>, <code>TS12</code>, <code>TS13</code>, <code>TS14</code>, <code>TS15</code>, <code>TS16</code>, <code>TS17</code>, <code>TS18</code>, <code>TS19</code>, <code>TS20</code>, <code>TS21</code>, <code>TS22</code>, <code>TS23</code>, <code>TS24</code>, <code>TS25</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The compatibility row contains the 21 primary cases only.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The compatibility row contains the 21 primary cases only.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>The source electrostatic stage is not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-allyl"><code>equilibrium_parameter_tether</code></a></td>
+<td><code>blocked</code></td>
+<td>The source used equilibrium-value tethers; exact per-slot targets are unavailable.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> Auxiliary oxazole cases TS22-TS25 lack the Hessian data required for exact eight-block rederivation.</li>
+<li><strong>Note:</strong> The executable compatibility row contains the 21 primary TS1-TS21 structures.</li>
+</ul>
+<p><a id="pd-conjugate"></a></p>
+<h3 id="pd-14-conjugate-addition-profiles">Pd 1,4-conjugate addition profiles<a class="headerlink" href="#pd-14-conjugate-addition-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition">Source evidence and limitations</a> · <a href="../../systems/pd-conjugate/">System guide</a></p>
+<h4 id="repository-geometry-eigenmatrix-v1-published_3"><code>repository-geometry-eigenmatrix-v1</code> / <code>published</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-published_3" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">10</td>
+<td><code>transition_state</code></td>
+<td><code>partial_repository_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS10</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code>, <code>TS8</code>, <code>TS9</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. All ten primary structures are represented.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>All ten primary structures are represented.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>CHELPG electrostatics are not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>equilibrium_parameter_tether</code></a></td>
+<td><code>blocked</code></td>
+<td>The source used equilibrium-value tethers; exact per-slot targets are unavailable.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Note:</strong> The source describes four conceptual groups implemented as six physical OPT blocks.</li>
+</ul>
+<h4 id="repository-geometry-eigenmatrix-v1-qfuerza_3"><code>repository-geometry-eigenmatrix-v1</code> / <code>qfuerza</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-qfuerza_3" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qfuerza</code></td>
+<td style="text-align: right;">10</td>
+<td><code>transition_state</code></td>
+<td><code>partial_repository_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS10</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code>, <code>TS8</code>, <code>TS9</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. All ten primary structures are represented.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>All ten primary structures are represented.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>CHELPG electrostatics are not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#pd-14-conjugate-addition"><code>equilibrium_parameter_tether</code></a></td>
+<td><code>blocked</code></td>
+<td>The source used equilibrium-value tethers; exact per-slot targets are unavailable.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Note:</strong> The source describes four conceptual groups implemented as six physical OPT blocks.</li>
+</ul>
+<p><a id="rh-conjugate"></a></p>
+<h3 id="rh-14-conjugate-addition-profiles">Rh 1,4-conjugate addition profiles<a class="headerlink" href="#rh-14-conjugate-addition-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition">Source evidence and limitations</a> · <a href="../../systems/rh-conjugate/">System guide</a></p>
+<h4 id="repository-geometry-eigenmatrix-v1-published_4"><code>repository-geometry-eigenmatrix-v1</code> / <code>published</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-published_4" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">10</td>
+<td><code>transition_state</code></td>
+<td><code>sdk_software_path_demonstration</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS10</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code>, <code>TS8</code>, <code>TS9</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The compatibility row combines the source's staged eight-case and two-case fits.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The compatibility row combines the source's staged eight-case and two-case fits.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>CHELPG electrostatics are not executable through current MM backend results.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Note:</strong> This 2021 dissertation force field is developmental, not a mature validation system.</li>
+</ul>
+<h4 id="repository-geometry-eigenmatrix-v1-qfuerza_4"><code>repository-geometry-eigenmatrix-v1</code> / <code>qfuerza</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-qfuerza_4" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qfuerza</code></td>
+<td style="text-align: right;">10</td>
+<td><code>transition_state</code></td>
+<td><code>sdk_software_path_demonstration</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS10</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code>, <code>TS8</code>, <code>TS9</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The compatibility row combines the source's staged eight-case and two-case fits.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The compatibility row combines the source's staged eight-case and two-case fits.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#rh-14-conjugate-addition"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>CHELPG electrostatics are not executable through current MM backend results.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Note:</strong> This 2021 dissertation force field is developmental, not a mature validation system.</li>
+</ul>
+<p><a id="ferrocene"></a></p>
+<h3 id="ferrocene-ground-state-force-field-profiles">Ferrocene ground-state force field profiles<a class="headerlink" href="#ferrocene-ground-state-force-field-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene">Source evidence and limitations</a> · <a href="../../systems/ferrocene/">System guide</a></p>
+<h4 id="repository-geometry-eigenmatrix-v1-published_5"><code>repository-geometry-eigenmatrix-v1</code> / <code>published</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-published_5" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">7</td>
+<td><code>ground_state</code></td>
+<td><code>partial_repository_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>Published point-charge/bond-dipole fitting is not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>constrained_scan_energy</code></a></td>
+<td><code>blocked</code></td>
+<td>Numerical data for all four source scans are absent from the recovered archive.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> Exact reoptimization requires four absent numerical constrained-scan data sets.</li>
+<li><strong>Note:</strong> TS-prefixed archive labels do not change the governing ground-state semantics.</li>
+<li><strong>Note:</strong> External crystal, diastereomer, and selectivity validation structures are not training cases.</li>
+<li><strong>Note:</strong> The seven-case partial evaluator explicitly excludes the Fe atom type from nonbonded pairs because the source OPT file defines no Fe vdW row; it does not reconstruct the D1 dummy topology.</li>
+</ul>
+<h4 id="wahlers-ferrocene-seven-structure-v1-published"><code>wahlers-ferrocene-seven-structure-v1</code> / <code>published</code><a class="headerlink" href="#wahlers-ferrocene-seven-structure-v1-published" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">7</td>
+<td><code>ground_state</code></td>
+<td><code>partial_repository_reproduction</code></td>
+<td>Yes</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>Published point-charge/bond-dipole fitting is not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>constrained_scan_energy</code></a></td>
+<td><code>blocked</code></td>
+<td>Numerical data for all four source scans are absent from the recovered archive.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> Exact reoptimization requires four absent numerical constrained-scan data sets.</li>
+<li><strong>Note:</strong> TS-prefixed archive labels do not change the governing ground-state semantics.</li>
+<li><strong>Note:</strong> External crystal, diastereomer, and selectivity validation structures are not training cases.</li>
+<li><strong>Note:</strong> The seven-case partial evaluator explicitly excludes the Fe atom type from nonbonded pairs because the source OPT file defines no Fe vdW row; it does not reconstruct the D1 dummy topology.</li>
+</ul>
+<h4 id="wahlers-ferrocene-full-scan-v1-published"><code>wahlers-ferrocene-full-scan-v1</code> / <code>published</code><a class="headerlink" href="#wahlers-ferrocene-full-scan-v1-published" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>published</code></td>
+<td style="text-align: right;">7</td>
+<td><code>ground_state</code></td>
+<td><code>blocked_historical_record</code></td>
+<td>No</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>Published point-charge/bond-dipole fitting is not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>constrained_scan_energy</code></a></td>
+<td><code>blocked</code></td>
+<td>Numerical data for all four source scans are absent from the recovered archive.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> Numerical data are absent for all four constrained scans used by the publication.</li>
+<li><strong>Note:</strong> TS-prefixed archive labels do not change the governing ground-state semantics.</li>
+<li><strong>Note:</strong> External crystal, diastereomer, and selectivity validation structures are not training cases.</li>
+<li><strong>Note:</strong> The seven-case partial evaluator explicitly excludes the Fe atom type from nonbonded pairs because the source OPT file defines no Fe vdW row; it does not reconstruct the D1 dummy topology.</li>
+</ul>
+<h4 id="repository-geometry-eigenmatrix-v1-qfuerza_5"><code>repository-geometry-eigenmatrix-v1</code> / <code>qfuerza</code><a class="headerlink" href="#repository-geometry-eigenmatrix-v1-qfuerza_5" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qfuerza</code></td>
+<td style="text-align: right;">7</td>
+<td><code>ground_state</code></td>
+<td><code>blocked_historical_record</code></td>
+<td>No</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>Published point-charge/bond-dipole fitting is not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>constrained_scan_energy</code></a></td>
+<td><code>blocked</code></td>
+<td>Numerical data for all four source scans are absent from the recovered archive.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> QFUERZA initialization is unsupported until the D1 dummy-atom topology is represented and its frozen partition is proven.</li>
+<li><strong>Note:</strong> TS-prefixed archive labels do not change the governing ground-state semantics.</li>
+<li><strong>Note:</strong> External crystal, diastereomer, and selectivity validation structures are not training cases.</li>
+<li><strong>Note:</strong> The seven-case partial evaluator explicitly excludes the Fe atom type from nonbonded pairs because the source OPT file defines no Fe vdW row; it does not reconstruct the D1 dummy topology.</li>
+</ul>
+<h4 id="wahlers-ferrocene-seven-structure-v1-qfuerza"><code>wahlers-ferrocene-seven-structure-v1</code> / <code>qfuerza</code><a class="headerlink" href="#wahlers-ferrocene-seven-structure-v1-qfuerza" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>qfuerza</code></td>
+<td style="text-align: right;">7</td>
+<td><code>ground_state</code></td>
+<td><code>blocked_historical_record</code></td>
+<td>No</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> <code>TS1</code>, <code>TS2</code>, <code>TS3</code>, <code>TS4</code>, <code>TS5</code>, <code>TS6</code>, <code>TS7</code></p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_length</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>bond_angle</code></a></td>
+<td><code>implemented</code></td>
+<td>Compatibility profile preserves the repository weight byte-for-byte.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>torsion_geometry</code></a></td>
+<td><code>omitted</code></td>
+<td>The canonical torsion observation exists, but this compatibility profile does not populate it.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>Reaction/negative mode weight is 0. The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>eigenmatrix_offdiagonal</code></a></td>
+<td><code>implemented</code></td>
+<td>The source describes Hessian eigenvalues; the repository partial profile retains its full eigenmatrix recipe.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>atomic_partial_charge</code></a></td>
+<td><code>blocked</code></td>
+<td>Published point-charge/bond-dipole fitting is not executable through current MM backend results.</td>
+</tr>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#ferrocene"><code>constrained_scan_energy</code></a></td>
+<td><code>blocked</code></td>
+<td>Numerical data for all four source scans are absent from the recovered archive.</td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> QFUERZA initialization is unsupported until the D1 dummy-atom topology is represented and its frozen partition is proven.</li>
+<li><strong>Note:</strong> TS-prefixed archive labels do not change the governing ground-state semantics.</li>
+<li><strong>Note:</strong> External crystal, diastereomer, and selectivity validation structures are not training cases.</li>
+<li><strong>Note:</strong> The seven-case partial evaluator explicitly excludes the Fe atom type from nonbonded pairs because the source OPT file defines no Fe vdW row; it does not reconstruct the D1 dummy topology.</li>
+</ul>
+<p><a id="osmium-dihydroxylation"></a></p>
+<h3 id="osmium-dihydroxylation-profiles">osmium-dihydroxylation profiles<a class="headerlink" href="#osmium-dihydroxylation-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records">Source evidence and limitations</a></p>
+<h4 id="historical-force-field-record-v1-not-specified"><code>historical-force-field-record-v1</code> / <code>not specified</code><a class="headerlink" href="#historical-force-field-record-v1-not-specified" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>not specified</code></td>
+<td style="text-align: right;">0</td>
+<td><code>transition_state</code></td>
+<td><code>blocked_historical_record</code></td>
+<td>No</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> None recorded.</p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>blocked</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> No authoritative QM training files are available and the legacy force-field-to-publication mapping is unverified.</li>
+</ul>
+<p><a id="ru-ketone-hydrogenation"></a></p>
+<h3 id="ru-ketone-hydrogenation-profiles">ru-ketone-hydrogenation profiles<a class="headerlink" href="#ru-ketone-hydrogenation-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records">Source evidence and limitations</a></p>
+<h4 id="historical-force-field-record-v1-not-specified_1"><code>historical-force-field-record-v1</code> / <code>not specified</code><a class="headerlink" href="#historical-force-field-record-v1-not-specified_1" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>not specified</code></td>
+<td style="text-align: right;">0</td>
+<td><code>transition_state</code></td>
+<td><code>blocked_historical_record</code></td>
+<td>No</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> None recorded.</p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records"><code>eigenmatrix_diagonal</code></a></td>
+<td><code>blocked</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> No authoritative QM training files are available.</li>
+</ul>
+<p><a id="sulfone"></a></p>
+<h3 id="sulfone-profiles">sulfone profiles<a class="headerlink" href="#sulfone-profiles" title="Permanent link">&para;</a></h3>
+<p><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records">Source evidence and limitations</a></p>
+<h4 id="historical-force-field-record-v1-not-specified_2"><code>historical-force-field-record-v1</code> / <code>not specified</code><a class="headerlink" href="#historical-force-field-record-v1-not-specified_2" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Starting point</th>
+<th style="text-align: right;">Authoritative cases</th>
+<th>Stationary point</th>
+<th>Claim</th>
+<th>Provisionable</th>
+<th>Evidence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>not specified</code></td>
+<td style="text-align: right;">0</td>
+<td><code>unknown</code></td>
+<td><code>blocked_historical_record</code></td>
+<td>No</td>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records">Source/status details</a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Authoritative case IDs (record order):</strong> None recorded.</p>
+<table>
+<thead>
+<tr>
+<th>Target category</th>
+<th>Disposition</th>
+<th>Canonical detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records"><code>constrained_scan_energy</code></a></td>
+<td><code>blocked</code></td>
+<td></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li><strong>Blocker:</strong> The legacy file-to-paper mapping is unverified and no authoritative QM training or scan data are available.</li>
+</ul>
+<!-- END GENERATED publication-profiles -->
+
+<h2 id="compatibility-profile">Compatibility profile<a class="headerlink" href="#compatibility-profile" title="Permanent link">&para;</a></h2>
+<p>The five TS systems use <code>repository-geometry-eigenmatrix-v1</code>. It preserves the
+repository bond, angle, and full-eigenmatrix observations and weights exactly.
+Those weights are not silently rewritten to the general source tolerances, and
+selecting published versus QFUERZA values changes the starting vector—not the
+observations.</p>
+<p>Ferrocene additionally names
+<code>wahlers-ferrocene-seven-structure-v1</code>, a published-start, seven-ground-state
+partial profile. The exact scan and QFUERZA rows remain blocked.</p>
+<h2 id="typed-but-unsupported-source-terms">Typed but unsupported source terms<a class="headerlink" href="#typed-but-unsupported-source-terms" title="Permanent link">&para;</a></h2>
+<p>Grouped relative energy and equilibrium-parameter tethers execute in the Python
+and JAX objective paths. Relative enthalpy, atomic charge, direct ESP, and
+constrained scan observations have canonical identities and fingerprints, but
+raise typed errors when a backend cannot calculate the required property. Q2MM
+does not replace them with potential energy, charges, optimizer bounds, or
+another surrogate.</p>
+<h2 id="historical-force-field-only-records">Historical force-field-only records<a class="headerlink" href="#historical-force-field-only-records" title="Permanent link">&para;</a></h2>
+<p>Historical force-field-only records are included in the generated matrix, not
+counted as executable successes. Candidate citations and unverified
+file-to-paper mappings are explained in the
+<a href="https://github.com/ericchansen/q2mm/blob/master/validation/published_ffs/README.md#blocked-historical-records">blocked inventory</a>;
+no authoritative QM training problem is available.</p>
+<h2 id="executable-proof">Executable proof<a class="headerlink" href="#executable-proof" title="Permanent link">&para;</a></h2>
+<p>The source-only scripts under
+<a href="https://github.com/ericchansen/q2mm/tree/master/examples/publication"><code>examples/publication/</code></a>
+run each provisionable study through the root application functions. Their
+bounded mode uses the real case membership and objective, enters the optimizer
+once, saves a field and manifest, and explicitly makes no convergence claim.</p>
+<p>Numerical optimization claims require a linked canonical record in
+<a href="https://github.com/ericchansen/q2mm-data"><code>ericchansen/q2mm-data</code></a>. Example
+outputs are not committed to this repository.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.sections", "navigation.top", "toc.follow"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+        <script src="../../javascripts/mathjax.js"></script>
+      
+        <script src="https://unpkg.com/mathjax@3.2.2/es5/tex-mml-chtml.js"></script>
+      
+        <script src="../../javascripts/benchmarks.js"></script>
+      
+    
+  </body>
+</html>
